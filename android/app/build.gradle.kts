@@ -1,3 +1,6 @@
+import java.util.Properties
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,8 +8,18 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystorePropertiesFile.inputStream().use { keystoreProperties.load(it) }
+}
+
+fun requiredKeystoreProperty(name: String): String =
+    keystoreProperties.getProperty(name)
+        ?: throw org.gradle.api.GradleException("Missing '$name' in ${keystorePropertiesFile.path}")
+
 android {
-    namespace = "com.example.flutter_application_2"
+    namespace = "com.flutter.duu233"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,13 +28,8 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
-    }
-
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.flutter_application_2"
+        applicationId = "com.flutter.duu233"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -30,12 +38,30 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("release") {
+            val releaseStoreFile = file(requiredKeystoreProperty("storeFile"))
+            if (!releaseStoreFile.exists()) {
+                throw org.gradle.api.GradleException("Keystore file not found: ${releaseStoreFile.path}")
+            }
+
+            keyAlias = requiredKeystoreProperty("keyAlias")
+            keyPassword = requiredKeystoreProperty("keyPassword")
+            storeFile = releaseStoreFile
+            storePassword = requiredKeystoreProperty("storePassword")
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("release")
         }
+    }
+}
+
+kotlin {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_17)
     }
 }
 
