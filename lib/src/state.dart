@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 enum AppLanguage { zh, en, ja }
 
-enum PermissionKind { location, bluetooth, camera }
+enum PermissionKind { location, bluetooth, album, camera }
 
 enum DeviceRole { owner, user }
 
@@ -11,10 +11,7 @@ enum ImageSourceType { camera, album }
 enum CastStatus { success, failed }
 
 class ActionFeedback {
-  const ActionFeedback({
-    required this.success,
-    required this.message,
-  });
+  const ActionFeedback({required this.success, required this.message});
 
   final bool success;
   final String message;
@@ -170,186 +167,187 @@ class GuideArticle {
 
 class PhotoFrameState extends ChangeNotifier {
   PhotoFrameState.seeded()
-      : _language = AppLanguage.zh,
-        _cameraCounter = 4,
-        _lastSentCode = '',
-        _isLoggedIn = true,
-        _currentUser = UserProfile(
-          id: 'USR-2048',
-          nickname: '林岚',
-          email: 'linlan@example.com',
-          avatarColor: const Color(0xFFBC6C25),
-          signature: '把生活里的光，留给会发亮的相框。',
+    : _language = AppLanguage.zh,
+      _cameraCounter = 4,
+      _lastSentCode = '',
+      _isLoggedIn = true,
+      _currentUser = UserProfile(
+        id: 'USR-2048',
+        nickname: '林岚',
+        email: 'linlan@example.com',
+        avatarColor: const Color(0xFFBC6C25),
+        signature: '把生活里的光，留给会发亮的相框。',
+      ),
+      _permissions = {
+        PermissionKind.location: true,
+        PermissionKind.bluetooth: true,
+        PermissionKind.album: false,
+        PermissionKind.camera: false,
+      },
+      _devices = [
+        DeviceItem(
+          id: 'dev-aurora',
+          name: 'Aurora S1',
+          kind: '10.1" 木纹相框',
+          batteryLevel: 78,
+          connected: true,
+          role: DeviceRole.owner,
+          capacity: 6,
+          serialNumber: 'SN-AUR-240018',
+          carouselEnabled: true,
         ),
-        _permissions = {
-          PermissionKind.location: true,
-          PermissionKind.bluetooth: true,
-          PermissionKind.camera: false,
-        },
-        _devices = [
-          DeviceItem(
-            id: 'dev-aurora',
-            name: 'Aurora S1',
-            kind: '10.1" 木纹相框',
-            batteryLevel: 78,
-            connected: true,
-            role: DeviceRole.owner,
-            capacity: 6,
-            serialNumber: 'SN-AUR-240018',
-            carouselEnabled: true,
-          ),
-          DeviceItem(
-            id: 'dev-gallery',
-            name: 'Gallery Loop',
-            kind: '壁挂画廊屏',
-            batteryLevel: 43,
-            connected: false,
-            role: DeviceRole.user,
-            capacity: 4,
-            serialNumber: 'SN-GAL-983602',
-            carouselEnabled: false,
-          ),
-          DeviceItem(
-            id: 'dev-pocket',
-            name: 'Pocket Frame',
-            kind: '桌面轻量相框',
-            batteryLevel: 91,
-            connected: false,
-            role: DeviceRole.user,
-            capacity: 8,
-            serialNumber: 'SN-PKT-661245',
-            carouselEnabled: true,
-          ),
-        ],
-        _selectedDeviceId = 'dev-aurora',
-        _draftLibrary = const [
-          DraftPhoto(
-            id: 'draft-1',
-            title: '玄关晨光',
-            source: ImageSourceType.album,
-            width: 3024,
-            height: 4032,
-            color: Color(0xFFE07A5F),
-            note: '自动裁剪为 3:4，适合竖版相框',
-          ),
-          DraftPhoto(
-            id: 'draft-2',
-            title: '海风留白',
-            source: ImageSourceType.album,
-            width: 3840,
-            height: 2160,
-            color: Color(0xFF3D5A80),
-            note: '横版照片，建议投放壁挂设备',
-          ),
-          DraftPhoto(
-            id: 'draft-3',
-            title: '窗边手作',
-            source: ImageSourceType.album,
-            width: 2400,
-            height: 2400,
-            color: Color(0xFF6B705C),
-            note: '正方形构图，将保留完整边距',
-          ),
-          DraftPhoto(
-            id: 'draft-4',
-            title: '夜色吧台',
-            source: ImageSourceType.album,
-            width: 2592,
-            height: 3872,
-            color: Color(0xFF6D597A),
-            note: '高对比度照片，适合深色边框',
-          ),
-          DraftPhoto(
-            id: 'draft-5',
-            title: '晚霞远山',
-            source: ImageSourceType.album,
-            width: 4080,
-            height: 3072,
-            color: Color(0xFFCB997E),
-            note: '预处理后输出 1600px 长边',
-          ),
-        ],
-        _albumPhotos = [
-          AlbumPhoto(
-            id: 'photo-1',
-            title: '栖居午后',
-            source: ImageSourceType.album,
-            deviceId: 'dev-aurora',
-            ownerUserId: 'USR-2048',
-            width: 2400,
-            height: 3200,
-            color: const Color(0xFF7F5539),
-            note: '已成功上传至 Aurora S1',
-            uploadedAt: DateTime(2026, 4, 22, 10, 12),
-          ),
-          AlbumPhoto(
-            id: 'photo-2',
-            title: '山谷云层',
-            source: ImageSourceType.camera,
-            deviceId: 'dev-aurora',
-            ownerUserId: 'USR-2048',
-            width: 3024,
-            height: 4032,
-            color: const Color(0xFF588157),
-            note: '由拍照流程上传',
-            uploadedAt: DateTime(2026, 4, 22, 17, 40),
-          ),
-          AlbumPhoto(
-            id: 'photo-3',
-            title: '暮色灯塔',
-            source: ImageSourceType.album,
-            deviceId: 'dev-gallery',
-            ownerUserId: 'USR-2048',
-            width: 3840,
-            height: 2160,
-            color: const Color(0xFF355070),
-            note: '横版样片，适配壁挂设备',
-            uploadedAt: DateTime(2026, 4, 21, 20, 18),
-          ),
-        ],
-        _castRecords = [
-          CastRecord(
-            id: 'record-1',
-            title: '栖居午后',
-            deviceId: 'dev-aurora',
-            ownerUserId: 'USR-2048',
-            status: CastStatus.success,
-            source: ImageSourceType.album,
-            color: const Color(0xFF7F5539),
-            width: 2400,
-            height: 3200,
-            message: '投屏完成，已写入设备存储。',
-            createdAt: DateTime(2026, 4, 22, 10, 13),
-            photoId: 'photo-1',
-          ),
-          CastRecord(
-            id: 'record-2',
-            title: '山谷云层',
-            deviceId: 'dev-aurora',
-            ownerUserId: 'USR-2048',
-            status: CastStatus.success,
-            source: ImageSourceType.camera,
-            color: const Color(0xFF588157),
-            width: 3024,
-            height: 4032,
-            message: '拍照处理成功，已投放到当前设备。',
-            createdAt: DateTime(2026, 4, 22, 17, 41),
-            photoId: 'photo-2',
-          ),
-          CastRecord(
-            id: 'record-3',
-            title: '雨夜街口',
-            deviceId: 'dev-gallery',
-            ownerUserId: 'USR-2048',
-            status: CastStatus.failed,
-            source: ImageSourceType.album,
-            color: const Color(0xFF9C6644),
-            width: 3024,
-            height: 4032,
-            message: '设备内存已满，请清理相册或联系设备所有者。',
-            createdAt: DateTime(2026, 4, 21, 22, 06),
-          ),
-        ];
+        DeviceItem(
+          id: 'dev-gallery',
+          name: 'Gallery Loop',
+          kind: '壁挂画廊屏',
+          batteryLevel: 43,
+          connected: false,
+          role: DeviceRole.user,
+          capacity: 4,
+          serialNumber: 'SN-GAL-983602',
+          carouselEnabled: false,
+        ),
+        DeviceItem(
+          id: 'dev-pocket',
+          name: 'Pocket Frame',
+          kind: '桌面轻量相框',
+          batteryLevel: 91,
+          connected: false,
+          role: DeviceRole.user,
+          capacity: 8,
+          serialNumber: 'SN-PKT-661245',
+          carouselEnabled: true,
+        ),
+      ],
+      _selectedDeviceId = 'dev-aurora',
+      _draftLibrary = const [
+        DraftPhoto(
+          id: 'draft-1',
+          title: '玄关晨光',
+          source: ImageSourceType.album,
+          width: 3024,
+          height: 4032,
+          color: Color(0xFFE07A5F),
+          note: '自动裁剪为 3:4，适合竖版相框',
+        ),
+        DraftPhoto(
+          id: 'draft-2',
+          title: '海风留白',
+          source: ImageSourceType.album,
+          width: 3840,
+          height: 2160,
+          color: Color(0xFF3D5A80),
+          note: '横版照片，建议投放壁挂设备',
+        ),
+        DraftPhoto(
+          id: 'draft-3',
+          title: '窗边手作',
+          source: ImageSourceType.album,
+          width: 2400,
+          height: 2400,
+          color: Color(0xFF6B705C),
+          note: '正方形构图，将保留完整边距',
+        ),
+        DraftPhoto(
+          id: 'draft-4',
+          title: '夜色吧台',
+          source: ImageSourceType.album,
+          width: 2592,
+          height: 3872,
+          color: Color(0xFF6D597A),
+          note: '高对比度照片，适合深色边框',
+        ),
+        DraftPhoto(
+          id: 'draft-5',
+          title: '晚霞远山',
+          source: ImageSourceType.album,
+          width: 4080,
+          height: 3072,
+          color: Color(0xFFCB997E),
+          note: '预处理后输出 1600px 长边',
+        ),
+      ],
+      _albumPhotos = [
+        AlbumPhoto(
+          id: 'photo-1',
+          title: '栖居午后',
+          source: ImageSourceType.album,
+          deviceId: 'dev-aurora',
+          ownerUserId: 'USR-2048',
+          width: 2400,
+          height: 3200,
+          color: const Color(0xFF7F5539),
+          note: '已成功上传至 Aurora S1',
+          uploadedAt: DateTime(2026, 4, 22, 10, 12),
+        ),
+        AlbumPhoto(
+          id: 'photo-2',
+          title: '山谷云层',
+          source: ImageSourceType.camera,
+          deviceId: 'dev-aurora',
+          ownerUserId: 'USR-2048',
+          width: 3024,
+          height: 4032,
+          color: const Color(0xFF588157),
+          note: '由拍照流程上传',
+          uploadedAt: DateTime(2026, 4, 22, 17, 40),
+        ),
+        AlbumPhoto(
+          id: 'photo-3',
+          title: '暮色灯塔',
+          source: ImageSourceType.album,
+          deviceId: 'dev-gallery',
+          ownerUserId: 'USR-2048',
+          width: 3840,
+          height: 2160,
+          color: const Color(0xFF355070),
+          note: '横版样片，适配壁挂设备',
+          uploadedAt: DateTime(2026, 4, 21, 20, 18),
+        ),
+      ],
+      _castRecords = [
+        CastRecord(
+          id: 'record-1',
+          title: '栖居午后',
+          deviceId: 'dev-aurora',
+          ownerUserId: 'USR-2048',
+          status: CastStatus.success,
+          source: ImageSourceType.album,
+          color: const Color(0xFF7F5539),
+          width: 2400,
+          height: 3200,
+          message: '投屏完成，已写入设备存储。',
+          createdAt: DateTime(2026, 4, 22, 10, 13),
+          photoId: 'photo-1',
+        ),
+        CastRecord(
+          id: 'record-2',
+          title: '山谷云层',
+          deviceId: 'dev-aurora',
+          ownerUserId: 'USR-2048',
+          status: CastStatus.success,
+          source: ImageSourceType.camera,
+          color: const Color(0xFF588157),
+          width: 3024,
+          height: 4032,
+          message: '拍照处理成功，已投放到当前设备。',
+          createdAt: DateTime(2026, 4, 22, 17, 41),
+          photoId: 'photo-2',
+        ),
+        CastRecord(
+          id: 'record-3',
+          title: '雨夜街口',
+          deviceId: 'dev-gallery',
+          ownerUserId: 'USR-2048',
+          status: CastStatus.failed,
+          source: ImageSourceType.album,
+          color: const Color(0xFF9C6644),
+          width: 3024,
+          height: 4032,
+          message: '设备内存已满，请清理相册或联系设备所有者。',
+          createdAt: DateTime(2026, 4, 21, 22, 06),
+        ),
+      ];
 
   AppLanguage _language;
   int _cameraCounter;
@@ -375,7 +373,9 @@ class PhotoFrameState extends ChangeNotifier {
 
   List<AlbumPhoto> get myAlbum {
     final items = _albumPhotos
-        .where((photo) => photo.ownerUserId == _currentUser.id && photo.isOnDevice)
+        .where(
+          (photo) => photo.ownerUserId == _currentUser.id && photo.isOnDevice,
+        )
         .toList();
     items.sort((left, right) => right.uploadedAt.compareTo(left.uploadedAt));
     return items;
@@ -387,11 +387,7 @@ class PhotoFrameState extends ChangeNotifier {
 
   DeviceItem get selectedDevice => _findDevice(_selectedDeviceId);
 
-  String tr({
-    required String zh,
-    String? en,
-    String? ja,
-  }) {
+  String tr({required String zh, String? en, String? ja}) {
     switch (_language) {
       case AppLanguage.zh:
         return zh;
@@ -416,74 +412,40 @@ class PhotoFrameState extends ChangeNotifier {
   String permissionLabel(PermissionKind kind) {
     switch (kind) {
       case PermissionKind.location:
-        return tr(
-          zh: '位置',
-          en: 'Location',
-          ja: '位置情報',
-        );
+        return tr(zh: '位置', en: 'Location', ja: '位置情報');
       case PermissionKind.bluetooth:
-        return tr(
-          zh: '蓝牙',
-          en: 'Bluetooth',
-          ja: 'Bluetooth',
-        );
+        return tr(zh: '蓝牙', en: 'Bluetooth', ja: 'Bluetooth');
+      case PermissionKind.album:
+        return tr(zh: '相册', en: 'Album', ja: 'アルバム');
       case PermissionKind.camera:
-        return tr(
-          zh: '相机',
-          en: 'Camera',
-          ja: 'カメラ',
-        );
+        return tr(zh: '相机', en: 'Camera', ja: 'カメラ');
     }
   }
 
   String roleLabel(DeviceRole role) {
     switch (role) {
       case DeviceRole.owner:
-        return tr(
-          zh: '所有者',
-          en: 'Owner',
-          ja: 'オーナー',
-        );
+        return tr(zh: '所有者', en: 'Owner', ja: 'オーナー');
       case DeviceRole.user:
-        return tr(
-          zh: '使用者',
-          en: 'User',
-          ja: '利用者',
-        );
+        return tr(zh: '使用者', en: 'User', ja: '利用者');
     }
   }
 
   String sourceLabel(ImageSourceType source) {
     switch (source) {
       case ImageSourceType.camera:
-        return tr(
-          zh: '拍照',
-          en: 'Camera',
-          ja: '撮影',
-        );
+        return tr(zh: '拍照', en: 'Camera', ja: '撮影');
       case ImageSourceType.album:
-        return tr(
-          zh: '相册',
-          en: 'Album',
-          ja: 'アルバム',
-        );
+        return tr(zh: '相册', en: 'Album', ja: 'アルバム');
     }
   }
 
   String statusLabel(CastStatus status) {
     switch (status) {
       case CastStatus.success:
-        return tr(
-          zh: '成功',
-          en: 'Success',
-          ja: '成功',
-        );
+        return tr(zh: '成功', en: 'Success', ja: '成功');
       case CastStatus.failed:
-        return tr(
-          zh: '失败',
-          en: 'Failed',
-          ja: '失敗',
-        );
+        return tr(zh: '失败', en: 'Failed', ja: '失敗');
     }
   }
 
@@ -502,22 +464,30 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   int deviceUsage(String deviceId) {
-    return _albumPhotos.where((photo) => photo.deviceId == deviceId && photo.isOnDevice).length;
+    return _albumPhotos
+        .where((photo) => photo.deviceId == deviceId && photo.isOnDevice)
+        .length;
   }
 
   int get totalPhotoCount => myAlbum.length;
 
   int get successCount {
-    return _castRecords.where((record) => record.status == CastStatus.success).length;
+    return _castRecords
+        .where((record) => record.status == CastStatus.success)
+        .length;
   }
 
   int get failureCount {
-    return _castRecords.where((record) => record.status == CastStatus.failed).length;
+    return _castRecords
+        .where((record) => record.status == CastStatus.failed)
+        .length;
   }
 
   int get activePermissionCount {
     return _permissions.values.where((enabled) => enabled).length;
   }
+
+  int get totalPermissionCount => PermissionKind.values.length;
 
   double get successRate {
     if (_castRecords.isEmpty) {
@@ -538,13 +508,7 @@ class PhotoFrameState extends ChangeNotifier {
       const Color(0xFF9C6644),
       const Color(0xFF6D597A),
     ];
-    final titles = <String>[
-      '门口剪影',
-      '雨后露台',
-      '下午茶桌',
-      '沙发角落',
-      '阳台花影',
-    ];
+    final titles = <String>['门口剪影', '雨后露台', '下午茶桌', '沙发角落', '阳台花影'];
     final index = _cameraCounter % palette.length;
     _cameraCounter += 1;
     return DraftPhoto(
@@ -558,6 +522,35 @@ class PhotoFrameState extends ChangeNotifier {
         zh: '已完成自动裁剪与锐化预处理',
         en: 'Auto cropped and sharpened before casting',
         ja: '自動トリミングとシャープ処理済み',
+      ),
+    );
+  }
+
+  DraftPhoto createAlbumDraft({
+    required String title,
+    required double width,
+    required double height,
+    required String uri,
+  }) {
+    final palette = <Color>[
+      const Color(0xFF3D5A80),
+      const Color(0xFF6B705C),
+      const Color(0xFFD97757),
+      const Color(0xFF7F5539),
+      const Color(0xFF5E548E),
+    ];
+    final index = DateTime.now().millisecondsSinceEpoch % palette.length;
+    return DraftPhoto(
+      id: _nextId('draft-album'),
+      title: title.trim().isEmpty ? '相册图片' : title.trim(),
+      source: ImageSourceType.album,
+      width: width,
+      height: height,
+      color: palette[index],
+      note: tr(
+        zh: '来自系统相册，已获得本次读取授权',
+        en: 'Selected from system album with read access granted.',
+        ja: 'システムアルバムから選択され、読み取り権限を取得済みです。',
       ),
     );
   }
@@ -676,11 +669,7 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
     return ActionFeedback(
       success: true,
-      message: tr(
-        zh: '个人信息已更新。',
-        en: 'Profile updated.',
-        ja: 'プロフィールを更新しました。',
-      ),
+      message: tr(zh: '个人信息已更新。', en: 'Profile updated.', ja: 'プロフィールを更新しました。'),
     );
   }
 
@@ -718,7 +707,8 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    if (draft.source == ImageSourceType.camera && !_permissions[PermissionKind.camera]!) {
+    if (draft.source == ImageSourceType.camera &&
+        !_permissions[PermissionKind.camera]!) {
       return CastAttemptResult(
         success: false,
         message: tr(
@@ -815,7 +805,8 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     _albumPhotos.removeWhere(
-      (photo) => photoIds.contains(photo.id) && photo.ownerUserId == _currentUser.id,
+      (photo) =>
+          photoIds.contains(photo.id) && photo.ownerUserId == _currentUser.id,
     );
     notifyListeners();
     return ActionFeedback(
@@ -830,10 +821,7 @@ class PhotoFrameState extends ChangeNotifier {
 
   CastAttemptResult recastAlbumPhoto(String photoId, String deviceId) {
     final photo = _albumPhotos.firstWhere((item) => item.id == photoId);
-    return castDraft(
-      draft: draftFromAlbumPhoto(photo),
-      deviceId: deviceId,
-    );
+    return castDraft(draft: draftFromAlbumPhoto(photo), deviceId: deviceId);
   }
 
   CastAttemptResult recastRecord(String recordId, String deviceId) {
@@ -887,7 +875,9 @@ class PhotoFrameState extends ChangeNotifier {
 
   ActionFeedback clearDeviceMemory(String deviceId) {
     var clearedCount = 0;
-    for (final photo in _albumPhotos.where((item) => item.deviceId == deviceId && item.isOnDevice)) {
+    for (final photo in _albumPhotos.where(
+      (item) => item.deviceId == deviceId && item.isOnDevice,
+    )) {
       photo.isOnDevice = false;
       clearedCount += 1;
     }
@@ -922,11 +912,7 @@ class PhotoFrameState extends ChangeNotifier {
     _isLoggedIn = false;
     _currentUser = UserProfile(
       id: 'USR-GUEST',
-      nickname: tr(
-        zh: '访客',
-        en: 'Guest',
-        ja: 'ゲスト',
-      ),
+      nickname: tr(zh: '访客', en: 'Guest', ja: 'ゲスト'),
       email: '',
       avatarColor: const Color(0xFF6C757D),
       signature: tr(

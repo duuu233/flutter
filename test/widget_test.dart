@@ -4,7 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_application_2/src/app.dart';
 
 void main() {
-  testWidgets('app boots and can switch to mine tab', (WidgetTester tester) async {
+  testWidgets('app boots and can switch to mine tab', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(const FrameFlowApp());
     await tester.pumpAndSettle();
 
