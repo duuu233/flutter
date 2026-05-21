@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 ThemeData buildAppTheme() {
-  const red = Colors.red;
   const primary = Color(0xFF234E52);
   const secondary = Color(0xFFD97757);
   const surface = Color(0xFFF6EFE5);

@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 
+import '../../../device/frame_device_protocol.dart';
 import '../../../native_device_api.dart';
 import '../../../shared/shared.dart';
 import '../../../state.dart';
@@ -99,6 +100,10 @@ class HomePage extends StatelessWidget {
                         HeroMetric(
                           label: state.tr(zh: '容量占用', en: 'Capacity', ja: '容量'),
                           value: '$usage/${selectedDevice.capacity}',
+                        ),
+                        HeroMetric(
+                          label: 'IMG_MASK',
+                          value: selectedDevice.maskLabel,
                         ),
                         HeroMetric(
                           label: state.tr(
@@ -255,7 +260,7 @@ class HomePage extends StatelessWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                selectedDevice.kind,
+                                '${selectedDevice.kind} · ${selectedDevice.screenType.width}×${selectedDevice.screenType.height}',
                                 style: theme.textTheme.bodyMedium,
                               ),
                             ],
@@ -286,6 +291,14 @@ class HomePage extends StatelessWidget {
                           foreground: const Color(0xFFD97757),
                           background: const Color(
                             0xFFD97757,
+                          ).withValues(alpha: 0.12),
+                        ),
+                        StatTag(
+                          label: selectedDevice.maskLabel,
+                          icon: Icons.memory_rounded,
+                          foreground: const Color(0xFF3D5A80),
+                          background: const Color(
+                            0xFF3D5A80,
                           ).withValues(alpha: 0.12),
                         ),
                         StatTag(

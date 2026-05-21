@@ -8,12 +8,12 @@ void main() {
     WidgetTester tester,
   ) async {
     await tester.pumpWidget(const FrameFlowApp());
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.byKey(const Key('home-title')), findsOneWidget);
 
     await tester.tap(find.byIcon(Icons.person_outline));
-    await tester.pumpAndSettle();
+    await tester.pump();
 
     expect(find.byKey(const Key('mine-page-title')), findsOneWidget);
   });

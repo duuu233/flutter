@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../device/frame_device_protocol.dart';
 import '../../state.dart';
 
+/// 通用半透明内容面板。
+///
+/// 用于承载普通页面的主要信息区，保持圆角、描边和阴影一致。
 class AppPanel extends StatelessWidget {
   const AppPanel({super.key, required this.child});
 
@@ -47,6 +51,9 @@ class SectionHeader extends StatelessWidget {
   }
 }
 
+/// 带图标和说明文案的入口卡片。
+///
+/// 适合用于首页快捷操作或功能入口，点击行为由调用方传入。
 class ActionCard extends StatelessWidget {
   const ActionCard({
     super.key,
@@ -195,6 +202,9 @@ class StatusPill extends StatelessWidget {
   }
 }
 
+/// 设备缩略图占位组件。
+///
+/// 当前项目还没有真实设备渲染图时，用主题色渐变保持列表视觉一致。
 class DeviceIllustration extends StatelessWidget {
   const DeviceIllustration({super.key, required this.color});
 
@@ -221,6 +231,9 @@ class DeviceIllustration extends StatelessWidget {
   }
 }
 
+/// 照片缩略图占位组件。
+///
+/// 业务列表只依赖颜色和来源，不直接绑定真实图片资源，便于演示数据复用。
 class PhotoArtwork extends StatelessWidget {
   const PhotoArtwork({
     super.key,
@@ -286,6 +299,9 @@ class PhotoArtwork extends StatelessWidget {
   }
 }
 
+/// 设置页、个人页等列表入口通用行。
+///
+/// 保持图标容器、标题、副标题和右箭头布局一致，减少各页面重复实现。
 class MenuTile extends StatelessWidget {
   const MenuTile({
     super.key,
@@ -340,6 +356,9 @@ class MenuTile extends StatelessWidget {
   }
 }
 
+/// 投屏记录卡片。
+///
+/// 同一个组件支持普通列表和 compact 模式，避免首页摘要与记录页维护两套展示逻辑。
 class RecordCard extends StatelessWidget {
   const RecordCard({
     super.key,
@@ -394,6 +413,24 @@ class RecordCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(record.message),
+                if (record.command != null ||
+                    record.imageIndex != null ||
+                    record.imageMask != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    [
+                      if (record.command != null)
+                        'CMD=${state.formatCommand(record.command)}',
+                      if (record.imageIndex != null)
+                        'slot=${record.imageIndex}',
+                      if (record.resultCode != null)
+                        'result=${record.resultCode!.labelZh}',
+                      if (record.imageMask != null)
+                        'mask=${FrameDeviceProtocol.maskHex(record.imageMask!)}',
+                    ].join(' · '),
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
+                ],
                 if (!compact) ...[
                   const SizedBox(height: 12),
                   Wrap(
@@ -420,6 +457,7 @@ class RecordCard extends StatelessWidget {
   }
 }
 
+/// 通用空状态组件，用于列表无数据或权限未准备好的兜底展示。
 class EmptyState extends StatelessWidget {
   const EmptyState({super.key, required this.title, required this.message});
 

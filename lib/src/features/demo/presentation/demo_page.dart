@@ -1,6 +1,5 @@
 ﻿import 'package:flutter/material.dart';
 
-import '../../../shared/shared.dart';
 import '../../../state.dart';
 
 class DemoPage extends StatefulWidget {
@@ -13,123 +12,60 @@ class DemoPage extends StatefulWidget {
 }
 
 class _DemoPageState extends State<DemoPage> {
-  final Set<String> _selectedIds = <String>{};
-
   @override
   Widget build(BuildContext context) {
-    final state = widget.state;
-
     return MaterialApp(
-      title: '这个顶部导航栏的文字',
+      title: '这个顶部导航栏的文字1',
       home: Scaffold(
-        // appBar: AppBar(title: const Text('111')),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // 1. 最基础的用法
-              ElevatedButton(
-                onPressed: () {
-                  debugPrint('基础按钮被点击了');
-                },
-                child: const Text('基础按钮'),
+        // 💡 核心改动 1：最外层使用 Stack 建立上下层级关系
+        body: Stack(
+          children: [
+            // 【第一层：最底层的背景图】
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 300, // 👈 顶部背景图高度（建议先设为300，900会填满整个屏幕）
+              child: Image.asset(
+                'images/1.png',
+                fit: BoxFit.cover, // 宽度100%撑满
               ),
-              const SizedBox(height: 20),
-              // 2. 带图标的按钮 (使用 .icon 构造函数)
-              ElevatedButton.icon(
-                onPressed: () => debugPrint('发送按钮被点击'),
-                icon: const Icon(Icons.send),
-                label: const Text('发送消息'),
-              ),
-              const SizedBox(height: 20),
-              // 3. 自定义样式的按钮
-              ElevatedButton(
-                onPressed: () {},
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.orange, // 背景颜色
-                  foregroundColor: Colors.white, // 文字和图标颜色
-                  elevation: 5, // 阴影深度
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 30,
-                    vertical: 15,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(30), // 圆角
-                  ),
-                ),
-                child: const Text('圆角橙色按钮'),
-              ),
-              const SizedBox(height: 20),
-              // 4. 禁用状态 (onPressed 为 null 时自动进入禁用状态)
-              const ElevatedButton(onPressed: null, child: Text('禁用状态')),
-              // 3. Card 与 Text 示例
-              const Card(
-                child: ListTile(
-                  leading: Icon(Icons.info),
-                  title: Text(
-                    '这是一个卡片标题',
-                    style: TextStyle(
-                      color: Colors.blue,
-                      fontSize: 24,
-                      decoration: TextDecoration.underline,
-                    ),
-                  ),
-                  subtitle: Text('这里是副标题描述内容'),
-                ),
-              ),
-              _sectionTitle('1. 网络图片'),
-              _buildNetworkImage(),
+            ),
 
-              // 示例：显示一段带样式的文字和一个图标
-              Column(
+            // 【第二层：悬浮在背景图之上的所有内容】
+            // 💡 核心改动 2：将 Column 换成 ListView，这样内容多了可以上下滚动，且自带安全区域
+            SafeArea(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
                 children: [
-                  Text(
-                    '你好 Flutter',
-                    style: TextStyle(
-                      fontSize: 24,
-                      color: Colors.blue,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  Icon(Icons.star, color: Colors.amber, size: 50),
-                ],
-              ),
-              // 示例：一个带圆角和阴影的卡片布局
-              Container(
-                padding: EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 4)],
-                ),
-                child: Row(
-                  children: [
-                    Icon(Icons.account_circle),
-                    SizedBox(width: 10), // 占位间距
-                    Expanded(
-                      child: Text('用户姓名', style: TextStyle(fontSize: 18)),
-                    ),
-                    Icon(Icons.arrow_forward_ios),
-                  ],
-                ),
-              ),
-              Column(
-                children: [
-                  TextField(
-                    decoration: InputDecoration(
-                      labelText: '请输入密码',
-                      border: OutlineInputBorder(),
-                    ),
-                    obscureText: true, // 隐藏输入内容
-                  ),
+                  // 💡 核心改动 3：顶部加一个透明间距，让按钮刚好落在背景图下方（或者留在图上）
+
+                  // 下方其它组件
+                  _buildNetworkImage(),
+                  _sectionTitle('头像'),
+                  const SizedBox(height: 100),
+
+                  // 1. 基础按钮（悬浮在背景图上方）
                   ElevatedButton(
-                    onPressed: () => print('点击了登录'),
-                    child: Text('登录'),
+                    onPressed: () {
+                      debugPrint('基础按钮被点击了');
+                    },
+                    child: const Text('基础按钮'),
                   ),
+                  const SizedBox(height: 20),
+
+                  const CircleAvatar(
+                    radius: 80, // 👈 头像半径（总直径就是 80 像素）
+                    backgroundImage: AssetImage('images/logo.png'), // 本地图片路径
+                  ),
+
+                  // 4. 禁用状态
+                  const ElevatedButton(onPressed: null, child: Text('禁用状态')),
+                  const SizedBox(height: 20),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -149,9 +85,9 @@ Widget _sectionTitle(String title) {
 
 // 加载网络图片
 Widget _buildNetworkImage() {
-  return Image.network(
-    'https://picsum.photos', // 测试图源
-    height: 150,
-    fit: BoxFit.cover, // 告诉图片如何适应容器：充满并裁剪
+  return Image.asset(
+    'images/logo.png', // 测试图源
+    height: 40,
+    width: 40,
   );
 }

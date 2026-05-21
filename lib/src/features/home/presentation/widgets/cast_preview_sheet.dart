@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 
+import '../../../../device/frame_device_protocol.dart';
 import '../../../../shared/shared.dart';
 import '../../../../state.dart';
 
@@ -26,6 +27,9 @@ class _CastPreviewSheetState extends State<CastPreviewSheet> {
   Widget build(BuildContext context) {
     final device = widget.state.deviceById(_deviceId);
     final usage = widget.state.deviceUsage(device.id);
+    final freeIndex = device.imageCount >= device.capacity
+        ? null
+        : widget.state.nextImageIndex(device.id);
 
     return BottomSheetFrame(
       title: widget.state.tr(
@@ -52,9 +56,12 @@ class _CastPreviewSheetState extends State<CastPreviewSheet> {
           const SizedBox(height: 6),
           Text(
             widget.state.tr(
-              zh: '预处理尺寸：${widget.draft.width.toInt()} × ${widget.draft.height.toInt()}',
-              en: 'Processed size: ${widget.draft.width.toInt()} × ${widget.draft.height.toInt()}',
-              ja: '処理後サイズ: ${widget.draft.width.toInt()} × ${widget.draft.height.toInt()}',
+              zh:
+                  '源图：${widget.draft.width.toInt()} × ${widget.draft.height.toInt()}',
+              en:
+                  'Source: ${widget.draft.width.toInt()} × ${widget.draft.height.toInt()}',
+              ja:
+                  '元画像: ${widget.draft.width.toInt()} × ${widget.draft.height.toInt()}',
             ),
           ),
           const SizedBox(height: 6),
@@ -83,8 +90,19 @@ class _CastPreviewSheetState extends State<CastPreviewSheet> {
           ),
           const SizedBox(height: 18),
           Text(
-            '${device.name} · $usage/${device.capacity}',
+            '${device.name} · ${device.screenType.label} · $usage/${device.capacity}',
             style: Theme.of(context).textTheme.titleMedium,
+          ),
+          const SizedBox(height: 6),
+          Text(
+            widget.state.tr(
+              zh:
+                  '目标输出：${device.screenType.width} × ${device.screenType.height}，槽位：${freeIndex ?? '-'}，IMG_MASK=${device.maskLabel}',
+              en:
+                  'Target: ${device.screenType.width} × ${device.screenType.height}, slot: ${freeIndex ?? '-'}, IMG_MASK=${device.maskLabel}',
+              ja:
+                  '出力: ${device.screenType.width} × ${device.screenType.height}、スロット: ${freeIndex ?? '-'}、IMG_MASK=${device.maskLabel}',
+            ),
           ),
           const SizedBox(height: 8),
           LinearProgressIndicator(

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'device/frame_device_protocol.dart';
+
 enum AppLanguage { zh, en, ja }
 
 enum PermissionKind { location, bluetooth, album, camera }
@@ -48,23 +50,61 @@ class DeviceItem {
     required this.id,
     required this.name,
     required this.kind,
+    required this.screenType,
     required this.batteryLevel,
+    required this.charging,
     required this.connected,
     required this.role,
-    required this.capacity,
     required this.serialNumber,
+    required this.hardwareVersion,
+    required this.firmwareVersion,
+    required this.imageMask,
+    required this.currentImageIndex,
+    required this.playbackMode,
+    required this.carouselIntervalSeconds,
     required this.carouselEnabled,
   });
 
   final String id;
   String name;
   String kind;
+  FrameScreenType screenType;
   int batteryLevel;
+  bool charging;
   bool connected;
   DeviceRole role;
-  int capacity;
   String serialNumber;
+  String hardwareVersion;
+  String firmwareVersion;
+  int imageMask;
+  int currentImageIndex;
+  FramePlaybackMode playbackMode;
+  int carouselIntervalSeconds;
   bool carouselEnabled;
+
+  int get capacity => FrameProtocolConfig.maxImages;
+
+  int get imageCount => FrameDeviceProtocol.countImages(imageMask);
+
+  int get storageFreeBytes =>
+      FrameDeviceProtocol.estimateStorageFreeBytes(imageMask, screenType);
+
+  String get maskLabel => FrameDeviceProtocol.maskHex(imageMask);
+
+  FrameDeviceInfoSnapshot toSnapshot() {
+    return FrameDeviceProtocol.readDeviceInfo(
+      deviceId: id,
+      hardwareVersion: hardwareVersion,
+      firmwareVersion: firmwareVersion,
+      imageMask: imageMask,
+      batteryLevel: batteryLevel,
+      charging: charging,
+      playbackMode: playbackMode,
+      intervalSeconds: carouselIntervalSeconds,
+      screenType: screenType,
+      currentImageIndex: currentImageIndex,
+    );
+  }
 }
 
 class DraftPhoto {
@@ -94,8 +134,14 @@ class AlbumPhoto {
     required this.source,
     required this.deviceId,
     required this.ownerUserId,
+    required this.imageIndex,
+    required this.imageMaskBit,
     required this.width,
     required this.height,
+    required this.targetWidth,
+    required this.targetHeight,
+    required this.transferBytes,
+    required this.crc32,
     required this.color,
     required this.note,
     required this.uploadedAt,
@@ -107,8 +153,14 @@ class AlbumPhoto {
   final ImageSourceType source;
   final String deviceId;
   final String ownerUserId;
+  final int imageIndex;
+  final int imageMaskBit;
   final double width;
   final double height;
+  final int targetWidth;
+  final int targetHeight;
+  final int transferBytes;
+  final int crc32;
   final Color color;
   final String note;
   final DateTime uploadedAt;
@@ -128,6 +180,10 @@ class CastRecord {
     required this.height,
     required this.message,
     required this.createdAt,
+    this.imageIndex,
+    this.command,
+    this.resultCode,
+    this.imageMask,
     this.photoId,
   });
 
@@ -142,6 +198,10 @@ class CastRecord {
   final double height;
   final String message;
   final DateTime createdAt;
+  final int? imageIndex;
+  final int? command;
+  final FrameProtocolResultCode? resultCode;
+  final int? imageMask;
   final String? photoId;
 }
 
@@ -165,6 +225,10 @@ class GuideArticle {
   final List<String> summaryJa;
 }
 
+/// 应用级演示状态容器。
+///
+/// 页面只通过这个对象读取和触发业务动作；设备、相册、投屏记录、权限和登录态都在这里统一维护。
+/// 后续接入真实接口时，建议优先替换这些 action 方法内部实现，而不是让页面直接操作数据列表。
 class PhotoFrameState extends ChangeNotifier {
   PhotoFrameState.seeded()
     : _language = AppLanguage.zh,
@@ -188,34 +252,58 @@ class PhotoFrameState extends ChangeNotifier {
         DeviceItem(
           id: 'dev-aurora',
           name: 'Aurora S1',
-          kind: '10.1" 木纹相框',
+          kind: '5.89寸六色墨水屏',
+          screenType: FrameScreenType.inch589,
           batteryLevel: 78,
+          charging: false,
           connected: true,
           role: DeviceRole.owner,
-          capacity: 6,
           serialNumber: 'SN-AUR-240018',
+          hardwareVersion: 'HW-1.0',
+          firmwareVersion: 'FW_V1.0.5_20260402',
+          imageMask: 0x00000003,
+          currentImageIndex: 1,
+          playbackMode: FramePlaybackMode.sequence,
+          carouselIntervalSeconds:
+              FrameProtocolConfig.defaultCarouselIntervalSeconds,
           carouselEnabled: true,
         ),
         DeviceItem(
           id: 'dev-gallery',
           name: 'Gallery Loop',
-          kind: '壁挂画廊屏',
+          kind: '7.3寸六色墨水屏',
+          screenType: FrameScreenType.inch73,
           batteryLevel: 43,
+          charging: true,
           connected: false,
           role: DeviceRole.user,
-          capacity: 4,
           serialNumber: 'SN-GAL-983602',
+          hardwareVersion: 'HW-1.0',
+          firmwareVersion: 'FW_V1.0.5_20260402',
+          imageMask: 0x00000001,
+          currentImageIndex: 0,
+          playbackMode: FramePlaybackMode.manual,
+          carouselIntervalSeconds:
+              FrameProtocolConfig.defaultCarouselIntervalSeconds,
           carouselEnabled: false,
         ),
         DeviceItem(
           id: 'dev-pocket',
           name: 'Pocket Frame',
-          kind: '桌面轻量相框',
+          kind: '3.7寸六色墨水屏',
+          screenType: FrameScreenType.inch37,
           batteryLevel: 91,
+          charging: false,
           connected: false,
           role: DeviceRole.user,
-          capacity: 8,
           serialNumber: 'SN-PKT-661245',
+          hardwareVersion: 'HW-1.0',
+          firmwareVersion: 'FW_V1.0.5_20260402',
+          imageMask: 0x00000000,
+          currentImageIndex: -1,
+          playbackMode: FramePlaybackMode.sequence,
+          carouselIntervalSeconds:
+              FrameProtocolConfig.defaultCarouselIntervalSeconds,
           carouselEnabled: true,
         ),
       ],
@@ -274,8 +362,14 @@ class PhotoFrameState extends ChangeNotifier {
           source: ImageSourceType.album,
           deviceId: 'dev-aurora',
           ownerUserId: 'USR-2048',
+          imageIndex: 0,
+          imageMaskBit: FrameDeviceProtocol.bitForIndex(0),
           width: 2400,
           height: 3200,
+          targetWidth: FrameScreenType.inch589.width,
+          targetHeight: FrameScreenType.inch589.height,
+          transferBytes: FrameScreenType.inch589.frameBufferBytes,
+          crc32: 0x1A2B3C40,
           color: const Color(0xFF7F5539),
           note: '已成功上传至 Aurora S1',
           uploadedAt: DateTime(2026, 4, 22, 10, 12),
@@ -286,8 +380,14 @@ class PhotoFrameState extends ChangeNotifier {
           source: ImageSourceType.camera,
           deviceId: 'dev-aurora',
           ownerUserId: 'USR-2048',
+          imageIndex: 1,
+          imageMaskBit: FrameDeviceProtocol.bitForIndex(1),
           width: 3024,
           height: 4032,
+          targetWidth: FrameScreenType.inch589.width,
+          targetHeight: FrameScreenType.inch589.height,
+          transferBytes: FrameScreenType.inch589.frameBufferBytes,
+          crc32: 0x1A2B3C41,
           color: const Color(0xFF588157),
           note: '由拍照流程上传',
           uploadedAt: DateTime(2026, 4, 22, 17, 40),
@@ -298,8 +398,14 @@ class PhotoFrameState extends ChangeNotifier {
           source: ImageSourceType.album,
           deviceId: 'dev-gallery',
           ownerUserId: 'USR-2048',
+          imageIndex: 0,
+          imageMaskBit: FrameDeviceProtocol.bitForIndex(0),
           width: 3840,
           height: 2160,
+          targetWidth: FrameScreenType.inch73.width,
+          targetHeight: FrameScreenType.inch73.height,
+          transferBytes: FrameScreenType.inch73.frameBufferBytes,
+          crc32: 0x1A2B3C42,
           color: const Color(0xFF355070),
           note: '横版样片，适配壁挂设备',
           uploadedAt: DateTime(2026, 4, 21, 20, 18),
@@ -318,6 +424,10 @@ class PhotoFrameState extends ChangeNotifier {
           height: 3200,
           message: '投屏完成，已写入设备存储。',
           createdAt: DateTime(2026, 4, 22, 10, 13),
+          imageIndex: 0,
+          command: FrameCommand.finishTransfer,
+          resultCode: FrameProtocolResultCode.success,
+          imageMask: 0x00000003,
           photoId: 'photo-1',
         ),
         CastRecord(
@@ -332,6 +442,10 @@ class PhotoFrameState extends ChangeNotifier {
           height: 4032,
           message: '拍照处理成功，已投放到当前设备。',
           createdAt: DateTime(2026, 4, 22, 17, 41),
+          imageIndex: 1,
+          command: FrameCommand.finishTransfer,
+          resultCode: FrameProtocolResultCode.success,
+          imageMask: 0x00000003,
           photoId: 'photo-2',
         ),
         CastRecord(
@@ -346,6 +460,9 @@ class PhotoFrameState extends ChangeNotifier {
           height: 4032,
           message: '设备内存已满，请清理相册或联系设备所有者。',
           createdAt: DateTime(2026, 4, 21, 22, 06),
+          command: FrameCommand.startTransfer,
+          resultCode: FrameProtocolResultCode.storageFull,
+          imageMask: 0xFFFFFFFF,
         ),
       ];
 
@@ -464,9 +581,30 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   int deviceUsage(String deviceId) {
-    return _albumPhotos
-        .where((photo) => photo.deviceId == deviceId && photo.isOnDevice)
-        .length;
+    return _findDevice(deviceId).imageCount;
+  }
+
+  int? nextImageIndex(String deviceId) {
+    return FrameDeviceProtocol.firstFreeIndex(_findDevice(deviceId).imageMask);
+  }
+
+  String deviceMaskLabel(String deviceId) => _findDevice(deviceId).maskLabel;
+
+  String formatBytes(int value) {
+    if (value >= 1024 * 1024) {
+      return '${(value / (1024 * 1024)).toStringAsFixed(1)} MB';
+    }
+    if (value >= 1024) {
+      return '${(value / 1024).toStringAsFixed(1)} KB';
+    }
+    return '$value B';
+  }
+
+  String formatCommand(int? command) {
+    if (command == null) {
+      return '-';
+    }
+    return '0x${command.toRadixString(16).padLeft(2, '0').toUpperCase()}';
   }
 
   int get totalPhotoCount => myAlbum.length;
@@ -580,6 +718,9 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 发送邮箱验证码的业务入口。
+  ///
+  /// 目前使用固定演示验证码；接入后端时保持返回 `ActionFeedback`，页面层就不需要改交互逻辑。
   ActionFeedback sendEmailCode(String email) {
     if (!_isValidEmail(email)) {
       return ActionFeedback(
@@ -602,6 +743,9 @@ class PhotoFrameState extends ChangeNotifier {
     );
   }
 
+  /// 邮箱验证码登录/注册入口。
+  ///
+  /// 这里负责更新登录态和当前用户邮箱，调用方只消费成功/失败消息。
   ActionFeedback loginWithEmail(String email, String code) {
     if (!_isValidEmail(email)) {
       return ActionFeedback(
@@ -673,6 +817,10 @@ class PhotoFrameState extends ChangeNotifier {
     );
   }
 
+  /// 将一张草稿照片投屏到指定设备。
+  ///
+  /// 方法内部串联权限校验、容量校验、传输计划模拟、相册写入和记录生成；
+  /// 页面层不要拆开复用这些步骤，否则容易造成记录和设备状态不一致。
   CastAttemptResult castDraft({
     required DraftPhoto draft,
     required String deviceId,
@@ -719,7 +867,9 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     final device = _findDevice(deviceId);
-    if (deviceUsage(deviceId) >= device.capacity) {
+    final snapshot = device.toSnapshot();
+    final imageIndex = FrameDeviceProtocol.firstFreeIndex(snapshot.imageMask);
+    if (imageIndex == null) {
       final message = tr(
         zh: '设备内存已满，请清理相框照片或联系设备所有者。',
         en: 'Device storage is full. Clear photos or contact the owner.',
@@ -739,6 +889,9 @@ class PhotoFrameState extends ChangeNotifier {
           height: draft.height,
           message: message,
           createdAt: DateTime.now(),
+          command: FrameCommand.startTransfer,
+          resultCode: FrameProtocolResultCode.storageFull,
+          imageMask: snapshot.imageMask,
         ),
       );
       notifyListeners();
@@ -748,16 +901,70 @@ class PhotoFrameState extends ChangeNotifier {
         deviceFull: true,
       );
     }
+    final plan = FrameDeviceProtocol.buildTransferPlan(
+      imageIndex: imageIndex,
+      sourceWidth: draft.width,
+      sourceHeight: draft.height,
+      screenType: snapshot.screenType,
+    );
+    final transfer = FrameDeviceProtocol.simulateImageTransfer(
+      imageMask: snapshot.imageMask,
+      screenType: snapshot.screenType,
+      plan: plan,
+    );
+    if (!transfer.success) {
+      final message = tr(
+        zh: '投屏失败：${transfer.resultCode.labelZh}。',
+        en: 'Casting failed: ${transfer.resultCode.labelZh}.',
+        ja: '投映に失敗しました: ${transfer.resultCode.labelZh}。',
+      );
+      _castRecords.insert(
+        0,
+        CastRecord(
+          id: _nextId('record'),
+          title: draft.title,
+          deviceId: deviceId,
+          ownerUserId: _currentUser.id,
+          status: CastStatus.failed,
+          source: draft.source,
+          color: draft.color,
+          width: draft.width,
+          height: draft.height,
+          message: message,
+          createdAt: DateTime.now(),
+          imageIndex: imageIndex,
+          command: FrameCommand.finishTransfer,
+          resultCode: transfer.resultCode,
+          imageMask: transfer.imageMask,
+        ),
+      );
+      notifyListeners();
+      return CastAttemptResult(
+        success: false,
+        message: message,
+        deviceFull: transfer.resultCode == FrameProtocolResultCode.storageFull,
+      );
+    }
+    device.imageMask = transfer.imageMask;
+    device.currentImageIndex = transfer.currentImageIndex;
+    device.batteryLevel = (device.batteryLevel - 1).clamp(0, 100);
     final photo = AlbumPhoto(
       id: _nextId('photo'),
       title: draft.title,
       source: draft.source,
       deviceId: deviceId,
       ownerUserId: _currentUser.id,
+      imageIndex: imageIndex,
+      imageMaskBit: FrameDeviceProtocol.bitForIndex(imageIndex),
       width: draft.width,
       height: draft.height,
+      targetWidth: plan.targetWidth,
+      targetHeight: plan.targetHeight,
+      transferBytes: plan.dataSize,
+      crc32: plan.crc32,
       color: draft.color,
-      note: draft.note,
+      note:
+          '${draft.note}；写入槽位 $imageIndex，${plan.targetWidth}×${plan.targetHeight}，${plan.packetCount} 个 BLE 分包。',
       uploadedAt: DateTime.now(),
     );
     _albumPhotos.insert(0, photo);
@@ -774,11 +981,15 @@ class PhotoFrameState extends ChangeNotifier {
         width: draft.width,
         height: draft.height,
         message: tr(
-          zh: '投屏成功，已写入 ${device.name}。',
-          en: 'Casting succeeded and saved to ${device.name}.',
-          ja: '${device.name} への投映が完了しました。',
+          zh: '投屏成功，写入 ${device.name} 槽位 $imageIndex，IMG_MASK=${device.maskLabel}。',
+          en: 'Casting succeeded on ${device.name}, slot $imageIndex, IMG_MASK=${device.maskLabel}.',
+          ja: '${device.name} のスロット $imageIndex に投映しました。IMG_MASK=${device.maskLabel}。',
         ),
         createdAt: DateTime.now(),
+        imageIndex: imageIndex,
+        command: FrameCommand.finishTransfer,
+        resultCode: transfer.resultCode,
+        imageMask: transfer.imageMask,
         photoId: photo.id,
       ),
     );
@@ -804,17 +1015,65 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    _albumPhotos.removeWhere(
-      (photo) =>
-          photoIds.contains(photo.id) && photo.ownerUserId == _currentUser.id,
-    );
+    final photos = _albumPhotos
+        .where(
+          (photo) =>
+              photoIds.contains(photo.id) &&
+              photo.ownerUserId == _currentUser.id &&
+              photo.isOnDevice,
+        )
+        .toList();
+    if (photos.isEmpty) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '没有可删除的设备照片。',
+          en: 'No device photos can be deleted.',
+          ja: '削除できる端末写真がありません。',
+        ),
+      );
+    }
+    final photosByDevice = <String, List<AlbumPhoto>>{};
+    for (final photo in photos) {
+      photosByDevice
+          .putIfAbsent(photo.deviceId, () => <AlbumPhoto>[])
+          .add(photo);
+    }
+    for (final entry in photosByDevice.entries) {
+      final device = _findDevice(entry.key);
+      var deleteMask = 0;
+      for (final photo in entry.value) {
+        deleteMask |= photo.imageMaskBit;
+      }
+      final result = FrameDeviceProtocol.simulateDeleteImages(
+        imageMask: device.imageMask,
+        deleteMask: deleteMask,
+        screenType: device.screenType,
+        currentImageIndex: device.currentImageIndex,
+      );
+      if (!result.success) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '删除失败：${device.name} ${result.resultCode.labelZh}。',
+            en: 'Delete failed on ${device.name}: ${result.resultCode.labelZh}.',
+            ja: '${device.name} の削除に失敗しました: ${result.resultCode.labelZh}。',
+          ),
+        );
+      }
+      device.imageMask = result.imageMask;
+      device.currentImageIndex = result.currentImageIndex;
+      for (final photo in entry.value) {
+        photo.isOnDevice = false;
+      }
+    }
     notifyListeners();
     return ActionFeedback(
       success: true,
       message: tr(
-        zh: '已删除所选照片，并同步移除设备存储。',
-        en: 'Selected photos removed from album and device storage.',
-        ja: '選択した写真をアルバムと端末ストレージから削除しました。',
+        zh: '已按图片槽位删除所选照片，并同步更新设备 IMG_MASK。',
+        en: 'Selected photos removed by image index and device IMG_MASK updated.',
+        ja: '画像スロットに基づき削除し、端末 IMG_MASK を更新しました。',
       ),
     );
   }
@@ -869,11 +1128,47 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   void toggleCarousel(String deviceId, bool enabled) {
-    _findDevice(deviceId).carouselEnabled = enabled;
+    final device = _findDevice(deviceId);
+    device.carouselEnabled = enabled;
+    device.playbackMode = enabled
+        ? FramePlaybackMode.sequence
+        : FramePlaybackMode.manual;
+    device.carouselIntervalSeconds =
+        FrameProtocolConfig.defaultCarouselIntervalSeconds;
     notifyListeners();
   }
 
   ActionFeedback clearDeviceMemory(String deviceId) {
+    final device = _findDevice(deviceId);
+    final deleteMask = device.imageMask;
+    if (deleteMask == 0) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '设备内没有可清空的照片。',
+          en: 'There are no photos to clear.',
+          ja: 'クリアできる写真がありません。',
+        ),
+      );
+    }
+    final result = FrameDeviceProtocol.simulateDeleteImages(
+      imageMask: device.imageMask,
+      deleteMask: deleteMask,
+      screenType: device.screenType,
+      currentImageIndex: device.currentImageIndex,
+    );
+    if (!result.success) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '清空失败：${result.resultCode.labelZh}。',
+          en: 'Clear failed: ${result.resultCode.labelZh}.',
+          ja: 'クリアに失敗しました: ${result.resultCode.labelZh}。',
+        ),
+      );
+    }
+    device.imageMask = result.imageMask;
+    device.currentImageIndex = result.currentImageIndex;
     var clearedCount = 0;
     for (final photo in _albumPhotos.where(
       (item) => item.deviceId == deviceId && item.isOnDevice,
@@ -885,7 +1180,7 @@ class PhotoFrameState extends ChangeNotifier {
     return ActionFeedback(
       success: true,
       message: tr(
-        zh: '已清空设备物理内存，共移除 $clearedCount 张照片。',
+        zh: '已通过删除全量 IMG_MASK 清空设备，共移除 $clearedCount 张照片。',
         en: 'Device memory cleared. Removed $clearedCount photos.',
         ja: '端末メモリをクリアし、$clearedCount 枚を削除しました。',
       ),

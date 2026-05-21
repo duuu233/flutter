@@ -113,6 +113,18 @@ class _AlbumPageState extends State<AlbumPage> {
                                   style: Theme.of(context).textTheme.bodyMedium,
                                 ),
                                 const SizedBox(height: 6),
+                                Text(
+                                  state.tr(
+                                    zh:
+                                        '设备槽位 ${photo.imageIndex} · ${photo.targetWidth}×${photo.targetHeight} · ${state.formatBytes(photo.transferBytes)}',
+                                    en:
+                                        'Slot ${photo.imageIndex} · ${photo.targetWidth}×${photo.targetHeight} · ${state.formatBytes(photo.transferBytes)}',
+                                    ja:
+                                        'スロット ${photo.imageIndex} · ${photo.targetWidth}×${photo.targetHeight} · ${state.formatBytes(photo.transferBytes)}',
+                                  ),
+                                  style: Theme.of(context).textTheme.bodyMedium,
+                                ),
+                                const SizedBox(height: 6),
                                 Text(photo.note),
                                 const SizedBox(height: 12),
                                 Wrap(

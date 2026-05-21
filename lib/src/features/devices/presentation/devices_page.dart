@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 
+import '../../../device/frame_device_protocol.dart';
 import '../../../shared/shared.dart';
 import '../../../state.dart';
 
@@ -50,7 +51,9 @@ class DevicesPage extends StatelessWidget {
                                 style: Theme.of(context).textTheme.titleLarge,
                               ),
                               const SizedBox(height: 4),
-                              Text('${device.kind} · ${device.serialNumber}'),
+                              Text(
+                                '${device.kind} · ${device.serialNumber} · ${device.screenType.width}×${device.screenType.height}',
+                              ),
                             ],
                           ),
                         ),
@@ -81,6 +84,22 @@ class DevicesPage extends StatelessWidget {
                           foreground: const Color(0xFFD97757),
                           background: const Color(
                             0xFFD97757,
+                          ).withValues(alpha: 0.12),
+                        ),
+                        StatTag(
+                          label: device.maskLabel,
+                          icon: Icons.memory_rounded,
+                          foreground: const Color(0xFF3D5A80),
+                          background: const Color(
+                            0xFF3D5A80,
+                          ).withValues(alpha: 0.12),
+                        ),
+                        StatTag(
+                          label: state.formatBytes(device.storageFreeBytes),
+                          icon: Icons.sd_storage_outlined,
+                          foreground: const Color(0xFF9C6644),
+                          background: const Color(
+                            0xFF9C6644,
                           ).withValues(alpha: 0.12),
                         ),
                         StatTag(
@@ -186,9 +205,12 @@ class DevicesPage extends StatelessWidget {
                       ),
                       subtitle: Text(
                         state.tr(
-                          zh: '开启后按启用时间起算 24 小时轮播下一张。',
-                          en: 'After enabling, the next photo is shown every 24 hours.',
-                          ja: '有効化後、24 時間ごとに次の写真へ切り替わります。',
+                          zh:
+                              '对应 CMD=0x10；${device.playbackMode.labelZh}，间隔 ${device.carouselIntervalSeconds ~/ 3600} 小时。',
+                          en:
+                              'Maps to CMD=0x10; ${device.playbackMode.labelZh}, interval ${device.carouselIntervalSeconds ~/ 3600} hours.',
+                          ja:
+                              'CMD=0x10 に対応。${device.playbackMode.labelZh}、間隔 ${device.carouselIntervalSeconds ~/ 3600} 時間。',
                         ),
                       ),
                       onChanged: (value) =>

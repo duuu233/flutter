@@ -9,6 +9,10 @@ import '../features/mine/presentation/profile_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../state.dart';
 
+/// 统一维护 App 内部命名路由。
+///
+/// 新增页面时只需要在这里补充 path 常量和 switch 分支，页面继续接收根组件传入的
+/// `PhotoFrameState`，避免每个页面各自初始化演示数据。
 class AppRoutes {
   const AppRoutes._();
 
@@ -26,6 +30,7 @@ class AppRoutes {
   }) {
     late final WidgetBuilder builder;
 
+    // 路由表只负责页面分发，不在这里处理业务判断；登录态、权限等逻辑放回页面或状态层。
     switch (settings.name) {
       case AppRoutes.auth:
         builder = (_) => AuthPage(state: state);
