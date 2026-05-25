@@ -1,9 +1,10 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
 import '../features/album/presentation/album_page.dart';
 import '../features/auth/presentation/auth_page.dart';
 import '../features/cast/presentation/cast_management_page.dart';
 import '../features/devices/presentation/devices_page.dart';
+import '../features/figma_generated/figma_generated_pages.dart';
 import '../features/guide/presentation/guide_page.dart';
 import '../features/mine/presentation/profile_page.dart';
 import '../features/settings/presentation/settings_page.dart';
@@ -23,6 +24,28 @@ class AppRoutes {
   static const castManagement = '/cast-management';
   static const guide = '/guide';
   static const settings = '/settings';
+  static const figmaForgotPassword = '/figma/forgot-password';
+  static const figmaModifyPassword = '/figma/modify-password';
+  static const figmaBindDeviceSearching = '/figma/bind-device/searching';
+  static const figmaBindDeviceFound = '/figma/bind-device/found';
+  static const figmaBindDeviceNotFound = '/figma/bind-device/not-found';
+  static const figmaBindDeviceScanHelp = '/figma/bind-device/scan-help';
+  static const figmaPhotoPreviewAdjustImage = '/figma/photo-preview/adjust';
+  static const figmaPhotoPreviewSaved = '/figma/photo-preview/saved';
+  static const figmaCastingProgress = '/figma/cast/progress';
+  static const figmaCastSuccess = '/figma/cast/success';
+  static const figmaCastFailed = '/figma/cast/failed';
+  static const figmaProfileUnboundEmail = '/figma/profile/unbound-email';
+  static const figmaProfileBoundEmail = '/figma/profile/bound-email';
+  static const figmaBindEmailIncomplete =
+      '/figma/profile/bind-email/incomplete';
+  static const figmaBindEmailComplete = '/figma/profile/bind-email/complete';
+  static const figmaModifyEmail = '/figma/profile/modify-email';
+  static const figmaMyDevices = '/figma/devices/my-devices';
+  static const figmaDeviceDetails = '/figma/devices/detail';
+  static const figmaDeviceDeleteConfirm = '/figma/devices/delete-confirm';
+  static const figmaDeviceClearConfirm = '/figma/devices/clear-confirm';
+  static const figmaCarouselSettings = '/figma/devices/carousel-settings';
 
   static Route<dynamic> onGenerateRoute({
     required RouteSettings settings,
@@ -52,6 +75,109 @@ class AppRoutes {
         break;
       case AppRoutes.settings:
         builder = (_) => SettingsPage(state: state);
+        break;
+      case AppRoutes.figmaForgotPassword:
+        builder = (_) => const ForgotPassword();
+        break;
+      case AppRoutes.figmaModifyPassword:
+        builder = (_) => const ModifyPassword();
+        break;
+      case AppRoutes.figmaBindDeviceSearching:
+        builder = (_) => const BindDeviceSearching();
+        break;
+      case AppRoutes.figmaBindDeviceFound:
+        builder = (_) => const BindDeviceFound();
+        break;
+      case AppRoutes.figmaBindDeviceNotFound:
+        builder = (_) => const BindDeviceNotFound();
+        break;
+      case AppRoutes.figmaBindDeviceScanHelp:
+        builder = (_) => const BindDeviceScanHelp();
+        break;
+      case AppRoutes.figmaPhotoPreviewAdjustImage:
+        builder = (_) => const PhotoPreviewAdjustImagePage();
+        break;
+      case AppRoutes.figmaPhotoPreviewSaved:
+        builder = (_) => const PhotoPreviewSavedPage();
+        break;
+      case AppRoutes.figmaCastingProgress:
+        builder = (_) => const CastingProgressPage();
+        break;
+      case AppRoutes.figmaCastSuccess:
+        builder = (_) => const CastSuccessPage();
+        break;
+      case AppRoutes.figmaCastFailed:
+        builder = (_) => const CastFailedPage();
+        break;
+      case AppRoutes.figmaProfileUnboundEmail:
+        builder = (context) => ProfileUnboundEmailPage(
+          onBindEmail: () {
+            Navigator.of(
+              context,
+            ).pushNamed<void>(AppRoutes.figmaBindEmailIncomplete);
+          },
+        );
+        break;
+      case AppRoutes.figmaProfileBoundEmail:
+        builder = (context) => ProfileBoundEmailPage(
+          onModifyEmail: () {
+            Navigator.of(context).pushNamed<void>(AppRoutes.figmaModifyEmail);
+          },
+        );
+        break;
+      case AppRoutes.figmaBindEmailIncomplete:
+        builder = (_) => const BindEmailIncompletePage();
+        break;
+      case AppRoutes.figmaBindEmailComplete:
+        builder = (_) => const BindEmailCompletePage();
+        break;
+      case AppRoutes.figmaModifyEmail:
+        builder = (_) => const ModifyEmailPage();
+        break;
+      case AppRoutes.figmaMyDevices:
+        builder = (context) => MyDevicesPage(
+          onAddDevice: () {
+            Navigator.of(
+              context,
+            ).pushNamed<void>(AppRoutes.figmaBindDeviceSearching);
+          },
+          onOpenDetail: (_) {
+            Navigator.of(context).pushNamed<void>(AppRoutes.figmaDeviceDetails);
+          },
+          onCarouselSettings: (_) {
+            Navigator.of(
+              context,
+            ).pushNamed<void>(AppRoutes.figmaCarouselSettings);
+          },
+        );
+        break;
+      case AppRoutes.figmaDeviceDetails:
+        builder = (context) => DeviceDetailsPage(
+          onCarouselSettings: () {
+            Navigator.of(
+              context,
+            ).pushNamed<void>(AppRoutes.figmaCarouselSettings);
+          },
+          onClearDevice: () {
+            Navigator.of(
+              context,
+            ).pushNamed<void>(AppRoutes.figmaDeviceClearConfirm);
+          },
+          onDeleteDevice: () {
+            Navigator.of(
+              context,
+            ).pushNamed<void>(AppRoutes.figmaDeviceDeleteConfirm);
+          },
+        );
+        break;
+      case AppRoutes.figmaDeviceDeleteConfirm:
+        builder = (_) => const DeviceDeleteConfirmPage();
+        break;
+      case AppRoutes.figmaDeviceClearConfirm:
+        builder = (_) => const DeviceClearConfirmPage();
+        break;
+      case AppRoutes.figmaCarouselSettings:
+        builder = (_) => const CarouselSettingsPage();
         break;
       default:
         builder = (_) => _UnknownRoutePage(routeName: settings.name);

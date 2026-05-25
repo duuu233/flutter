@@ -227,7 +227,7 @@ class _AuthHeroAsset extends StatelessWidget {
     // TODO: Export Figma node "ChatGPT Image 2026年5月16日 16_08_37 1"
     // as assets/images/auth_hero_background.png and replace this placeholder.
     return Image.asset(
-      'images/1.png',
+      'assets/images/1.png',
       width: 376,
       height: 812,
       fit: BoxFit.cover,
@@ -243,34 +243,10 @@ class _AuthWaveAsset extends StatelessWidget {
     // TODO: Export Figma node "组 1 1" as assets/images/auth_wave_overlay.png
     // and replace this placeholder.
     return Image.asset(
-      'images/1.png',
+      'assets/images/1.png',
       width: 375,
       height: 812,
       fit: BoxFit.cover,
-    );
-  }
-}
-
-class _HeroFallback extends StatelessWidget {
-  const _HeroFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _HeroFallbackPainter(),
-      child: const SizedBox.expand(),
-    );
-  }
-}
-
-class _WaveFallback extends StatelessWidget {
-  const _WaveFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      painter: _WaveFallbackPainter(),
-      child: const SizedBox.expand(),
     );
   }
 }
@@ -647,151 +623,4 @@ class _AuthTextStyles {
     fontWeight: FontWeight.w400,
     height: 1.2,
   );
-}
-
-/// 切图资源缺失时的本地兜底绘制，保证开发环境不会出现空白首屏。
-class _HeroFallbackPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final backgroundPaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0xFFE9F5FF), Color(0xFFF9FBFF), Color(0xFFEAF3FF)],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, backgroundPaint);
-
-    final glowPaint = Paint()
-      ..shader = RadialGradient(
-        colors: [
-          Colors.white.withValues(alpha: 0.94),
-          Colors.white.withValues(alpha: 0),
-        ],
-      ).createShader(const Rect.fromLTWH(90, 16, 190, 170));
-    canvas.drawOval(const Rect.fromLTWH(90, 16, 190, 170), glowPaint);
-
-    final tablePaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0xFFFFFFFF), Color(0xFFF2F7FF)],
-      ).createShader(const Rect.fromLTWH(0, 276, 375, 98));
-    canvas.drawOval(const Rect.fromLTWH(-22, 266, 420, 128), tablePaint);
-
-    canvas.save();
-    canvas.translate(77, 121);
-    canvas.rotate(-0.075);
-    final shadowPaint = Paint()
-      ..color = const Color(0x22000000)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 14);
-    final frameRect = RRect.fromRectAndRadius(
-      const Rect.fromLTWH(0, 0, 214, 164),
-      const Radius.circular(15),
-    );
-    canvas.drawRRect(frameRect.shift(const Offset(4, 8)), shadowPaint);
-    canvas.drawRRect(frameRect, Paint()..color = const Color(0xFFFDFDFB));
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(5, 5, 204, 154),
-        const Radius.circular(11),
-      ),
-      Paint()..color = const Color(0xFFE7E2D8),
-    );
-    canvas.drawRect(
-      const Rect.fromLTWH(27, 28, 160, 101),
-      Paint()..color = const Color(0xFFD6B594),
-    );
-    canvas.drawOval(
-      const Rect.fromLTWH(86, 62, 54, 38),
-      Paint()..color = const Color(0xFFC98E4A),
-    );
-    canvas.drawCircle(
-      const Offset(113, 60),
-      20,
-      Paint()..color = const Color(0xFFD9A15C),
-    );
-    canvas.drawCircle(
-      const Offset(142, 88),
-      19,
-      Paint()..color = const Color(0xFF7A6C63),
-    );
-    canvas.drawCircle(
-      const Offset(111, 15),
-      3,
-      Paint()..color = const Color(0xFFC6C2BB),
-    );
-    canvas.restore();
-
-    final vasePaint = Paint()..color = const Color(0xFFF8F4EC);
-    canvas.drawOval(const Rect.fromLTWH(308, 208, 29, 54), vasePaint);
-    canvas.drawRect(const Rect.fromLTWH(316, 190, 10, 46), vasePaint);
-    final leafPaint = Paint()
-      ..color = const Color(0xFFB9BD84)
-      ..strokeWidth = 2
-      ..style = PaintingStyle.stroke;
-    canvas.drawLine(const Offset(321, 198), const Offset(341, 171), leafPaint);
-    canvas.drawLine(const Offset(321, 202), const Offset(305, 182), leafPaint);
-    canvas.drawOval(
-      const Rect.fromLTWH(338, 164, 10, 18),
-      leafPaint..style = PaintingStyle.fill,
-    );
-    canvas.drawOval(const Rect.fromLTWH(299, 176, 11, 18), leafPaint);
-
-    final sparklePaint = Paint()..color = Colors.white.withValues(alpha: 0.9);
-    for (final point in const [
-      Offset(40, 108),
-      Offset(271, 83),
-      Offset(67, 73),
-      Offset(292, 326),
-    ]) {
-      canvas.drawCircle(point, 1.6, sparklePaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-/// 底部波纹覆盖层的兜底绘制，与主背景分开便于后续替换真实切图。
-class _WaveFallbackPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final lowerPaint = Paint()
-      ..shader = const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0x00FFFFFF), Color(0x99EAF3FF), Color(0xFFEAF3FF)],
-        stops: [0.0, 0.58, 1.0],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, lowerPaint);
-
-    final wavePath = Path()
-      ..moveTo(0, 753)
-      ..cubicTo(72, 793, 129, 786, 191, 767)
-      ..cubicTo(263, 745, 319, 744, 375, 755)
-      ..lineTo(375, 812)
-      ..lineTo(0, 812)
-      ..close();
-    canvas.drawPath(wavePath, Paint()..color = const Color(0xCCE5F0FF));
-
-    final highlightPath = Path()
-      ..moveTo(0, 760)
-      ..cubicTo(77, 796, 131, 793, 193, 773)
-      ..cubicTo(263, 751, 319, 750, 375, 761);
-    canvas.drawPath(
-      highlightPath,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2
-        ..shader = const LinearGradient(
-          colors: [Color(0xFFFFFFFF), Color(0xFFFFD7CF), Color(0x00FFFFFF)],
-        ).createShader(const Rect.fromLTWH(0, 744, 375, 56)),
-    );
-
-    final dotPaint = Paint()..color = Colors.white.withValues(alpha: 0.92);
-    canvas.drawCircle(const Offset(293, 792), 2.8, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_application_2/src/device/frame_device_protocol.dart';
+import 'package:BoltStar/src/device/frame_device_protocol.dart';
 
 void main() {
   test('finds free slot and updates image mask after transfer', () {
@@ -32,7 +32,8 @@ void main() {
   test('delete command clears requested mask bits', () {
     final result = FrameDeviceProtocol.simulateDeleteImages(
       imageMask: 0x00000007,
-      deleteMask: FrameDeviceProtocol.bitForIndex(0) |
+      deleteMask:
+          FrameDeviceProtocol.bitForIndex(0) |
           FrameDeviceProtocol.bitForIndex(2),
       screenType: FrameScreenType.inch73,
       currentImageIndex: 2,

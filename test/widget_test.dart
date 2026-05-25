@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:flutter_application_2/src/app.dart';
+import 'package:BoltStar/src/app.dart';
 
 void main() {
   testWidgets('app boots and can switch to mine tab', (
@@ -12,7 +12,7 @@ void main() {
 
     expect(find.byKey(const Key('home-title')), findsOneWidget);
 
-    await tester.tap(find.byIcon(Icons.person_outline));
+    await tester.tap(find.text('我的'));
     await tester.pump();
 
     expect(find.byKey(const Key('mine-page-title')), findsOneWidget);

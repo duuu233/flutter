@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_application_2/src/app.dart';
+import 'package:BoltStar/src/app.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();

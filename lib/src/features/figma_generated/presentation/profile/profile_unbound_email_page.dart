@@ -1,28 +1,22 @@
 import 'package:flutter/material.dart';
 
-import '../../../features/figma_generated/presentation/widgets/figma_common.dart';
-import '../../../routes/app_routes.dart';
-import '../../../state.dart';
+import '../widgets/figma_common.dart';
 
-class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key, required this.state});
+class ProfileUnboundEmailPage extends StatefulWidget {
+  const ProfileUnboundEmailPage({super.key, this.onSave, this.onBindEmail});
 
-  final PhotoFrameState state;
+  final VoidCallback? onSave;
+  final VoidCallback? onBindEmail;
 
   @override
-  State<ProfilePage> createState() => _ProfilePageState();
+  State<ProfileUnboundEmailPage> createState() =>
+      _ProfileUnboundEmailPageState();
 }
 
-class _ProfilePageState extends State<ProfilePage> {
-  late final TextEditingController _nicknameController;
-
-  @override
-  void initState() {
-    super.initState();
-    _nicknameController = TextEditingController(
-      text: widget.state.currentUser.nickname,
-    );
-  }
+class _ProfileUnboundEmailPageState extends State<ProfileUnboundEmailPage> {
+  final TextEditingController _nicknameController = TextEditingController(
+    text: '江江江',
+  );
 
   @override
   void dispose() {
@@ -32,9 +26,6 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
-    final user = widget.state.currentUser;
-    final emailText = user.email.isEmpty ? '暂未绑定' : user.email;
-
     return FigmaPhoneFrame(
       child: Stack(
         children: [
@@ -54,7 +45,7 @@ class _ProfilePageState extends State<ProfilePage> {
             child: FigmaGlassCard(
               child: Column(
                 children: [
-                  _AvatarRow(color: user.avatarColor),
+                  const _AvatarRow(),
                   const FigmaFormDivider(),
                   FigmaAccountField(
                     label: '昵称',
@@ -62,18 +53,12 @@ class _ProfilePageState extends State<ProfilePage> {
                     hintText: '请输入昵称',
                   ),
                   const FigmaFormDivider(),
-                  FigmaInfoRow(label: 'ID', value: user.id),
+                  const FigmaInfoRow(label: 'ID', value: '123456'),
                   const FigmaFormDivider(),
                   FigmaInfoRow(
                     label: '邮箱',
-                    value: emailText,
-                    onTap: () {
-                      Navigator.of(context).pushNamed<void>(
-                        user.email.isEmpty
-                            ? AppRoutes.figmaBindEmailIncomplete
-                            : AppRoutes.figmaModifyEmail,
-                      );
-                    },
+                    value: '暂未绑定',
+                    onTap: widget.onBindEmail,
                   ),
                 ],
               ),
@@ -87,7 +72,7 @@ class _ProfilePageState extends State<ProfilePage> {
             child: FigmaPrimaryButton(
               label: '保存资料',
               height: 64,
-              onPressed: _saveProfile,
+              onPressed: widget.onSave,
             ),
           ),
           const FigmaBottomHomeIndicator(),
@@ -95,25 +80,10 @@ class _ProfilePageState extends State<ProfilePage> {
       ),
     );
   }
-
-  void _saveProfile() {
-    final user = widget.state.currentUser;
-    final feedback = widget.state.updateProfile(
-      nickname: _nicknameController.text,
-      email: user.email,
-      signature: user.signature,
-      avatarColor: user.avatarColor,
-    );
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(feedback.message)));
-  }
 }
 
 class _AvatarRow extends StatelessWidget {
-  const _AvatarRow({required this.color});
-
-  final Color color;
+  const _AvatarRow();
 
   @override
   Widget build(BuildContext context) {
@@ -124,12 +94,16 @@ class _AvatarRow extends StatelessWidget {
         child: Row(
           children: [
             const Expanded(child: Text('头像', style: FigmaTextStyles.formLabel)),
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: color,
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: Color(0xFFE7E7E7),
+              ),
               child: const Icon(
                 Icons.person_rounded,
-                color: Colors.white,
+                color: Color(0x992A2B2B),
                 size: 24,
               ),
             ),
