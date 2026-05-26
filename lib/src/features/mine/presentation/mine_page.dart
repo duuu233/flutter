@@ -274,7 +274,7 @@ class _ProfileCard extends StatelessWidget {
                   mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('汪汪汪', style: _MineTextStyles.profileName),
+                    Text('江江', style: _MineTextStyles.profileName),
                     SizedBox(height: 9),
                     Text('ID：123456', style: _MineTextStyles.profileId),
                   ],

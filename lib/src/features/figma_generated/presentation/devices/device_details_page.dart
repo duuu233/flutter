@@ -134,19 +134,19 @@ class DeviceDetailsScene extends StatelessWidget {
           child: FigmaGlassCard(
             child: Column(
               children: [
-                FigmaInfoRow(
+                _DangerActionRow(
                   label: '一键清空',
-                  value: '清空设备本地所有照片',
+                  description: '清空设备本地所有照片',
                   icon: Icons.cleaning_services_outlined,
-                  danger: true,
+                  color: const Color(0xFFEB5F1B),
                   onTap: onClearDevice,
                 ),
                 const FigmaFormDivider(),
-                FigmaInfoRow(
+                _DangerActionRow(
                   label: '删除设备',
-                  value: '删除后将无法恢复',
+                  description: '删除后将无法恢复',
                   icon: Icons.delete_outline_rounded,
-                  danger: true,
+                  color: const Color(0xFFFF3B30),
                   onTap: onDeleteDevice,
                 ),
               ],
@@ -154,6 +154,58 @@ class DeviceDetailsScene extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _DangerActionRow extends StatelessWidget {
+  const _DangerActionRow({
+    required this.label,
+    required this.description,
+    required this.icon,
+    required this.color,
+    this.onTap,
+  });
+
+  final String label;
+  final String description;
+  final IconData icon;
+  final Color color;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 60,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Row(
+            children: [
+              Icon(icon, size: 20, color: color),
+              const SizedBox(width: 10),
+              Text(
+                label,
+                style: FigmaTextStyles.formLabel.copyWith(color: color),
+              ),
+              const Spacer(),
+              Text(
+                description,
+                style: FigmaTextStyles.formHint.copyWith(
+                  color: const Color(0x992A2B2B),
+                ),
+              ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0x992A2B2B),
+                size: 18,
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

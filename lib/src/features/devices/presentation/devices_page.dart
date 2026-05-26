@@ -19,7 +19,6 @@ class DevicesPage extends StatelessWidget {
               name: device.name,
               connected: device.connected,
               battery: '${device.batteryLevel}%',
-              action: device.connected ? '断开' : '连接',
             ),
           )
           .toList(),

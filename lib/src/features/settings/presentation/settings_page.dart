@@ -1,8 +1,13 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 
-import '../../../shared/shared.dart';
+import '../../../routes/app_routes.dart';
 import '../../../state.dart';
+import '../../figma_generated/presentation/widgets/figma_common.dart';
 
+/// 设置页面，对应 UI 稿「设置」。
+///
+/// 包含语种设置、联系方式、隐私政策、用户协议、更新入口，以及退出登录与用户注销。
+/// 退出登录 / 用户注销使用确认弹窗（对应「设置-退出登录」「设置-用户注销」两张稿）。
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.state});
 
@@ -10,193 +15,365 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SubPageScaffold(
-      title: state.tr(zh: '设置', en: 'Settings', ja: '設定'),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+    return FigmaPhoneFrame(
+      child: Stack(
         children: [
-          AppPanel(
-            child: Column(
-              children: [
-                MenuTile(
-                  icon: Icons.info_outline_rounded,
-                  title: state.tr(zh: '关于我们', en: 'About', ja: '私たちについて'),
-                  subtitle: state.tr(
-                    zh: '数字相框多端投屏客户端',
-                    en: 'Multi-platform client for digital frame casting',
-                    ja: 'デジタルフォトフレーム向けマルチプラットフォームクライアント',
+          const FigmaPageBackground(),
+          const Positioned(
+            left: 0,
+            top: 0,
+            width: 375,
+            height: 90,
+            child: FigmaTopNavigation(title: '设置'),
+          ),
+          Positioned(
+            left: 24,
+            top: 109,
+            width: 327,
+            child: FigmaGlassCard(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Column(
+                children: [
+                  _SettingsRow(
+                    icon: Icons.translate_rounded,
+                    iconColor: const Color(0xFFFF6A24),
+                    title: '语种设置',
+                    value: _languageLabel(state.language),
+                    onTap: () => Navigator.of(
+                      context,
+                    ).pushNamed<void>(AppRoutes.figmaLanguageSettings),
                   ),
-                  onTap: () => _showInfoDialog(
-                    context,
-                    title: state.tr(zh: '关于我们', en: 'About', ja: '私たちについて'),
-                    content: state.tr(
-                      zh: '本工程面向 iOS、Android、鸿蒙三端统一维护投屏业务流程，包含设备管理、相册、记录与帮助模块。',
-                      en: 'This project unifies casting, device management, album, record and guide flows for iOS, Android and HarmonyOS.',
-                      ja: 'このプロジェクトは iOS、Android、HarmonyOS 向けに投映、端末管理、アルバム、履歴、ガイド機能を統合しています。',
-                    ),
+                  const FigmaFormDivider(),
+                  _SettingsRow(
+                    icon: Icons.phone_in_talk_outlined,
+                    iconColor: const Color(0xFF4A98FF),
+                    title: '联系方式',
+                    value: '99999@qq.com',
+                    onTap: () => _showContactDialog(context),
                   ),
-                ),
-                const Divider(height: 24),
-                MenuTile(
-                  icon: Icons.support_agent_rounded,
-                  title: state.tr(zh: '联系方式', en: 'Contact', ja: '連絡先'),
-                  subtitle: 'support@frameflow.app',
-                  onTap: () => _showInfoDialog(
-                    context,
-                    title: state.tr(zh: '联系方式', en: 'Contact', ja: '連絡先'),
-                    content: 'support@frameflow.app\n+86 400-001-2400',
+                  const FigmaFormDivider(),
+                  _SettingsRow(
+                    icon: Icons.shield_outlined,
+                    iconColor: const Color(0xFF4A98FF),
+                    title: '隐私政策',
+                    onTap: () => Navigator.of(
+                      context,
+                    ).pushNamed<void>(AppRoutes.figmaPrivacyPolicy),
                   ),
-                ),
-                const Divider(height: 24),
-                MenuTile(
-                  icon: Icons.privacy_tip_outlined,
-                  title: state.tr(
-                    zh: '隐私政策',
-                    en: 'Privacy Policy',
-                    ja: 'プライバシーポリシー',
+                  const FigmaFormDivider(),
+                  _SettingsRow(
+                    icon: Icons.description_outlined,
+                    iconColor: const Color(0xFF4A98FF),
+                    title: '用户协议',
+                    onTap: () => Navigator.of(
+                      context,
+                    ).pushNamed<void>(AppRoutes.figmaUserAgreement),
                   ),
-                  subtitle: state.tr(
-                    zh: '说明权限使用范围',
-                    en: 'How permissions are used',
-                    ja: '権限利用範囲の説明',
+                  const FigmaFormDivider(),
+                  _SettingsRow(
+                    icon: Icons.system_update_alt_rounded,
+                    iconColor: const Color(0xFF4A98FF),
+                    title: '更新BoltStar',
+                    value: '版本1.0.0',
+                    onTap: () => Navigator.of(
+                      context,
+                    ).pushNamed<void>(AppRoutes.figmaUpdateBoltStarAvailable),
                   ),
-                  onTap: () => _showInfoDialog(
-                    context,
-                    title: state.tr(
-                      zh: '隐私政策',
-                      en: 'Privacy Policy',
-                      ja: 'プライバシーポリシー',
-                    ),
-                    content: state.tr(
-                      zh: '位置权限用于蓝牙搜索，蓝牙权限用于连接设备，相机权限用于拍照上传。当前工程未接入云端存储。',
-                      en: 'Location is used for Bluetooth discovery, Bluetooth for device connection, and camera for capture upload. This build does not connect to cloud storage.',
-                      ja: '位置情報は Bluetooth 探索、Bluetooth は端末接続、カメラは撮影アップロードに使用します。現在の実装はクラウド保存を利用しません。',
-                    ),
-                  ),
-                ),
-                const Divider(height: 24),
-                MenuTile(
-                  icon: Icons.description_outlined,
-                  title: state.tr(zh: '用户协议', en: 'User Agreement', ja: '利用規約'),
-                  subtitle: state.tr(
-                    zh: '设备与账号使用规范',
-                    en: 'Device and account rules',
-                    ja: '端末とアカウントの利用規約',
-                  ),
-                  onTap: () => _showInfoDialog(
-                    context,
-                    title: state.tr(
-                      zh: '用户协议',
-                      en: 'User Agreement',
-                      ja: '利用規約',
-                    ),
-                    content: state.tr(
-                      zh: '所有者可配置设备权限、轮播模式和一键清空；使用者仅管理自己上传的照片。',
-                      en: 'Owners can configure permissions, carousel mode and one-tap clear. Users can manage only the photos they uploaded.',
-                      ja: 'オーナーは権限、スライドモード、一括クリアを設定できます。利用者は自分がアップロードした写真のみ管理できます。',
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          AppPanel(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  state.tr(zh: '语种设置', en: 'Language', ja: '言語設定'),
-                  style: Theme.of(context).textTheme.titleLarge,
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: AppLanguage.values.map((language) {
-                    final selected = state.language == language;
-                    return ChoiceChip(
-                      selected: selected,
-                      label: Text(state.languageLabel(language)),
-                      onSelected: (_) => state.switchLanguage(language),
-                    );
-                  }).toList(),
-                ),
-              ],
+          Positioned(
+            left: 26,
+            top: 470,
+            width: 323,
+            height: 56,
+            child: _OutlinedActionButton(
+              label: '退出登录',
+              onPressed: () => _confirmLogout(context),
             ),
           ),
-          const SizedBox(height: 16),
-          AppPanel(
-            child: Column(
-              children: [
-                MenuTile(
-                  icon: Icons.logout_rounded,
-                  title: state.tr(zh: '退出登录', en: 'Log Out', ja: 'ログアウト'),
-                  subtitle: state.tr(
-                    zh: '保留设备与记录，清空邮箱登录态',
-                    en: 'Keep device data but clear email session',
-                    ja: '端末と履歴を保持したままメールセッションを解除',
+          Positioned(
+            left: 0,
+            top: 752,
+            width: 375,
+            child: Center(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _confirmDeleteAccount(context),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 6, horizontal: 24),
+                  child: Text(
+                    '用户注销',
+                    style: TextStyle(
+                      color: Color(0x992A2B2B),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w400,
+                      height: 1.4,
+                    ),
                   ),
-                  onTap: () {
-                    state.logout();
-                    _showMessage(
-                      context,
-                      state.tr(
-                        zh: '已退出登录。',
-                        en: 'Logged out.',
-                        ja: 'ログアウトしました。',
-                      ),
-                    );
-                  },
                 ),
-                const Divider(height: 24),
-                MenuTile(
-                  icon: Icons.person_remove_outlined,
-                  title: state.tr(
-                    zh: '用户注销',
-                    en: 'Delete Account',
-                    ja: 'アカウント削除',
-                  ),
-                  subtitle: state.tr(
-                    zh: '移除我的相册与投屏记录',
-                    en: 'Remove My Album and casting records',
-                    ja: 'マイアルバムと投映履歴を削除',
-                  ),
-                  onTap: () {
-                    state.deleteAccount();
-                    _showMessage(
-                      context,
-                      state.tr(
-                        zh: '账号已注销，当前进入访客状态。',
-                        en: 'Account deleted. You are now in guest mode.',
-                        ja: 'アカウントを削除し、ゲストモードに切り替えました。',
-                      ),
-                    );
-                  },
-                ),
-              ],
+              ),
             ),
+          ),
+          const FigmaBottomHomeIndicator(),
+        ],
+      ),
+    );
+  }
+
+  String _languageLabel(AppLanguage language) {
+    switch (language) {
+      case AppLanguage.zh:
+        return '简中';
+      case AppLanguage.en:
+        return 'English';
+      case AppLanguage.ja:
+        return '日本語';
+    }
+  }
+
+  void _showContactDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('联系方式'),
+        content: const Text('客服邮箱：99999@qq.com\n服务时间：周一至周五 9:00 - 18:00'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.maybePop(context),
+            child: const Text('知道了'),
           ),
         ],
       ),
     );
   }
 
-  void _showInfoDialog(
-    BuildContext context, {
-    required String title,
-    required String content,
-  }) {
-    showDialog<void>(
-      context: context,
-      builder: (context) =>
-          AlertDialog(title: Text(title), content: Text(content)),
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await _showConfirmDialog(
+      context,
+      title: '退出登录',
+      message: '退出后将返回登录页，是否继续？',
     );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    state.logout();
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.auth, (route) => false);
   }
 
-  void _showMessage(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final confirmed = await _showConfirmDialog(
+      context,
+      title: '用户注销',
+      message: '注销后您的所有数据将会彻底删除且无法恢复，确定要注销账号？',
+    );
+    if (confirmed != true || !context.mounted) {
+      return;
+    }
+    state.deleteAccount();
+    Navigator.of(
+      context,
+    ).pushNamedAndRemoveUntil(AppRoutes.auth, (route) => false);
+  }
+}
+
+Future<bool?> _showConfirmDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+}) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.32),
+    builder: (context) => _ConfirmDialog(title: title, message: message),
+  );
+}
+
+class _SettingsRow extends StatelessWidget {
+  const _SettingsRow({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    this.value,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String? value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: SizedBox(
+        height: 58,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Row(
+            children: [
+              Icon(icon, color: iconColor, size: 22),
+              const SizedBox(width: 14),
+              Expanded(child: Text(title, style: FigmaTextStyles.formLabel)),
+              if (value != null)
+                Text(
+                  value!,
+                  style: FigmaTextStyles.formHint.copyWith(
+                    color: const Color(0x992A2B2B),
+                  ),
+                ),
+              const SizedBox(width: 6),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0x662A2B2B),
+                size: 20,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _OutlinedActionButton extends StatelessWidget {
+  const _OutlinedActionButton({required this.label, required this.onPressed});
+
+  final String label;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(28),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(28),
+        onTap: onPressed,
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(28),
+            border: Border.all(color: const Color(0xFFFF6A24), width: 1.4),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFFFF6A24),
+              fontSize: 18,
+              fontWeight: FontWeight.w500,
+              letterSpacing: 2,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfirmDialog extends StatelessWidget {
+  const _ConfirmDialog({required this.title, required this.message});
+
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(
+                color: Color(0xFF2A2B2B),
+                fontSize: 18,
+                fontWeight: FontWeight.w600,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0x992A2B2B),
+                fontSize: 13,
+                fontWeight: FontWeight.w400,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: _DialogButton(
+                    label: '取消',
+                    filled: false,
+                    onPressed: () => Navigator.of(context).pop(false),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: _DialogButton(
+                    label: '确定',
+                    filled: true,
+                    onPressed: () => Navigator.of(context).pop(true),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogButton extends StatelessWidget {
+  const _DialogButton({
+    required this.label,
+    required this.filled,
+    required this.onPressed,
+  });
+
+  final String label;
+  final bool filled;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: filled ? const Color(0xFFFF6A24) : const Color(0xFFF1F1F3),
+      borderRadius: BorderRadius.circular(24),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(24),
+        onTap: onPressed,
+        child: Container(
+          height: 46,
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: filled ? Colors.white : const Color(0xFF2A2B2B),
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

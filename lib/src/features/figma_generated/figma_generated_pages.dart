@@ -21,3 +21,7 @@ export 'presentation/profile/bind_email_incomplete_page.dart';
 export 'presentation/profile/modify_email_page.dart';
 export 'presentation/profile/profile_bound_email_page.dart';
 export 'presentation/profile/profile_unbound_email_page.dart';
+export 'presentation/settings/language_settings_page.dart';
+export 'presentation/settings/privacy_policy_page.dart';
+export 'presentation/settings/update_boltstar_page.dart';
+export 'presentation/settings/user_agreement_page.dart';

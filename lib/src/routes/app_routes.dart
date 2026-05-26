@@ -53,6 +53,12 @@ class AppRoutes {
   static const figmaDeviceDeleteConfirm = '/figma/devices/delete-confirm';
   static const figmaDeviceClearConfirm = '/figma/devices/clear-confirm';
   static const figmaCarouselSettings = '/figma/devices/carousel-settings';
+  static const figmaLanguageSettings = '/figma/settings/language';
+  static const figmaPrivacyPolicy = '/figma/settings/privacy-policy';
+  static const figmaUserAgreement = '/figma/settings/user-agreement';
+  static const figmaUpdateBoltStar = '/figma/settings/update';
+  static const figmaUpdateBoltStarAvailable = '/figma/settings/update/available';
+  static const figmaUpdateBoltStarProgress = '/figma/settings/update/progress';
 
   static Route<dynamic> onGenerateRoute({
     required RouteSettings settings,
@@ -210,6 +216,28 @@ class AppRoutes {
         break;
       case AppRoutes.figmaCarouselSettings:
         builder = (_) => const CarouselSettingsPage();
+        break;
+      case AppRoutes.figmaLanguageSettings:
+        builder = (_) => LanguageSettingsPage(state: state);
+        break;
+      case AppRoutes.figmaPrivacyPolicy:
+        builder = (_) => const PrivacyPolicyPage();
+        break;
+      case AppRoutes.figmaUserAgreement:
+        builder = (_) => const UserAgreementPage();
+        break;
+      case AppRoutes.figmaUpdateBoltStar:
+        builder = (_) => const UpdateBoltStarPage();
+        break;
+      case AppRoutes.figmaUpdateBoltStarAvailable:
+        builder = (_) => const UpdateBoltStarPage(
+          stage: BoltStarUpdateStage.updateAvailable,
+        );
+        break;
+      case AppRoutes.figmaUpdateBoltStarProgress:
+        builder = (_) => const UpdateBoltStarPage(
+          stage: BoltStarUpdateStage.downloading,
+        );
         break;
       default:
         builder = (_) => _UnknownRoutePage(routeName: settings.name);
