@@ -20,6 +20,13 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (currentIndex == 0) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: HomePage(state: state, onOpenMine: () => onIndexChanged(1)),
+      );
+    }
+
     return Scaffold(
       extendBody: false,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -29,9 +36,8 @@ class AppShell extends StatelessWidget {
           SafeArea(
             bottom: false,
             child: IndexedStack(
-              index: currentIndex,
+              index: currentIndex - 1,
               children: [
-                HomePage(state: state, onOpenMine: () => onIndexChanged(1)),
                 MinePage(state: state),
                 DemoPage(state: state),
               ],

@@ -1,4 +1,5 @@
 export 'presentation/account/forgot_password.dart';
+export 'presentation/account/login_password_page.dart';
 export 'presentation/account/modify_password.dart';
 export 'presentation/cast/cast_failed_page.dart';
 export 'presentation/cast/cast_success_page.dart';
@@ -14,6 +15,7 @@ export 'presentation/devices/device_clear_confirm_page.dart';
 export 'presentation/devices/device_delete_confirm_page.dart';
 export 'presentation/devices/device_details_page.dart';
 export 'presentation/devices/my_devices_page.dart';
+export 'presentation/home/home_device_pages.dart';
 export 'presentation/profile/bind_email_complete_page.dart';
 export 'presentation/profile/bind_email_incomplete_page.dart';
 export 'presentation/profile/modify_email_page.dart';

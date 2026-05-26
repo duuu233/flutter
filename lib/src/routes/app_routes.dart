@@ -25,7 +25,14 @@ class AppRoutes {
   static const guide = '/guide';
   static const settings = '/settings';
   static const figmaForgotPassword = '/figma/forgot-password';
+  static const figmaLoginPassword = '/figma/login-password';
+  static const figmaLoginPasswordError = '/figma/login-password/error';
   static const figmaModifyPassword = '/figma/modify-password';
+  static const figmaHomeUnbound = '/figma/home/unbound';
+  static const figmaHomeUnboundBindNow = '/figma/home/unbound/bind-now';
+  static const figmaHomeUnboundReconnect = '/figma/home/unbound/reconnect';
+  static const figmaHomeBound = '/figma/home/bound';
+  static const figmaHomeBoundPicker = '/figma/home/bound/picker';
   static const figmaBindDeviceSearching = '/figma/bind-device/searching';
   static const figmaBindDeviceFound = '/figma/bind-device/found';
   static const figmaBindDeviceNotFound = '/figma/bind-device/not-found';
@@ -79,8 +86,33 @@ class AppRoutes {
       case AppRoutes.figmaForgotPassword:
         builder = (_) => const ForgotPassword();
         break;
+      case AppRoutes.figmaLoginPassword:
+        builder = (_) => const LoginPasswordPage();
+        break;
+      case AppRoutes.figmaLoginPasswordError:
+        builder = (_) => const LoginPasswordPage(initialShowErrors: true);
+        break;
       case AppRoutes.figmaModifyPassword:
         builder = (_) => const ModifyPassword();
+        break;
+      case AppRoutes.figmaHomeUnbound:
+        builder = (_) => const FigmaHomeUnboundDevicePage();
+        break;
+      case AppRoutes.figmaHomeUnboundBindNow:
+        builder = (_) => const FigmaHomeUnboundDevicePage(
+          sheet: FigmaHomeUnboundSheet.bindNow,
+        );
+        break;
+      case AppRoutes.figmaHomeUnboundReconnect:
+        builder = (_) => const FigmaHomeUnboundDevicePage(
+          sheet: FigmaHomeUnboundSheet.reconnect,
+        );
+        break;
+      case AppRoutes.figmaHomeBound:
+        builder = (_) => const FigmaHomeBoundDevicePage();
+        break;
+      case AppRoutes.figmaHomeBoundPicker:
+        builder = (_) => const FigmaHomeBoundDevicePage(showCastSheet: true);
         break;
       case AppRoutes.figmaBindDeviceSearching:
         builder = (_) => const BindDeviceSearching();

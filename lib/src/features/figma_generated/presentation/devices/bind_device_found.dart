@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../home/home_figma_common.dart';
 import '../widgets/figma_common.dart';
 
 class BindDeviceFound extends StatefulWidget {
@@ -7,10 +8,12 @@ class BindDeviceFound extends StatefulWidget {
     super.key,
     this.devices = const ['客厅相框', '卧室相框', '书房相框'],
     this.onBind,
+    this.onRefresh,
   });
 
   final List<String> devices;
   final ValueChanged<String>? onBind;
+  final VoidCallback? onRefresh;
 
   @override
   State<BindDeviceFound> createState() => _BindDeviceFoundState();
@@ -28,27 +31,27 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
         ? ''
         : widget.devices[safeSelectedIndex];
 
-    return FigmaPhoneFrame(
+    return FigmaHomePhoneFrame(
       child: Stack(
         children: [
-          const FigmaPageBackground(),
+          const Positioned.fill(child: FigmaHomeBackground()),
           const Positioned(
-            left: -1,
-            top: 22,
-            width: 378,
-            height: 378,
-            child: FigmaDeviceRadar(state: FigmaRadarState.found),
+            left: 52,
+            top: 91,
+            width: 270,
+            height: 270,
+            child: FigmaBluetoothRadar(state: FigmaRadarState.found),
           ),
           const Positioned(
             left: 0,
             top: 0,
             width: 375,
             height: 90,
-            child: FigmaTopNavigation(title: '绑定设备'),
+            child: FigmaBindDeviceTopBar(),
           ),
           Positioned(
             left: 24,
-            top: 370,
+            top: 379,
             width: 327,
             height: 28,
             child: Row(
@@ -58,9 +61,9 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                     '附近设备',
                     style: TextStyle(
                       color: Color(0xFF2A2B2B),
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      height: 1.4,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      height: 1.2,
                     ),
                   ),
                 ),
@@ -70,8 +73,12 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                     width: 28,
                     height: 28,
                   ),
-                  icon: const Icon(Icons.refresh_rounded, size: 22),
-                  onPressed: () {},
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    color: Color(0xFFFF6A24),
+                    size: 24,
+                  ),
+                  onPressed: widget.onRefresh,
                 ),
               ],
             ),
@@ -83,9 +90,11 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
             child: Column(
               children: [
                 for (var i = 0; i < widget.devices.length; i++) ...[
-                  FigmaDeviceListCard(
+                  FigmaBindDeviceCard(
                     name: widget.devices[i],
                     selected: i == safeSelectedIndex,
+                    iconColor: _deviceAccent(i),
+                    iconBackground: _deviceAccent(i).withValues(alpha: 0.10),
                     onTap: () {
                       setState(() {
                         _selectedIndex = i;
@@ -103,7 +112,7 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
             top: 702,
             width: 327,
             height: 56,
-            child: FigmaPrimaryButton(
+            child: FigmaHomePrimaryButton(
               label: '立即绑定',
               onPressed: selectedDevice.isEmpty
                   ? null
@@ -121,5 +130,13 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
         ],
       ),
     );
+  }
+
+  Color _deviceAccent(int index) {
+    return switch (index) {
+      0 => const Color(0xFFFF6A24),
+      1 => const Color(0xFF2FB46B),
+      _ => const Color(0xFF4A98FF),
+    };
   }
 }

@@ -3,37 +3,41 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../../state.dart';
+import '../widgets/figma_common.dart';
 
-/// 邮箱密码登录页。
-///
-/// 页面按 375x812 设计稿坐标还原；登录逻辑只保留邮箱密码校验，不再展示验证码登录入口。
-class AuthPage extends StatefulWidget {
-  const AuthPage({super.key, required this.state});
+class LoginPasswordPage extends StatefulWidget {
+  const LoginPasswordPage({
+    super.key,
+    this.initialShowErrors = false,
+    this.onLogin,
+    this.onForgotPassword,
+    this.onRegister,
+  });
 
-  final PhotoFrameState state;
+  final bool initialShowErrors;
+  final VoidCallback? onLogin;
+  final VoidCallback? onForgotPassword;
+  final VoidCallback? onRegister;
 
   @override
-  State<AuthPage> createState() => _AuthPageState();
+  State<LoginPasswordPage> createState() => _LoginPasswordPageState();
 }
 
-class _AuthPageState extends State<AuthPage> {
+class _LoginPasswordPageState extends State<LoginPasswordPage> {
   static const double _designWidth = 375;
   static const double _designHeight = 812;
 
-  late final TextEditingController _emailController;
+  final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
 
+  late bool _showErrors;
   bool _passwordVisible = false;
   bool _agreed = false;
-  bool _showErrors = false;
 
   @override
   void initState() {
     super.initState();
-    _emailController = TextEditingController(
-      text: widget.state.currentUser.email,
-    );
+    _showErrors = widget.initialShowErrors;
   }
 
   @override
@@ -70,25 +74,25 @@ class _AuthPageState extends State<AuthPage> {
                     child: SizedBox(
                       width: _designWidth,
                       height: _designHeight,
-                      child: _AuthCanvas(
+                      child: _LoginPasswordCanvas(
                         emailController: _emailController,
                         passwordController: _passwordController,
+                        showErrors: _showErrors,
                         passwordVisible: _passwordVisible,
                         agreed: _agreed,
-                        showErrors: _showErrors,
                         onPasswordVisibilityChanged: () {
                           setState(() {
                             _passwordVisible = !_passwordVisible;
                           });
                         },
+                        onForgotPassword: widget.onForgotPassword,
+                        onRegister: widget.onRegister,
                         onAgreementChanged: () {
                           setState(() {
                             _agreed = !_agreed;
                           });
                         },
-                        onForgotPassword: _forgotPassword,
-                        onRegister: _register,
-                        onLogin: _login,
+                        onLogin: _handleLogin,
                       ),
                     ),
                   ),
@@ -101,84 +105,64 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
-  void _login() {
+  void _handleLogin() {
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final emailValid = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
 
-    if (!emailValid || password.trim().isEmpty) {
+    if (!emailValid || password.isEmpty) {
       setState(() {
         _showErrors = true;
       });
       return;
     }
-    if (!_agreed) {
-      _showFeedback('请先阅读并同意用户协议和隐私政策');
-      return;
-    }
 
-    final feedback = widget.state.loginWithPassword(email, password);
-    _showFeedback(feedback.message);
-  }
-
-  void _forgotPassword() {
-    _showFeedback('请前往忘记密码流程重置密码');
-  }
-
-  void _register() {
-    _showFeedback('请使用邮箱和密码完成注册');
-  }
-
-  void _showFeedback(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    widget.onLogin?.call();
   }
 }
 
-class _AuthCanvas extends StatelessWidget {
-  const _AuthCanvas({
+class _LoginPasswordCanvas extends StatelessWidget {
+  const _LoginPasswordCanvas({
     required this.emailController,
     required this.passwordController,
+    required this.showErrors,
     required this.passwordVisible,
     required this.agreed,
-    required this.showErrors,
     required this.onPasswordVisibilityChanged,
     required this.onAgreementChanged,
-    required this.onForgotPassword,
-    required this.onRegister,
     required this.onLogin,
+    this.onForgotPassword,
+    this.onRegister,
   });
 
   final TextEditingController emailController;
   final TextEditingController passwordController;
+  final bool showErrors;
   final bool passwordVisible;
   final bool agreed;
-  final bool showErrors;
   final VoidCallback onPasswordVisibilityChanged;
   final VoidCallback onAgreementChanged;
-  final VoidCallback onForgotPassword;
-  final VoidCallback onRegister;
   final VoidCallback onLogin;
+  final VoidCallback? onForgotPassword;
+  final VoidCallback? onRegister;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        const Positioned.fill(child: _LoginBackground()),
-        const Positioned(left: 0, top: 0, width: 375, child: _StatusBar()),
-        const Positioned(left: 28, top: 223, child: _TitleGroup()),
+        const Positioned.fill(child: _LoginPasswordBackground()),
+        const Positioned(left: 0, top: 0, width: 375, child: FigmaStatusBar()),
+        const Positioned(left: 28, top: 223, child: _LoginPasswordTitle()),
         Positioned(
           left: 26,
           top: 325,
           width: 323,
           height: 64,
-          child: _PillTextField(
+          child: _LoginInputField(
             controller: emailController,
             hintText: '请输入邮箱',
             icon: Icons.mail_outline_rounded,
             keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
             showError: showErrors,
           ),
         ),
@@ -186,32 +170,30 @@ class _AuthCanvas extends StatelessWidget {
           const Positioned(
             left: 49,
             top: 391,
-            child: _ErrorText(text: '请输入正确的邮箱地址'),
+            child: _LoginErrorText(text: '请输入正确的邮箱地址'),
           ),
         Positioned(
           left: 26,
           top: 419,
           width: 323,
           height: 64,
-          child: _PillTextField(
+          child: _LoginInputField(
             controller: passwordController,
             hintText: '请输入密码',
             icon: Icons.verified_user_outlined,
-            keyboardType: TextInputType.visiblePassword,
-            textInputAction: TextInputAction.done,
             obscureText: !passwordVisible,
+            keyboardType: TextInputType.visiblePassword,
             showError: showErrors,
-            onSubmitted: (_) => onLogin(),
             trailing: IconButton(
+              onPressed: onPasswordVisibilityChanged,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              onPressed: onPasswordVisibilityChanged,
               icon: Icon(
                 passwordVisible
                     ? Icons.visibility_outlined
                     : Icons.visibility_off_outlined,
                 color: const Color(0xFF8C9092),
-                size: 20,
+                size: 22,
               ),
             ),
           ),
@@ -220,7 +202,7 @@ class _AuthCanvas extends StatelessWidget {
           const Positioned(
             left: 49,
             top: 485,
-            child: _ErrorText(text: '密码不能为空'),
+            child: _LoginErrorText(text: '密码不能为空'),
           ),
         Positioned(
           left: 258,
@@ -232,7 +214,7 @@ class _AuthCanvas extends StatelessWidget {
             onTap: onForgotPassword,
             child: const Align(
               alignment: Alignment.centerLeft,
-              child: Text('忘记密码?', style: _AuthTextStyles.linkMuted),
+              child: Text('忘记密码?', style: _LoginPasswordStyles.linkMuted),
             ),
           ),
         ),
@@ -241,7 +223,7 @@ class _AuthCanvas extends StatelessWidget {
           top: 543,
           width: 323,
           height: 64,
-          child: _PrimaryButton(onPressed: onLogin),
+          child: _LoginPrimaryButton(onPressed: onLogin),
         ),
         Positioned(
           left: 0,
@@ -252,16 +234,16 @@ class _AuthCanvas extends StatelessWidget {
         Positioned(
           left: 57,
           top: 744,
-          child: _AgreementRow(agreed: agreed, onChanged: onAgreementChanged),
+          child: _AgreementText(agreed: agreed, onChanged: onAgreementChanged),
         ),
-        const _HomeIndicator(),
+        const FigmaBottomHomeIndicator(),
       ],
     );
   }
 }
 
-class _LoginBackground extends StatelessWidget {
-  const _LoginBackground();
+class _LoginPasswordBackground extends StatelessWidget {
+  const _LoginPasswordBackground();
 
   @override
   Widget build(BuildContext context) {
@@ -273,7 +255,7 @@ class _LoginBackground extends StatelessWidget {
           top: 0,
           width: 376,
           height: 812,
-          child: _AssetImageWithFallback(
+          child: _FigmaImageAsset(
             assetPath: 'assets/images/login_bg_image_5130.png',
             fallback: _LoginBackgroundFallback(),
           ),
@@ -283,11 +265,8 @@ class _LoginBackground extends StatelessWidget {
   }
 }
 
-class _AssetImageWithFallback extends StatelessWidget {
-  const _AssetImageWithFallback({
-    required this.assetPath,
-    required this.fallback,
-  });
+class _FigmaImageAsset extends StatelessWidget {
+  const _FigmaImageAsset({required this.assetPath, required this.fallback});
 
   final String assetPath;
   final Widget fallback;
@@ -315,37 +294,32 @@ class _LoginBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFEAF4FF), Color(0xFFF9FBFF), Color(0xFFFFF7F1)],
-          stops: [0, 0.56, 1],
-        ).createShader(rect),
-    );
+    final paint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFEAF4FF), Color(0xFFF9FBFF), Color(0xFFFFF7F1)],
+        stops: [0, 0.56, 1],
+      ).createShader(rect);
+    canvas.drawRect(rect, paint);
 
-    final haze = Paint()
-      ..color = Colors.white.withValues(alpha: 0.42)
+    final bluePaint = Paint()
+      ..color = const Color(0xFFFFFFFF).withValues(alpha: 0.42)
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-    canvas.drawCircle(const Offset(120, 20), 118, haze);
-    canvas.drawCircle(const Offset(55, 270), 170, haze);
+    canvas.drawCircle(const Offset(120, 20), 118, bluePaint);
+    canvas.drawCircle(const Offset(55, 270), 170, bluePaint);
 
-    canvas.drawCircle(
-      const Offset(372, 180),
-      125,
-      Paint()
-        ..shader =
-            RadialGradient(
-              colors: [
-                const Color(0xFFFFC9A7).withValues(alpha: 0.68),
-                const Color(0x00FFC9A7),
-              ],
-            ).createShader(
-              Rect.fromCircle(center: const Offset(372, 180), radius: 125),
-            ),
-    );
+    final warmPaint = Paint()
+      ..shader =
+          RadialGradient(
+            colors: [
+              const Color(0xFFFFC9A7).withValues(alpha: 0.68),
+              const Color(0x00FFC9A7),
+            ],
+          ).createShader(
+            Rect.fromCircle(center: const Offset(372, 180), radius: 125),
+          );
+    canvas.drawCircle(const Offset(372, 180), 125, warmPaint);
 
     final curvePaint = Paint()
       ..color = Colors.white.withValues(alpha: 0.62)
@@ -371,43 +345,8 @@ class _LoginBackgroundPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _StatusBar extends StatelessWidget {
-  const _StatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Stack(
-        children: [
-          const Positioned(
-            left: 21,
-            top: 12,
-            width: 54,
-            height: 21,
-            child: Center(child: Text('9:41', style: _AuthTextStyles.status)),
-          ),
-          Positioned(
-            right: 14,
-            top: 16,
-            child: Row(
-              children: const [
-                Icon(Icons.signal_cellular_alt_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.wifi_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.battery_full_rounded, size: 21),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TitleGroup extends StatelessWidget {
-  const _TitleGroup();
+class _LoginPasswordTitle extends StatelessWidget {
+  const _LoginPasswordTitle();
 
   @override
   Widget build(BuildContext context) {
@@ -415,17 +354,17 @@ class _TitleGroup extends StatelessWidget {
       width: 320,
       height: 72,
       child: Stack(
-        children: const [
-          Positioned(
+        children: [
+          const Positioned(
             left: 0,
             top: 0,
-            child: Text('欢迎使用', style: _AuthTextStyles.title),
+            child: Text('欢迎使用', style: _LoginPasswordStyles.title),
           ),
-          Positioned(left: 137, top: 3, child: _BoltStarWordmark()),
+          const Positioned(left: 137, top: 3, child: _BoltStarWordmark()),
           Positioned(
             left: 0,
             top: 50,
-            child: Text('使用邮箱密码登录或注册', style: _AuthTextStyles.subtitle),
+            child: Text('使用邮箱密码登录或注册', style: _LoginPasswordStyles.subtitle),
           ),
         ],
       ),
@@ -445,44 +384,99 @@ class _BoltStarWordmark extends StatelessWidget {
       fit: BoxFit.contain,
       alignment: Alignment.centerLeft,
       errorBuilder: (context, error, stackTrace) {
-        return ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) {
-            return const LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [Color(0xFFFEA24C), Color(0xFFFF5B1F)],
-            ).createShader(bounds);
-          },
-          child: const Text('BoltStar', style: _AuthTextStyles.brandFallback),
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: const [
+            _GradientText('B', style: _LoginPasswordStyles.brand),
+            Padding(
+              padding: EdgeInsets.only(left: 1, right: 1, top: 2),
+              child: _BoltOIcon(),
+            ),
+            _GradientText('ltStar', style: _LoginPasswordStyles.brand),
+          ],
         );
       },
     );
   }
 }
 
-class _PillTextField extends StatelessWidget {
-  const _PillTextField({
+class _GradientText extends StatelessWidget {
+  const _GradientText(this.text, {required this.style});
+
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    return ShaderMask(
+      blendMode: BlendMode.srcIn,
+      shaderCallback: (bounds) {
+        return const LinearGradient(
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+          colors: [Color(0xFFFEA24C), Color(0xFFFF5B1F)],
+        ).createShader(bounds);
+      },
+      child: Text(text, style: style),
+    );
+  }
+}
+
+class _BoltOIcon extends StatelessWidget {
+  const _BoltOIcon();
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(size: const Size(21, 21), painter: _BoltOIconPainter());
+  }
+}
+
+class _BoltOIconPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final circlePaint = Paint()
+      ..shader = const LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [Color(0xFFFFA24A), Color(0xFFFF5B1F)],
+      ).createShader(rect);
+    canvas.drawOval(rect, circlePaint);
+
+    final boltPath = Path()
+      ..moveTo(size.width * 0.56, size.height * 0.14)
+      ..lineTo(size.width * 0.28, size.height * 0.56)
+      ..lineTo(size.width * 0.48, size.height * 0.56)
+      ..lineTo(size.width * 0.39, size.height * 0.88)
+      ..lineTo(size.width * 0.74, size.height * 0.42)
+      ..lineTo(size.width * 0.53, size.height * 0.42)
+      ..close();
+    canvas.drawPath(boltPath, Paint()..color = Colors.white);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _LoginInputField extends StatelessWidget {
+  const _LoginInputField({
     required this.controller,
     required this.hintText,
     required this.icon,
     required this.keyboardType,
-    required this.textInputAction,
     required this.showError,
     this.obscureText = false,
     this.trailing,
-    this.onSubmitted,
   });
 
   final TextEditingController controller;
   final String hintText;
   final IconData icon;
   final TextInputType keyboardType;
-  final TextInputAction textInputAction;
   final bool showError;
   final bool obscureText;
   final Widget? trailing;
-  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -492,6 +486,7 @@ class _PillTextField extends StatelessWidget {
         borderRadius: BorderRadius.circular(71),
         border: Border.all(
           color: showError ? const Color(0xFFFF3B3B) : Colors.transparent,
+          width: 1,
         ),
       ),
       child: Padding(
@@ -504,19 +499,15 @@ class _PillTextField extends StatelessWidget {
               child: TextField(
                 controller: controller,
                 keyboardType: keyboardType,
-                textInputAction: textInputAction,
                 obscureText: obscureText,
-                onSubmitted: onSubmitted,
                 cursorColor: const Color(0xFFEB5F1B),
-                style: _AuthTextStyles.input,
-                decoration:
-                    const InputDecoration(
-                      isCollapsed: true,
-                      border: InputBorder.none,
-                    ).copyWith(
-                      hintText: hintText,
-                      hintStyle: _AuthTextStyles.inputHint,
-                    ),
+                style: _LoginPasswordStyles.input,
+                decoration: InputDecoration(
+                  isCollapsed: true,
+                  border: InputBorder.none,
+                  hintText: hintText,
+                  hintStyle: _LoginPasswordStyles.inputHint,
+                ),
               ),
             ),
             if (trailing != null) ...[const SizedBox(width: 8), trailing!],
@@ -527,8 +518,8 @@ class _PillTextField extends StatelessWidget {
   }
 }
 
-class _ErrorText extends StatelessWidget {
-  const _ErrorText({required this.text});
+class _LoginErrorText extends StatelessWidget {
+  const _LoginErrorText({required this.text});
 
   final String text;
 
@@ -543,14 +534,14 @@ class _ErrorText extends StatelessWidget {
           size: 16,
         ),
         const SizedBox(width: 6),
-        Text(text, style: _AuthTextStyles.error),
+        Text(text, style: _LoginPasswordStyles.error),
       ],
     );
   }
 }
 
-class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.onPressed});
+class _LoginPrimaryButton extends StatelessWidget {
+  const _LoginPrimaryButton({required this.onPressed});
 
   final VoidCallback onPressed;
 
@@ -579,7 +570,7 @@ class _PrimaryButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(71),
           onTap: onPressed,
           child: const Center(
-            child: Text('登 录', style: _AuthTextStyles.button),
+            child: Text('登 录', style: _LoginPasswordStyles.button),
           ),
         ),
       ),
@@ -588,9 +579,9 @@ class _PrimaryButton extends StatelessWidget {
 }
 
 class _RegisterPrompt extends StatelessWidget {
-  const _RegisterPrompt({required this.onRegister});
+  const _RegisterPrompt({this.onRegister});
 
-  final VoidCallback onRegister;
+  final VoidCallback? onRegister;
 
   @override
   Widget build(BuildContext context) {
@@ -608,15 +599,15 @@ class _RegisterPrompt extends StatelessWidget {
               ),
             ],
           ),
-          style: _AuthTextStyles.register,
+          style: _LoginPasswordStyles.register,
         ),
       ),
     );
   }
 }
 
-class _AgreementRow extends StatelessWidget {
-  const _AgreementRow({required this.agreed, required this.onChanged});
+class _AgreementText extends StatelessWidget {
+  const _AgreementText({required this.agreed, required this.onChanged});
 
   final bool agreed;
   final VoidCallback onChanged;
@@ -628,10 +619,12 @@ class _AgreementRow extends StatelessWidget {
       onTap: onChanged,
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 16,
             height: 16,
+            margin: const EdgeInsets.only(top: 1),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: agreed ? const Color(0xFFEB5F1B) : Colors.transparent,
@@ -639,6 +632,7 @@ class _AgreementRow extends StatelessWidget {
                 color: agreed
                     ? const Color(0xFFEB5F1B)
                     : const Color(0xFF8C9092),
+                width: 1,
               ),
             ),
             child: agreed
@@ -662,7 +656,7 @@ class _AgreementRow extends StatelessWidget {
               ],
             ),
             maxLines: 1,
-            style: _AuthTextStyles.agreement,
+            style: _LoginPasswordStyles.agreement,
           ),
         ],
       ),
@@ -670,35 +664,8 @@ class _AgreementRow extends StatelessWidget {
   }
 }
 
-class _HomeIndicator extends StatelessWidget {
-  const _HomeIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: 120,
-      bottom: 8,
-      width: 135,
-      height: 5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(100),
-        ),
-      ),
-    );
-  }
-}
-
-class _AuthTextStyles {
-  const _AuthTextStyles._();
-
-  static const status = TextStyle(
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1,
-  );
+class _LoginPasswordStyles {
+  const _LoginPasswordStyles._();
 
   static const title = TextStyle(
     color: Color(0xFF2A2B2B),
@@ -707,7 +674,7 @@ class _AuthTextStyles {
     height: 1.18,
   );
 
-  static const brandFallback = TextStyle(
+  static const brand = TextStyle(
     fontSize: 30,
     fontStyle: FontStyle.italic,
     fontWeight: FontWeight.w800,
@@ -723,14 +690,14 @@ class _AuthTextStyles {
 
   static const inputHint = TextStyle(
     color: Color(0x992A2B2B),
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: FontWeight.w400,
     height: 1.2,
   );
 
   static const input = TextStyle(
     color: Color(0xFF2A2B2B),
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: FontWeight.w400,
     height: 1.2,
   );

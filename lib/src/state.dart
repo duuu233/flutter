@@ -233,7 +233,6 @@ class PhotoFrameState extends ChangeNotifier {
   PhotoFrameState.seeded()
     : _language = AppLanguage.zh,
       _cameraCounter = 4,
-      _lastSentCode = '',
       _isLoggedIn = true,
       _currentUser = UserProfile(
         id: 'USR-2048',
@@ -251,10 +250,10 @@ class PhotoFrameState extends ChangeNotifier {
       _devices = [
         DeviceItem(
           id: 'dev-aurora',
-          name: 'Aurora S1',
+          name: '房间相册',
           kind: '5.89寸六色墨水屏',
           screenType: FrameScreenType.inch589,
-          batteryLevel: 78,
+          batteryLevel: 30,
           charging: false,
           connected: true,
           role: DeviceRole.owner,
@@ -270,7 +269,7 @@ class PhotoFrameState extends ChangeNotifier {
         ),
         DeviceItem(
           id: 'dev-gallery',
-          name: 'Gallery Loop',
+          name: '卧室相框',
           kind: '7.3寸六色墨水屏',
           screenType: FrameScreenType.inch73,
           batteryLevel: 43,
@@ -289,7 +288,7 @@ class PhotoFrameState extends ChangeNotifier {
         ),
         DeviceItem(
           id: 'dev-pocket',
-          name: 'Pocket Frame',
+          name: '书房相框',
           kind: '3.7寸六色墨水屏',
           screenType: FrameScreenType.inch37,
           batteryLevel: 91,
@@ -468,7 +467,6 @@ class PhotoFrameState extends ChangeNotifier {
 
   AppLanguage _language;
   int _cameraCounter;
-  String _lastSentCode;
   bool _isLoggedIn;
   UserProfile _currentUser;
   final Map<PermissionKind, bool> _permissions;
@@ -718,35 +716,10 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 发送邮箱验证码的业务入口。
+  /// 邮箱密码登录入口。
   ///
-  /// 目前使用固定演示验证码；接入后端时保持返回 `ActionFeedback`，页面层就不需要改交互逻辑。
-  ActionFeedback sendEmailCode(String email) {
-    if (!_isValidEmail(email)) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '请输入有效的邮箱地址。',
-          en: 'Enter a valid email address.',
-          ja: '有効なメールアドレスを入力してください。',
-        ),
-      );
-    }
-    _lastSentCode = '246810';
-    return ActionFeedback(
-      success: true,
-      message: tr(
-        zh: '验证码已发送，演示验证码为 246810。',
-        en: 'Verification code sent. Demo code: 246810.',
-        ja: '認証コードを送信しました。デモコードは 246810 です。',
-      ),
-    );
-  }
-
-  /// 邮箱验证码登录/注册入口。
-  ///
-  /// 这里负责更新登录态和当前用户邮箱，调用方只消费成功/失败消息。
-  ActionFeedback loginWithEmail(String email, String code) {
+  /// 当前演示工程只做前端格式和非空校验；接入真实账号体系时替换这里的密码校验即可。
+  ActionFeedback loginWithPassword(String email, String password) {
     if (!_isValidEmail(email)) {
       return ActionFeedback(
         success: false,
@@ -757,25 +730,26 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    if (code != _lastSentCode || code.isEmpty) {
+    if (password.trim().isEmpty) {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '验证码错误，请先发送验证码后再登录。',
-          en: 'Wrong verification code. Send a code first.',
-          ja: '認証コードが正しくありません。先に送信してください。',
+          zh: '密码不能为空。',
+          en: 'Password cannot be empty.',
+          ja: 'パスワードは必須です。',
         ),
       );
     }
+
     _isLoggedIn = true;
-    _currentUser.email = email;
+    _currentUser.email = email.trim();
     notifyListeners();
     return ActionFeedback(
       success: true,
       message: tr(
-        zh: '邮箱登录成功，已同步到个人资料。',
-        en: 'Email login succeeded and profile updated.',
-        ja: 'メールログインに成功し、プロフィールに反映しました。',
+        zh: '登录成功，已同步到个人资料。',
+        en: 'Login succeeded and profile updated.',
+        ja: 'ログインに成功し、プロフィールに反映しました。',
       ),
     );
   }

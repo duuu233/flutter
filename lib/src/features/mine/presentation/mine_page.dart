@@ -132,7 +132,7 @@ class MinePage extends StatelessWidget {
               SectionHeader(
                 title: state.tr(zh: '账户与资料', en: 'Account', ja: 'アカウント'),
                 subtitle: state.tr(
-                  zh: '邮箱验证码登录、个人信息和头像管理。',
+                  zh: '邮箱密码登录、个人信息和头像管理。',
                   en: 'Email verification, profile and avatar management.',
                   ja: 'メール認証、プロフィール、アバター管理。',
                 ),
