@@ -26,6 +26,12 @@ class AppShell extends StatelessWidget {
         body: HomePage(state: state, onOpenMine: () => onIndexChanged(1)),
       );
     }
+    if (currentIndex == 1) {
+      return Scaffold(
+        backgroundColor: Colors.white,
+        body: MinePage(state: state, onOpenHome: () => onIndexChanged(0)),
+      );
+    }
 
     return Scaffold(
       extendBody: false,
@@ -36,11 +42,8 @@ class AppShell extends StatelessWidget {
           SafeArea(
             bottom: false,
             child: IndexedStack(
-              index: currentIndex - 1,
-              children: [
-                MinePage(state: state),
-                DemoPage(state: state),
-              ],
+              index: currentIndex - 2,
+              children: [DemoPage(state: state)],
             ),
           ),
         ],
