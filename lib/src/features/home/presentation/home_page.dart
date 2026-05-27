@@ -933,7 +933,7 @@ class _HomeBackground extends StatelessWidget {
           width: 376,
           height: 812,
           child: _AssetImage(
-            path: 'assets/images/login_bg_image_5130.png',
+            path: 'assets/images/bg02.png',
             fallback: _SoftBackgroundPainterWidget(),
           ),
         ),

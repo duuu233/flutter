@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
@@ -171,7 +172,7 @@ class _AuthCanvas extends StatelessWidget {
             child: _PillTextField(
               controller: emailController,
               hintText: '请输入邮箱',
-              icon: Icons.mail_outline_rounded,
+              iconAsset: 'assets/images/email-icon.svg',
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               showError: showErrors,
@@ -188,7 +189,7 @@ class _AuthCanvas extends StatelessWidget {
             child: _PillTextField(
               controller: passwordController,
               hintText: '请输入密码',
-              icon: Icons.verified_user_outlined,
+              iconAsset: 'assets/images/password-icon.svg',
               keyboardType: TextInputType.visiblePassword,
               textInputAction: TextInputAction.done,
               obscureText: !passwordVisible,
@@ -253,7 +254,7 @@ class _LoginBackground extends StatelessWidget {
     return const ColoredBox(
       color: Color(0xFFF7FAFF),
       child: _AssetImageWithFallback(
-        assetPath: 'assets/images/login_bg_image_5130.png',
+        assetPath: 'assets/images/bg02.png',
         fallback: _LoginBackgroundFallback(),
       ),
     );
@@ -363,7 +364,7 @@ class _TitleGroup extends StatelessWidget {
           children: [
             Text('欢迎使用', style: _AuthTextStyles.title),
             SizedBox(width: 6),
-            _BoltStarWordmark(),
+            _PositionedBoltStarWordmark(),
           ],
         ),
         SizedBox(height: 12),
@@ -373,30 +374,62 @@ class _TitleGroup extends StatelessWidget {
   }
 }
 
-class _BoltStarWordmark extends StatelessWidget {
-  const _BoltStarWordmark();
+class _PositionedBoltStarWordmark extends StatelessWidget {
+  const _PositionedBoltStarWordmark();
+
+  static const double _logoLeft = 0;
+  static const double _logoTop = 4;
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      'assets/images/logo.png',
-      width: 130,
-      height: 32,
-      fit: BoxFit.contain,
-      alignment: Alignment.centerLeft,
-      errorBuilder: (context, error, stackTrace) {
-        return ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) {
-            return const LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [Color(0xFFFEA24C), Color(0xFFFF5B1F)],
-            ).createShader(bounds);
-          },
-          child: const Text('BoltStar', style: _AuthTextStyles.brandFallback),
-        );
-      },
+    return SizedBox(
+      width: _BoltStarWordmark.logoWidth,
+      height: _BoltStarWordmark.logoHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: const [
+          Positioned(
+            left: _logoLeft,
+            top: _logoTop,
+            child: _BoltStarWordmark(),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BoltStarWordmark extends StatelessWidget {
+  const _BoltStarWordmark();
+
+  static const double logoWidth = 130;
+  static const double logoHeight = 32;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: logoWidth,
+      height: logoHeight,
+      child: Image.asset(
+        'assets/images/logo.png',
+        width: logoWidth,
+        height: logoHeight,
+        fit: BoxFit.contain,
+        alignment: Alignment.centerLeft,
+        errorBuilder: (context, error, stackTrace) {
+          return ShaderMask(
+            blendMode: BlendMode.srcIn,
+            shaderCallback: (bounds) {
+              return const LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [Color(0xFFFEA24C), Color(0xFFFF5B1F)],
+              ).createShader(bounds);
+            },
+            child: const Text('BoltStar', style: _AuthTextStyles.brandFallback),
+          );
+        },
+      ),
     );
   }
 }
@@ -405,7 +438,7 @@ class _PillTextField extends StatelessWidget {
   const _PillTextField({
     required this.controller,
     required this.hintText,
-    required this.icon,
+    required this.iconAsset,
     required this.keyboardType,
     required this.textInputAction,
     required this.showError,
@@ -417,7 +450,7 @@ class _PillTextField extends StatelessWidget {
 
   final TextEditingController controller;
   final String hintText;
-  final IconData icon;
+  final String iconAsset;
   final TextInputType keyboardType;
   final TextInputAction textInputAction;
   final bool showError;
@@ -439,7 +472,7 @@ class _PillTextField extends StatelessWidget {
         padding: const EdgeInsets.only(left: 24, right: 25),
         child: Row(
           children: [
-            Icon(icon, color: const Color(0xFFFF5B1F), size: 21),
+            SvgPicture.asset(iconAsset, width: 24, height: 24),
             const SizedBox(width: 14),
             Expanded(
               child: TextField(
@@ -453,7 +486,15 @@ class _PillTextField extends StatelessWidget {
                 decoration:
                     const InputDecoration(
                       isCollapsed: true,
+                      filled: false,
+                      fillColor: Colors.transparent,
+                      hoverColor: Colors.transparent,
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
                     ).copyWith(
                       hintText: hintText,
                       hintStyle: _AuthTextStyles.inputHint,

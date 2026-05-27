@@ -177,7 +177,7 @@ class _MineBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Image.asset(
-      'assets/images/login_bg_image_5130.png',
+      'assets/images/bg02.png',
       width: 375,
       height: 812,
       fit: BoxFit.cover,
