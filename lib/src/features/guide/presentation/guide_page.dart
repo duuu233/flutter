@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../state.dart';
-import '../../figma_generated/presentation/widgets/figma_common.dart';
+import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 操作指南页面，对应 UI 稿「操作指南」：搜索框 + 可展开的常见问题列表。
 class GuidePage extends StatefulWidget {

@@ -1,13 +1,41 @@
 import 'package:flutter/material.dart';
 
+import '../features/account/presentation/auth_page.dart';
+import '../features/account/presentation/bind_email_complete_page.dart';
+import '../features/account/presentation/bind_email_incomplete_page.dart';
+import '../features/account/presentation/forgot_password.dart';
+import '../features/account/presentation/modify_email_page.dart';
+import '../features/account/presentation/modify_password.dart';
+import '../features/account/presentation/profile_bound_email_page.dart';
+import '../features/account/presentation/profile_page.dart';
+import '../features/account/presentation/profile_unbound_email_page.dart';
+import '../features/account/presentation/register_page.dart';
 import '../features/album/presentation/album_page.dart';
-import '../features/auth/presentation/auth_page.dart';
+import '../features/cast/presentation/cast_failed_page.dart';
+import '../features/cast/presentation/cast_management_figma_page.dart';
 import '../features/cast/presentation/cast_management_page.dart';
+import '../features/cast/presentation/cast_success_page.dart';
+import '../features/cast/presentation/casting_progress_page.dart';
+import '../features/cast/presentation/photo_preview_adjust_image_page.dart';
+import '../features/cast/presentation/photo_preview_saved_page.dart';
+import '../features/devices/presentation/bind_device_found.dart';
+import '../features/devices/presentation/bind_device_not_found.dart';
+import '../features/devices/presentation/bind_device_scan_help.dart';
+import '../features/devices/presentation/bind_device_searching.dart';
+import '../features/devices/presentation/carousel_settings_page.dart';
+import '../features/devices/presentation/device_clear_confirm_page.dart';
+import '../features/devices/presentation/device_delete_confirm_page.dart';
+import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
-import '../features/figma_generated/figma_generated_pages.dart';
+import '../features/devices/presentation/my_devices_page.dart';
+import '../features/gallery/presentation/gallery_page.dart';
 import '../features/guide/presentation/guide_page.dart';
-import '../features/mine/presentation/profile_page.dart';
+import '../features/home/presentation/home_device_pages.dart';
+import '../features/settings/presentation/language_settings_page.dart';
+import '../features/settings/presentation/privacy_policy_page.dart';
 import '../features/settings/presentation/settings_page.dart';
+import '../features/settings/presentation/update_boltstar_page.dart';
+import '../features/settings/presentation/user_agreement_page.dart';
 import '../state.dart';
 
 /// 统一维护 App 内部命名路由。
@@ -25,11 +53,8 @@ class AppRoutes {
   static const guide = '/guide';
   static const settings = '/settings';
   static const figmaForgotPassword = '/figma/forgot-password';
-  static const figmaLoginPassword = '/figma/login-password';
-  static const figmaLoginPasswordError = '/figma/login-password/error';
   static const figmaModifyPassword = '/figma/modify-password';
   static const figmaRegister = '/figma/register';
-  static const figmaWechatLogin = '/figma/wechat-login';
   static const figmaGallery = '/figma/gallery';
   static const figmaCastManagement = '/figma/cast/management';
   static const figmaHomeUnbound = '/figma/home/unbound';
@@ -96,12 +121,6 @@ class AppRoutes {
       case AppRoutes.figmaForgotPassword:
         builder = (_) => const ForgotPassword();
         break;
-      case AppRoutes.figmaLoginPassword:
-        builder = (_) => const LoginPasswordPage();
-        break;
-      case AppRoutes.figmaLoginPasswordError:
-        builder = (_) => const LoginPasswordPage(initialShowErrors: true);
-        break;
       case AppRoutes.figmaModifyPassword:
         builder = (_) => const ModifyPassword();
         break;
@@ -110,9 +129,6 @@ class AppRoutes {
           onRegistered: () => Navigator.maybePop(context),
           onBackToLogin: () => Navigator.maybePop(context),
         );
-        break;
-      case AppRoutes.figmaWechatLogin:
-        builder = (_) => const WechatLoginPage();
         break;
       case AppRoutes.figmaGallery:
         builder = (_) => GalleryPage(state: state);

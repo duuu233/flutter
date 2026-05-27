@@ -146,14 +146,10 @@ class MinePage extends StatelessWidget {
                       },
                     ),
                   ),
+
                   const Positioned(
                     left: 24,
-                    top: 620,
-                    child: Text('调试入口', style: _MineTextStyles.sectionTitle),
-                  ),
-                  const Positioned(
-                    left: 24,
-                    top: 650,
+                    top: 600,
                     width: 327,
                     child: _DebugEntryRow(),
                   ),
@@ -467,18 +463,8 @@ class _DebugEntryRow extends StatelessWidget {
       spacing: 10,
       runSpacing: 10,
       children: [
-        _DebugChip(
-          label: '创建账户',
-          route: AppRoutes.figmaRegister,
-        ),
-        _DebugChip(
-          label: '微信登录',
-          route: AppRoutes.figmaWechatLogin,
-        ),
-        _DebugChip(
-          label: '邮箱登录',
-          route: AppRoutes.figmaLoginPassword,
-        ),
+        _DebugChip(label: '创建账户', route: AppRoutes.figmaRegister),
+        _DebugChip(label: '邮箱登录', route: AppRoutes.auth),
       ],
     );
   }

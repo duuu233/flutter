@@ -6,6 +6,7 @@ import '../../home/presentation/home_page.dart';
 import '../../mine/presentation/mine_page.dart';
 import '../../demo/presentation/demo_page.dart';
 
+/// 应用主框架壳层：通过底部导航在「首页 / 我的 / Demo」之间切换。
 class AppShell extends StatelessWidget {
   const AppShell({
     super.key,

@@ -4,6 +4,7 @@ import '../../../../device/frame_device_protocol.dart';
 import '../../../../shared/shared.dart';
 import '../../../../state.dart';
 
+/// 投屏预览底部弹层（非独立页面）：投屏前预览并确认照片效果。
 class CastPreviewSheet extends StatefulWidget {
   const CastPreviewSheet({super.key, required this.state, required this.draft});
 

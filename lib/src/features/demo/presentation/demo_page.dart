@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../shared/shared.dart';
 import '../../../state.dart';
 
+/// Demo 演示页：用于试验图片裁剪 / 编辑等能力的调试页面。
 class DemoPage extends StatefulWidget {
   const DemoPage({super.key, required this.state});
 

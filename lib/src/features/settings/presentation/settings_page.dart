@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
-import '../../figma_generated/presentation/widgets/figma_common.dart';
+import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 设置页面，对应 UI 稿「设置」。
 ///

@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
-import '../../../features/figma_generated/figma_generated_pages.dart';
 import '../../../routes/app_routes.dart';
+import 'my_devices_page.dart';
 import '../../../state.dart';
 
+/// 设备页：展示已绑定的相框设备，并提供进入设备相关页面的入口。
 class DevicesPage extends StatelessWidget {
   const DevicesPage({super.key, required this.state});
 

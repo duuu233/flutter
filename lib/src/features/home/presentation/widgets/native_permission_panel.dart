@@ -4,6 +4,7 @@ import '../../../../native_device_api.dart';
 import '../../../../shared/shared.dart';
 import '../../../../state.dart';
 
+/// 原生权限申请面板（非独立页面）：引导用户授予相机 / 相册等系统权限。
 class NativePermissionPanel extends StatefulWidget {
   const NativePermissionPanel({super.key, required this.state});
 

@@ -3,6 +3,7 @@
 import '../../../shared/shared.dart';
 import '../../../state.dart';
 
+/// 投屏管理页：查看与管理历史投屏记录。
 class CastManagementPage extends StatelessWidget {
   const CastManagementPage({super.key, required this.state});
 

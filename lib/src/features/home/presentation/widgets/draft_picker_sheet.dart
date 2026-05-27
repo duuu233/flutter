@@ -3,6 +3,7 @@
 import '../../../../shared/shared.dart';
 import '../../../../state.dart';
 
+/// 草稿选择底部弹层（非独立页面）：从首页选择待投屏的照片草稿。
 class DraftPickerSheet extends StatelessWidget {
   const DraftPickerSheet({super.key, required this.state});
 

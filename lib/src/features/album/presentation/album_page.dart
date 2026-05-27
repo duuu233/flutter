@@ -3,6 +3,7 @@
 import '../../../shared/shared.dart';
 import '../../../state.dart';
 
+/// 相册页：浏览与管理本地照片，作为投屏图片的来源。
 class AlbumPage extends StatefulWidget {
   const AlbumPage({super.key, required this.state});
 

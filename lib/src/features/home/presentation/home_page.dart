@@ -8,6 +8,7 @@ import 'widgets/cast_preview_sheet.dart';
 
 enum _HomeBindMode { none, searching, notFound, found }
 
+/// 首页：App 主页面，承载设备绑定与投屏的核心流程。
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.state, required this.onOpenMine});
 
