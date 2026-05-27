@@ -67,9 +67,11 @@ class MinePage extends StatelessWidget {
                       fallbackIcon: Icons.photo_size_select_actual_outlined,
                       fallbackColor: const Color(0xFFFF6A24),
                       title: '我的图库',
-                      subtitle: '102张照片',
+                      subtitle: '${state.totalPhotoCount}张照片',
                       onTap: () {
-                        Navigator.of(context).pushNamed<void>(AppRoutes.album);
+                        Navigator.of(
+                          context,
+                        ).pushNamed<void>(AppRoutes.figmaGallery);
                       },
                     ),
                   ),
@@ -105,7 +107,7 @@ class MinePage extends StatelessWidget {
                       onTap: () {
                         Navigator.of(
                           context,
-                        ).pushNamed<void>(AppRoutes.castManagement);
+                        ).pushNamed<void>(AppRoutes.figmaCastManagement);
                       },
                     ),
                   ),
@@ -143,6 +145,17 @@ class MinePage extends StatelessWidget {
                         ).pushNamed<void>(AppRoutes.settings);
                       },
                     ),
+                  ),
+                  const Positioned(
+                    left: 24,
+                    top: 620,
+                    child: Text('调试入口', style: _MineTextStyles.sectionTitle),
+                  ),
+                  const Positioned(
+                    left: 24,
+                    top: 650,
+                    width: 327,
+                    child: _DebugEntryRow(),
                   ),
                   Positioned(
                     left: 24,
@@ -437,6 +450,67 @@ class _ServiceRow extends StatelessWidget {
                 size: 22,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 临时调试入口：用于在首页 / 我的页未提供入口的页面，方便直接进入调试。
+class _DebugEntryRow extends StatelessWidget {
+  const _DebugEntryRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 10,
+      runSpacing: 10,
+      children: [
+        _DebugChip(
+          label: '创建账户',
+          route: AppRoutes.figmaRegister,
+        ),
+        _DebugChip(
+          label: '微信登录',
+          route: AppRoutes.figmaWechatLogin,
+        ),
+        _DebugChip(
+          label: '邮箱登录',
+          route: AppRoutes.figmaLoginPassword,
+        ),
+      ],
+    );
+  }
+}
+
+class _DebugChip extends StatelessWidget {
+  const _DebugChip({required this.label, required this.route});
+
+  final String label;
+  final String route;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).pushNamed<void>(route),
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(17),
+          border: Border.all(color: const Color(0x33FF6A24)),
+        ),
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: Color(0xFFFF6A24),
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            height: 1.2,
           ),
         ),
       ),

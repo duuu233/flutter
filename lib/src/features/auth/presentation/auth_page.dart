@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../routes/app_routes.dart';
 import '../../../state.dart';
 
 /// 邮箱密码登录页。
@@ -126,7 +127,7 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   void _register() {
-    _showFeedback('请使用邮箱和密码完成注册');
+    Navigator.of(context).pushNamed<void>(AppRoutes.figmaRegister);
   }
 
   void _showFeedback(String message) {

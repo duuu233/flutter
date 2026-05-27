@@ -28,6 +28,10 @@ class AppRoutes {
   static const figmaLoginPassword = '/figma/login-password';
   static const figmaLoginPasswordError = '/figma/login-password/error';
   static const figmaModifyPassword = '/figma/modify-password';
+  static const figmaRegister = '/figma/register';
+  static const figmaWechatLogin = '/figma/wechat-login';
+  static const figmaGallery = '/figma/gallery';
+  static const figmaCastManagement = '/figma/cast/management';
   static const figmaHomeUnbound = '/figma/home/unbound';
   static const figmaHomeUnboundBindNow = '/figma/home/unbound/bind-now';
   static const figmaHomeUnboundReconnect = '/figma/home/unbound/reconnect';
@@ -100,6 +104,21 @@ class AppRoutes {
         break;
       case AppRoutes.figmaModifyPassword:
         builder = (_) => const ModifyPassword();
+        break;
+      case AppRoutes.figmaRegister:
+        builder = (context) => RegisterPage(
+          onRegistered: () => Navigator.maybePop(context),
+          onBackToLogin: () => Navigator.maybePop(context),
+        );
+        break;
+      case AppRoutes.figmaWechatLogin:
+        builder = (_) => const WechatLoginPage();
+        break;
+      case AppRoutes.figmaGallery:
+        builder = (_) => GalleryPage(state: state);
+        break;
+      case AppRoutes.figmaCastManagement:
+        builder = (_) => CastManagementFigmaPage(state: state);
         break;
       case AppRoutes.figmaHomeUnbound:
         builder = (_) => const FigmaHomeUnboundDevicePage();

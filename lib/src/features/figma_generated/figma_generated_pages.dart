@@ -1,11 +1,15 @@
 export 'presentation/account/forgot_password.dart';
 export 'presentation/account/login_password_page.dart';
 export 'presentation/account/modify_password.dart';
+export 'presentation/account/register_page.dart';
+export 'presentation/account/wechat_login_page.dart';
 export 'presentation/cast/cast_failed_page.dart';
+export 'presentation/cast/cast_management_figma_page.dart';
 export 'presentation/cast/cast_success_page.dart';
 export 'presentation/cast/casting_progress_page.dart';
 export 'presentation/cast/photo_preview_adjust_image_page.dart';
 export 'presentation/cast/photo_preview_saved_page.dart';
+export 'presentation/gallery/gallery_page.dart';
 export 'presentation/devices/bind_device_found.dart';
 export 'presentation/devices/bind_device_not_found.dart';
 export 'presentation/devices/bind_device_scan_help.dart';

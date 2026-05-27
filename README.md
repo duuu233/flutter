@@ -1,4 +1,4 @@
-# FrameFlow Flutter Demo
+# BoltStar Flutter Demo
 
 基于图片需求表实现的 Flutter 移动端原型，覆盖：
 

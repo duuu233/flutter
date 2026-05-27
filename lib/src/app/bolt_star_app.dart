@@ -9,14 +9,14 @@ import 'app_theme.dart';
 ///
 /// 这里集中创建全局业务状态、挂载主题、配置首页壳层和命名路由。
 /// 具体页面不要再各自创建 `PhotoFrameState`，统一从这里向下传递。
-class FrameFlowApp extends StatefulWidget {
-  const FrameFlowApp({super.key});
+class BoltStarApp extends StatefulWidget {
+  const BoltStarApp({super.key});
 
   @override
-  State<FrameFlowApp> createState() => _FrameFlowAppState();
+  State<BoltStarApp> createState() => _BoltStarAppState();
 }
 
-class _FrameFlowAppState extends State<FrameFlowApp> {
+class _BoltStarAppState extends State<BoltStarApp> {
   final PhotoFrameState _state = PhotoFrameState.seeded();
   int _currentIndex = 0;
 
@@ -33,7 +33,7 @@ class _FrameFlowAppState extends State<FrameFlowApp> {
       builder: (context, _) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
-          title: _state.tr(zh: '鐩告鎶曞睆', en: 'Frame Cast', ja: '銉曘儸銉笺儬鎶曞奖'),
+          title: 'BoltStar',
           theme: buildAppTheme(),
           home: AppShell(
             state: _state,

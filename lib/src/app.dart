@@ -1,1 +1,1 @@
-﻿export 'app/frame_flow_app.dart';
+﻿export 'app/bolt_star_app.dart';

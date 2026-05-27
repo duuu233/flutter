@@ -14,5 +14,5 @@ void main() {
       systemNavigationBarDividerColor: Color(0xFFE5DED4),
     ),
   );
-  runApp(const FrameFlowApp());
+  runApp(const BoltStarApp());
 }

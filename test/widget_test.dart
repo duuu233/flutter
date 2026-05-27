@@ -7,7 +7,7 @@ void main() {
   testWidgets('app boots and can switch to mine tab', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const FrameFlowApp());
+    await tester.pumpWidget(const BoltStarApp());
     await tester.pump();
 
     expect(find.byKey(const Key('home-title')), findsOneWidget);
