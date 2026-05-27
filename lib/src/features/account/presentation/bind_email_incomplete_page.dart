@@ -26,48 +26,30 @@ class _BindEmailIncompletePageState extends State<BindEmailIncompletePage> {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '绑定邮箱',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '绑定邮箱'),
+          const SizedBox(height: 12),
+          FigmaAccountFormCard(
+            children: [
+              FigmaAccountField(
+                label: '邮箱',
+                controller: _emailController,
+                hintText: '请输入邮箱地址',
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const FigmaFormDivider(),
+              FigmaVerificationField(
+                controller: _codeController,
+                onGetCode: widget.onGetCode,
+              ),
+            ],
           ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            height: 122,
-            child: FigmaAccountFormCard(
-              children: [
-                FigmaAccountField(
-                  label: '邮箱',
-                  controller: _emailController,
-                  hintText: '请输入邮箱地址',
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const FigmaFormDivider(),
-                FigmaVerificationField(
-                  controller: _codeController,
-                  onGetCode: widget.onGetCode,
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            left: 26,
-            top: 543,
-            width: 323,
-            height: 64,
-            child: const FigmaPrimaryButton(label: '确认绑定', height: 64),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
+      bottom: const FigmaPrimaryButton(label: '确认绑定'),
     );
   }
 }

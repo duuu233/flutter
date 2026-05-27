@@ -35,73 +35,51 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '修改邮箱',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '修改邮箱'),
+          const SizedBox(height: 12),
+          FigmaAccountFormCard(
+            children: [
+              FigmaAccountField(
+                label: '当前邮箱',
+                controller: _currentEmailController,
+                hintText: '',
+                readOnly: true,
+              ),
+              const FigmaFormDivider(),
+              FigmaAccountField(
+                label: '新邮箱',
+                controller: _newEmailController,
+                hintText: '请输入新的邮箱地址',
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const FigmaFormDivider(),
+              FigmaVerificationField(
+                controller: _codeController,
+                onGetCode: widget.onGetCode,
+              ),
+              const FigmaFormDivider(),
+              FigmaAccountField(
+                label: '密码',
+                controller: _passwordController,
+                hintText: '请输入密码',
+                obscureText: true,
+              ),
+              const FigmaFormDivider(),
+              FigmaAccountField(
+                label: '确认密码',
+                controller: _confirmPasswordController,
+                hintText: '请确认密码',
+                obscureText: true,
+              ),
+            ],
           ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            height: 305,
-            child: FigmaAccountFormCard(
-              children: [
-                FigmaAccountField(
-                  label: '当前邮箱',
-                  controller: _currentEmailController,
-                  hintText: '',
-                  readOnly: true,
-                ),
-                const FigmaFormDivider(),
-                FigmaAccountField(
-                  label: '新邮箱',
-                  controller: _newEmailController,
-                  hintText: '请输入新的邮箱地址',
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const FigmaFormDivider(),
-                FigmaVerificationField(
-                  controller: _codeController,
-                  onGetCode: widget.onGetCode,
-                ),
-                const FigmaFormDivider(),
-                FigmaAccountField(
-                  label: '密码',
-                  controller: _passwordController,
-                  hintText: '请输入密码',
-                  obscureText: true,
-                ),
-                const FigmaFormDivider(),
-                FigmaAccountField(
-                  label: '确认密码',
-                  controller: _confirmPasswordController,
-                  hintText: '请确认密码',
-                  obscureText: true,
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            left: 26,
-            top: 543,
-            width: 323,
-            height: 64,
-            child: FigmaPrimaryButton(
-              label: '确认修改',
-              height: 64,
-              onPressed: widget.onConfirm,
-            ),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
+      bottom: FigmaPrimaryButton(label: '确认修改', onPressed: widget.onConfirm),
     );
   }
 }

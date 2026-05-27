@@ -12,18 +12,15 @@ class DeviceClearConfirmPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
-        children: [
-          const DeviceDetailsScene(),
-          Positioned.fill(
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.32)),
-          ),
-          Positioned(
-            left: 24,
-            top: 318,
-            width: 327,
-            height: 188,
+    return Stack(
+      children: [
+        const FigmaScreen(title: '设备详情', body: DeviceDetailsBody()),
+        Positioned.fill(
+          child: ColoredBox(color: Colors.black.withValues(alpha: 0.32)),
+        ),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: _ConfirmDialogCard(
               title: '一键清空',
               message: '将清空设备内所有照片，请谨慎选择是否继续？',
@@ -31,9 +28,8 @@ class DeviceClearConfirmPage extends StatelessWidget {
               onConfirm: onConfirm,
             ),
           ),
-          const FigmaBottomHomeIndicator(),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -61,6 +57,7 @@ class _ConfirmDialogCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(title, style: FigmaTextStyles.pageHeading),
             const SizedBox(height: 16),
@@ -69,7 +66,7 @@ class _ConfirmDialogCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: FigmaTextStyles.bodySmall.copyWith(fontSize: 14),
             ),
-            const Spacer(),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'package:BoltStar/src/shared/widgets/home_figma_common.dart';
 
 enum FigmaHomeUnboundSheet { none, bindNow, reconnect }
@@ -22,17 +21,16 @@ class FigmaHomeUnboundDevicePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaHomePhoneFrame(
-      child: Stack(
-        children: [
-          FigmaHomeScaffoldContent(
-            showBoundDevice: false,
-            onBindDevice: onBindDevice,
-            onCamera: onCamera,
-            onAlbum: onAlbum,
-          ),
-          if (sheet != FigmaHomeUnboundSheet.none)
-            _UnboundNoticeOverlay(
+    return _HomeDeviceScaffold(
+      content: FigmaHomeScaffoldContent(
+        showBoundDevice: false,
+        onBindDevice: onBindDevice,
+        onCamera: onCamera,
+        onAlbum: onAlbum,
+      ),
+      overlay: sheet == FigmaHomeUnboundSheet.none
+          ? null
+          : _UnboundNoticeOverlay(
               title: sheet == FigmaHomeUnboundSheet.bindNow
                   ? '暂未绑定设备'
                   : '设备连接失败',
@@ -44,6 +42,28 @@ class FigmaHomeUnboundDevicePage extends StatelessWidget {
                   : '重新连接',
               onPressed: onBindDevice,
             ),
+    );
+  }
+}
+
+/// 首页系列页面的响应式外壳：全屏背景 + 安全区内容 +（可选）底部弹层。
+class _HomeDeviceScaffold extends StatelessWidget {
+  const _HomeDeviceScaffold({required this.content, this.overlay});
+
+  final Widget content;
+  final Widget? overlay;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      backgroundColor: const Color(0xFFEFF3FA),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const Positioned.fill(child: FigmaHomeBackground()),
+          SafeArea(child: content),
+          ?overlay,
         ],
       ),
     );
@@ -67,19 +87,16 @@ class FigmaHomeBoundDevicePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaHomePhoneFrame(
-      child: Stack(
-        children: [
-          FigmaHomeScaffoldContent(
-            showBoundDevice: true,
-            onAddDevice: onAddDevice,
-            onCamera: onCamera,
-            onAlbum: onAlbum,
-          ),
-          if (showCastSheet)
-            _CastMethodOverlay(onCamera: onCamera, onAlbum: onAlbum),
-        ],
+    return _HomeDeviceScaffold(
+      content: FigmaHomeScaffoldContent(
+        showBoundDevice: true,
+        onAddDevice: onAddDevice,
+        onCamera: onCamera,
+        onAlbum: onAlbum,
       ),
+      overlay: showCastSheet
+          ? _CastMethodOverlay(onCamera: onCamera, onAlbum: onAlbum)
+          : null,
     );
   }
 }
@@ -102,100 +119,132 @@ class FigmaHomeScaffoldContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Positioned.fill(child: FigmaHomeBackground()),
-        const Positioned(left: 0, top: 0, width: 375, child: FigmaStatusBar()),
-        if (showBoundDevice) ...[
-          const Positioned(left: 24, top: 56, child: _UserAvatar()),
-          Positioned(
-            left: 328,
-            top: 58,
-            width: 30,
-            height: 30,
-            child: _AddDeviceButton(onTap: onAddDevice),
-          ),
-          const Positioned(left: 24, top: 136, child: _BoundGreeting()),
-          const Positioned(
-            left: 24,
-            top: 241,
-            width: 327,
-            height: 186,
-            child: _BoundDeviceCard(),
-          ),
-          const Positioned(
-            right: -106,
-            top: 267,
-            width: 154,
-            height: 134,
-            child: _PartialDeviceCard(),
-          ),
-          const Positioned(left: 150, top: 458, child: _CarouselDots()),
-        ] else ...[
-          const Positioned(
-            left: 96,
-            top: 188,
-            width: 185,
-            height: 116,
-            child: FigmaHomeAssetImage(
-              assetPath: 'assets/images/home_unbound_frame_device.png',
-              fallback: _UnboundDeviceFallback(),
-              fit: BoxFit.contain,
+        if (showBoundDevice)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+            child: Row(
+              children: [
+                const _UserAvatar(),
+                const Spacer(),
+                SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: _AddDeviceButton(onTap: onAddDevice),
+                ),
+              ],
             ),
+          )
+        else
+          const SizedBox(height: 12),
+        Expanded(
+          child: showBoundDevice ? _boundMiddle() : _unboundMiddle(),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('选择投屏方式', style: FigmaHomeTextStyles.sectionTitle),
+              const SizedBox(height: 14),
+              _CastMethodCards(onCamera: onCamera, onAlbum: onAlbum),
+            ],
           ),
-          const Positioned(
-            left: 0,
-            top: 349,
-            width: 375,
-            child: Text(
-              '请先绑定相框设备后再投屏照片',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0x992A2B2B),
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-                height: 1.2,
+        ),
+        const SizedBox(height: 20),
+        const Center(child: FigmaHomeBottomNav()),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Widget _boundMiddle() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: const [
+        Padding(
+          padding: EdgeInsets.fromLTRB(24, 16, 24, 0),
+          child: Align(alignment: Alignment.centerLeft, child: _BoundGreeting()),
+        ),
+        SizedBox(height: 16),
+        SizedBox(
+          height: 186,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                right: -106,
+                top: 26,
+                width: 154,
+                height: 134,
+                child: _PartialDeviceCard(),
               ),
-            ),
+              Positioned(
+                left: 24,
+                right: 24,
+                top: 0,
+                height: 186,
+                child: _BoundDeviceCard(),
+              ),
+            ],
           ),
-          Positioned(
-            left: 88,
-            top: 381,
-            width: 200,
+        ),
+        SizedBox(height: 18),
+        Center(child: _CarouselDots()),
+      ],
+    );
+  }
+
+  Widget _unboundMiddle() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const SizedBox(
+          width: 185,
+          height: 116,
+          child: FigmaHomeAssetImage(
+            assetPath: 'assets/images/home_unbound_frame_device.png',
+            fallback: _UnboundDeviceFallback(),
+            fit: BoxFit.contain,
+          ),
+        ),
+        const SizedBox(height: 28),
+        const Text(
+          '请先绑定相框设备后再投屏照片',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Color(0x992A2B2B),
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+            height: 1.2,
+          ),
+        ),
+        const SizedBox(height: 16),
+        SizedBox(
+          width: 200,
+          height: 44,
+          child: FigmaHomePrimaryButton(
+            label: '绑定设备',
             height: 44,
-            child: FigmaHomePrimaryButton(
-              label: '绑定设备',
-              height: 44,
-              fontSize: 16,
-              icon: Container(
-                width: 16,
-                height: 16,
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.bluetooth_rounded,
-                  color: Color(0xFFFF6A24),
-                  size: 14,
-                ),
+            fontSize: 16,
+            icon: Container(
+              width: 16,
+              height: 16,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
               ),
-              onPressed: onBindDevice,
+              child: const Icon(
+                Icons.bluetooth_rounded,
+                color: Color(0xFFFF6A24),
+                size: 14,
+              ),
             ),
+            onPressed: onBindDevice,
           ),
-        ],
-        const Positioned(
-          left: 24,
-          top: 498,
-          child: Text('选择投屏方式', style: FigmaHomeTextStyles.sectionTitle),
         ),
-        Positioned(
-          left: 24,
-          top: 524,
-          child: _CastMethodCards(onCamera: onCamera, onAlbum: onAlbum),
-        ),
-        const Positioned(left: 24, top: 730, child: FigmaHomeBottomNav()),
-        const FigmaBottomHomeIndicator(),
       ],
     );
   }
@@ -255,77 +304,65 @@ class _UnboundNoticeOverlay extends StatelessWidget {
         Positioned.fill(
           child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
         ),
-        Positioned(
-          left: 0,
-          top: 562,
-          width: 375,
-          height: 250,
+        Align(
+          alignment: Alignment.bottomCenter,
           child: DecoratedBox(
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            child: Stack(
-              children: [
-                Positioned(
-                  right: 31,
-                  top: 26,
-                  width: 22,
-                  height: 22,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 22,
-                      height: 22,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: IconButton(
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 24,
+                          height: 24,
+                        ),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Color(0xFF7E7E7E),
+                          size: 24,
+                        ),
+                        onPressed: () => Navigator.maybePop(context),
+                      ),
                     ),
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: Color(0xFF7E7E7E),
-                      size: 24,
+                    const SizedBox(height: 8),
+                    Text(
+                      title,
+                      textAlign: TextAlign.center,
+                      style: FigmaHomeTextStyles.sheetTitle,
                     ),
-                    onPressed: () => Navigator.maybePop(context),
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  top: 61,
-                  width: 375,
-                  child: Text(
-                    title,
-                    textAlign: TextAlign.center,
-                    style: FigmaHomeTextStyles.sheetTitle,
-                  ),
-                ),
-                Positioned(
-                  left: 0,
-                  top: 103,
-                  width: 375,
-                  child: Text(
-                    subtitle,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(
-                      color: Color(0xCC2A2B2B),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w400,
-                      height: 1.2,
+                    const SizedBox(height: 12),
+                    Text(
+                      subtitle,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xCC2A2B2B),
+                        fontSize: 14,
+                        fontWeight: FontWeight.w400,
+                        height: 1.2,
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 24),
+                    FigmaHomePrimaryButton(
+                      label: buttonLabel,
+                      onPressed: onPressed,
+                    ),
+                  ],
                 ),
-                Positioned(
-                  left: 24,
-                  top: 140,
-                  width: 327,
-                  height: 56,
-                  child: FigmaHomePrimaryButton(
-                    label: buttonLabel,
-                    onPressed: onPressed,
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ),
-        const FigmaBottomHomeIndicator(),
       ],
     );
   }
@@ -344,78 +381,76 @@ class _CastMethodOverlay extends StatelessWidget {
         Positioned.fill(
           child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
         ),
-        Positioned(
-          left: 0,
-          top: 459,
-          width: 375,
-          height: 353,
+        Align(
+          alignment: Alignment.bottomCenter,
           child: DecoratedBox(
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            child: Stack(
-              children: [
-                const Positioned(
-                  left: 24,
-                  top: 24,
-                  child: Text('选择投屏方式', style: FigmaHomeTextStyles.sheetTitle),
-                ),
-                Positioned(
-                  left: 24,
-                  top: 73,
-                  child: FigmaCastMethodRow(
-                    title: '拍照',
-                    subtitle: '调用手机相机拍照',
-                    assetPath: 'assets/images/home_camera_entry.png',
-                    accentColor: Color(0xFFFF6A24),
-                    fallbackIcon: const FigmaCameraFallbackIcon(size: 48),
-                    onTap: onCamera,
-                  ),
-                ),
-                Positioned(
-                  left: 24,
-                  top: 147,
-                  child: FigmaCastMethodRow(
-                    title: '相册',
-                    subtitle: '从手机相册选择照片',
-                    assetPath: 'assets/images/home_album_entry.png',
-                    accentColor: Color(0xFF287BFF),
-                    fallbackIcon: const FigmaAlbumFallbackIcon(size: 48),
-                    onTap: onAlbum,
-                  ),
-                ),
-                Positioned(
-                  left: 24,
-                  top: 244,
-                  width: 327,
-                  height: 56,
-                  child: Material(
-                    color: const Color(0xFFEDEDED),
-                    borderRadius: BorderRadius.circular(28),
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(28),
-                      onTap: () => Navigator.maybePop(context),
-                      child: const Center(
-                        child: Text(
-                          '取消',
-                          style: TextStyle(
-                            color: Color(0xFF2A2B2B),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w500,
-                            height: 1.2,
-                            letterSpacing: 2,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '选择投屏方式',
+                        style: FigmaHomeTextStyles.sheetTitle,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    FigmaCastMethodRow(
+                      title: '拍照',
+                      subtitle: '调用手机相机拍照',
+                      assetPath: 'assets/images/home_camera_entry.png',
+                      accentColor: const Color(0xFFFF6A24),
+                      fallbackIcon: const FigmaCameraFallbackIcon(size: 48),
+                      onTap: onCamera,
+                    ),
+                    const SizedBox(height: 12),
+                    FigmaCastMethodRow(
+                      title: '相册',
+                      subtitle: '从手机相册选择照片',
+                      assetPath: 'assets/images/home_album_entry.png',
+                      accentColor: const Color(0xFF287BFF),
+                      fallbackIcon: const FigmaAlbumFallbackIcon(size: 48),
+                      onTap: onAlbum,
+                    ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      height: 56,
+                      child: Material(
+                        color: const Color(0xFFEDEDED),
+                        borderRadius: BorderRadius.circular(28),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(28),
+                          onTap: () => Navigator.maybePop(context),
+                          child: const Center(
+                            child: Text(
+                              '取消',
+                              style: TextStyle(
+                                color: Color(0xFF2A2B2B),
+                                fontSize: 18,
+                                fontWeight: FontWeight.w500,
+                                height: 1.2,
+                                letterSpacing: 2,
+                              ),
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),
-        const FigmaBottomHomeIndicator(),
       ],
     );
   }

@@ -23,25 +23,15 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '轮播设置',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '轮播设置'),
-          ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            height: 252,
-            child: FigmaGlassCard(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
-              child: Column(
+          const SizedBox(height: 12),
+          FigmaGlassCard(
+            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
@@ -96,8 +86,6 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
                 ],
               ),
             ),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
     );

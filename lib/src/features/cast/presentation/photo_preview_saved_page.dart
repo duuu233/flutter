@@ -19,35 +19,50 @@ class PhotoPreviewSavedPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '照片预览',
+      scrollable: false,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '照片预览'),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Stack(
+              children: const [
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Color(0xFFD9D9D9),
+                      borderRadius: BorderRadius.all(Radius.circular(16)),
+                    ),
+                    child: Center(
+                      child: Text(
+                        'Image Placeholder',
+                        style: TextStyle(
+                          color: Color(0xFF737373),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Align(
+                  alignment: Alignment.topCenter,
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 12),
+                    child: SizedBox(
+                      width: 71,
+                      height: 30,
+                      child: _PreviewCounter(label: '10/10'),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-          const Positioned(
-            left: 152,
-            top: 104,
-            width: 71,
-            height: 30,
-            child: _PreviewCounter(label: '10/10'),
-          ),
-          const Positioned(
-            left: 24,
-            top: 150,
-            width: 327,
-            height: 372,
-            child: FigmaImagePlaceholder(width: 327, height: 372),
-          ),
-          Positioned(
-            left: 24,
-            top: 544,
-            width: 327,
+          const SizedBox(height: 16),
+          SizedBox(
             height: 74,
             child: _PhotoToolBar(
               onCrop: onCrop,
@@ -55,16 +70,9 @@ class PhotoPreviewSavedPage extends StatelessWidget {
               onOriginal: onOriginal,
             ),
           ),
-          Positioned(
-            left: 24,
-            top: 705,
-            width: 327,
-            height: 56,
-            child: FigmaPrimaryButton(label: '开始投屏', onPressed: onStartCasting),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
+      bottom: FigmaPrimaryButton(label: '开始投屏', onPressed: onStartCasting),
     );
   }
 }

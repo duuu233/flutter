@@ -66,32 +66,19 @@ class _GuidePageState extends State<GuidePage> {
           i,
     ];
 
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '操作指南',
+      scrollable: false,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '操作指南'),
+          const SizedBox(height: 8),
+          _SearchField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _keyword = value.trim()),
           ),
-          Positioned(
-            left: 24,
-            top: 104,
-            width: 327,
-            height: 44,
-            child: _SearchField(
-              controller: _searchController,
-              onChanged: (value) => setState(() => _keyword = value.trim()),
-            ),
-          ),
-          Positioned(
-            left: 24,
-            top: 168,
-            right: 24,
-            bottom: 24,
+          const SizedBox(height: 16),
+          Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.only(bottom: 16),
               itemCount: items.length,
@@ -112,7 +99,6 @@ class _GuidePageState extends State<GuidePage> {
               },
             ),
           ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
     );

@@ -12,70 +12,48 @@ class BindDeviceNotFound extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '绑定设备',
+      scrollable: false,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: -1,
-            top: 22,
-            width: 378,
-            height: 378,
-            child: FigmaDeviceRadar(state: FigmaRadarState.notFound),
-          ),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '绑定设备'),
-          ),
-          const Positioned(
-            left: 88,
-            top: 333,
-            width: 200,
-            child: Text(
-              '未发现设备',
-              textAlign: TextAlign.center,
-              style: FigmaTextStyles.pageHeading,
+          const Spacer(flex: 2),
+          const Center(
+            child: SizedBox(
+              width: 280,
+              height: 280,
+              child: FigmaDeviceRadar(state: FigmaRadarState.notFound),
             ),
           ),
-          const Positioned(
-            left: 72,
-            top: 368,
-            width: 232,
-            child: Text(
-              '设备连接中断，请检查设备状态后重试',
-              textAlign: TextAlign.center,
-              style: FigmaTextStyles.bodySmall,
-            ),
+          const SizedBox(height: 20),
+          const Text(
+            '未发现设备',
+            textAlign: TextAlign.center,
+            style: FigmaTextStyles.pageHeading,
           ),
-          Positioned(
-            left: 112,
-            top: 665,
-            width: 152,
-            child: _ScanHelpLink(
-              onTap:
-                  onHelp ??
-                  () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (_) => const BindDeviceScanHelp(),
-                      ),
-                    );
-                  },
-            ),
+          const SizedBox(height: 8),
+          const Text(
+            '设备连接中断，请检查设备状态后重试',
+            textAlign: TextAlign.center,
+            style: FigmaTextStyles.bodySmall,
           ),
-          Positioned(
-            left: 24,
-            top: 702,
-            width: 327,
-            height: 56,
-            child: FigmaPrimaryButton(label: '重新扫描', onPressed: onRetry),
+          const Spacer(flex: 3),
+          _ScanHelpLink(
+            onTap:
+                onHelp ??
+                () {
+                  Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const BindDeviceScanHelp(),
+                    ),
+                  );
+                },
           ),
-          const FigmaBottomHomeIndicator(),
+          const SizedBox(height: 16),
         ],
       ),
+      bottom: FigmaPrimaryButton(label: '重新扫描', onPressed: onRetry),
     );
   }
 }

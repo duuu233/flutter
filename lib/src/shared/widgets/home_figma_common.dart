@@ -1,60 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
-const double figmaHomeDesignWidth = 375;
-const double figmaHomeDesignHeight = 812;
-
-/// Figma 首页 / 绑定设备流程的公共组件库（非页面）：首页外框、背景、投屏方式
-/// 卡片、蓝牙雷达、绑定设备卡片等，被首页及绑定相关页面复用。
-class FigmaHomePhoneFrame extends StatelessWidget {
-  const FigmaHomePhoneFrame({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.dark.copyWith(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.white,
-      ),
-      child: Scaffold(
-        resizeToAvoidBottomInset: false,
-        backgroundColor: Colors.white,
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final scale = math.max(
-              constraints.maxWidth / figmaHomeDesignWidth,
-              constraints.maxHeight / figmaHomeDesignHeight,
-            );
-
-            return ClipRect(
-              child: SizedBox.expand(
-                child: OverflowBox(
-                  maxWidth: figmaHomeDesignWidth * scale,
-                  maxHeight: figmaHomeDesignHeight * scale,
-                  child: Transform.scale(
-                    scale: scale,
-                    child: SizedBox(
-                      width: figmaHomeDesignWidth,
-                      height: figmaHomeDesignHeight,
-                      child: child,
-                    ),
-                  ),
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
+/// Figma 首页 / 绑定设备流程的公共组件库（非页面）：背景、投屏方式卡片、
+/// 蓝牙雷达、绑定设备卡片等通用控件，被首页及绑定相关页面复用。
 class FigmaHomeBackground extends StatelessWidget {
   const FigmaHomeBackground({super.key});
 
@@ -596,57 +545,6 @@ class FigmaBluetoothRadar extends StatelessWidget {
                 ),
               ),
             ),
-        ],
-      ),
-    );
-  }
-}
-
-class FigmaBindDeviceTopBar extends StatelessWidget {
-  const FigmaBindDeviceTopBar({super.key, this.onBack});
-
-  final VoidCallback? onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 375,
-      height: 90,
-      child: Stack(
-        children: [
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            child: FigmaStatusBar(),
-          ),
-          Positioned(
-            left: 22,
-            top: 46,
-            width: 34,
-            height: 34,
-            child: Material(
-              color: Colors.white.withValues(alpha: 0.45),
-              shape: const CircleBorder(),
-              child: InkWell(
-                customBorder: const CircleBorder(),
-                onTap: onBack ?? () => Navigator.maybePop(context),
-                child: const Icon(
-                  Icons.arrow_back_rounded,
-                  color: Color(0xFF2A2B2B),
-                  size: 20,
-                ),
-              ),
-            ),
-          ),
-          const Positioned(
-            left: 80,
-            top: 51,
-            width: 215,
-            child: Center(
-              child: Text('绑定设备', style: FigmaHomeTextStyles.navTitle),
-            ),
-          ),
         ],
       ),
     );

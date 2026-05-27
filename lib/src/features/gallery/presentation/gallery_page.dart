@@ -160,103 +160,79 @@ class _GalleryPageState extends State<GalleryPage> {
     final photos = _photos;
     final isEmpty = photos.isEmpty;
 
-    return FigmaPhoneFrame(
-      child: Stack(
-        children: [
-          const FigmaPageBackground(),
-          Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(
-              title: '我的图库',
-              trailing: isEmpty
-                  ? null
-                  : _TopActionButton(
-                      label: _selecting ? '取消' : '选择',
-                      onTap: _toggleSelecting,
-                    ),
+    return FigmaScreen(
+      title: '我的图库',
+      scrollable: false,
+      bodyPadding: EdgeInsets.zero,
+      trailing: isEmpty
+          ? null
+          : _TopActionButton(
+              label: _selecting ? '取消' : '选择',
+              onTap: _toggleSelecting,
             ),
-          ),
-          if (isEmpty)
-            const Positioned(
-              left: 0,
-              top: 90,
-              width: 375,
-              height: 722,
-              child: _GalleryEmptyState(),
-            )
-          else ...[
-            Positioned(
-              left: 24,
-              top: 100,
-              width: 327,
-              height: 28,
-              child: Row(
-                children: [
-                  Text(
-                    '共 ${photos.length} 张',
-                    style: FigmaTextStyles.bodySmall.copyWith(fontSize: 13),
+      body: isEmpty
+          ? const _GalleryEmptyState()
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
+                  child: Row(
+                    children: [
+                      Text(
+                        '共 ${photos.length} 张',
+                        style: FigmaTextStyles.bodySmall.copyWith(fontSize: 13),
+                      ),
+                      const Spacer(),
+                      if (_selecting)
+                        _TopActionButton(label: '全选', onTap: _toggleAll)
+                      else
+                        _DeviceFilterChip(
+                          label: _filterLabel,
+                          onTap: _pickDeviceFilter,
+                        ),
+                    ],
                   ),
-                  const Spacer(),
-                  if (_selecting)
-                    _TopActionButton(label: '全选', onTap: _toggleAll)
-                  else
-                    _DeviceFilterChip(
-                      label: _filterLabel,
-                      onTap: _pickDeviceFilter,
-                    ),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 16,
-              top: 136,
-              right: 16,
-              bottom: _selecting ? 96 : 24,
-              child: GridView.builder(
-                padding: const EdgeInsets.only(bottom: 8),
-                physics: const BouncingScrollPhysics(),
-                gridDelegate:
-                    const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 3,
-                      mainAxisSpacing: 8,
-                      crossAxisSpacing: 8,
-                      childAspectRatio: 0.82,
-                    ),
-                itemCount: photos.length,
-                itemBuilder: (context, index) {
-                  final photo = photos[index];
-                  return _GalleryTile(
-                    photo: photo,
-                    selecting: _selecting,
-                    selected: _selectedIds.contains(photo.id),
-                    onTap: () {
-                      if (_selecting) {
-                        _toggleOne(photo.id);
-                      }
-                    },
-                  );
-                },
-              ),
-            ),
-            if (_selecting)
-              Positioned(
-                left: 0,
-                bottom: 0,
-                width: 375,
-                height: 88,
-                child: _SelectionBar(
-                  count: _selectedIds.length,
-                  onDelete: _confirmDelete,
-                  onCast: _castSelected,
                 ),
-              ),
-          ],
-          const FigmaBottomHomeIndicator(),
-        ],
-      ),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: GridView.builder(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      physics: const BouncingScrollPhysics(),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            childAspectRatio: 0.82,
+                          ),
+                      itemCount: photos.length,
+                      itemBuilder: (context, index) {
+                        final photo = photos[index];
+                        return _GalleryTile(
+                          photo: photo,
+                          selecting: _selecting,
+                          selected: _selectedIds.contains(photo.id),
+                          onTap: () {
+                            if (_selecting) {
+                              _toggleOne(photo.id);
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                if (_selecting)
+                  _SelectionBar(
+                    count: _selectedIds.length,
+                    onDelete: _confirmDelete,
+                    onCast: _castSelected,
+                  ),
+              ],
+            ),
     );
   }
 }

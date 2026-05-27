@@ -36,66 +36,44 @@ class _ModifyPasswordState extends State<ModifyPassword> {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '修改密码',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '修改密码'),
+          const SizedBox(height: 12),
+          FigmaAccountFormCard(
+            children: [
+              FigmaAccountField(
+                label: '邮箱',
+                controller: _emailController,
+                hintText: '请输入邮箱',
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const FigmaFormDivider(),
+              FigmaVerificationField(
+                controller: _codeController,
+                onGetCode: _showCodeMessage,
+              ),
+              const FigmaFormDivider(),
+              FigmaAccountField(
+                label: '新密码',
+                controller: _newPasswordController,
+                hintText: '请输入密码',
+                obscureText: true,
+              ),
+              const FigmaFormDivider(),
+              FigmaAccountField(
+                label: '确认密码',
+                controller: _confirmPasswordController,
+                hintText: '请确认密码',
+                obscureText: true,
+              ),
+            ],
           ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            height: 249,
-            child: FigmaAccountFormCard(
-              children: [
-                FigmaAccountField(
-                  label: '邮箱',
-                  controller: _emailController,
-                  hintText: '请输入邮箱',
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const FigmaFormDivider(),
-                FigmaVerificationField(
-                  controller: _codeController,
-                  onGetCode: _showCodeMessage,
-                ),
-                const FigmaFormDivider(),
-                FigmaAccountField(
-                  label: '新密码',
-                  controller: _newPasswordController,
-                  hintText: '请输入密码',
-                  obscureText: true,
-                ),
-                const FigmaFormDivider(),
-                FigmaAccountField(
-                  label: '确认密码',
-                  controller: _confirmPasswordController,
-                  hintText: '请确认密码',
-                  obscureText: true,
-                ),
-              ],
-            ),
-          ),
-          Positioned(
-            left: 26,
-            top: 543,
-            width: 323,
-            height: 64,
-            child: FigmaPrimaryButton(
-              label: '确认',
-              height: 64,
-              onPressed: _confirm,
-            ),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
+      bottom: FigmaPrimaryButton(label: '确认', onPressed: _confirm),
     );
   }
 

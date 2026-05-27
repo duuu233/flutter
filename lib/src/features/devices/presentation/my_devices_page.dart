@@ -76,25 +76,15 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '我的设备',
+      trailing: _AddDeviceButton(onTap: widget.onAddDevice),
+      scrollable: false,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(
-              title: '我的设备',
-              trailing: _AddDeviceButton(onTap: widget.onAddDevice),
-            ),
-          ),
-          Positioned(
-            left: 24,
-            top: 102,
-            right: 24,
-            bottom: 20,
+          const SizedBox(height: 8),
+          Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.only(bottom: 12),
               itemCount: _devices.length,
@@ -112,7 +102,6 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
               },
             ),
           ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
     );

@@ -11,62 +11,36 @@ class CastFailedPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '投屏失败',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: const [
+          SizedBox(height: 68),
+          Center(child: FigmaCastResultIcon(success: false)),
+          SizedBox(height: 24),
+          Text(
+            '投屏失败',
+            textAlign: TextAlign.center,
+            style: FigmaTextStyles.pageHeading,
+          ),
+          SizedBox(height: 8),
+          Text(
+            '设备连接中断，请检查设备状态后重试',
+            textAlign: TextAlign.center,
+            style: FigmaTextStyles.bodySmall,
+          ),
+        ],
+      ),
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '投屏失败'),
+          FigmaPrimaryButton(label: '重新投屏', onPressed: onRetry),
+          const SizedBox(height: 12),
+          FigmaSecondaryButton(
+            label: '返回首页',
+            onPressed: onBackHome ?? () => Navigator.maybePop(context),
           ),
-          const Positioned(
-            left: 130,
-            top: 158,
-            width: 116,
-            height: 116,
-            child: FigmaCastResultIcon(success: false),
-          ),
-          const Positioned(
-            left: 24,
-            top: 326,
-            width: 327,
-            child: Text(
-              '投屏失败',
-              textAlign: TextAlign.center,
-              style: FigmaTextStyles.pageHeading,
-            ),
-          ),
-          const Positioned(
-            left: 62,
-            top: 361,
-            width: 252,
-            child: Text(
-              '设备连接中断，请检查设备状态后重试',
-              textAlign: TextAlign.center,
-              style: FigmaTextStyles.bodySmall,
-            ),
-          ),
-          Positioned(
-            left: 24,
-            top: 624,
-            width: 327,
-            height: 56,
-            child: FigmaPrimaryButton(label: '重新投屏', onPressed: onRetry),
-          ),
-          Positioned(
-            left: 24,
-            top: 692,
-            width: 327,
-            height: 56,
-            child: FigmaSecondaryButton(
-              label: '返回首页',
-              onPressed: onBackHome ?? () => Navigator.maybePop(context),
-            ),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
     );

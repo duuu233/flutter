@@ -158,7 +158,10 @@ lib/
   与 `switch` 分支即可。（注：历史遗留的 `figma*` 路由常量名仅为内部标识，可后续按需重命名。）
 - **状态**：全局业务数据由 `PhotoFrameState`（`state.dart`）持有，在 `BoltStarApp` 中创建后
   向下传递；页面不要各自创建状态实例。
-- **设计基准**：页面以 375×812 设计稿坐标还原，登录页等用背景全屏铺满 + 表单等比缩放适配。
+- **布局方式**：页面采用**弹性 / 响应式布局**（`SafeArea` + `Column/Row/Flex` + `Spacer`），
+  适配不同屏幕、刘海与系统字号；不再使用整页画布缩放（旧的 `FigmaPhoneFrame` / `Transform.scale`
+  已移除）。带顶部导航的页面统一用 `shared/widgets/figma_common.dart` 的 `FigmaScreen` 脚手架
+  （`title` / `body` / `bottom` / `trailing`），登录页用全屏背景 + `SafeArea` 自定义实现。
 - **共享控件**：Figma 通用控件统一放 `shared/widgets/figma_common.dart`、`home_figma_common.dart`，
   跨模块以包导入 `package:BoltStar/src/shared/widgets/...` 引用。
 - **测试**：`test/frame_device_protocol_test.dart`（设备协议）、`test/widget_test.dart`（Widget）。

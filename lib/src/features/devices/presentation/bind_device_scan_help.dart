@@ -11,109 +11,102 @@ class BindDeviceScanHelp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaHomePhoneFrame(
-      child: Stack(
-        children: [
-          const Positioned.fill(child: FigmaHomeBackground()),
-          const Positioned(
-            left: 52,
-            top: 91,
-            width: 270,
-            height: 270,
-            child: FigmaBluetoothRadar(state: FigmaRadarState.notFound),
-          ),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaBindDeviceTopBar(),
-          ),
-          const Positioned(
-            left: 0,
-            top: 338,
-            width: 375,
-            child: Text(
-              '未发现设备',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF2A2B2B),
-                fontSize: 20,
-                fontWeight: FontWeight.w600,
-                height: 1.2,
+    return Stack(
+      children: [
+        FigmaScreen(
+          title: '绑定设备',
+          scrollable: false,
+          body: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: const [
+              Spacer(flex: 2),
+              Center(
+                child: SizedBox(
+                  width: 240,
+                  height: 240,
+                  child: FigmaBluetoothRadar(state: FigmaRadarState.notFound),
+                ),
               ),
+              SizedBox(height: 20),
+              Text(
+                '未发现设备',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF2A2B2B),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w600,
+                  height: 1.2,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '设备连接中断，请检查设备状态后重试',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0x992A2B2B),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w400,
+                  height: 1.2,
+                ),
+              ),
+              Spacer(flex: 3),
+            ],
+          ),
+        ),
+        Positioned.fill(
+          child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
+        ),
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: DecoratedBox(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-          ),
-          const Positioned(
-            left: 0,
-            top: 374,
-            width: 375,
-            child: Text(
-              '设备连接中断，请检查设备状态后重试',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0x992A2B2B),
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-                height: 1.2,
-              ),
-            ),
-          ),
-          Positioned.fill(
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
-          ),
-          Positioned(
-            left: 0,
-            top: 346,
-            width: 375,
-            height: 466,
-            child: DecoratedBox(
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
-              child: Stack(
-                children: [
-                  const Positioned(
-                    left: 0,
-                    top: 25,
-                    width: 375,
-                    child: Text(
-                      '扫描不到怎么办？',
-                      textAlign: TextAlign.center,
-                      style: FigmaHomeTextStyles.sheetTitle,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Stack(
+                      alignment: Alignment.center,
+                      children: [
+                        const Text(
+                          '扫描不到怎么办？',
+                          textAlign: TextAlign.center,
+                          style: FigmaHomeTextStyles.sheetTitle,
+                        ),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 24,
+                              height: 24,
+                            ),
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF7E7E7E),
+                              size: 26,
+                            ),
+                            onPressed: () => Navigator.maybePop(context),
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  Positioned(
-                    right: 28,
-                    top: 25,
-                    width: 24,
-                    height: 24,
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints.tightFor(
-                        width: 24,
-                        height: 24,
+                    const SizedBox(height: 24),
+                    const Center(
+                      child: SizedBox(
+                        width: 115,
+                        height: 115,
+                        child: _ScanHelpIcon(),
                       ),
-                      icon: const Icon(
-                        Icons.close_rounded,
-                        color: Color(0xFF7E7E7E),
-                        size: 26,
-                      ),
-                      onPressed: () => Navigator.maybePop(context),
                     ),
-                  ),
-                  const Positioned(
-                    left: 129,
-                    top: 72,
-                    width: 115,
-                    height: 115,
-                    child: _ScanHelpIcon(),
-                  ),
-                  const Positioned(
-                    left: 39,
-                    top: 213,
-                    child: Text(
+                    const SizedBox(height: 26),
+                    const Text(
                       '请检查：',
                       style: TextStyle(
                         color: Color(0xFF2A2B2B),
@@ -122,12 +115,8 @@ class BindDeviceScanHelp extends StatelessWidget {
                         height: 1.5,
                       ),
                     ),
-                  ),
-                  const Positioned(
-                    left: 39,
-                    top: 248,
-                    width: 306,
-                    child: Text(
+                    const SizedBox(height: 12),
+                    const Text(
                       '1.设备是否有电?\n'
                       '2.当前设备是否被占用?\n'
                       '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
@@ -139,24 +128,15 @@ class BindDeviceScanHelp extends StatelessWidget {
                         height: 1.55,
                       ),
                     ),
-                  ),
-                  Positioned(
-                    left: 24,
-                    top: 356,
-                    width: 327,
-                    height: 56,
-                    child: FigmaHomePrimaryButton(
-                      label: '重新扫描',
-                      onPressed: onRetry,
-                    ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+                    FigmaHomePrimaryButton(label: '重新扫描', onPressed: onRetry),
+                  ],
+                ),
               ),
             ),
           ),
-          const FigmaBottomHomeIndicator(),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

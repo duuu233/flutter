@@ -36,64 +36,42 @@ class _ProfilePageState extends State<ProfilePage> {
     final user = widget.state.currentUser;
     final emailText = user.email.isEmpty ? '暂未绑定' : user.email;
 
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '个人信息',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '个人信息'),
-          ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            height: 244,
-            child: FigmaGlassCard(
-              child: Column(
-                children: [
-                  _AvatarRow(color: user.avatarColor),
-                  const FigmaFormDivider(),
-                  FigmaAccountField(
-                    label: '昵称',
-                    controller: _nicknameController,
-                    hintText: '请输入昵称',
-                  ),
-                  const FigmaFormDivider(),
-                  FigmaInfoRow(label: 'ID', value: user.id),
-                  const FigmaFormDivider(),
-                  FigmaInfoRow(
-                    label: '邮箱',
-                    value: emailText,
-                    onTap: () {
-                      Navigator.of(context).pushNamed<void>(
-                        user.email.isEmpty
-                            ? AppRoutes.figmaBindEmailIncomplete
-                            : AppRoutes.figmaModifyEmail,
-                      );
-                    },
-                  ),
-                ],
-              ),
+          const SizedBox(height: 12),
+          FigmaGlassCard(
+            child: Column(
+              children: [
+                _AvatarRow(color: user.avatarColor),
+                const FigmaFormDivider(),
+                FigmaAccountField(
+                  label: '昵称',
+                  controller: _nicknameController,
+                  hintText: '请输入昵称',
+                ),
+                const FigmaFormDivider(),
+                FigmaInfoRow(label: 'ID', value: user.id),
+                const FigmaFormDivider(),
+                FigmaInfoRow(
+                  label: '邮箱',
+                  value: emailText,
+                  onTap: () {
+                    Navigator.of(context).pushNamed<void>(
+                      user.email.isEmpty
+                          ? AppRoutes.figmaBindEmailIncomplete
+                          : AppRoutes.figmaModifyEmail,
+                    );
+                  },
+                ),
+              ],
             ),
           ),
-          Positioned(
-            left: 26,
-            top: 543,
-            width: 323,
-            height: 64,
-            child: FigmaPrimaryButton(
-              label: '保存资料',
-              height: 64,
-              onPressed: _saveProfile,
-            ),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
+      bottom: FigmaPrimaryButton(label: '保存资料', onPressed: _saveProfile),
     );
   }
 

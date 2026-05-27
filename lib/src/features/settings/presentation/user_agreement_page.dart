@@ -9,31 +9,15 @@ class UserAgreementPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
-        children: const [
-          FigmaPageBackground(),
-          Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '用户协议'),
-          ),
-          Positioned(
-            left: 0,
-            top: 100,
-            right: 0,
-            bottom: 0,
-            child: LegalDocumentView(
-              title: '《BoltStar 用户协议》',
-              updatedAt: '2026-5-13',
-              effectiveAt: '2026-5-13',
-              sections: _sections,
-            ),
-          ),
-          FigmaBottomHomeIndicator(),
-        ],
+    return const FigmaScreen(
+      title: '用户协议',
+      scrollable: false,
+      bodyPadding: EdgeInsets.zero,
+      body: LegalDocumentView(
+        title: '《BoltStar 用户协议》',
+        updatedAt: '2026-5-13',
+        effectiveAt: '2026-5-13',
+        sections: _sections,
       ),
     );
   }

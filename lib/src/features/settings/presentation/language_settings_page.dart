@@ -41,53 +41,32 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '语种设置',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '语种设置'),
-          ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            child: FigmaGlassCard(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Column(
-                children: [
-                  for (var i = 0; i < _LanguageOption.values.length; i++) ...[
-                    if (i != 0) const FigmaFormDivider(),
-                    _LanguageRow(
-                      label: _LanguageOption.values[i].label,
-                      selected: _selected == _LanguageOption.values[i],
-                      onTap: () {
-                        setState(() => _selected = _LanguageOption.values[i]);
-                      },
-                    ),
-                  ],
+          const SizedBox(height: 12),
+          FigmaGlassCard(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Column(
+              children: [
+                for (var i = 0; i < _LanguageOption.values.length; i++) ...[
+                  if (i != 0) const FigmaFormDivider(),
+                  _LanguageRow(
+                    label: _LanguageOption.values[i].label,
+                    selected: _selected == _LanguageOption.values[i],
+                    onTap: () {
+                      setState(() => _selected = _LanguageOption.values[i]);
+                    },
+                  ),
                 ],
-              ),
+              ],
             ),
           ),
-          Positioned(
-            left: 26,
-            top: 543,
-            width: 323,
-            height: 64,
-            child: FigmaPrimaryButton(
-              label: '保存设置',
-              height: 64,
-              onPressed: _save,
-            ),
-          ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
+      bottom: FigmaPrimaryButton(label: '保存设置', onPressed: _save),
     );
   }
 

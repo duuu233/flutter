@@ -12,18 +12,15 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
-        children: [
-          const DeviceDetailsScene(),
-          Positioned.fill(
-            child: ColoredBox(color: Colors.black.withValues(alpha: 0.32)),
-          ),
-          Positioned(
-            left: 24,
-            top: 318,
-            width: 327,
-            height: 188,
+    return Stack(
+      children: [
+        const FigmaScreen(title: '设备详情', body: DeviceDetailsBody()),
+        Positioned.fill(
+          child: ColoredBox(color: Colors.black.withValues(alpha: 0.32)),
+        ),
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
             child: _ConfirmDialogCard(
               title: '删除设备',
               message: '删除后将解除与该相框设备的绑定，后续使用需重新添加设备。',
@@ -31,9 +28,8 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
               onConfirm: onConfirm,
             ),
           ),
-          const FigmaBottomHomeIndicator(),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -61,6 +57,7 @@ class _ConfirmDialogCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(title, style: FigmaTextStyles.pageHeading),
             const SizedBox(height: 16),
@@ -69,7 +66,7 @@ class _ConfirmDialogCard extends StatelessWidget {
               textAlign: TextAlign.center,
               style: FigmaTextStyles.bodySmall.copyWith(fontSize: 14),
             ),
-            const Spacer(),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(

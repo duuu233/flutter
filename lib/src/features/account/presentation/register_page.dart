@@ -98,94 +98,76 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget build(BuildContext context) {
     final mismatchText = _showMismatch ? '密码不一致' : null;
 
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '创建账户',
+      onBack: widget.onBackToLogin,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '创建账户'),
+          const SizedBox(height: 12),
+          FigmaAccountFormCard(
+            children: [
+              FigmaAccountField(
+                label: '邮箱',
+                controller: _emailController,
+                hintText: '请输入邮箱地址',
+                keyboardType: TextInputType.emailAddress,
+              ),
+              const FigmaFormDivider(),
+              FigmaVerificationField(
+                controller: _codeController,
+                onGetCode: _getCode,
+                countdownLabel: _countdown > 0 ? '$_countdown秒后重新获取' : null,
+              ),
+              const FigmaFormDivider(),
+              FigmaAccountField(
+                label: '密码',
+                controller: _passwordController,
+                hintText: '请输入密码',
+                obscureText: true,
+                errorText: mismatchText,
+              ),
+              const FigmaFormDivider(),
+              FigmaAccountField(
+                label: '确认密码',
+                controller: _confirmController,
+                hintText: '请确认密码',
+                obscureText: true,
+                errorText: _showMismatch ? '密码不一致，请重新确认密码' : null,
+              ),
+            ],
           ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            child: FigmaAccountFormCard(
-              children: [
-                FigmaAccountField(
-                  label: '邮箱',
-                  controller: _emailController,
-                  hintText: '请输入邮箱地址',
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const FigmaFormDivider(),
-                FigmaVerificationField(
-                  controller: _codeController,
-                  onGetCode: _getCode,
-                  countdownLabel: _countdown > 0 ? '$_countdown秒后重新获取' : null,
-                ),
-                const FigmaFormDivider(),
-                FigmaAccountField(
-                  label: '密码',
-                  controller: _passwordController,
-                  hintText: '请输入密码',
-                  obscureText: true,
-                  errorText: mismatchText,
-                ),
-                const FigmaFormDivider(),
-                FigmaAccountField(
-                  label: '确认密码',
-                  controller: _confirmController,
-                  hintText: '请确认密码',
-                  obscureText: true,
-                  errorText: _showMismatch ? '密码不一致，请重新确认密码' : null,
-                ),
-              ],
-            ),
+        ],
+      ),
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FigmaPrimaryButton(
+            label: '注 册',
+            onPressed: _canSubmit ? _register : null,
           ),
-          Positioned(
-            left: 26,
-            top: 600,
-            width: 323,
-            height: 64,
-            child: FigmaPrimaryButton(
-              label: '注 册',
-              height: 64,
-              onPressed: _canSubmit ? _register : null,
-            ),
-          ),
-          Positioned(
-            left: 0,
-            top: 684,
-            width: 375,
-            child: Center(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: widget.onBackToLogin ?? () => Navigator.maybePop(context),
-                child: Text.rich(
-                  const TextSpan(
-                    children: [
-                      TextSpan(text: '已有账户？'),
-                      TextSpan(
-                        text: ' 去登录',
-                        style: TextStyle(color: Color(0xFFFF5B1F)),
-                      ),
-                    ],
+          const SizedBox(height: 16),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onBackToLogin ?? () => Navigator.maybePop(context),
+            child: Text.rich(
+              const TextSpan(
+                children: [
+                  TextSpan(text: '已有账户？'),
+                  TextSpan(
+                    text: ' 去登录',
+                    style: TextStyle(color: Color(0xFFFF5B1F)),
                   ),
-                  style: const TextStyle(
-                    color: Color(0x992A2B2B),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                    height: 1.2,
-                  ),
-                ),
+                ],
+              ),
+              style: const TextStyle(
+                color: Color(0x992A2B2B),
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+                height: 1.2,
               ),
             ),
           ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
     );

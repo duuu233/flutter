@@ -67,50 +67,30 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '更新BoltStar',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '更新BoltStar'),
-          ),
-          const Positioned(
-            left: 0,
-            top: 168,
-            width: 375,
-            child: Center(child: _BoltStarWordmark()),
-          ),
-          Positioned(
-            left: 24,
-            top: 224,
-            width: 327,
-            child: Center(child: _versionLabel()),
-          ),
+          const SizedBox(height: 64),
+          const Center(child: _BoltStarWordmark()),
+          const SizedBox(height: 16),
+          Center(child: _versionLabel()),
+          const SizedBox(height: 48),
           if (_stage == BoltStarUpdateStage.downloading)
-            Positioned(
-              left: 0,
-              top: 300,
-              width: 375,
-              child: Center(
-                child: AnimatedBuilder(
-                  animation: _downloadController,
-                  builder: (context, _) {
-                    return _DownloadProgressRing(
-                      progress: _downloadController.value,
-                    );
-                  },
-                ),
+            Center(
+              child: AnimatedBuilder(
+                animation: _downloadController,
+                builder: (context, _) {
+                  return _DownloadProgressRing(
+                    progress: _downloadController.value,
+                  );
+                },
               ),
             )
           else
-            const Positioned(
-              left: 40,
-              top: 296,
-              width: 295,
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 _appIntro,
                 textAlign: TextAlign.center,
@@ -122,21 +102,11 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
                 ),
               ),
             ),
-          if (_stage == BoltStarUpdateStage.updateAvailable)
-            Positioned(
-              left: 26,
-              top: 543,
-              width: 323,
-              height: 64,
-              child: FigmaPrimaryButton(
-                label: '立即更新',
-                height: 64,
-                onPressed: _startDownload,
-              ),
-            ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
+      bottom: _stage == BoltStarUpdateStage.updateAvailable
+          ? FigmaPrimaryButton(label: '立即更新', onPressed: _startDownload)
+          : null,
     );
   }
 

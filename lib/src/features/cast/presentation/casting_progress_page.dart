@@ -15,51 +15,30 @@ class CastingProgressPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '投屏中',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '投屏中'),
+          const SizedBox(height: 68),
+          const Center(child: FigmaCastResultIcon(success: true)),
+          const SizedBox(height: 24),
+          const Text(
+            '投屏中',
+            textAlign: TextAlign.center,
+            style: FigmaTextStyles.pageHeading,
           ),
-          const Positioned(
-            left: 130,
-            top: 158,
-            width: 116,
-            height: 116,
-            child: FigmaCastResultIcon(success: true),
+          const SizedBox(height: 8),
+          const Text(
+            '投屏过程中请不要关闭手机',
+            textAlign: TextAlign.center,
+            style: FigmaTextStyles.bodySmall,
           ),
-          const Positioned(
-            left: 24,
-            top: 326,
-            width: 327,
-            child: Text(
-              '投屏中',
-              textAlign: TextAlign.center,
-              style: FigmaTextStyles.pageHeading,
-            ),
-          ),
-          const Positioned(
-            left: 62,
-            top: 361,
-            width: 252,
-            child: Text(
-              '投屏过程中请不要关闭手机',
-              textAlign: TextAlign.center,
-              style: FigmaTextStyles.bodySmall,
-            ),
-          ),
-          Positioned(
-            left: 43,
-            top: 436,
-            width: 289,
+          const SizedBox(height: 40),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 19),
             child: FigmaProgressBar(progress: progress, label: progressLabel),
           ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
     );

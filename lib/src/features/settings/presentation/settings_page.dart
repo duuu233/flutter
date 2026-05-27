@@ -15,109 +15,89 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '设置',
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '设置'),
-          ),
-          Positioned(
-            left: 24,
-            top: 109,
-            width: 327,
-            child: FigmaGlassCard(
-              padding: const EdgeInsets.symmetric(vertical: 4),
-              child: Column(
-                children: [
-                  _SettingsRow(
-                    icon: Icons.translate_rounded,
-                    iconColor: const Color(0xFFFF6A24),
-                    title: '语种设置',
-                    value: _languageLabel(state.language),
-                    onTap: () => Navigator.of(
-                      context,
-                    ).pushNamed<void>(AppRoutes.figmaLanguageSettings),
-                  ),
-                  const FigmaFormDivider(),
-                  _SettingsRow(
-                    icon: Icons.phone_in_talk_outlined,
-                    iconColor: const Color(0xFF4A98FF),
-                    title: '联系方式',
-                    value: '99999@qq.com',
-                    onTap: () => _showContactDialog(context),
-                  ),
-                  const FigmaFormDivider(),
-                  _SettingsRow(
-                    icon: Icons.shield_outlined,
-                    iconColor: const Color(0xFF4A98FF),
-                    title: '隐私政策',
-                    onTap: () => Navigator.of(
-                      context,
-                    ).pushNamed<void>(AppRoutes.figmaPrivacyPolicy),
-                  ),
-                  const FigmaFormDivider(),
-                  _SettingsRow(
-                    icon: Icons.description_outlined,
-                    iconColor: const Color(0xFF4A98FF),
-                    title: '用户协议',
-                    onTap: () => Navigator.of(
-                      context,
-                    ).pushNamed<void>(AppRoutes.figmaUserAgreement),
-                  ),
-                  const FigmaFormDivider(),
-                  _SettingsRow(
-                    icon: Icons.system_update_alt_rounded,
-                    iconColor: const Color(0xFF4A98FF),
-                    title: '更新BoltStar',
-                    value: '版本1.0.0',
-                    onTap: () => Navigator.of(
-                      context,
-                    ).pushNamed<void>(AppRoutes.figmaUpdateBoltStarAvailable),
-                  ),
-                ],
-              ),
+          const SizedBox(height: 12),
+          FigmaGlassCard(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Column(
+              children: [
+                _SettingsRow(
+                  icon: Icons.translate_rounded,
+                  iconColor: const Color(0xFFFF6A24),
+                  title: '语种设置',
+                  value: _languageLabel(state.language),
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed<void>(AppRoutes.figmaLanguageSettings),
+                ),
+                const FigmaFormDivider(),
+                _SettingsRow(
+                  icon: Icons.phone_in_talk_outlined,
+                  iconColor: const Color(0xFF4A98FF),
+                  title: '联系方式',
+                  value: '99999@qq.com',
+                  onTap: () => _showContactDialog(context),
+                ),
+                const FigmaFormDivider(),
+                _SettingsRow(
+                  icon: Icons.shield_outlined,
+                  iconColor: const Color(0xFF4A98FF),
+                  title: '隐私政策',
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed<void>(AppRoutes.figmaPrivacyPolicy),
+                ),
+                const FigmaFormDivider(),
+                _SettingsRow(
+                  icon: Icons.description_outlined,
+                  iconColor: const Color(0xFF4A98FF),
+                  title: '用户协议',
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed<void>(AppRoutes.figmaUserAgreement),
+                ),
+                const FigmaFormDivider(),
+                _SettingsRow(
+                  icon: Icons.system_update_alt_rounded,
+                  iconColor: const Color(0xFF4A98FF),
+                  title: '更新BoltStar',
+                  value: '版本1.0.0',
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed<void>(AppRoutes.figmaUpdateBoltStarAvailable),
+                ),
+              ],
             ),
           ),
-          Positioned(
-            left: 26,
-            top: 470,
-            width: 323,
+          const SizedBox(height: 24),
+          SizedBox(
             height: 56,
             child: _OutlinedActionButton(
               label: '退出登录',
               onPressed: () => _confirmLogout(context),
             ),
           ),
-          Positioned(
-            left: 0,
-            top: 752,
-            width: 375,
-            child: Center(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () => _confirmDeleteAccount(context),
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 6, horizontal: 24),
-                  child: Text(
-                    '用户注销',
-                    style: TextStyle(
-                      color: Color(0x992A2B2B),
-                      fontSize: 13,
-                      fontWeight: FontWeight.w400,
-                      height: 1.4,
-                    ),
-                  ),
-                ),
-              ),
+        ],
+      ),
+      bottom: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _confirmDeleteAccount(context),
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 6, horizontal: 24),
+          child: Text(
+            '用户注销',
+            style: TextStyle(
+              color: Color(0x992A2B2B),
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              height: 1.4,
             ),
           ),
-          const FigmaBottomHomeIndicator(),
-        ],
+        ),
       ),
     );
   }

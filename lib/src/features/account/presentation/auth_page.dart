@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -20,9 +18,6 @@ class AuthPage extends StatefulWidget {
 }
 
 class _AuthPageState extends State<AuthPage> {
-  static const double _designWidth = 375;
-  static const double _designHeight = 812;
-
   late final TextEditingController _emailController;
   final TextEditingController _passwordController = TextEditingController();
 
@@ -59,45 +54,29 @@ class _AuthPageState extends State<AuthPage> {
           fit: StackFit.expand,
           children: [
             const _LoginBackground(),
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final scale = math.min(
-                  constraints.maxWidth / _designWidth,
-                  constraints.maxHeight / _designHeight,
-                );
-
-                return Center(
-                  child: Transform.scale(
-                    scale: scale,
-                    child: SizedBox(
-                      width: _designWidth,
-                      height: _designHeight,
-                      child: _AuthCanvas(
-                        emailController: _emailController,
-                        passwordController: _passwordController,
-                        passwordVisible: _passwordVisible,
-                        agreed: _agreed,
-                        showErrors: _showErrors,
-                        onPasswordVisibilityChanged: () {
-                          setState(() {
-                            _passwordVisible = !_passwordVisible;
-                          });
-                        },
-                        onAgreementChanged: () {
-                          setState(() {
-                            _agreed = !_agreed;
-                          });
-                        },
-                        onForgotPassword: _forgotPassword,
-                        onRegister: _register,
-                        onUserAgreement: _openUserAgreement,
-                        onPrivacyPolicy: _openPrivacyPolicy,
-                        onLogin: _login,
-                      ),
-                    ),
-                  ),
-                );
-              },
+            SafeArea(
+              child: _AuthCanvas(
+                emailController: _emailController,
+                passwordController: _passwordController,
+                passwordVisible: _passwordVisible,
+                agreed: _agreed,
+                showErrors: _showErrors,
+                onPasswordVisibilityChanged: () {
+                  setState(() {
+                    _passwordVisible = !_passwordVisible;
+                  });
+                },
+                onAgreementChanged: () {
+                  setState(() {
+                    _agreed = !_agreed;
+                  });
+                },
+                onForgotPassword: _forgotPassword,
+                onRegister: _register,
+                onUserAgreement: _openUserAgreement,
+                onPrivacyPolicy: _openPrivacyPolicy,
+                onLogin: _login,
+              ),
             ),
           ],
         ),
@@ -179,103 +158,89 @@ class _AuthCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        const Positioned(left: 0, top: 0, width: 375, child: _StatusBar()),
-        const Positioned(left: 28, top: 223, child: _TitleGroup()),
-        Positioned(
-          left: 26,
-          top: 325,
-          width: 323,
-          height: 64,
-          child: _PillTextField(
-            controller: emailController,
-            hintText: '请输入邮箱',
-            icon: Icons.mail_outline_rounded,
-            keyboardType: TextInputType.emailAddress,
-            textInputAction: TextInputAction.next,
-            showError: showErrors,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 26),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Spacer(flex: 3),
+          const _TitleGroup(),
+          const SizedBox(height: 36),
+          SizedBox(
+            height: 56,
+            child: _PillTextField(
+              controller: emailController,
+              hintText: '请输入邮箱',
+              icon: Icons.mail_outline_rounded,
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              showError: showErrors,
+            ),
           ),
-        ),
-        if (showErrors)
-          const Positioned(
-            left: 49,
-            top: 391,
-            child: _ErrorText(text: '请输入正确的邮箱地址'),
-          ),
-        Positioned(
-          left: 26,
-          top: 419,
-          width: 323,
-          height: 64,
-          child: _PillTextField(
-            controller: passwordController,
-            hintText: '请输入密码',
-            icon: Icons.verified_user_outlined,
-            keyboardType: TextInputType.visiblePassword,
-            textInputAction: TextInputAction.done,
-            obscureText: !passwordVisible,
-            showError: showErrors,
-            onSubmitted: (_) => onLogin(),
-            trailing: IconButton(
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints.tightFor(width: 36, height: 36),
-              onPressed: onPasswordVisibilityChanged,
-              icon: Icon(
-                passwordVisible
-                    ? Icons.visibility_outlined
-                    : Icons.visibility_off_outlined,
-                color: const Color(0xFF8C9092),
-                size: 20,
+          if (showErrors)
+            const Padding(
+              padding: EdgeInsets.only(top: 8, left: 23),
+              child: _ErrorText(text: '请输入正确的邮箱地址'),
+            ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 56,
+            child: _PillTextField(
+              controller: passwordController,
+              hintText: '请输入密码',
+              icon: Icons.verified_user_outlined,
+              keyboardType: TextInputType.visiblePassword,
+              textInputAction: TextInputAction.done,
+              obscureText: !passwordVisible,
+              showError: showErrors,
+              onSubmitted: (_) => onLogin(),
+              trailing: IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 36,
+                  height: 36,
+                ),
+                onPressed: onPasswordVisibilityChanged,
+                icon: Icon(
+                  passwordVisible
+                      ? Icons.visibility_outlined
+                      : Icons.visibility_off_outlined,
+                  color: const Color(0xFF8C9092),
+                  size: 20,
+                ),
               ),
             ),
           ),
-        ),
-        if (showErrors)
-          const Positioned(
-            left: 49,
-            top: 485,
-            child: _ErrorText(text: '密码不能为空'),
-          ),
-        Positioned(
-          left: 258,
-          top: 498,
-          width: 70,
-          height: 22,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onForgotPassword,
-            child: const Align(
-              alignment: Alignment.centerLeft,
-              child: Text('忘记密码?', style: _AuthTextStyles.linkMuted),
+          if (showErrors)
+            const Padding(
+              padding: EdgeInsets.only(top: 8, left: 23),
+              child: _ErrorText(text: '密码不能为空'),
+            ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onForgotPassword,
+              child: const Text('忘记密码?', style: _AuthTextStyles.linkMuted),
             ),
           ),
-        ),
-        Positioned(
-          left: 26,
-          top: 543,
-          width: 323,
-          height: 64,
-          child: _PrimaryButton(onPressed: onLogin),
-        ),
-        Positioned(
-          left: 0,
-          top: 633,
-          width: 375,
-          child: _RegisterPrompt(onRegister: onRegister),
-        ),
-        Positioned(
-          left: 57,
-          top: 744,
-          child: _AgreementRow(
-            agreed: agreed,
-            onChanged: onAgreementChanged,
-            onUserAgreement: onUserAgreement,
-            onPrivacyPolicy: onPrivacyPolicy,
+          const SizedBox(height: 24),
+          SizedBox(height: 56, child: _PrimaryButton(onPressed: onLogin)),
+          const SizedBox(height: 24),
+          _RegisterPrompt(onRegister: onRegister),
+          const Spacer(flex: 4),
+          Center(
+            child: _AgreementRow(
+              agreed: agreed,
+              onChanged: onAgreementChanged,
+              onUserAgreement: onUserAgreement,
+              onPrivacyPolicy: onPrivacyPolicy,
+            ),
           ),
-        ),
-        const _HomeIndicator(),
-      ],
+          const SizedBox(height: 16),
+        ],
+      ),
     );
   }
 }
@@ -383,64 +348,27 @@ class _LoginBackgroundPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class _StatusBar extends StatelessWidget {
-  const _StatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Stack(
-        children: [
-          const Positioned(
-            left: 21,
-            top: 12,
-            width: 54,
-            height: 21,
-            child: Center(child: Text('9:41', style: _AuthTextStyles.status)),
-          ),
-          Positioned(
-            right: 14,
-            top: 16,
-            child: Row(
-              children: const [
-                Icon(Icons.signal_cellular_alt_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.wifi_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.battery_full_rounded, size: 21),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _TitleGroup extends StatelessWidget {
   const _TitleGroup();
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 320,
-      height: 72,
-      child: Stack(
-        children: const [
-          Positioned(
-            left: 0,
-            top: 0,
-            child: Text('欢迎使用', style: _AuthTextStyles.title),
-          ),
-          Positioned(left: 137, top: 5, child: _BoltStarWordmark()),
-          Positioned(
-            left: 0,
-            top: 50,
-            child: Text('使用邮箱密码登录或注册', style: _AuthTextStyles.subtitle),
-          ),
-        ],
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const [
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Text('欢迎使用', style: _AuthTextStyles.title),
+            SizedBox(width: 6),
+            _BoltStarWordmark(),
+          ],
+        ),
+        SizedBox(height: 12),
+        Text('使用邮箱密码登录或注册', style: _AuthTextStyles.subtitle),
+      ],
     );
   }
 }
@@ -481,6 +409,7 @@ class _PillTextField extends StatelessWidget {
     required this.keyboardType,
     required this.textInputAction,
     required this.showError,
+
     this.obscureText = false,
     this.trailing,
     this.onSubmitted,
@@ -687,35 +616,8 @@ class _AgreementRow extends StatelessWidget {
   }
 }
 
-class _HomeIndicator extends StatelessWidget {
-  const _HomeIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: 120,
-      bottom: 8,
-      width: 135,
-      height: 5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(100),
-        ),
-      ),
-    );
-  }
-}
-
 class _AuthTextStyles {
   const _AuthTextStyles._();
-
-  static const status = TextStyle(
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1,
-  );
 
   static const title = TextStyle(
     color: Color(0xFF2A2B2B),

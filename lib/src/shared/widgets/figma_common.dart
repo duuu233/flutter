@@ -1,222 +1,155 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-const double figmaDesignWidth = 375;
-const double figmaDesignHeight = 812;
+/// 响应式页面脚手架（全屏背景 + 安全区 + 顶部导航 + 内容 +（可选）底部固定区）。
+///
+/// 结构：全屏背景 + [SafeArea] + 顶部导航 + 可滚动内容 +（可选）底部固定区，
+/// 适配任意屏幕尺寸、刘海与系统字号。
+class FigmaScreen extends StatelessWidget {
+  const FigmaScreen({
+    super.key,
+    this.title,
+    this.showBack = true,
+    this.onBack,
+    this.trailing,
+    required this.body,
+    this.bottom,
+    this.scrollable = true,
+    this.bodyPadding = const EdgeInsets.symmetric(horizontal: 24),
+    this.background,
+    this.resizeToAvoidBottomInset = true,
+  });
 
-/// Figma 还原页面的公共组件库（非页面）：手机外框、状态栏、导航栏、按钮、
-/// 输入框、卡片等通用控件，被各业务模块的 Figma 还原页面复用。
-class FigmaPhoneFrame extends StatelessWidget {
-  const FigmaPhoneFrame({super.key, required this.child});
-
-  final Widget child;
+  final String? title;
+  final bool showBack;
+  final VoidCallback? onBack;
+  final Widget? trailing;
+  final Widget body;
+  final Widget? bottom;
+  final bool scrollable;
+  final EdgeInsets bodyPadding;
+  final Widget? background;
+  final bool resizeToAvoidBottomInset;
 
   @override
   Widget build(BuildContext context) {
+    final Widget content = scrollable
+        ? SingleChildScrollView(padding: bodyPadding, child: body)
+        : Padding(padding: bodyPadding, child: body);
+
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark.copyWith(
         statusBarColor: Colors.transparent,
         systemNavigationBarColor: Colors.white,
       ),
       child: Scaffold(
-        resizeToAvoidBottomInset: false,
+        resizeToAvoidBottomInset: resizeToAvoidBottomInset,
         backgroundColor: const Color(0xFFF2F5FC),
-        body: LayoutBuilder(
-          builder: (context, constraints) {
-            final scale = math.min(
-              constraints.maxWidth / figmaDesignWidth,
-              constraints.maxHeight / figmaDesignHeight,
-            );
-
-            return Center(
-              child: Transform.scale(
-                scale: scale,
-                child: SizedBox(
-                  width: figmaDesignWidth,
-                  height: figmaDesignHeight,
-                  child: child,
-                ),
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class FigmaPageBackground extends StatelessWidget {
-  const FigmaPageBackground({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        const Positioned.fill(child: ColoredBox(color: Color(0xFFF2F5FC))),
-        const Positioned(
-          left: 0,
-          top: 0,
-          width: 375,
-          height: 401,
-          child: FigmaImagePlaceholder(width: 375, height: 401),
-        ),
-        Positioned(
-          left: 0,
-          top: 401,
-          width: 375,
-          height: 411,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.94),
-              borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(28),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            background ?? const FigmaScreenBackground(),
+            SafeArea(
+              child: Column(
+                children: [
+                  if (title != null)
+                    FigmaTopBar(
+                      title: title!,
+                      showBack: showBack,
+                      onBack: onBack,
+                      trailing: trailing,
+                    ),
+                  Expanded(child: content),
+                  if (bottom != null)
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 8, 24, 12),
+                      child: bottom,
+                    ),
+                ],
               ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
 
-class FigmaImagePlaceholder extends StatelessWidget {
-  const FigmaImagePlaceholder({
-    super.key,
-    required this.width,
-    required this.height,
-    this.borderRadius = 16,
-    this.label = 'Image Placeholder',
-  });
-
-  final double width;
-  final double height;
-  final double borderRadius;
-  final String label;
+/// 默认页面背景：顶部浅蓝渐变过渡到底部白。
+class FigmaScreenBackground extends StatelessWidget {
+  const FigmaScreenBackground({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: height,
-      alignment: Alignment.center,
+    return const DecoratedBox(
       decoration: BoxDecoration(
-        color: Colors.grey[300],
-        borderRadius: BorderRadius.circular(borderRadius),
-      ),
-      child: Text(
-        label,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Color(0xFF737373),
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [Color(0xFFEAF1FB), Color(0xFFF4F7FC), Color(0xFFF2F5FC)],
+          stops: [0, 0.4, 1],
         ),
       ),
     );
   }
 }
 
-class FigmaTopNavigation extends StatelessWidget {
-  const FigmaTopNavigation({
+/// 响应式顶部导航条：全宽、标题居中（左右各留等宽槽位保证真正居中）。
+class FigmaTopBar extends StatelessWidget {
+  const FigmaTopBar({
     super.key,
     required this.title,
-    this.onBack,
     this.showBack = true,
+    this.onBack,
     this.trailing,
   });
 
   final String title;
-  final VoidCallback? onBack;
   final bool showBack;
+  final VoidCallback? onBack;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 375,
-      height: 90,
+      height: 56,
       child: Stack(
         children: [
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            child: FigmaStatusBar(),
-          ),
-          if (showBack)
-            Positioned(
-              left: 22,
-              top: 46,
-              width: 34,
-              height: 34,
-              child: FigmaRoundIconButton(
-                icon: Icons.chevron_left_rounded,
-                onTap: onBack ?? () => Navigator.maybePop(context),
-              ),
-            ),
-          Positioned(
-            left: 80,
-            top: 47,
-            width: 215,
-            height: 24,
-            child: Center(
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 56),
               child: Text(
                 title,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
                 style: FigmaTextStyles.navigationTitle,
               ),
             ),
           ),
-          if (trailing != null)
-            Positioned(right: 18, top: 46, height: 34, child: trailing!),
-        ],
-      ),
-    );
-  }
-}
-
-class FigmaStatusBar extends StatelessWidget {
-  const FigmaStatusBar({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Stack(
-        children: [
-          const Positioned(
-            left: 21,
-            top: 12,
-            width: 54,
-            height: 21,
-            child: Center(
-              child: Text(
-                '9:41',
-                style: TextStyle(
-                  color: Color(0xFF111111),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  height: 1,
+          if (showBack)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: SizedBox(
+                  width: 34,
+                  height: 34,
+                  child: FigmaRoundIconButton(
+                    icon: Icons.chevron_left_rounded,
+                    onTap: onBack ?? () => Navigator.maybePop(context),
+                  ),
                 ),
               ),
             ),
-          ),
-          const Positioned(
-            right: 14,
-            top: 16,
-            child: Row(
-              children: [
-                Icon(Icons.signal_cellular_alt_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.wifi_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.battery_full_rounded, size: 21),
-              ],
+          if (trailing != null)
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: trailing,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -327,26 +260,6 @@ class FigmaSecondaryButton extends StatelessWidget {
           child: Center(
             child: Text(label, style: FigmaTextStyles.secondaryButton),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class FigmaBottomHomeIndicator extends StatelessWidget {
-  const FigmaBottomHomeIndicator({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: 120,
-      bottom: 8,
-      width: 135,
-      height: 5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black.withValues(alpha: 0.86),
-          borderRadius: BorderRadius.circular(100),
         ),
       ),
     );

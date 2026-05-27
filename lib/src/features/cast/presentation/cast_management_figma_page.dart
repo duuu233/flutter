@@ -42,38 +42,25 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
   Widget build(BuildContext context) {
     final records = _records;
 
-    return FigmaPhoneFrame(
-      child: Stack(
+    return FigmaScreen(
+      title: '投屏管理',
+      scrollable: false,
+      bodyPadding: const EdgeInsets.symmetric(horizontal: 16),
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const FigmaPageBackground(),
-          const Positioned(
-            left: 0,
-            top: 0,
-            width: 375,
-            height: 90,
-            child: FigmaTopNavigation(title: '投屏管理'),
+          const SizedBox(height: 8),
+          _SegmentedTabs(
+            current: _tab,
+            onChanged: (value) => setState(() => _tab = value),
           ),
-          Positioned(
-            left: 24,
-            top: 100,
-            child: _SegmentedTabs(
-              current: _tab,
-              onChanged: (value) => setState(() => _tab = value),
-            ),
+          const SizedBox(height: 14),
+          Text(
+            '共 ${records.length} 条记录',
+            style: FigmaTextStyles.bodySmall.copyWith(fontSize: 13),
           ),
-          Positioned(
-            left: 24,
-            top: 150,
-            child: Text(
-              '共 ${records.length} 条记录',
-              style: FigmaTextStyles.bodySmall.copyWith(fontSize: 13),
-            ),
-          ),
-          Positioned(
-            left: 16,
-            top: 178,
-            right: 16,
-            bottom: 16,
+          const SizedBox(height: 12),
+          Expanded(
             child: records.isEmpty
                 ? const _EmptyRecords()
                 : ListView.separated(
@@ -93,7 +80,6 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
                     },
                   ),
           ),
-          const FigmaBottomHomeIndicator(),
         ],
       ),
     );
