@@ -11,162 +11,158 @@ class MinePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.contain,
-            child: SizedBox(
-              width: 375,
-              height: 812,
-              child: Stack(
-                children: [
-                  const Positioned.fill(child: _MineBackground()),
-                  const Positioned(
-                    left: 0,
-                    top: 0,
-                    width: 375,
-                    child: _StatusBar(),
-                  ),
-                  const Positioned(
-                    left: 0,
-                    top: 53,
-                    width: 375,
-                    child: Text(
-                      '我的',
-                      key: Key('mine-page-title'),
-                      textAlign: TextAlign.center,
-                      style: _MineTextStyles.navTitle,
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const _MineBackground(),
+        SafeArea(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 12),
+                          const Text(
+                            '我的',
+                            key: Key('mine-page-title'),
+                            textAlign: TextAlign.center,
+                            style: _MineTextStyles.navTitle,
+                          ),
+                          const SizedBox(height: 30),
+                          SizedBox(
+                            height: 110,
+                            child: _ProfileCard(
+                              onTap: () {
+                                Navigator.of(
+                                  context,
+                                ).pushNamed<void>(AppRoutes.profile);
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 29),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '常用功能',
+                              style: _MineTextStyles.sectionTitle,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 147,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: _FeatureCard(
+                                    asset: 'assets/images/Group 194925.png',
+                                    fallbackIcon:
+                                        Icons.photo_size_select_actual_outlined,
+                                    fallbackColor: const Color(0xFFFF6A24),
+                                    title: '我的图库',
+                                    subtitle: '${state.totalPhotoCount}张照片',
+                                    onTap: () {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed<void>(AppRoutes.figmaGallery);
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _FeatureCard(
+                                    asset: 'assets/images/Group 194926.png',
+                                    fallbackIcon: Icons.devices_other_outlined,
+                                    fallbackColor: const Color(0xFF4A98FF),
+                                    title: '我的设备',
+                                    subtitle: '${state.devices.length}个设备',
+                                    onTap: () {
+                                      Navigator.of(
+                                        context,
+                                      ).pushNamed<void>(AppRoutes.figmaMyDevices);
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: _FeatureCard(
+                                    asset: 'assets/images/Group 194927.png',
+                                    fallbackIcon: Icons.view_list_rounded,
+                                    fallbackColor: const Color(0xFFFF6A24),
+                                    title: '投屏管理',
+                                    subtitle: '',
+                                    onTap: () {
+                                      Navigator.of(context).pushNamed<void>(
+                                        AppRoutes.figmaCastManagement,
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 33),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: Text(
+                              '服务与帮助',
+                              style: _MineTextStyles.sectionTitle,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 54,
+                            child: _ServiceRow(
+                              asset: 'assets/images/Group 194799.png',
+                              fallbackIcon: Icons.menu_book_outlined,
+                              title: '操作指南',
+                              onTap: () {
+                                Navigator.of(
+                                  context,
+                                ).pushNamed<void>(AppRoutes.guide);
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          SizedBox(
+                            height: 54,
+                            child: _ServiceRow(
+                              asset: 'assets/images/Group 194928.png',
+                              fallbackIcon: Icons.settings_outlined,
+                              title: '设置',
+                              onTap: () {
+                                Navigator.of(
+                                  context,
+                                ).pushNamed<void>(AppRoutes.settings);
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Align(
+                            alignment: Alignment.centerLeft,
+                            child: _DebugEntryRow(),
+                          ),
+                          const Spacer(),
+                          SizedBox(
+                            height: 56,
+                            child: _MineTabBar(onOpenHome: onOpenHome),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                      ),
                     ),
                   ),
-                  Positioned(
-                    left: 24,
-                    top: 109,
-                    width: 327,
-                    height: 110,
-                    child: _ProfileCard(
-                      onTap: () {
-                        Navigator.of(
-                          context,
-                        ).pushNamed<void>(AppRoutes.profile);
-                      },
-                    ),
-                  ),
-                  const Positioned(
-                    left: 24,
-                    top: 248,
-                    child: Text('常用功能', style: _MineTextStyles.sectionTitle),
-                  ),
-                  Positioned(
-                    left: 24,
-                    top: 276,
-                    width: 104,
-                    height: 147,
-                    child: _FeatureCard(
-                      asset: 'assets/images/Group 194925.png',
-                      fallbackIcon: Icons.photo_size_select_actual_outlined,
-                      fallbackColor: const Color(0xFFFF6A24),
-                      title: '我的图库',
-                      subtitle: '${state.totalPhotoCount}张照片',
-                      onTap: () {
-                        Navigator.of(
-                          context,
-                        ).pushNamed<void>(AppRoutes.figmaGallery);
-                      },
-                    ),
-                  ),
-                  Positioned(
-                    left: 136,
-                    top: 276,
-                    width: 104,
-                    height: 147,
-                    child: _FeatureCard(
-                      asset: 'assets/images/Group 194926.png',
-                      fallbackIcon: Icons.devices_other_outlined,
-                      fallbackColor: const Color(0xFF4A98FF),
-                      title: '我的设备',
-                      subtitle: '${state.devices.length}个设备',
-                      onTap: () {
-                        Navigator.of(
-                          context,
-                        ).pushNamed<void>(AppRoutes.figmaMyDevices);
-                      },
-                    ),
-                  ),
-                  Positioned(
-                    left: 248,
-                    top: 276,
-                    width: 104,
-                    height: 147,
-                    child: _FeatureCard(
-                      asset: 'assets/images/Group 194927.png',
-                      fallbackIcon: Icons.view_list_rounded,
-                      fallbackColor: const Color(0xFFFF6A24),
-                      title: '投屏管理',
-                      subtitle: '',
-                      onTap: () {
-                        Navigator.of(
-                          context,
-                        ).pushNamed<void>(AppRoutes.figmaCastManagement);
-                      },
-                    ),
-                  ),
-                  const Positioned(
-                    left: 24,
-                    top: 456,
-                    child: Text('服务与帮助', style: _MineTextStyles.sectionTitle),
-                  ),
-                  Positioned(
-                    left: 24,
-                    top: 482,
-                    width: 327,
-                    height: 54,
-                    child: _ServiceRow(
-                      asset: 'assets/images/Group 194799.png',
-                      fallbackIcon: Icons.menu_book_outlined,
-                      title: '操作指南',
-                      onTap: () {
-                        Navigator.of(context).pushNamed<void>(AppRoutes.guide);
-                      },
-                    ),
-                  ),
-                  Positioned(
-                    left: 24,
-                    top: 550,
-                    width: 327,
-                    height: 54,
-                    child: _ServiceRow(
-                      asset: 'assets/images/Group 194928.png',
-                      fallbackIcon: Icons.settings_outlined,
-                      title: '设置',
-                      onTap: () {
-                        Navigator.of(
-                          context,
-                        ).pushNamed<void>(AppRoutes.settings);
-                      },
-                    ),
-                  ),
-
-                  const Positioned(
-                    left: 24,
-                    top: 600,
-                    width: 327,
-                    child: _DebugEntryRow(),
-                  ),
-                  Positioned(
-                    left: 24,
-                    top: 730,
-                    width: 327,
-                    height: 56,
-                    child: _MineTabBar(onOpenHome: onOpenHome),
-                  ),
-                  const _HomeIndicator(),
-                ],
-              ),
-            ),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 }
@@ -178,8 +174,6 @@ class _MineBackground extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       'assets/images/bg02.png',
-      width: 375,
-      height: 812,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
         return DecoratedBox(
@@ -193,50 +187,6 @@ class _MineBackground extends StatelessWidget {
           child: CustomPaint(painter: _MineBackgroundPainter()),
         );
       },
-    );
-  }
-}
-
-class _StatusBar extends StatelessWidget {
-  const _StatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(32, 15, 14, 0),
-      child: Row(
-        children: [
-          const Text('9:41', style: _MineTextStyles.status),
-          const Spacer(),
-          Icon(
-            Icons.signal_cellular_alt_rounded,
-            size: 17,
-            color: Colors.black,
-          ),
-          const SizedBox(width: 4),
-          Icon(Icons.wifi_rounded, size: 17, color: Colors.black),
-          const SizedBox(width: 4),
-          Container(
-            width: 24,
-            height: 11,
-            padding: const EdgeInsets.all(1.2),
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.black, width: 1),
-              borderRadius: BorderRadius.circular(2.5),
-            ),
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: Container(
-                width: 18,
-                decoration: BoxDecoration(
-                  color: Colors.black,
-                  borderRadius: BorderRadius.circular(1.5),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -582,26 +532,6 @@ class _MineTabItem extends StatelessWidget {
   }
 }
 
-class _HomeIndicator extends StatelessWidget {
-  const _HomeIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: 120,
-      bottom: 8,
-      width: 135,
-      height: 5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(100),
-        ),
-      ),
-    );
-  }
-}
-
 class _MineBackgroundPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -633,13 +563,6 @@ class _MineBackgroundPainter extends CustomPainter {
 
 class _MineTextStyles {
   const _MineTextStyles._();
-
-  static const status = TextStyle(
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1,
-  );
 
   static const navTitle = TextStyle(
     color: Color(0xFF111111),

@@ -54,71 +54,49 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SizedBox.expand(
-          child: FittedBox(
-            fit: BoxFit.contain,
-            child: SizedBox(
-              width: 375,
-              height: 812,
-              child: SizedBox(
-                width: 375,
-                height: 812,
-                child: Stack(
-                  children: [
-                    const Positioned.fill(child: _HomeBackground()),
-                    const Positioned(
-                      left: 0,
-                      top: 0,
-                      width: 375,
-                      child: _StatusBar(),
-                    ),
-                    if (_bindMode == _HomeBindMode.none)
-                      _HomeMainView(
-                        state: widget.state,
-                        activeDevice: _activeDevice,
-                        onBindDevice: _startScan,
-                        onAddDevice: _startScan,
-                        onShowCastSheet: _showCastMethodSheet,
-                        onCamera: () => _startCast(ImageSourceType.camera),
-                        onAlbum: () => _startCast(ImageSourceType.album),
-                        onOpenMine: widget.onOpenMine,
-                      )
-                    else
-                      _BindDeviceView(
-                        mode: _bindMode,
-                        devices: _nearbyDevices,
-                        selectedIndex: _selectedFoundDeviceIndex,
-                        showScanHelp: _showScanHelp,
-                        onBack: _closeBindFlow,
-                        onHelp: () {
-                          setState(() {
-                            _showScanHelp = true;
-                          });
-                        },
-                        onCloseHelp: () {
-                          setState(() {
-                            _showScanHelp = false;
-                          });
-                        },
-                        onRetry: _startScan,
-                        onCancel: _closeBindFlow,
-                        onSelectDevice: (index) {
-                          setState(() {
-                            _selectedFoundDeviceIndex = index;
-                          });
-                        },
-                        onBind: _bindSelectedDevice,
-                      ),
-                    const _HomeIndicator(),
-                  ],
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        const _HomeBackground(),
+        SafeArea(
+          child: _bindMode == _HomeBindMode.none
+              ? _HomeMainView(
+                  state: widget.state,
+                  activeDevice: _activeDevice,
+                  onBindDevice: _startScan,
+                  onAddDevice: _startScan,
+                  onShowCastSheet: _showCastMethodSheet,
+                  onCamera: () => _startCast(ImageSourceType.camera),
+                  onAlbum: () => _startCast(ImageSourceType.album),
+                  onOpenMine: widget.onOpenMine,
+                )
+              : _BindDeviceView(
+                  mode: _bindMode,
+                  devices: _nearbyDevices,
+                  selectedIndex: _selectedFoundDeviceIndex,
+                  showScanHelp: _showScanHelp,
+                  onBack: _closeBindFlow,
+                  onHelp: () {
+                    setState(() {
+                      _showScanHelp = true;
+                    });
+                  },
+                  onCloseHelp: () {
+                    setState(() {
+                      _showScanHelp = false;
+                    });
+                  },
+                  onRetry: _startScan,
+                  onCancel: _closeBindFlow,
+                  onSelectDevice: (index) {
+                    setState(() {
+                      _selectedFoundDeviceIndex = index;
+                    });
+                  },
+                  onBind: _bindSelectedDevice,
                 ),
-              ),
-            ),
-          ),
-        );
-      },
+        ),
+      ],
     );
   }
 
@@ -335,54 +313,97 @@ class _HomeMainView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: IntrinsicHeight(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: _bound ? _buildBound(context) : _buildUnbound(context),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBound(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (_bound) ...[
-          const Positioned(left: 24, top: 56, child: _Avatar()),
-          Positioned(
-            left: 328,
-            top: 58,
-            width: 30,
-            height: 30,
-            child: _RoundAddButton(onTap: onAddDevice),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 34,
+          child: Row(
+            children: [
+              const _Avatar(),
+              const Spacer(),
+              SizedBox(
+                width: 30,
+                height: 30,
+                child: _RoundAddButton(onTap: onAddDevice),
+              ),
+            ],
           ),
-          const Positioned(left: 24, top: 142, child: _GreetingTitle()),
-          Positioned(
-            left: 24,
-            top: 242,
-            width: 327,
-            height: 186,
-            child: _ConnectedDeviceCard(device: activeDevice!),
+        ),
+        const SizedBox(height: 52),
+        const _GreetingTitle(),
+        const SizedBox(height: 25),
+        SizedBox(
+          width: double.infinity,
+          height: 186,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned.fill(child: _ConnectedDeviceCard(device: activeDevice!)),
+              const Positioned(
+                right: -130,
+                top: 25,
+                width: 154,
+                height: 134,
+                child: _SideCardHint(),
+              ),
+            ],
           ),
-          const Positioned(
-            right: -106,
-            top: 267,
-            width: 154,
-            height: 134,
-            child: _SideCardHint(),
-          ),
-          const Positioned(left: 150, top: 459, child: _CarouselDots()),
-        ] else ...[
-          const Positioned(
-            left: 96,
-            top: 188,
+        ),
+        const SizedBox(height: 31),
+        const Center(child: _CarouselDots()),
+        const Spacer(),
+        ..._castSection(),
+        const Spacer(),
+        _HomeTabBar(onOpenMine: onOpenMine),
+        const SizedBox(height: 12),
+      ],
+    );
+  }
+
+  Widget _buildUnbound(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Spacer(flex: 3),
+        const Center(
+          child: SizedBox(
             width: 185,
             height: 116,
             child: _UnboundDeviceArt(),
           ),
-          const Positioned(
-            left: 0,
-            top: 349,
-            width: 375,
-            child: Text(
-              '请先绑定相框设备后再投屏照片',
-              textAlign: TextAlign.center,
-              style: _HomeTextStyles.mutedBody,
-            ),
+        ),
+        const SizedBox(height: 29),
+        const SizedBox(
+          width: double.infinity,
+          child: Text(
+            '请先绑定相框设备后再投屏照片',
+            textAlign: TextAlign.center,
+            style: _HomeTextStyles.mutedBody,
           ),
-          Positioned(
-            left: 88,
-            top: 381,
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: SizedBox(
             width: 200,
             height: 44,
             child: _GradientButton(
@@ -405,50 +426,52 @@ class _HomeMainView extends StatelessWidget {
               onPressed: onBindDevice,
             ),
           ),
-        ],
-        Positioned(
-          left: 24,
-          top: 498,
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onShowCastSheet,
-            child: const Text('选择投屏方式', style: _HomeTextStyles.sectionTitle),
-          ),
         ),
-        Positioned(
-          left: 24,
-          top: 524,
-          child: Row(
-            children: [
-              _CastEntryCard(
-                title: '拍照',
-                subtitle: '拍摄照片并投屏',
-                artAsset: 'assets/images/camera_material.png',
-                arrowAsset: 'assets/images/Group 194521.png',
-                backgroundAsset: 'assets/images/Rectangle 10457.png',
-                fallbackColor: const Color(0xFFFFF8F4),
-                onTap: onCamera,
-              ),
-              const SizedBox(width: 11),
-              _CastEntryCard(
-                title: '相册',
-                subtitle: '选择照片并投屏',
-                artAsset: 'assets/images/Group 194924.png',
-                arrowAsset: 'assets/images/Group 194522.png',
-                backgroundAsset: 'assets/images/Rectangle 10403.png',
-                fallbackColor: const Color(0xFFEAF4FF),
-                onTap: onAlbum,
-              ),
-            ],
-          ),
-        ),
-        Positioned(
-          left: 24,
-          top: 730,
-          child: _HomeTabBar(onOpenMine: onOpenMine),
-        ),
+        const Spacer(flex: 4),
+        ..._castSection(),
+        const Spacer(),
+        _HomeTabBar(onOpenMine: onOpenMine),
+        const SizedBox(height: 12),
       ],
     );
+  }
+
+  List<Widget> _castSection() {
+    return [
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onShowCastSheet,
+        child: const Text('选择投屏方式', style: _HomeTextStyles.sectionTitle),
+      ),
+      const SizedBox(height: 14),
+      Row(
+        children: [
+          Expanded(
+            child: _CastEntryCard(
+              title: '拍照',
+              subtitle: '拍摄照片并投屏',
+              artAsset: 'assets/images/camera_material.png',
+              arrowAsset: 'assets/images/Group 194521.png',
+              backgroundAsset: 'assets/images/Rectangle 10457.png',
+              fallbackColor: const Color(0xFFFFF8F4),
+              onTap: onCamera,
+            ),
+          ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: _CastEntryCard(
+              title: '相册',
+              subtitle: '选择照片并投屏',
+              artAsset: 'assets/images/Group 194924.png',
+              arrowAsset: 'assets/images/Group 194522.png',
+              backgroundAsset: 'assets/images/Rectangle 10403.png',
+              fallbackColor: const Color(0xFFEAF4FF),
+              onTap: onAlbum,
+            ),
+          ),
+        ],
+      ),
+    ];
   }
 }
 
@@ -486,183 +509,169 @@ class _BindDeviceView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        Positioned(
-          left: 24,
-          top: 47,
-          width: 34,
-          height: 34,
-          child: _CircleIconButton(
-            icon: Icons.arrow_back_rounded,
-            onTap: onBack,
-          ),
-        ),
-        const Positioned(
-          left: 0,
-          top: 51,
-          width: 375,
-          child: Text(
-            '绑定设备',
-            textAlign: TextAlign.center,
-            style: _HomeTextStyles.navTitle,
-          ),
-        ),
-        Positioned(
-          left: 52,
-          top: 99,
-          width: 270,
-          height: 225,
-          child: _BluetoothRadar(
-            failed: _notFound || showScanHelp,
-            success: _found,
-            dimmed: showScanHelp,
-          ),
-        ),
-        if (mode == _HomeBindMode.searching) ...[
-          const Positioned(
-            left: 0,
-            top: 340,
-            width: 375,
-            child: Text(
-              '正在搜索附近设备',
-              textAlign: TextAlign.center,
-              style: _HomeTextStyles.bindTitle,
-            ),
-          ),
-          const Positioned(
-            left: 0,
-            top: 374,
-            width: 375,
-            child: Text(
-              '请尽量将手机靠近需要添加的设备...',
-              textAlign: TextAlign.center,
-              style: _HomeTextStyles.bindSubtitle,
-            ),
-          ),
-          Positioned(
-            left: 0,
-            top: 670,
-            width: 375,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onHelp,
-              child: const Text(
-                '扫描不到怎么办?',
-                textAlign: TextAlign.center,
-                style: _HomeTextStyles.orangeLink,
-              ),
-            ),
-          ),
-          Positioned(
-            left: 24,
-            top: 702,
-            width: 327,
-            height: 56,
-            child: _GradientButton(label: '取消扫描', onPressed: onCancel),
-          ),
-        ],
-        if (_notFound && !showScanHelp) ...[
-          const Positioned(
-            left: 0,
-            top: 340,
-            width: 375,
-            child: Text(
-              '未发现设备',
-              textAlign: TextAlign.center,
-              style: _HomeTextStyles.bindTitle,
-            ),
-          ),
-          const Positioned(
-            left: 0,
-            top: 374,
-            width: 375,
-            child: Text(
-              '设备连接中断，请检查设备状态后重试',
-              textAlign: TextAlign.center,
-              style: _HomeTextStyles.bindSubtitle,
-            ),
-          ),
-          Positioned(
-            left: 0,
-            top: 670,
-            width: 375,
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onHelp,
-              child: const Text(
-                '扫描不到怎么办?',
-                textAlign: TextAlign.center,
-                style: _HomeTextStyles.orangeLink,
-              ),
-            ),
-          ),
-          Positioned(
-            left: 24,
-            top: 702,
-            width: 327,
-            height: 56,
-            child: _GradientButton(label: '重新扫描', onPressed: onRetry),
-          ),
-        ],
-        if (_found) ...[
-          Positioned(
-            left: 24,
-            top: 376,
-            width: 327,
-            height: 28,
-            child: Row(
-              children: [
-                const Expanded(
-                  child: Text('附近设备', style: _HomeTextStyles.sectionTitle),
-                ),
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: onRetry,
-                  child: Image.asset(
-                    'assets/images/Frame3.png',
-                    width: 22,
-                    height: 22,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Icon(
-                        Icons.refresh_rounded,
-                        color: Color(0xFFFF6A24),
-                        size: 24,
-                      );
-                    },
+        LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: IntrinsicHeight(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        const SizedBox(height: 8),
+                        SizedBox(
+                          height: 34,
+                          child: Stack(
+                            children: [
+                              Align(
+                                alignment: Alignment.centerLeft,
+                                child: SizedBox(
+                                  width: 34,
+                                  height: 34,
+                                  child: _CircleIconButton(
+                                    icon: Icons.arrow_back_rounded,
+                                    onTap: onBack,
+                                  ),
+                                ),
+                              ),
+                              const Center(
+                                child: Text(
+                                  '绑定设备',
+                                  style: _HomeTextStyles.navTitle,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        Center(
+                          child: SizedBox(
+                            width: 270,
+                            height: 225,
+                            child: _BluetoothRadar(
+                              failed: _notFound || showScanHelp,
+                              success: _found,
+                              dimmed: showScanHelp,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        ..._modeContent(),
+                        const SizedBox(height: 16),
+                      ],
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ),
-          Positioned(
-            left: 24,
-            top: 406,
-            width: 327,
-            child: Column(
-              children: [
-                for (var index = 0; index < devices.length; index++) ...[
-                  _FoundDeviceTile(
-                    device: devices[index],
-                    selected: index == selectedIndex,
-                    accent: _deviceAccent(index),
-                    onTap: () => onSelectDevice(index),
-                  ),
-                  if (index != devices.length - 1) const SizedBox(height: 12),
-                ],
-              ],
-            ),
-          ),
-          Positioned(
-            left: 24,
-            top: 702,
-            width: 327,
-            height: 56,
-            child: _GradientButton(label: '立即绑定', onPressed: onBind),
-          ),
-        ],
+              ),
+            );
+          },
+        ),
         if (showScanHelp)
           _ScanHelpSheet(onClose: onCloseHelp, onRetry: onRetry),
       ],
     );
+  }
+
+  List<Widget> _modeContent() {
+    if (mode == _HomeBindMode.searching) {
+      return _statusContent(
+        title: '正在搜索附近设备',
+        subtitle: '请尽量将手机靠近需要添加的设备...',
+        buttonLabel: '取消扫描',
+        onButton: onCancel,
+      );
+    }
+    if (_found) {
+      return _foundContent();
+    }
+    if (_notFound && !showScanHelp) {
+      return _statusContent(
+        title: '未发现设备',
+        subtitle: '设备连接中断，请检查设备状态后重试',
+        buttonLabel: '重新扫描',
+        onButton: onRetry,
+      );
+    }
+    return const [Spacer()];
+  }
+
+  List<Widget> _statusContent({
+    required String title,
+    required String subtitle,
+    required String buttonLabel,
+    required VoidCallback onButton,
+  }) {
+    return [
+      const SizedBox(height: 8),
+      Text(title, textAlign: TextAlign.center, style: _HomeTextStyles.bindTitle),
+      const SizedBox(height: 6),
+      Text(
+        subtitle,
+        textAlign: TextAlign.center,
+        style: _HomeTextStyles.bindSubtitle,
+      ),
+      const Spacer(),
+      GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onHelp,
+        child: const Text(
+          '扫描不到怎么办?',
+          textAlign: TextAlign.center,
+          style: _HomeTextStyles.orangeLink,
+        ),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        height: 56,
+        child: _GradientButton(label: buttonLabel, onPressed: onButton),
+      ),
+    ];
+  }
+
+  List<Widget> _foundContent() {
+    return [
+      const SizedBox(height: 8),
+      Row(
+        children: [
+          const Expanded(
+            child: Text('附近设备', style: _HomeTextStyles.sectionTitle),
+          ),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onRetry,
+            child: Image.asset(
+              'assets/images/Frame3.png',
+              width: 22,
+              height: 22,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.refresh_rounded,
+                  color: Color(0xFFFF6A24),
+                  size: 24,
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 14),
+      for (var index = 0; index < devices.length; index++) ...[
+        _FoundDeviceTile(
+          device: devices[index],
+          selected: index == selectedIndex,
+          accent: _deviceAccent(index),
+          onTap: () => onSelectDevice(index),
+        ),
+        if (index != devices.length - 1) const SizedBox(height: 12),
+      ],
+      const Spacer(),
+      SizedBox(
+        height: 56,
+        child: _GradientButton(label: '立即绑定', onPressed: onBind),
+      ),
+    ];
   }
 
   Color _deviceAccent(int index) {
@@ -685,87 +694,92 @@ class _ScanHelpSheet extends StatelessWidget {
     return Stack(
       children: [
         Positioned.fill(
-          child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
+          child: GestureDetector(
+            onTap: onClose,
+            child: ColoredBox(color: Colors.black.withValues(alpha: 0.42)),
+          ),
         ),
-        Positioned(
-          left: 0,
-          top: 346,
-          width: 375,
-          height: 466,
-          child: DecoratedBox(
+        Align(
+          alignment: Alignment.bottomCenter,
+          child: Container(
+            width: double.infinity,
             decoration: const BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            child: Stack(
-              children: [
-                const Positioned(
-                  left: 0,
-                  top: 25,
-                  width: 375,
-                  child: Text(
-                    '扫描不到怎么办?',
-                    textAlign: TextAlign.center,
-                    style: _HomeTextStyles.sheetTitle,
-                  ),
-                ),
-                Positioned(
-                  right: 28,
-                  top: 25,
-                  width: 24,
-                  height: 24,
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints.tightFor(
-                      width: 24,
-                      height: 24,
+            child: SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      children: [
+                        const SizedBox(
+                          width: double.infinity,
+                          child: Text(
+                            '扫描不到怎么办?',
+                            textAlign: TextAlign.center,
+                            style: _HomeTextStyles.sheetTitle,
+                          ),
+                        ),
+                        Positioned(
+                          right: 0,
+                          top: 0,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 24,
+                              height: 24,
+                            ),
+                            onPressed: onClose,
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              color: Color(0xFF7E7E7E),
+                              size: 25,
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                    onPressed: onClose,
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      color: Color(0xFF7E7E7E),
-                      size: 25,
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      width: 115,
+                      height: 115,
+                      child: Image.asset(
+                        'assets/images/scan_help_art.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const _ScanHelpIconFallback();
+                        },
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 26),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('请检查：', style: _HomeTextStyles.helpTitle),
+                    ),
+                    const SizedBox(height: 12),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        '1.设备是否有电?\n'
+                        '2.当前设备是否被占用?\n'
+                        '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
+                        '4.设备是否与手机距离过远，隔离或有其他遮挡物',
+                        style: _HomeTextStyles.helpBody,
+                      ),
+                    ),
+                    const SizedBox(height: 28),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 56,
+                      child: _GradientButton(label: '重新扫描', onPressed: onRetry),
+                    ),
+                  ],
                 ),
-                Positioned(
-                  left: 130,
-                  top: 72,
-                  width: 115,
-                  height: 115,
-                  child: Image.asset(
-                    'assets/images/scan_help_art.png',
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const _ScanHelpIconFallback();
-                    },
-                  ),
-                ),
-                const Positioned(
-                  left: 39,
-                  top: 213,
-                  child: Text('请检查：', style: _HomeTextStyles.helpTitle),
-                ),
-                const Positioned(
-                  left: 39,
-                  top: 248,
-                  width: 306,
-                  child: Text(
-                    '1.设备是否有电?\n'
-                    '2.当前设备是否被占用?\n'
-                    '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
-                    '4.设备是否与手机距离过远，隔离或有其他遮挡物',
-                    style: _HomeTextStyles.helpBody,
-                  ),
-                ),
-                Positioned(
-                  left: 24,
-                  top: 356,
-                  width: 327,
-                  height: 56,
-                  child: _GradientButton(label: '重新扫描', onPressed: onRetry),
-                ),
-              ],
+              ),
             ),
           ),
         ),
@@ -789,62 +803,55 @@ class _DeviceNoticeSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 250,
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Stack(
-          children: [
-            Positioned(
-              right: 32,
-              top: 27,
-              width: 22,
-              height: 22,
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 22,
-                  height: 22,
-                ),
-                onPressed: () => Navigator.maybePop(context),
-                icon: const Icon(
-                  Icons.close_rounded,
-                  color: Color(0xFF7E7E7E),
-                  size: 24,
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Align(
+                alignment: Alignment.centerRight,
+                child: IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 22,
+                    height: 22,
+                  ),
+                  onPressed: () => Navigator.maybePop(context),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Color(0xFF7E7E7E),
+                    size: 24,
+                  ),
                 ),
               ),
-            ),
-            Positioned(
-              left: 0,
-              top: 61,
-              width: 375,
-              child: Text(
+              const SizedBox(height: 10),
+              Text(
                 title,
                 textAlign: TextAlign.center,
                 style: _HomeTextStyles.sheetTitle,
               ),
-            ),
-            Positioned(
-              left: 0,
-              top: 103,
-              width: 375,
-              child: Text(
+              const SizedBox(height: 14),
+              Text(
                 message,
                 textAlign: TextAlign.center,
                 style: _HomeTextStyles.sheetBody,
               ),
-            ),
-            Positioned(
-              left: 24,
-              top: 140,
-              width: 327,
-              height: 56,
-              child: _GradientButton(label: buttonLabel, onPressed: onPressed),
-            ),
-          ],
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: _GradientButton(label: buttonLabel, onPressed: onPressed),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -859,60 +866,55 @@ class _CastMethodSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: 353,
-      child: DecoratedBox(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Stack(
-          children: [
-            const Positioned(
-              left: 24,
-              top: 24,
-              child: Text('选择投屏方式', style: _HomeTextStyles.sheetTitle),
-            ),
-            Positioned(
-              left: 24,
-              top: 73,
-              child: _CastSheetRow(
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('选择投屏方式', style: _HomeTextStyles.sheetTitle),
+              const SizedBox(height: 25),
+              _CastSheetRow(
                 title: '拍照',
                 subtitle: '调用手机相机拍照',
                 artAsset: 'assets/images/camera_material.png',
                 arrowAsset: 'assets/images/Group 194521.png',
                 onTap: onCamera,
               ),
-            ),
-            Positioned(
-              left: 24,
-              top: 147,
-              child: _CastSheetRow(
+              const SizedBox(height: 13),
+              _CastSheetRow(
                 title: '相册',
                 subtitle: '从手机相册选择照片',
                 artAsset: 'assets/images/Group 194924.png',
                 arrowAsset: 'assets/images/Group 194522.png',
                 onTap: onAlbum,
               ),
-            ),
-            Positioned(
-              left: 24,
-              top: 244,
-              width: 327,
-              height: 56,
-              child: Material(
-                color: const Color(0xFFEDEDED),
-                borderRadius: BorderRadius.circular(28),
-                child: InkWell(
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: Material(
+                  color: const Color(0xFFEDEDED),
                   borderRadius: BorderRadius.circular(28),
-                  onTap: () => Navigator.maybePop(context),
-                  child: const Center(
-                    child: Text('取消', style: _HomeTextStyles.cancelButton),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(28),
+                    onTap: () => Navigator.maybePop(context),
+                    child: const Center(
+                      child: Text('取消', style: _HomeTextStyles.cancelButton),
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -924,18 +926,13 @@ class _HomeBackground extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: const [
-        Positioned.fill(child: ColoredBox(color: Color(0xFFF5F9FF))),
-        Positioned(
-          left: 0,
-          top: 0,
-          width: 376,
-          height: 812,
-          child: _AssetImage(
-            path: 'assets/images/bg02.png',
-            fallback: _SoftBackgroundPainterWidget(),
-          ),
+    return const Stack(
+      fit: StackFit.expand,
+      children: [
+        ColoredBox(color: Color(0xFFF5F9FF)),
+        _AssetImage(
+          path: 'assets/images/bg02.png',
+          fallback: _SoftBackgroundPainterWidget(),
         ),
       ],
     );
@@ -1004,41 +1001,6 @@ class _AssetImage extends StatelessWidget {
       path,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) => fallback,
-    );
-  }
-}
-
-class _StatusBar extends StatelessWidget {
-  const _StatusBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: Stack(
-        children: [
-          const Positioned(
-            left: 21,
-            top: 12,
-            width: 54,
-            height: 21,
-            child: Center(child: Text('9:41', style: _HomeTextStyles.status)),
-          ),
-          Positioned(
-            right: 14,
-            top: 16,
-            child: Row(
-              children: const [
-                Icon(Icons.signal_cellular_alt_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.wifi_rounded, size: 16),
-                SizedBox(width: 4),
-                Icon(Icons.battery_full_rounded, size: 21),
-              ],
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
@@ -1407,7 +1369,6 @@ class _CastEntryCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 158,
         height: 155,
         child: Stack(
           children: [
@@ -1506,7 +1467,7 @@ class _CastSheetRow extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        width: 327,
+        width: double.infinity,
         height: 61,
         padding: const EdgeInsets.fromLTRB(12, 8, 18, 8),
         decoration: BoxDecoration(
@@ -1574,7 +1535,7 @@ class _HomeTabBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 327,
+      width: double.infinity,
       height: 56,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.74),
@@ -1971,35 +1932,8 @@ class _ScanHelpIconFallback extends StatelessWidget {
   }
 }
 
-class _HomeIndicator extends StatelessWidget {
-  const _HomeIndicator();
-
-  @override
-  Widget build(BuildContext context) {
-    return Positioned(
-      left: 120,
-      bottom: 8,
-      width: 135,
-      height: 5,
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.black,
-          borderRadius: BorderRadius.circular(100),
-        ),
-      ),
-    );
-  }
-}
-
 class _HomeTextStyles {
   const _HomeTextStyles._();
-
-  static const status = TextStyle(
-    color: Colors.black,
-    fontSize: 14,
-    fontWeight: FontWeight.w600,
-    height: 1,
-  );
 
   static const navTitle = TextStyle(
     color: Color(0xFF2A2B2B),
