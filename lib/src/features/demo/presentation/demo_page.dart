@@ -16,7 +16,7 @@ class DemoPage extends StatefulWidget {
 }
 
 class _DemoPageState extends State<DemoPage> {
-  static const _imageAsset = 'assets/images/1.png';
+  static const _imageAsset = 'assets/images/bg01.png';
 
   Rect _crop = const Rect.fromLTWH(0.14, 0.14, 0.72, 0.62);
   double _angle = 0;
@@ -535,10 +535,7 @@ class _ActionChipButton extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 18),
-            const SizedBox(width: 6),
-          ],
+          if (icon != null) ...[Icon(icon, size: 18), const SizedBox(width: 6)],
           Text(label),
         ],
       ),

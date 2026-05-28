@@ -234,6 +234,7 @@ class PhotoFrameState extends ChangeNotifier {
     : _language = AppLanguage.zh,
       _cameraCounter = 4,
       _isLoggedIn = true,
+      _isOffline = false,
       _currentUser = UserProfile(
         id: 'USR-2048',
         nickname: '林岚',
@@ -255,7 +256,7 @@ class PhotoFrameState extends ChangeNotifier {
           screenType: FrameScreenType.inch589,
           batteryLevel: 30,
           charging: false,
-          connected: true,
+          connected: false,
           role: DeviceRole.owner,
           serialNumber: 'SN-AUR-240018',
           hardwareVersion: 'HW-1.0',
@@ -468,6 +469,7 @@ class PhotoFrameState extends ChangeNotifier {
   AppLanguage _language;
   int _cameraCounter;
   bool _isLoggedIn;
+  bool _isOffline;
   UserProfile _currentUser;
   final Map<PermissionKind, bool> _permissions;
   final List<DeviceItem> _devices;
@@ -479,6 +481,9 @@ class PhotoFrameState extends ChangeNotifier {
   AppLanguage get language => _language;
 
   bool get isLoggedIn => _isLoggedIn;
+
+  /// 是否处于离线模式。接入真实网络监测后，在网络异常时调用 [setOffline]。
+  bool get isOffline => _isOffline;
 
   UserProfile get currentUser => _currentUser;
 
@@ -705,6 +710,14 @@ class PhotoFrameState extends ChangeNotifier {
 
   void setPermission(PermissionKind kind, bool enabled) {
     _permissions[kind] = enabled;
+    notifyListeners();
+  }
+
+  void setOffline(bool value) {
+    if (_isOffline == value) {
+      return;
+    }
+    _isOffline = value;
     notifyListeners();
   }
 

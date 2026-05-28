@@ -30,7 +30,6 @@ import '../features/devices/presentation/devices_page.dart';
 import '../features/devices/presentation/my_devices_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
 import '../features/guide/presentation/guide_page.dart';
-import '../features/home/presentation/home_device_pages.dart';
 import '../features/settings/presentation/language_settings_page.dart';
 import '../features/settings/presentation/privacy_policy_page.dart';
 import '../features/settings/presentation/settings_page.dart';
@@ -57,11 +56,6 @@ class AppRoutes {
   static const figmaRegister = '/figma/register';
   static const figmaGallery = '/figma/gallery';
   static const figmaCastManagement = '/figma/cast/management';
-  static const figmaHomeUnbound = '/figma/home/unbound';
-  static const figmaHomeUnboundBindNow = '/figma/home/unbound/bind-now';
-  static const figmaHomeUnboundReconnect = '/figma/home/unbound/reconnect';
-  static const figmaHomeBound = '/figma/home/bound';
-  static const figmaHomeBoundPicker = '/figma/home/bound/picker';
   static const figmaBindDeviceSearching = '/figma/bind-device/searching';
   static const figmaBindDeviceFound = '/figma/bind-device/found';
   static const figmaBindDeviceNotFound = '/figma/bind-device/not-found';
@@ -135,25 +129,6 @@ class AppRoutes {
         break;
       case AppRoutes.figmaCastManagement:
         builder = (_) => CastManagementFigmaPage(state: state);
-        break;
-      case AppRoutes.figmaHomeUnbound:
-        builder = (_) => const FigmaHomeUnboundDevicePage();
-        break;
-      case AppRoutes.figmaHomeUnboundBindNow:
-        builder = (_) => const FigmaHomeUnboundDevicePage(
-          sheet: FigmaHomeUnboundSheet.bindNow,
-        );
-        break;
-      case AppRoutes.figmaHomeUnboundReconnect:
-        builder = (_) => const FigmaHomeUnboundDevicePage(
-          sheet: FigmaHomeUnboundSheet.reconnect,
-        );
-        break;
-      case AppRoutes.figmaHomeBound:
-        builder = (_) => const FigmaHomeBoundDevicePage();
-        break;
-      case AppRoutes.figmaHomeBoundPicker:
-        builder = (_) => const FigmaHomeBoundDevicePage(showCastSheet: true);
         break;
       case AppRoutes.figmaBindDeviceSearching:
         builder = (_) => const BindDeviceSearching();
