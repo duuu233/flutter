@@ -563,8 +563,7 @@ class _UnboundDeviceArt extends StatelessWidget {
   Widget build(BuildContext context) {
     return Image.asset(
       'assets/images/empty_device_art.png',
-      width: 540, // 设置宽度
-      height: 189, // 设置高度
+
       fit: BoxFit.contain,
       errorBuilder: (context, error, stackTrace) {
         return const _UnboundDeviceFallback();

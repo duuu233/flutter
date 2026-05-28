@@ -120,11 +120,11 @@ class _HomeMainView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Spacer(flex: 3),
+        const Spacer(flex: 4),
         const Center(
-          child: SizedBox(width: 185, height: 116, child: _UnboundDeviceArt()),
+          child: SizedBox(width: 240, height: 189, child: _UnboundDeviceArt()),
         ),
-        const SizedBox(height: 29),
+        const SizedBox(height: 18),
         const SizedBox(
           width: double.infinity,
           child: Text(
@@ -133,7 +133,7 @@ class _HomeMainView extends StatelessWidget {
             style: _HomeTextStyles.mutedBody,
           ),
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 18),
         Center(
           child: SizedBox(
             width: 200,
@@ -159,7 +159,8 @@ class _HomeMainView extends StatelessWidget {
             ),
           ),
         ),
-        const Spacer(flex: 4),
+        const Spacer(flex: 6),
+        // const SizedBox(height: 68),
         ..._castSection(),
         const Spacer(),
         _HomeTabBar(onOpenMine: onOpenMine),
