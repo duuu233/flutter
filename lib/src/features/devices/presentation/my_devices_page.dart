@@ -189,154 +189,155 @@ class _DeviceCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FigmaGlassCard(
-      child: SizedBox(
-        height: 155,
-        child: Stack(
-          children: [
-            Positioned(
-              left: 18,
-              top: 27,
-              width: 60,
-              height: 60,
-              child: Container(
-                decoration: BoxDecoration(
-                  color: device.connected
-                      ? const Color(0xFFFFAF8B).withValues(alpha: 0.1)
-                      : const Color(0xFF2A2B2B).withValues(alpha: 0.04),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Icon(
-                  Icons.photo_library_outlined,
-                  color: device.connected
-                      ? const Color(0xFFEB5F1B)
-                      : const Color(0x992A2B2B),
-                  size: 32,
-                ),
-              ),
-            ),
-            Positioned(
-              left: 101,
-              top: 25,
-              right: 44,
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Text(
-                      device.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF2A2B2B),
-                        fontSize: 20,
-                        fontWeight: FontWeight.w500,
-                        height: 1.4,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: onRename,
-                    child: const Icon(
-                      Icons.edit_outlined,
-                      size: 16,
-                      color: Color(0x992A2B2B),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Positioned(
-              left: 101,
-              top: 62,
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.circle,
-                    size: 10,
+      // 卡片整体用纵向弹性布局：上半区图标 + 文字信息，下半区操作栏，
+      // 不再依赖写死的坐标，文字变长或字号变化都能自适应。
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 22, 11, 18),
+            child: Row(
+              children: [
+                Container(
+                  width: 60,
+                  height: 60,
+                  decoration: BoxDecoration(
                     color: device.connected
-                        ? const Color(0xFF1AC27F)
-                        : const Color(0xFFD9D9D9),
+                        ? const Color(0xFFFFAF8B).withValues(alpha: 0.1)
+                        : const Color(0xFF2A2B2B).withValues(alpha: 0.04),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    device.connected ? '已连接' : '未连接',
-                    style: FigmaTextStyles.bodySmall,
+                  child: Icon(
+                    Icons.photo_library_outlined,
+                    color: device.connected
+                        ? const Color(0xFFEB5F1B)
+                        : const Color(0x992A2B2B),
+                    size: 32,
                   ),
-                  if (device.connected && device.battery.isNotEmpty) ...[
-                    const SizedBox(width: 20),
-                    const Icon(
-                      Icons.battery_4_bar_rounded,
-                      size: 18,
-                      color: Color(0x992A2B2B),
+                ),
+                const SizedBox(width: 23),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              device.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: Color(0xFF2A2B2B),
+                                fontSize: 20,
+                                fontWeight: FontWeight.w500,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: onRename,
+                            child: const Icon(
+                              Icons.edit_outlined,
+                              size: 16,
+                              color: Color(0x992A2B2B),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.circle,
+                            size: 10,
+                            color: device.connected
+                                ? const Color(0xFF1AC27F)
+                                : const Color(0xFFD9D9D9),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            device.connected ? '已连接' : '未连接',
+                            style: FigmaTextStyles.bodySmall,
+                          ),
+                          if (device.connected &&
+                              device.battery.isNotEmpty) ...[
+                            const SizedBox(width: 20),
+                            const Icon(
+                              Icons.battery_4_bar_rounded,
+                              size: 18,
+                              color: Color(0x992A2B2B),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              device.battery,
+                              style: FigmaTextStyles.bodySmall,
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right_rounded, size: 22),
+                  color: const Color(0x992A2B2B),
+                  onPressed: onOpenDetail,
+                ),
+              ],
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.55),
+              borderRadius: const BorderRadius.vertical(
+                bottom: Radius.circular(20),
+              ),
+            ),
+            child: SizedBox(
+              height: 42,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: onCarouselSettings,
+                      icon: const Icon(Icons.tune_rounded, size: 18),
+                      label: const Text('轮播设置'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xCC2A2B2B),
+                      ),
                     ),
-                    const SizedBox(width: 6),
-                    Text(device.battery, style: FigmaTextStyles.bodySmall),
-                  ],
+                  ),
+                  Container(
+                    width: 1,
+                    height: 18,
+                    color: const Color(0x1A2A2B2B),
+                  ),
+                  Expanded(
+                    child: TextButton.icon(
+                      onPressed: onToggleConnection,
+                      icon: Icon(
+                        device.connected
+                            ? Icons.link_off_rounded
+                            : Icons.bluetooth_rounded,
+                        size: 18,
+                      ),
+                      label: Text(device.connected ? '断开' : '连接'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: device.connected
+                            ? const Color(0xFFEB5F1B)
+                            : const Color(0xFF2079FC),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-            Positioned(
-              right: 11,
-              top: 44,
-              child: IconButton(
-                icon: const Icon(Icons.chevron_right_rounded, size: 22),
-                color: const Color(0x992A2B2B),
-                onPressed: onOpenDetail,
-              ),
-            ),
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 42,
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.55),
-                  borderRadius: const BorderRadius.vertical(
-                    bottom: Radius.circular(20),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: TextButton.icon(
-                        onPressed: onCarouselSettings,
-                        icon: const Icon(Icons.tune_rounded, size: 18),
-                        label: const Text('轮播设置'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: const Color(0xCC2A2B2B),
-                        ),
-                      ),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 18,
-                      color: const Color(0x1A2A2B2B),
-                    ),
-                    Expanded(
-                      child: TextButton.icon(
-                        onPressed: onToggleConnection,
-                        icon: Icon(
-                          device.connected
-                              ? Icons.link_off_rounded
-                              : Icons.bluetooth_rounded,
-                          size: 18,
-                        ),
-                        label: Text(device.connected ? '断开' : '连接'),
-                        style: TextButton.styleFrom(
-                          foregroundColor: device.connected
-                              ? const Color(0xFFEB5F1B)
-                              : const Color(0xFF2079FC),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

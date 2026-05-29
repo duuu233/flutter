@@ -374,61 +374,62 @@ class _ConnectedDeviceCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(29),
         border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
       ),
-      child: Stack(
-        children: [
-          const Positioned(
-            left: 41,
-            top: 24,
-            width: 136,
-            height: 136,
-            child: _DeviceOrbitMark(),
-          ),
-          Positioned(
-            left: 195,
-            top: 58,
-            child: Text(device.name, style: _HomeTextStyles.deviceCardTitle),
-          ),
-          const Positioned(
-            left: 195,
-            top: 103,
-            child: Row(
-              children: [
-                Icon(
-                  Icons.bluetooth_rounded,
-                  color: Color(0xFF4A98FF),
-                  size: 17,
-                ),
-                SizedBox(width: 6),
-                Text('已连接', style: _HomeTextStyles.deviceMeta),
-              ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(41, 0, 20, 0),
+        child: Row(
+          children: [
+            const SizedBox(width: 136, height: 136, child: _DeviceOrbitMark()),
+            const SizedBox(width: 18),
+            Expanded(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    device.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _HomeTextStyles.deviceCardTitle,
+                  ),
+                  const SizedBox(height: 16),
+                  const Row(
+                    children: [
+                      Icon(
+                        Icons.bluetooth_rounded,
+                        color: Color(0xFF4A98FF),
+                        size: 17,
+                      ),
+                      SizedBox(width: 6),
+                      Text('已连接', style: _HomeTextStyles.deviceMeta),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      Image.asset(
+                        'assets/images/Frame.png',
+                        width: 18,
+                        height: 12,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.battery_2_bar_rounded,
+                            color: Color(0xFFFF6A24),
+                            size: 18,
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        '${device.batteryLevel}%',
+                        style: _HomeTextStyles.deviceMeta,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-          Positioned(
-            left: 195,
-            top: 132,
-            child: Row(
-              children: [
-                Image.asset(
-                  'assets/images/Frame.png',
-                  width: 18,
-                  height: 12,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const Icon(
-                      Icons.battery_2_bar_rounded,
-                      color: Color(0xFFFF6A24),
-                      size: 18,
-                    );
-                  },
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${device.batteryLevel}%',
-                  style: _HomeTextStyles.deviceMeta,
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -645,6 +646,8 @@ class _CastEntryCard extends StatelessWidget {
       onTap: onTap,
       child: SizedBox(
         height: 155,
+        // 背景图整张铺满属于合理的层叠用法，内容用弹性布局叠在其上，
+        // 避免对标题/副标题/箭头逐个写死坐标。
         child: Stack(
           children: [
             Positioned.fill(
@@ -664,54 +667,78 @@ class _CastEntryCard extends StatelessWidget {
                 },
               ),
             ),
-            Positioned(
-              left: 34,
-              top: 22,
-              width: 55,
-              height: 55,
-              child: Image.asset(
-                artAsset,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    title == '拍照'
-                        ? Icons.photo_camera_rounded
-                        : Icons.photo_library_rounded,
-                    color: title == '拍照'
-                        ? const Color(0xFFFF6A24)
-                        : const Color(0xFF287BFF),
-                    size: 38,
-                  );
-                },
-              ),
-            ),
-            Positioned(
-              left: 13,
-              top: 100,
-              child: Text(title, style: _HomeTextStyles.cardTitle),
-            ),
-            Positioned(
-              left: 13,
-              top: 126,
-              child: Text(subtitle, style: _HomeTextStyles.cardSubtitle),
-            ),
-            Positioned(
-              right: 25,
-              bottom: 22,
-              width: 36,
-              height: 36,
-              child: Image.asset(
-                arrowAsset,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    Icons.arrow_forward_rounded,
-                    color: title == '拍照'
-                        ? const Color(0xFFFF6A24)
-                        : const Color(0xFF287BFF),
-                    size: 26,
-                  );
-                },
+            Padding(
+              padding: const EdgeInsets.fromLTRB(13, 22, 25, 22),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(left: 21),
+                    child: SizedBox(
+                      width: 55,
+                      height: 55,
+                      child: Image.asset(
+                        artAsset,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return Icon(
+                            title == '拍照'
+                                ? Icons.photo_camera_rounded
+                                : Icons.photo_library_rounded,
+                            color: title == '拍照'
+                                ? const Color(0xFFFF6A24)
+                                : const Color(0xFF287BFF),
+                            size: 38,
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _HomeTextStyles.cardTitle,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _HomeTextStyles.cardSubtitle,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 36,
+                        height: 36,
+                        child: Image.asset(
+                          arrowAsset,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              Icons.arrow_forward_rounded,
+                              color: title == '拍照'
+                                  ? const Color(0xFFFF6A24)
+                                  : const Color(0xFF287BFF),
+                              size: 26,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ),
           ],

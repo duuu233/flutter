@@ -377,24 +377,14 @@ class _TitleGroup extends StatelessWidget {
 class _PositionedBoltStarWordmark extends StatelessWidget {
   const _PositionedBoltStarWordmark();
 
-  static const double _logoLeft = 0;
+  // 相对基线的微调偏移，让 logo 与「欢迎使用」文字垂直对齐。
   static const double _logoTop = 4;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _BoltStarWordmark.logoWidth,
-      height: _BoltStarWordmark.logoHeight,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: const [
-          Positioned(
-            left: _logoLeft,
-            top: _logoTop,
-            child: _BoltStarWordmark(),
-          ),
-        ],
-      ),
+    return const Padding(
+      padding: EdgeInsets.only(top: _logoTop),
+      child: _BoltStarWordmark(),
     );
   }
 }
