@@ -1,17 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
-/// 设置页面，对应 UI 稿「设置」。
+/// 设置页面，对照微信小程序 `subpackages/settings/index` 精准还原。
 ///
-/// 包含语种设置、联系方式、隐私政策、用户协议、更新入口，以及退出登录与用户注销。
-/// 退出登录 / 用户注销使用确认弹窗（对应「设置-退出登录」「设置-用户注销」两张稿）。
+/// 第一张玻璃卡仅含「语种设置」；第二张含「联系方式 / 隐私政策 / 用户协议」
+/// （小程序中「更新BoltStar」入口被注释，故此处不展示）。底部「退出登录」胶囊按钮
+/// 与「用户注销」文字链分别弹确认弹窗。
 class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key, required this.state});
 
   final PhotoFrameState state;
+
+  // 联系方式（与小程序 index.js 的 contact 一致）。
+  static const String _contact = '99999@qq.com';
 
   @override
   Widget build(BuildContext context) {
@@ -20,84 +25,82 @@ class SettingsPage extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
+          const SizedBox(height: 17),
           FigmaGlassCard(
-            padding: const EdgeInsets.symmetric(vertical: 4),
+            borderRadius: 11,
+            child: _SettingsRow(
+              iconAsset: 'assets/images/set-icon01.png',
+              iconBg: const Color(0x14FF6421),
+              title: '语种设置',
+              value: _languageLabel(state.language),
+              onTap: () => Navigator.of(
+                context,
+              ).pushNamed<void>(AppRoutes.figmaLanguageSettings),
+            ),
+          ),
+          const SizedBox(height: 14),
+          FigmaGlassCard(
+            borderRadius: 11,
             child: Column(
               children: [
                 _SettingsRow(
-                  icon: Icons.translate_rounded,
-                  iconColor: const Color(0xFFFF6A24),
-                  title: '语种设置',
-                  value: _languageLabel(state.language),
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pushNamed<void>(AppRoutes.figmaLanguageSettings),
-                ),
-                const FigmaFormDivider(),
-                _SettingsRow(
-                  icon: Icons.phone_in_talk_outlined,
-                  iconColor: const Color(0xFF4A98FF),
+                  iconAsset: 'assets/images/set-icon02.png',
+                  iconBg: const Color(0x1A287DFF),
                   title: '联系方式',
-                  value: '99999@qq.com',
-                  onTap: () => _showContactDialog(context),
+                  value: _contact,
+                  trailing: _RowTrailing.copy,
+                  onTap: () => _copyContact(context),
                 ),
-                const FigmaFormDivider(),
+                const _SettingsDivider(),
                 _SettingsRow(
-                  icon: Icons.shield_outlined,
-                  iconColor: const Color(0xFF4A98FF),
+                  iconAsset: 'assets/images/set-icon03.png',
+                  iconBg: const Color(0x1A287DFF),
                   title: '隐私政策',
                   onTap: () => Navigator.of(
                     context,
                   ).pushNamed<void>(AppRoutes.figmaPrivacyPolicy),
                 ),
-                const FigmaFormDivider(),
+                const _SettingsDivider(),
                 _SettingsRow(
-                  icon: Icons.description_outlined,
-                  iconColor: const Color(0xFF4A98FF),
+                  iconAsset: 'assets/images/set-icon04.png',
+                  iconBg: const Color(0x1A287DFF),
                   title: '用户协议',
                   onTap: () => Navigator.of(
                     context,
                   ).pushNamed<void>(AppRoutes.figmaUserAgreement),
                 ),
-                const FigmaFormDivider(),
-                _SettingsRow(
-                  icon: Icons.system_update_alt_rounded,
-                  iconColor: const Color(0xFF4A98FF),
-                  title: '更新BoltStar',
-                  value: '版本1.0.0',
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pushNamed<void>(AppRoutes.figmaUpdateBoltStarAvailable),
-                ),
               ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            height: 56,
-            child: _OutlinedActionButton(
-              label: '退出登录',
-              onPressed: () => _confirmLogout(context),
             ),
           ),
         ],
       ),
-      bottom: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => _confirmDeleteAccount(context),
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 6, horizontal: 24),
-          child: Text(
-            '用户注销',
-            style: TextStyle(
-              color: Color(0x992A2B2B),
-              fontSize: 13,
-              fontWeight: FontWeight.w400,
-              height: 1.4,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            height: 56,
+            width: double.infinity,
+            child: _LogoutButton(onTap: () => _confirmLogout(context)),
+          ),
+          const SizedBox(height: 14),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _confirmDeleteAccount(context),
+            child: const Padding(
+              padding: EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                '用户注销',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Color(0xFF808690),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w400,
+                  height: 1.2,
+                ),
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -113,27 +116,21 @@ class SettingsPage extends StatelessWidget {
     }
   }
 
-  void _showContactDialog(BuildContext context) {
-    showDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('联系方式'),
-        content: const Text('客服邮箱：99999@qq.com\n服务时间：周一至周五 9:00 - 18:00'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.maybePop(context),
-            child: const Text('知道了'),
-          ),
-        ],
-      ),
-    );
+  Future<void> _copyContact(BuildContext context) async {
+    await Clipboard.setData(const ClipboardData(text: _contact));
+    if (!context.mounted) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('已复制联系方式')));
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
     final confirmed = await _showConfirmDialog(
       context,
       title: '退出登录',
-      message: '退出后将返回登录页，是否继续？',
+      message: '退出后将返回登录页，是否继续?',
     );
     if (confirmed != true || !context.mounted) {
       return;
@@ -148,7 +145,7 @@ class SettingsPage extends StatelessWidget {
     final confirmed = await _showConfirmDialog(
       context,
       title: '用户注销',
-      message: '注销后您的所有数据将会彻底删除且无法恢复，确定要注销账号？',
+      message: '注销后您的所有数据将会彻底删除且无法恢复，确定要注销账号?',
     );
     if (confirmed != true || !context.mounted) {
       return;
@@ -167,24 +164,28 @@ Future<bool?> _showConfirmDialog(
 }) {
   return showDialog<bool>(
     context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.32),
+    barrierColor: const Color(0x802A2B2B),
     builder: (context) => _ConfirmDialog(title: title, message: message),
   );
 }
 
+enum _RowTrailing { chevron, copy }
+
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
-    required this.icon,
-    required this.iconColor,
+    required this.iconAsset,
+    required this.iconBg,
     required this.title,
     this.value,
+    this.trailing = _RowTrailing.chevron,
     required this.onTap,
   });
 
-  final IconData icon;
-  final Color iconColor;
+  final String iconAsset;
+  final Color iconBg;
   final String title;
   final String? value;
+  final _RowTrailing trailing;
   final VoidCallback onTap;
 
   @override
@@ -192,27 +193,65 @@ class _SettingsRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: SizedBox(
-        height: 58,
+        height: 62,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 18),
           child: Row(
             children: [
-              Icon(icon, color: iconColor, size: 22),
-              const SizedBox(width: 14),
-              Expanded(child: Text(title, style: FigmaTextStyles.formLabel)),
-              if (value != null)
-                Text(
-                  value!,
-                  style: FigmaTextStyles.formHint.copyWith(
-                    color: const Color(0x992A2B2B),
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+                child: Center(
+                  child: Image.asset(
+                    iconAsset,
+                    width: 20,
+                    height: 20,
+                    fit: BoxFit.contain,
                   ),
                 ),
-              const SizedBox(width: 6),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0x662A2B2B),
-                size: 20,
               ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF2A2D32),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+              if (value != null) ...[
+                Text(
+                  value!,
+                  style: const TextStyle(
+                    color: Color(0xFF808690),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(width: 9),
+              ],
+              if (trailing == _RowTrailing.chevron)
+                const Text(
+                  '›',
+                  style: TextStyle(
+                    color: Color(0xFF777E88),
+                    fontSize: 21,
+                    fontWeight: FontWeight.w300,
+                    height: 1,
+                  ),
+                )
+              else
+                Image.asset(
+                  'assets/images/copy-icon01.png',
+                  width: 16,
+                  height: 16,
+                  fit: BoxFit.contain,
+                ),
             ],
           ),
         ),
@@ -221,34 +260,50 @@ class _SettingsRow extends StatelessWidget {
   }
 }
 
-class _OutlinedActionButton extends StatelessWidget {
-  const _OutlinedActionButton({required this.label, required this.onPressed});
-
-  final String label;
-  final VoidCallback onPressed;
+/// 卡片内行间分隔线（小程序 `.setting-row + .setting-row::before`）：
+/// 左右内缩 18、1px、rgba(207,214,224,0.72)。
+class _SettingsDivider extends StatelessWidget {
+  const _SettingsDivider();
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(28),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(28),
-        onTap: onPressed,
-        child: Container(
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(color: const Color(0xFFFF6A24), width: 1.4),
-          ),
-          child: Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFFFF6A24),
-              fontSize: 18,
-              fontWeight: FontWeight.w500,
-              letterSpacing: 2,
-              height: 1.2,
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 18),
+      child: Divider(height: 1, thickness: 1, color: Color(0xB8CFD6E0)),
+    );
+  }
+}
+
+/// 退出登录（小程序 `.outline-logout`）：胶囊 + 浅橙底 + 橙描边 + 橙字。
+class _LogoutButton extends StatelessWidget {
+  const _LogoutButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(28);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBF2EE).withValues(alpha: 0.8),
+        borderRadius: radius,
+        border: Border.all(color: const Color(0xFFEB5F1B)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onTap,
+          child: const Center(
+            child: Text(
+              '退出登录',
+              style: TextStyle(
+                color: Color(0xFFEB5F1B),
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                height: 1.2,
+              ),
             ),
           ),
         ),
@@ -268,33 +323,33 @@ class _ConfirmDialog extends StatelessWidget {
     return Dialog(
       backgroundColor: Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 26, 24, 20),
+        padding: const EdgeInsets.fromLTRB(36, 35, 36, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               title,
               style: const TextStyle(
-                color: Color(0xFF2A2B2B),
+                color: Color(0xFF2A2D32),
                 fontSize: 18,
-                fontWeight: FontWeight.w600,
-                height: 1.4,
+                fontWeight: FontWeight.w700,
+                height: 1,
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 11),
             Text(
               message,
               textAlign: TextAlign.center,
               style: const TextStyle(
-                color: Color(0x992A2B2B),
-                fontSize: 13,
+                color: Color(0xFF636A74),
+                fontSize: 12,
                 fontWeight: FontWeight.w400,
-                height: 1.6,
+                height: 1.45,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 21),
             Row(
               children: [
                 Expanded(
@@ -304,7 +359,7 @@ class _ConfirmDialog extends StatelessWidget {
                     onPressed: () => Navigator.of(context).pop(false),
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 20),
                 Expanded(
                   child: _DialogButton(
                     label: '确定',
@@ -334,22 +389,36 @@ class _DialogButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: filled ? const Color(0xFFFF6A24) : const Color(0xFFF1F1F3),
-      borderRadius: BorderRadius.circular(24),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(24),
-        onTap: onPressed,
-        child: Container(
-          height: 46,
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              color: filled ? Colors.white : const Color(0xFF2A2B2B),
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-              height: 1.2,
+    final radius = BorderRadius.circular(18);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: filled ? null : const Color(0xFFEEEEEE),
+        borderRadius: radius,
+        gradient: filled
+            ? const LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [Color(0xFFFF8338), Color(0xFFFF621F)],
+              )
+            : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: radius,
+        child: InkWell(
+          borderRadius: radius,
+          onTap: onPressed,
+          child: Container(
+            height: 36,
+            alignment: Alignment.center,
+            child: Text(
+              label,
+              style: TextStyle(
+                color: filled ? Colors.white : const Color(0xFF2A2D32),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                height: 1,
+              ),
             ),
           ),
         ),

@@ -73,8 +73,8 @@ class _BindEmailCompletePageState extends State<BindEmailCompletePage> {
             ],
           ),
           const Padding(
-            padding: EdgeInsets.only(top: 16, left: 20),
-            child: Text('绑定邮箱可以用于app登录', style: FigmaTextStyles.bodySmall),
+            padding: EdgeInsets.only(top: 14),
+            child: FigmaInfoTip(text: '绑定邮箱可以用于app登录'),
           ),
         ],
       ),

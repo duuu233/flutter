@@ -37,6 +37,8 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
   Widget build(BuildContext context) {
     return FigmaScreen(
       title: '修改邮箱',
+      // 小程序 change-email 用 bg02 背景。
+      background: const FigmaScreenBackground(asset: 'assets/images/bg02.png'),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

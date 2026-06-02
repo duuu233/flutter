@@ -345,23 +345,66 @@ lib/
 - **校验**：`flutter analyze lib/src/features/gallery` → No issues。
 - **说明**：`album/album_page.dart`（`/album`）为未接入导航的孤儿页，未动；小程序 album 子包仅 list。
 
+### 设置 `settings`（对照 `photo-album/subpackages/settings`：index/language/guide/update/privacy/agreement）— ✅ 已完成（2026-06-02）
+- **共享返回按钮对齐**（`figma_common.dart`，惠及所有 `FigmaScreen` 页面）：导航返回键由 Material
+  箭头改为小程序 `page-nav` 的圆底图 `return-round-icon.png` + 箭头 `return-arrow-icon.png` 叠加
+  （新增 `FigmaBackButton`，带兜底）；原 `FigmaRoundIconButton` 保留未删。
+- **设置首页 `index`**（`settings_page.dart`）：
+  - 拆成两张玻璃卡——第一张仅「语种设置」（橙圈 `set-icon01.png`），第二张「联系方式 / 隐私政策 /
+    用户协议」（蓝圈 `set-icon02/03/04.png`，圈底 orange 8% / blue 10%）；行高 62、图标圈 32、
+    标题 #2a2d32/14/w600、取值 #808690/14、右箭头改「›」(#777e88/21)；卡内分隔线 #cfd6e0/0.72 内缩 18；
+  - 「联系方式」右侧改 `copy-icon01.png`，点按复制并提示「已复制联系方式」（原为弹窗，改 `Clipboard`）；
+  - 「更新BoltStar」入口删除（小程序中该行被注释）；
+  - 「退出登录」改胶囊（浅橙底 #fbf2ee/0.8 + 橙描边 #eb5f1b + 橙字 17/w700）、「用户注销」改
+    #808690/15，两者移入底部固定区；确认弹窗按 `shared.wxss` 版式（标题 18/w700、说明 12/#636a74、
+    取消 #eee / 确定橙渐变胶囊）。
+- **语种设置 `language`**（`language_settings_page.dart`）：选中项改用 `selected-icon.png`、未选改
+  #bfc4cc 空心环（26）；行高 61、标题 #2a2d32/14/w600；卡内分隔线同上。
+- **隐私政策 / 用户协议 `privacy`/`agreement`**（`legal_document_view.dart`）：整篇正文置于玻璃卡，
+  居中大标题 20/w700、更新/生效日期左右分布 #7e858f/12、分节标题 15/w700、正文 #2f343b/14/行高 1.55。
+- **操作指南 `guide`**（`guide_page.dart`）：搜索框改胶囊 + `search-icon01.png`；FAQ 改单张玻璃卡内堆叠，
+  问号图标用 `why-icon01.png`、标题 #4a505a/14；答案面板浅灰底(rgba(42,43,43,0.03))圆角 6、缩进 19、
+  文案 rgba(42,43,43,0.6)/12/行高 1.66；补回「如何进行照片投屏?」一项（共 5 项，默认展开首/末）。
+- **更新BoltStar `update`**（`update_boltstar_page.dart`）：Logo 改 `logo.png`（123×31）；版本行 #808690/13；
+  关于文案 #2a2d32/15/行高 1.58；进度环改小程序饼图样式（外圈灰 #dfe5ee + 橙 #ff762f 进度带 8px、
+  内圈 #edf6ff 实心盘 180、数字 #ff6421/37 + 小号「%」、说明 #808690/12）。
+- **校验**：本机未安装 Flutter/Dart SDK，无法运行 `flutter analyze`；改动经人工逐文件复核（导入、未用符号、
+  资源声明均已确认）。建议在有 SDK 的环境补跑一次 `flutter analyze lib`。
+- **说明**：删除设置首页的更新入口后，`UpdateBoltStarPage`（`/figma/settings/update*` 路由仍在）
+  成为未接入导航的孤儿页，与小程序一致（小程序 update 仅可经直接跳转到达）。
+
+> ✅ **设置模块（index / language / guide / update / privacy / agreement）整体完成。**
+
+### 账户 / 邮箱 `account`（对照 `photo-album/subpackages/settings`：profile/forgot-password/change-email/bind-email）— ✅ 已完成（2026-06-02）
+- **共享表单控件对齐**（`figma_common.dart`，惠及所有账户/资料页：profile/register/forgot/modify-password/
+  modify-email/bind-email）：
+  - 表单标签 `formLabel` 由 14/w400 改 **14/w700/#2a2d32**（小程序 `.form-label`/`.email-label`/
+    `.profile-label` 均为粗体）；为避免设备详情信息行被一起加粗，`FigmaInfoRow` 标题就地钉死 w600；
+  - 占位符 `formHint` 改 **#8b9098**（`.form-placeholder`/`.email-placeholder`）；
+  - 只读字段（如「当前邮箱」）取值改灰 **#777e88**（`.current-email`/`.profile-text`），可编辑值保持深色；
+  - 表单分隔线 `FigmaFormDivider` 改 **rgba(207,214,224,0.72) / 左右内缩 18**（`.form-row::before`/
+    `.thin-divider`），与设置模块一致；
+  - 验证码按钮 `FigmaVerificationField` 改小程序 `.code-btn`：橙描边 #ff5f1f / 圆角 8 / 白 0.5 底；
+    倒计时态灰底 #f2f2f2 无描边 + #ff7654 文字；
+  - `FigmaScreenBackground` 增 `asset` 入参，支持个别页换背景图。
+- **绑定邮箱 `bind-email`**（`bind_email_incomplete_page.dart` / `bind_email_complete_page.dart`）：
+  「未完成」态补齐为小程序的完整四行（邮箱/验证码/密码/确认密码）+ 提示，仅主按钮置灰（对应 `!canSubmit`）；
+  提示行统一改 `FigmaInfoTip`（圆圈「i」+「绑定邮箱可以用于app登录」居中）。
+- **修改邮箱 `change-email`**（`modify_email_page.dart`）：背景改 `bg02.png`（小程序 change-email 用 bg02）；
+  结构（当前邮箱只读 + 新邮箱/验证码/密码/确认密码 + 确认修改）本就对齐，随共享控件一并贴近。
+- **忘记密码 `forgot-password`**（`forgot_password.dart`）：结构/文案本就对齐，随共享控件贴近，无需改动。
+- **附带收益**：注册 `register_page.dart`、修改密码 `modify_password.dart`（小程序无对应页，App 特有）
+  因复用共享控件已同步获得粗标签/灰占位/新分隔线/新验证码按钮样式。
+- **校验**：本机无 Flutter/Dart SDK，未跑 `flutter analyze`；改动逐文件人工复核（导入、未用符号、资源
+  声明均确认）。建议在有 SDK 的环境补跑 `flutter analyze lib`。
+
+> ✅ **账户模块（资料 / 忘记密码 / 修改密码 / 修改邮箱 / 绑定邮箱 / 注册）整体完成。**
+> 至此「设置 + 账户」两大待还原模块均已完成；微信小程序 `photo-album` 各业务子包（home/mine/device/
+> projection/album/settings/account）已逐页对照还原。
+
 ### 后续待还原模块（按优先级，便于接续）
-- 设置 `subpackages/settings`（index/language/guide/update/privacy/agreement）→ `settings/*`
-- 账户其余页 `account/*`（注册/忘记密码/改密/改邮箱/绑定邮箱）核对专属图标文案
+- 投屏预览的裁剪态 `photo_preview_adjust_image_page.dart` 仍可作为 preview 的 crop 变体后续核对
+- 「待办 / 可继续优化」中列出的孤儿页与「真实数据版 vs Figma 版」并存项可评估收敛
 > 注：登录页两端差异较大（App 邮箱密码 vs 小程序微信快捷登录），不做样式对照还原。
-> 注：`figma_common.dart` 的共享脚手架（背景/主次按钮/玻璃卡/导航标题/表单行）已对齐小程序，
-> 后续设置/账户类页面无需重复改这些公共件。
-> 注：投屏预览的裁剪态 `photo_preview_adjust_image_page.dart` 仍可作为 crop 变体后续核对。
-- 图库/相册 `subpackages/album` → `gallery/*`、`album/*`
-- 设置 `subpackages/settings`（index/language/guide/update/privacy/agreement）→ `settings/*`
-- 账户其余页 `account/*`（注册/忘记密码/改密/改邮箱/绑定邮箱）核对专属图标文案
-> 注：登录页两端差异较大（App 邮箱密码 vs 小程序微信快捷登录），不做样式对照还原。
-> 注：`figma_common.dart` 的共享脚手架（背景/主按钮/玻璃卡/导航标题/表单行）已对齐小程序，
-> 后续设置/账户类页面无需重复改这些公共件。
-- 投屏 `subpackages/projection`（preview/records/result）→ `cast/*`
-- 图库/相册 `subpackages/album` → `gallery/*`、`album/*`
-- 设置 `subpackages/settings`（index/language/guide/update/privacy/agreement）→ `settings/*`
-- 账户其余页 `account/*`（注册/忘记密码/改密/改邮箱/绑定邮箱）核对专属图标文案
-> 注：登录页两端差异较大（App 邮箱密码 vs 小程序微信快捷登录），不做样式对照还原。
-> 注：`figma_common.dart` 的共享脚手架（背景/主按钮/玻璃卡/导航标题/表单行）已对齐小程序，
-> 后续设置/账户类页面无需重复改这些公共件。
+> 注：`figma_common.dart` 的共享脚手架（背景/主次按钮/玻璃卡/导航标题/表单行/分隔线/验证码按钮/返回键）
+> 已全面对齐小程序，后续无需重复改这些公共件。

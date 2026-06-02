@@ -75,15 +75,17 @@ class FigmaScreen extends StatelessWidget {
   }
 }
 
-/// 默认页面背景：`bg01.png` 铺满（小程序 `.mock-bg__image`，设置/账户类页面统一用 bg01）。
-/// 加载失败回退到顶部浅蓝渐变过渡到底部白。
+/// 默认页面背景：`bg01.png` 铺满（小程序 `.mock-bg__image`，设置/账户类页面统一用 bg01；
+/// 少数页面如「修改邮箱」用 bg02，可通过 [asset] 覆盖）。加载失败回退到顶部浅蓝渐变过渡到底部白。
 class FigmaScreenBackground extends StatelessWidget {
-  const FigmaScreenBackground({super.key});
+  const FigmaScreenBackground({super.key, this.asset = 'assets/images/bg01.png'});
+
+  final String asset;
 
   @override
   Widget build(BuildContext context) {
     return Image.asset(
-      'assets/images/bg01.png',
+      asset,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
         return const DecoratedBox(
@@ -143,13 +145,8 @@ class FigmaTopBar extends StatelessWidget {
               alignment: Alignment.centerLeft,
               child: Padding(
                 padding: const EdgeInsets.only(left: 16),
-                child: SizedBox(
-                  width: 34,
-                  height: 34,
-                  child: FigmaRoundIconButton(
-                    icon: Icons.chevron_left_rounded,
-                    onTap: onBack ?? () => Navigator.maybePop(context),
-                  ),
+                child: FigmaBackButton(
+                  onTap: onBack ?? () => Navigator.maybePop(context),
                 ),
               ),
             ),
@@ -162,6 +159,54 @@ class FigmaTopBar extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+/// 顶部返回按钮：圆形底图 `return-round-icon.png` + 箭头 `return-arrow-icon.png`
+/// 叠加居中（对应小程序 `page-nav` 的 `.nav-back`：56rpx 圆底 + 24rpx 箭头）。
+class FigmaBackButton extends StatelessWidget {
+  const FigmaBackButton({super.key, this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        width: 30,
+        height: 30,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Image.asset(
+              'assets/images/return-round-icon.png',
+              width: 30,
+              height: 30,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ),
+            Image.asset(
+              'assets/images/return-arrow-icon.png',
+              width: 13,
+              height: 13,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Icons.chevron_left_rounded,
+                color: Color(0xFF565D67),
+                size: 20,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -378,7 +423,12 @@ class FigmaAccountField extends StatelessWidget {
                     keyboardType: keyboardType,
                     obscureText: obscureText,
                     cursorColor: const Color(0xFFEB5F1B),
-                    style: FigmaTextStyles.formValue,
+                    // 只读值（如当前邮箱）用小程序的灰色 #777e88，可编辑值用深色。
+                    style: readOnly
+                        ? FigmaTextStyles.formValue.copyWith(
+                            color: const Color(0xFF777E88),
+                          )
+                        : FigmaTextStyles.formValue,
                     decoration: InputDecoration(
                       isCollapsed: true,
                       border: InputBorder.none,
@@ -452,7 +502,7 @@ class FigmaVerificationField extends StatelessWidget {
                   border: InputBorder.none,
                   hintText: '请输入验证码',
                   hintStyle: TextStyle(
-                    color: Color(0x662A2B2B),
+                    color: Color(0xFF8B9098),
                     fontSize: 14,
                     height: 1.2,
                   ),
@@ -463,24 +513,27 @@ class FigmaVerificationField extends StatelessWidget {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: disabled ? null : onGetCode,
+              // 验证码按钮（小程序 `.code-btn`）：橙描边圆角矩形；倒计时态灰底无描边。
               child: Container(
-                height: 28,
-                padding: const EdgeInsets.symmetric(horizontal: 10),
+                height: 29,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: disabled
-                        ? const Color(0x332A2B2B)
-                        : const Color(0xFFEB5F1B),
-                  ),
+                  color: disabled
+                      ? const Color(0xFFF2F2F2)
+                      : Colors.white.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                  border: disabled
+                      ? null
+                      : Border.all(color: const Color(0xFFFF5F1F)),
                 ),
                 child: Text(
                   label,
                   style: FigmaTextStyles.codeButton.copyWith(
                     color: disabled
-                        ? const Color(0x662A2B2B)
-                        : const Color(0xFFEB5F1B),
+                        ? const Color(0xFFFF7654)
+                        : const Color(0xFFFF5F1F),
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ),
@@ -492,18 +545,60 @@ class FigmaVerificationField extends StatelessWidget {
   }
 }
 
+/// 表单行分隔线（小程序 `.form-row + .form-row::before` / `.thin-divider`）：
+/// 左右内缩 18、1px、rgba(207,214,224,0.72)。
 class FigmaFormDivider extends StatelessWidget {
   const FigmaFormDivider({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 20),
-      child: Divider(
-        height: 1,
-        thickness: 1,
-        color: const Color(0xFF2A2B2B).withValues(alpha: 0.08),
-      ),
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 18),
+      child: Divider(height: 1, thickness: 1, color: Color(0xB8CFD6E0)),
+    );
+  }
+}
+
+/// 居中提示行（小程序 `.email-tip`）：圆圈「i」徽标 + 说明文字（如「绑定邮箱可以用于app登录」）。
+class FigmaInfoTip extends StatelessWidget {
+  const FigmaInfoTip({super.key, required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Container(
+          width: 13,
+          height: 13,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            border: Border.all(color: const Color(0xFF8A929D)),
+          ),
+          child: const Text(
+            'i',
+            style: TextStyle(
+              color: Color(0xFF8A929D),
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            ),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          text,
+          style: const TextStyle(
+            color: Color(0xFF888F99),
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            height: 1.2,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -547,7 +642,9 @@ class FigmaInfoRow extends StatelessWidget {
               Expanded(
                 child: Text(
                   label,
+                  // 信息行标题保持 w600（小程序设备详情 `.info-label`），不随表单标签加粗到 w700。
                   style: FigmaTextStyles.formLabel.copyWith(
+                    fontWeight: FontWeight.w600,
                     color: danger
                         ? const Color(0xFFEB5F1B)
                         : const Color(0xFF2A2B2B),
@@ -835,10 +932,11 @@ class FigmaTextStyles {
     height: 1.45,
   );
 
+  // .form-label / .email-label / .profile-label → 28rpx(=14) / weight 700 / #2a2d32
   static const formLabel = TextStyle(
-    color: Color(0xFF2A2B2B),
+    color: Color(0xFF2A2D32),
     fontSize: 14,
-    fontWeight: FontWeight.w400,
+    fontWeight: FontWeight.w700,
     height: 1.4,
   );
 
@@ -849,8 +947,9 @@ class FigmaTextStyles {
     height: 1.4,
   );
 
+  // .form-placeholder / .email-placeholder → #8b9098
   static const formHint = TextStyle(
-    color: Color(0x662A2B2B),
+    color: Color(0xFF8B9098),
     fontSize: 14,
     fontWeight: FontWeight.w400,
     height: 1.4,

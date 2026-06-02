@@ -46,13 +46,21 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
+          const SizedBox(height: 17),
           FigmaGlassCard(
-            padding: const EdgeInsets.symmetric(vertical: 6),
+            borderRadius: 11,
             child: Column(
               children: [
                 for (var i = 0; i < _LanguageOption.values.length; i++) ...[
-                  if (i != 0) const FigmaFormDivider(),
+                  if (i != 0)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 18),
+                      child: Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: Color(0xB8CFD6E0),
+                      ),
+                    ),
                   _LanguageRow(
                     label: _LanguageOption.values[i].label,
                     selected: _selected == _LanguageOption.values[i],
@@ -95,33 +103,36 @@ class _LanguageRow extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: SizedBox(
-        height: 56,
+        height: 61,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
           child: Row(
             children: [
-              Expanded(child: Text(label, style: FigmaTextStyles.formLabel)),
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF2A2D32),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                ),
+              ),
               if (selected)
-                Container(
-                  width: 22,
-                  height: 22,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEB5F1B),
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(
-                    Icons.check_rounded,
-                    color: Colors.white,
-                    size: 15,
-                  ),
+                Image.asset(
+                  'assets/images/selected-icon.png',
+                  width: 26,
+                  height: 26,
+                  fit: BoxFit.contain,
                 )
               else
                 Container(
-                  width: 22,
-                  height: 22,
+                  width: 26,
+                  height: 26,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    border: Border.all(color: const Color(0x332A2B2B)),
+                    border: Border.all(color: const Color(0xFFBFC4CC)),
                   ),
                 ),
             ],

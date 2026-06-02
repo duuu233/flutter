@@ -10,7 +10,7 @@ enum BoltStarUpdateStage { upToDate, updateAvailable, downloading }
 
 const String _currentVersion = '1.0.0';
 const String _latestVersion = '1.2.0';
-const String _appIntro = 'BoltStar是一款帮助您轻松管理和分享照片的应用，\n连接设备，珍藏生活每一刻。';
+const String _appIntro = 'BoltStar是一款帮助你轻松管理和分享照片的应用，连接设备，珍藏生活每一刻。';
 
 /// 更新 BoltStar 页面。
 ///
@@ -72,11 +72,11 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 64),
+          const SizedBox(height: 88),
           const Center(child: _BoltStarWordmark()),
-          const SizedBox(height: 16),
+          const SizedBox(height: 21),
           Center(child: _versionLabel()),
-          const SizedBox(height: 48),
+          const SizedBox(height: 64),
           if (_stage == BoltStarUpdateStage.downloading)
             Center(
               child: AnimatedBuilder(
@@ -90,15 +90,15 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
             )
           else
             const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
+              padding: EdgeInsets.symmetric(horizontal: 28),
               child: Text(
                 _appIntro,
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Color(0xCC2A2B2B),
-                  fontSize: 13,
+                  color: Color(0xFF2A2D32),
+                  fontSize: 15,
                   fontWeight: FontWeight.w400,
-                  height: 1.7,
+                  height: 1.58,
                 ),
               ),
             ),
@@ -126,10 +126,10 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
 }
 
 const TextStyle _versionStyle = TextStyle(
-  color: Color(0x992A2B2B),
+  color: Color(0xFF808690),
   fontSize: 13,
   fontWeight: FontWeight.w400,
-  height: 1.4,
+  height: 1,
 );
 
 class _BoltStarWordmark extends StatelessWidget {
@@ -137,16 +137,17 @@ class _BoltStarWordmark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 小程序 logo.png（246×62rpx ≈ 123×31）。
     return Image.asset(
-      'assets/images/login_boltstar_logo.png',
-      height: 40,
+      'assets/images/logo.png',
+      height: 31,
       fit: BoxFit.contain,
       errorBuilder: (context, error, stackTrace) {
         return const Text(
           'BoltStar',
           style: TextStyle(
             color: Color(0xFFFF6A24),
-            fontSize: 34,
+            fontSize: 28,
             fontWeight: FontWeight.w700,
             fontStyle: FontStyle.italic,
             letterSpacing: 0.5,
@@ -166,30 +167,36 @@ class _DownloadProgressRing extends StatelessWidget {
   Widget build(BuildContext context) {
     final percent = (progress * 100).round();
     return SizedBox(
-      width: 168,
-      height: 168,
+      width: 180,
+      height: 180,
       child: CustomPaint(
         painter: _RingPainter(progress: progress),
         child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(
-                '$percent%',
-                style: const TextStyle(
-                  color: Color(0xFFFF6A24),
-                  fontSize: 34,
-                  fontWeight: FontWeight.w600,
-                  height: 1.1,
+              Text.rich(
+                TextSpan(
+                  text: '$percent',
+                  style: const TextStyle(
+                    color: Color(0xFFFF6421),
+                    fontSize: 37,
+                    fontWeight: FontWeight.w400,
+                    height: 1,
+                  ),
+                  children: const [
+                    TextSpan(text: '%', style: TextStyle(fontSize: 14)),
+                  ],
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 12),
               const Text(
                 '正在下载更新中',
                 style: TextStyle(
-                  color: Color(0x992A2B2B),
+                  color: Color(0xFF808690),
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
+                  height: 1,
                 ),
               ),
             ],
@@ -200,6 +207,8 @@ class _DownloadProgressRing extends StatelessWidget {
   }
 }
 
+/// 进度环（小程序 `.progress-ring`）：外圈 conic 饼图（橙 #ff762f 进度 + 灰 #dfe5ee 余量），
+/// 内圈 #edf6ff 实心盖住中心 → 呈现一圈约 8px 的进度带。
 class _RingPainter extends CustomPainter {
   const _RingPainter({required this.progress});
 
@@ -208,21 +217,30 @@ class _RingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    final radius = (size.width - 12) / 2;
+    const ringWidth = 8.0;
+    final outerRadius = size.width / 2;
+    final ringRadius = outerRadius - ringWidth / 2;
+    final innerRadius = outerRadius - ringWidth;
+
     final track = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 10
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0xFFEDEDED);
+      ..strokeWidth = ringWidth
+      ..color = const Color(0xFFDFE5EE);
     final arc = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 10
-      ..strokeCap = StrokeCap.round
-      ..color = const Color(0xFFFF6A24);
+      ..strokeWidth = ringWidth
+      ..color = const Color(0xFFFF762F);
 
-    canvas.drawCircle(center, radius, track);
+    // 内圈浅蓝实心盘。
+    canvas.drawCircle(
+      center,
+      innerRadius,
+      Paint()..color = const Color(0xFFEDF6FF),
+    );
+    // 进度带：灰底 + 橙色弧（butt 端，呈饼图的锐利切边）。
+    canvas.drawCircle(center, ringRadius, track);
     canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
+      Rect.fromCircle(center: center, radius: ringRadius),
       -math.pi / 2,
       2 * math.pi * progress.clamp(0.0, 1.0),
       false,
