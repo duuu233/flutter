@@ -72,10 +72,17 @@ lib/
 | `shell_page.dart` | `AppShell` | 底部导航在「首页 / 我的 / Demo」之间切换 |
 
 ### `home/` — 首页
+`HomePage` 拆分为同一 library 下的多个 `part` 文件，按职责浏览；样式以微信小程序
+`photo-album/pages/home` 为准精准还原（详见文末「改造进度」）。
+
 | 文件 | 页面/组件 | 说明 |
 | --- | --- | --- |
-| `home_page.dart` | `HomePage` | 首页：设备绑定与投屏核心流程 |
-| `home_device_pages.dart` | `FigmaHomeUnboundDevicePage` / `FigmaHomeBoundDevicePage` | 首页（未绑定 / 已绑定）的 Figma 还原页 |
+| `home_page.dart` | `HomePage` | 首页主入口：场景状态机（已绑定/未绑定/绑定流程/各弹层）与所有交互逻辑 |
+| `home_main_view.dart` | `_HomeMainView`（part） | 首页主视图（已绑定 / 未绑定），含顶部「首页」标题栏、问候语、设备卡、投屏入口 |
+| `home_bind_device_view.dart` | `_BindDeviceView`（part） | 绑定设备流程视图（搜索中 / 未发现 / 已发现） |
+| `home_sheets.dart` | 各 `_*Sheet`（part） | 底部弹层（提示 / 选择投屏方式 / 扫描帮助） |
+| `home_widgets.dart` | 展示型叶子组件（part） | 背景、头像、设备卡、投屏卡、底部 Tab 栏、电量图标映射等 |
+| `home_text_styles.dart` | `_HomeTextStyles`（part） | 首页统一文字样式（字号/颜色/字重对齐小程序 rpx÷2） |
 | `widgets/draft_picker_sheet.dart` | `DraftPickerSheet` | 草稿选择底部弹层 |
 | `widgets/cast_preview_sheet.dart` | `CastPreviewSheet` | 投屏预览底部弹层 |
 | `widgets/native_permission_panel.dart` | `NativePermissionPanel` | 原生权限申请面板 |
@@ -170,7 +177,39 @@ lib/
 
 - **未接入导航的“孤儿”页面**（路由已定义但应用内无入口，多为早期原型，可评估删除或接入）：
   `AlbumPage`(`/album`)、`DevicesPage`(`/devices`)、`CastManagementPage`(`/cast-management`)、
-  `FigmaHomeUnbound/BoundDevicePage`、`ProfileBound/UnboundEmailPage`、各 `PhotoPreview*` 与
+  `ProfileBound/UnboundEmailPage`、各 `PhotoPreview*` 与
   `Casting/CastSuccess/CastFailed`、`ModifyPassword` 等。
 - **同领域的“真实数据版 vs Figma 版”**仍并存（如 `DevicesPage` vs `MyDevicesPage`、
   `CastManagementPage` vs `CastManagementFigmaPage`），建议后续各保留一个。
+
+---
+
+## 改造进度（对照微信小程序 `photo-album` 还原）
+
+> 背景：本 App 与微信小程序 `D:\Work\learn\photo-album` 功能一致，仅登录方式不同
+> （App 为邮箱密码，小程序为微信快捷登录）。两个项目 `assets/images/` 资源**完全同名同图**，
+> 以小程序为视觉基准逐页精准还原。换算约定：小程序 1rpx ≈ 0.5 逻辑像素（750rpx=屏宽）。
+> 每完成一项在此追加记录。
+
+### 首页 `home`（对照 `photo-album/pages/home`）— ✅ 已完成（2026-06-02）
+- **根因修复**：此前首页引用的是一批已删除的旧命名资源（`Group 194746.png`、
+  `Rectangle 10457.png`、`Group 19452x.png`、`Frame.png` 等），运行时全部走 `errorBuilder`
+  手绘兜底，与设计稿偏差大。现已全部改用与小程序一致的真实资源。
+- **资源对齐**：
+  - 头像 `mine-header.png`（36，白底圆形）、右上「+」`home-add-icon.png`；
+  - 已绑定设备卡底图 `home-bg01.png`（702×420rpx）+ 圆环 `home-icon02.png` +
+    蓝牙图标 `bluetooth-icon.png` + 电量图标 `BatteryLevel/battery-{档}.png`（就近取整，
+    逻辑同小程序 `utils/battery.js`）；
+  - 投屏卡底图 `home-camera-card-bg.png` / `home-album-card-bg.png`（366×358rpx），
+    素材 `camera_material.png` / `album_material.png`（132rpx），箭头
+    `home-camera-card-right-icon.png` / `home-album-card-right-icon.png`（118rpx）；
+  - 选择投屏方式弹层素材改 `home-media-mini01/02.png` + 圆形箭头；
+  - 底部 Tab 改用 `tabbar-home02.svg` / `tabbar-mine01.svg`（白色半透明胶囊 + 柔和投影）。
+- **样式对齐**：新增顶部居中「首页」标题栏；问候语「BoltStar」改为橙色加粗文字
+  （#ff7a2e/22/w800，非图片）；字号颜色按小程序 wxss 重设（见 `home_text_styles.dart`）；
+  轮播指示点按已连接设备数渲染（17×4、间距 12、选中 #ff6922）；横向留白分区设置
+  （文字区 24、卡片区 12）。
+- **配置**：`pubspec.yaml` 补充声明 `assets/images/BatteryLevel/`（Flutter 资源目录不递归）。
+- **涉及文件**：`home_main_view.dart`、`home_widgets.dart`、`home_text_styles.dart`、
+  `home_sheets.dart`、`home_page.dart`（引入 `flutter_svg`）、`pubspec.yaml`。
+- **校验**：`flutter analyze lib` 通过（仅 2 条与本次无关的既有 info 提示）。

@@ -7,9 +7,12 @@ part of 'home_page.dart';
 ///   设备轮播指示点。
 /// - [activeDevice] == null → 「首页-未绑定设备」：空设备插画 +「绑定设备」按钮。
 ///
-/// 两种场景底部共用「选择投屏方式」卡片区与底部 Tab 栏（见 [_castSection]）。
-/// 整体用 `SingleChildScrollView + ConstrainedBox + IntrinsicHeight` 包裹：屏幕够高
-/// 时用 `Spacer` 撑开布局，屏幕过矮时可滚动，避免溢出。所有交互通过回调上抛。
+/// 两种场景顶部共用居中「首页」标题栏，底部共用「选择投屏方式」卡片区与底部 Tab 栏
+/// （见 [_castSection]）。整体用 `SingleChildScrollView + ConstrainedBox + IntrinsicHeight`
+/// 包裹：屏幕够高时用 `Spacer` 撑开布局，屏幕过矮时可滚动，避免溢出。
+///
+/// 横向留白对齐小程序：文字内容区 48rpx(=24)，设备卡 / 投屏卡区 24rpx(=12)，
+/// 因此不再使用统一外层 padding，而是按区块分别设置。
 class _HomeMainView extends StatelessWidget {
   const _HomeMainView({
     required this.state,
@@ -43,74 +46,83 @@ class _HomeMainView extends StatelessWidget {
 
   bool get _bound => activeDevice != null;
 
+  /// 文字内容区横向留白（48rpx）。
+  static const _textInset = EdgeInsets.symmetric(horizontal: 24);
+
+  /// 卡片区横向留白（24rpx）。
+  static const _cardInset = EdgeInsets.symmetric(horizontal: 12);
+
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return SingleChildScrollView(
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight),
-            child: IntrinsicHeight(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: _bound ? _buildBound(context) : _buildUnbound(context),
-              ),
-            ),
+    return Column(
+      children: [
+        const _HomeNavBar(title: '首页'),
+        Expanded(
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                  child: IntrinsicHeight(
+                    child: _bound
+                        ? _buildBound(context)
+                        : _buildUnbound(context),
+                  ),
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+      ],
     );
   }
 
   /// 「首页-已绑定设备」布局。
   Widget _buildBound(BuildContext context) {
+    // 设备轮播指示点：点数=已连接设备数，高亮当前设备。
+    final connected = state.devices.where((device) => device.connected).toList();
+    final activeIndex = connected.indexWhere((d) => d.id == activeDevice!.id);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 12),
-        SizedBox(
-          height: 34,
-          child: Row(
-            children: [
-              const _Avatar(),
-              const Spacer(),
-              SizedBox(
-                width: 30,
-                height: 30,
-                child: _RoundAddButton(onTap: onAddDevice),
-              ),
-            ],
+        const SizedBox(height: 5),
+        Padding(
+          padding: _textInset,
+          child: SizedBox(
+            height: 36,
+            child: Row(
+              children: [
+                const _Avatar(),
+                const Spacer(),
+                _RoundAddButton(onTap: onAddDevice),
+              ],
+            ),
           ),
         ),
-        const SizedBox(height: 52),
-        const _GreetingTitle(),
-        const SizedBox(height: 25),
-        SizedBox(
-          width: double.infinity,
-          height: 186,
-          child: Stack(
-            clipBehavior: Clip.none,
-            children: [
-              Positioned.fill(
-                child: _ConnectedDeviceCard(device: activeDevice!),
-              ),
-              const Positioned(
-                right: -130,
-                top: 25,
-                width: 154,
-                height: 134,
-                child: _SideCardHint(),
-              ),
-            ],
+        const SizedBox(height: 35),
+        const Padding(padding: _textInset, child: _GreetingTitle()),
+        const SizedBox(height: 23),
+        // 设备卡：702×420rpx，横向 24rpx 留白，保持 351:210 比例。
+        Padding(
+          padding: _cardInset,
+          child: AspectRatio(
+            aspectRatio: 351 / 210,
+            child: _ConnectedDeviceCard(device: activeDevice!),
           ),
         ),
-        const SizedBox(height: 31),
-        const Center(child: _CarouselDots()),
+        const SizedBox(height: 18),
+        Center(
+          child: _CarouselDots(
+            count: connected.length,
+            activeIndex: activeIndex < 0 ? 0 : activeIndex,
+          ),
+        ),
         const Spacer(),
         ..._castSection(),
         const Spacer(),
-        _HomeTabBar(onOpenMine: onOpenMine),
-        const SizedBox(height: 12),
+        Padding(padding: _textInset, child: _HomeTabBar(onOpenMine: onOpenMine)),
+        const SizedBox(height: 13),
       ],
     );
   }
@@ -124,7 +136,7 @@ class _HomeMainView extends StatelessWidget {
         const Center(
           child: SizedBox(width: 240, height: 189, child: _UnboundDeviceArt()),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 12),
         const SizedBox(
           width: double.infinity,
           child: Text(
@@ -133,7 +145,7 @@ class _HomeMainView extends StatelessWidget {
             style: _HomeTextStyles.mutedBody,
           ),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 24),
         Center(
           child: SizedBox(
             width: 200,
@@ -141,7 +153,7 @@ class _HomeMainView extends StatelessWidget {
             child: _GradientButton(
               label: '绑定设备',
               height: 44,
-              fontSize: 16,
+              fontSize: 15,
               icon: Container(
                 width: 16,
                 height: 16,
@@ -160,11 +172,10 @@ class _HomeMainView extends StatelessWidget {
           ),
         ),
         const Spacer(flex: 6),
-        // const SizedBox(height: 68),
         ..._castSection(),
         const Spacer(),
-        _HomeTabBar(onOpenMine: onOpenMine),
-        const SizedBox(height: 12),
+        Padding(padding: _textInset, child: _HomeTabBar(onOpenMine: onOpenMine)),
+        const SizedBox(height: 13),
       ],
     );
   }
@@ -172,38 +183,44 @@ class _HomeMainView extends StatelessWidget {
   /// 两种场景共用的底部「选择投屏方式」标题 + 拍照/相册两张入口卡。
   List<Widget> _castSection() {
     return [
-      GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onShowCastSheet,
-        child: const Text('选择投屏方式', style: _HomeTextStyles.sectionTitle),
+      Padding(
+        padding: _textInset,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onShowCastSheet,
+          child: const Text('选择投屏方式', style: _HomeTextStyles.sectionTitle),
+        ),
       ),
-      const SizedBox(height: 14),
-      Row(
-        children: [
-          Expanded(
-            child: _CastEntryCard(
-              title: '拍照',
-              subtitle: '拍摄照片并投屏',
-              artAsset: 'assets/images/camera_material.png',
-              arrowAsset: 'assets/images/Group 194521.png',
-              backgroundAsset: 'assets/images/Rectangle 10457.png',
-              fallbackColor: const Color(0xFFFFF8F4),
-              onTap: onCamera,
+      const SizedBox(height: 8),
+      Padding(
+        padding: _cardInset,
+        child: Row(
+          children: [
+            Expanded(
+              child: _CastEntryCard(
+                title: '拍照',
+                subtitle: '拍摄照片并投屏',
+                artAsset: 'assets/images/camera_material.png',
+                arrowAsset: 'assets/images/home-camera-card-right-icon.png',
+                backgroundAsset: 'assets/images/home-camera-card-bg.png',
+                fallbackColor: const Color(0xFFFFF8F4),
+                onTap: onCamera,
+              ),
             ),
-          ),
-          const SizedBox(width: 11),
-          Expanded(
-            child: _CastEntryCard(
-              title: '相册',
-              subtitle: '选择照片并投屏',
-              artAsset: 'assets/images/Group 194924.png',
-              arrowAsset: 'assets/images/Group 194522.png',
-              backgroundAsset: 'assets/images/Rectangle 10403.png',
-              fallbackColor: const Color(0xFFEAF4FF),
-              onTap: onAlbum,
+            const SizedBox(width: 6),
+            Expanded(
+              child: _CastEntryCard(
+                title: '相册',
+                subtitle: '选择照片并投屏',
+                artAsset: 'assets/images/album_material.png',
+                arrowAsset: 'assets/images/home-album-card-right-icon.png',
+                backgroundAsset: 'assets/images/home-album-card-bg.png',
+                fallbackColor: const Color(0xFFEAF4FF),
+                onTap: onAlbum,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ];
   }

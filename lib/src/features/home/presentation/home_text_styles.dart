@@ -15,65 +15,74 @@ class _HomeTextStyles {
     height: 1.2,
   );
 
+  // .hello-title → font-size 82rpx(=41) / weight 500 / #2a2b2b / line-height 1
   static const hi = TextStyle(
     color: Color(0xFF2A2B2B),
-    fontSize: 43,
+    fontSize: 41,
     fontWeight: FontWeight.w500,
     height: 1,
   );
 
+  // .hello-subtitle → font-size 40rpx(=20) / #545963 / line-height 1
   static const welcome = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 21,
+    color: Color(0xFF545963),
+    fontSize: 20,
     fontWeight: FontWeight.w400,
     height: 1,
   );
 
-  static const brandFallback = TextStyle(
-    color: Color(0xFFFF7D36),
+  // .hello-subtitle text → font-size 44rpx(=22) / weight 800 / #ff7a2e
+  static const brand = TextStyle(
+    color: Color(0xFFFF7A2E),
     fontSize: 22,
+    fontWeight: FontWeight.w800,
+    height: 1,
+  );
+
+  // .projection-title → font-size 32rpx(=16) / weight 600 / #2a2d32
+  static const sectionTitle = TextStyle(
+    color: Color(0xFF2A2D32),
+    fontSize: 16,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+  );
+
+  // .empty-hint → font-size 26rpx(=13) / #2a2b2b 60%
+  static const mutedBody = TextStyle(
+    color: Color(0x992A2B2B),
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    height: 1.2,
+  );
+
+  // .projection-name → font-size 36rpx(=18) / weight 700 / #2a2d32 / line-height 1
+  static const cardTitle = TextStyle(
+    color: Color(0xFF2A2D32),
+    fontSize: 18,
     fontWeight: FontWeight.w700,
     height: 1,
   );
 
-  static const sectionTitle = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 17,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
-  );
-
-  static const mutedBody = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 14,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const cardTitle = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 18,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
-  );
-
+  // .projection-desc → font-size 22rpx(=11) / #8a9099 / line-height 1
   static const cardSubtitle = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 12,
+    color: Color(0xFF8A9099),
+    fontSize: 11,
     fontWeight: FontWeight.w400,
-    height: 1.2,
+    height: 1,
   );
 
+  // .device-title → font-size 40rpx(=20) / weight 700 / #2a2d32
   static const deviceCardTitle = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 23,
-    fontWeight: FontWeight.w600,
+    color: Color(0xFF2A2D32),
+    fontSize: 20,
+    fontWeight: FontWeight.w700,
     height: 1.2,
   );
 
+  // .device-status / .battery-row → font-size 24rpx(=12) / #777e88
   static const deviceMeta = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 13,
+    color: Color(0xFF777E88),
+    fontSize: 12,
     fontWeight: FontWeight.w400,
     height: 1.2,
   );
@@ -134,18 +143,20 @@ class _HomeTextStyles {
     height: 1.2,
   );
 
+  // .media-option-copy view → font-size 32rpx(=16) / weight 700 / #2a2d32
   static const sheetOptionTitle = TextStyle(
-    color: Color(0xFF2A2B2B),
+    color: Color(0xFF2A2D32),
     fontSize: 16,
-    fontWeight: FontWeight.w600,
+    fontWeight: FontWeight.w700,
     height: 1.15,
   );
 
+  // .media-option-copy text → font-size 22rpx(=11) / #858b96
   static const sheetOptionBody = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 12,
+    color: Color(0xFF858B96),
+    fontSize: 11,
     fontWeight: FontWeight.w400,
-    height: 1.2,
+    height: 1,
   );
 
   static const cancelButton = TextStyle(

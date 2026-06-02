@@ -186,6 +186,9 @@ class _CircleIconButton extends StatelessWidget {
 }
 
 /// 底部导航栏（首页主视图底部，「首页 / 我的」两个 Tab）。
+///
+/// 对齐小程序 `custom-tabbar`：白色半透明胶囊（圆角全圆 + 柔和投影），
+/// 图标用 `tabbar-*.svg`，首页态高亮 #ff6421、未选态 #777d86。
 class _HomeTabBar extends StatelessWidget {
   const _HomeTabBar({required this.onOpenMine});
 
@@ -198,16 +201,23 @@ class _HomeTabBar extends StatelessWidget {
       height: 56,
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.74),
-        borderRadius: BorderRadius.circular(35),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7E96B8).withValues(alpha: 0.14),
+            blurRadius: 25,
+            offset: const Offset(0, 9),
+          ),
+        ],
       ),
       child: Row(
         children: [
           const Expanded(
             child: _HomeTabItem(
-              icon: Icons.home_rounded,
+              iconAsset: 'assets/images/tabbar-home02.svg',
+              fallbackIcon: Icons.home_rounded,
               label: '首页',
-              color: Color(0xFFFF6A24),
+              color: Color(0xFFFF6421),
             ),
           ),
           Expanded(
@@ -215,9 +225,10 @@ class _HomeTabBar extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: onOpenMine,
               child: const _HomeTabItem(
-                icon: Icons.person_outline_rounded,
+                iconAsset: 'assets/images/tabbar-mine01.svg',
+                fallbackIcon: Icons.person_outline_rounded,
                 label: '我的',
-                color: Color(0xFF7A7D80),
+                color: Color(0xFF777D86),
               ),
             ),
           ),
@@ -229,12 +240,14 @@ class _HomeTabBar extends StatelessWidget {
 
 class _HomeTabItem extends StatelessWidget {
   const _HomeTabItem({
-    required this.icon,
+    required this.iconAsset,
+    required this.fallbackIcon,
     required this.label,
     required this.color,
   });
 
-  final IconData icon;
+  final String iconAsset;
+  final IconData fallbackIcon;
   final String label;
   final Color color;
 
@@ -243,8 +256,13 @@ class _HomeTabItem extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        Icon(icon, color: color, size: 28),
-        const SizedBox(height: 1),
+        SvgPicture.asset(
+          iconAsset,
+          width: 28,
+          height: 28,
+          placeholderBuilder: (context) => Icon(fallbackIcon, color: color, size: 28),
+        ),
+        const SizedBox(height: 2),
         Text(
           label,
           style: TextStyle(
@@ -259,26 +277,68 @@ class _HomeTabItem extends StatelessWidget {
   }
 }
 
+/// 顶部导航标题栏：与小程序 `page-nav` 一致，居中显示「首页」，背景透明。
+class _HomeNavBar extends StatelessWidget {
+  const _HomeNavBar({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: Center(
+        child: Text(
+          title,
+          style: const TextStyle(
+            color: Color(0xFF111111),
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            height: 1.25,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 电量百分比 → `BatteryLevel/battery-{档位}.png` 资源路径（每 10% 一档，就近取整）。
+/// 与小程序 `utils/battery.js` 的 getBatteryIcon 一致。
+String _batteryIconAsset(int level) {
+  final value = level.clamp(0, 100);
+  const levels = <int>[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  var nearest = levels.first;
+  for (final candidate in levels) {
+    if ((candidate - value).abs() < (nearest - value).abs()) {
+      nearest = candidate;
+    }
+  }
+  return 'assets/images/BatteryLevel/battery-$nearest.png';
+}
+
 // -----------------------------------------------------------------------------
 // 「首页-已绑定设备」场景专用组件。
 // -----------------------------------------------------------------------------
 
-/// 顶部用户头像。
+/// 顶部用户头像（小程序 `.avatar-btn`：72rpx=36 白底圆形，内嵌 `mine-header.png`）。
 class _Avatar extends StatelessWidget {
   const _Avatar();
 
   @override
   Widget build(BuildContext context) {
-    return ClipOval(
+    return Container(
+      width: 36,
+      height: 36,
+      clipBehavior: Clip.antiAlias,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+      ),
       child: Image.asset(
-        'assets/images/logo.png',
-        width: 34,
-        height: 34,
+        'assets/images/mine-header.png',
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) {
           return Container(
-            width: 34,
-            height: 34,
             color: const Color(0xFFEAF4FF),
             child: const Icon(
               Icons.person_rounded,
@@ -292,7 +352,7 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// 右上角「添加设备」圆形按钮。
+/// 右上角「添加设备」圆形按钮（小程序 `home-add-icon.png`，62rpx≈31）。
 class _RoundAddButton extends StatelessWidget {
   const _RoundAddButton({required this.onTap});
 
@@ -304,9 +364,9 @@ class _RoundAddButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Image.asset(
-        'assets/images/Group 194746.png',
-        width: 30,
-        height: 30,
+        'assets/images/home-add-icon.png',
+        width: 31,
+        height: 31,
         errorBuilder: (context, error, stackTrace) {
           return Container(
             decoration: const BoxDecoration(
@@ -322,45 +382,36 @@ class _RoundAddButton extends StatelessWidget {
 }
 
 /// 问候语「Hi / 欢迎使用 BoltStar」。带 Key('home-title') 供测试定位。
+///
+/// 对齐小程序：「BoltStar」为橙色加粗文字（非图片），与 `欢迎使用` 同一行。
 class _GreetingTitle extends StatelessWidget {
   const _GreetingTitle();
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 310,
-      height: 75,
-      child: Column(
-        key: const Key('home-title'),
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Hi', style: _HomeTextStyles.hi),
-          const SizedBox(height: 7),
-          Row(
+    return const Column(
+      key: Key('home-title'),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('Hi', style: _HomeTextStyles.hi),
+        SizedBox(height: 9),
+        Text.rich(
+          TextSpan(
             children: [
-              const Text('欢迎使用 ', style: _HomeTextStyles.welcome),
-              Image.asset(
-                'assets/images/logo.png',
-                width: 100,
-                height: 25,
-                fit: BoxFit.contain,
-                alignment: Alignment.centerLeft,
-                errorBuilder: (context, error, stackTrace) {
-                  return const Text(
-                    'BoltStar',
-                    style: _HomeTextStyles.brandFallback,
-                  );
-                },
-              ),
+              TextSpan(text: '欢迎使用 ', style: _HomeTextStyles.welcome),
+              TextSpan(text: 'BoltStar', style: _HomeTextStyles.brand),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
 
-/// 已连接设备卡片：设备名、连接状态、电量。
+/// 已连接设备卡片（小程序 `.device-carousel`）：
+/// 卡片底图 `home-bg01.png`（702×420rpx）+ 左侧圆环 `home-icon02.png` +
+/// 右侧设备信息（名称 / 蓝牙连接状态 / 电量）。
 class _ConnectedDeviceCard extends StatelessWidget {
   const _ConnectedDeviceCard({required this.device});
 
@@ -368,20 +419,44 @@ class _ConnectedDeviceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.76),
-        borderRadius: BorderRadius.circular(29),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(41, 0, 20, 0),
-        child: Row(
-          children: [
-            const SizedBox(width: 136, height: 136, child: _DeviceOrbitMark()),
-            const SizedBox(width: 18),
-            Expanded(
-              child: Column(
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // 卡片背景图铺满（home-bg01.png 自带圆角与玻璃质感）。
+        Image.asset(
+          'assets/images/home-bg01.png',
+          fit: BoxFit.fill,
+          errorBuilder: (context, error, stackTrace) {
+            return DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.55),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+              ),
+            );
+          },
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              // 左侧圆环图标（home-icon02.png，286rpx≈143）。
+              Image.asset(
+                'assets/images/home-icon02.png',
+                width: 143,
+                height: 143,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const SizedBox(
+                    width: 136,
+                    height: 136,
+                    child: _DeviceOrbitMark(),
+                  );
+                },
+              ),
+              // 右侧设备信息。
+              Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -391,25 +466,36 @@ class _ConnectedDeviceCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: _HomeTextStyles.deviceCardTitle,
                   ),
-                  const SizedBox(height: 16),
-                  const Row(
-                    children: [
-                      Icon(
-                        Icons.bluetooth_rounded,
-                        color: Color(0xFF4A98FF),
-                        size: 17,
-                      ),
-                      SizedBox(width: 6),
-                      Text('已连接', style: _HomeTextStyles.deviceMeta),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 9),
                   Row(
                     children: [
                       Image.asset(
-                        'assets/images/Frame.png',
-                        width: 18,
-                        height: 12,
+                        'assets/images/bluetooth-icon.png',
+                        width: 11,
+                        height: 14,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.bluetooth_rounded,
+                            color: Color(0xFF4A98FF),
+                            size: 14,
+                          );
+                        },
+                      ),
+                      const SizedBox(width: 7),
+                      Text(
+                        device.connected ? '已连接' : '未连接',
+                        style: _HomeTextStyles.deviceMeta,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 11),
+                  Row(
+                    children: [
+                      Image.asset(
+                        _batteryIconAsset(device.batteryLevel),
+                        width: 26,
+                        fit: BoxFit.contain,
                         errorBuilder: (context, error, stackTrace) {
                           return const Icon(
                             Icons.battery_2_bar_rounded,
@@ -418,7 +504,7 @@ class _ConnectedDeviceCard extends StatelessWidget {
                           );
                         },
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 7),
                       Text(
                         '${device.batteryLevel}%',
                         style: _HomeTextStyles.deviceMeta,
@@ -427,26 +513,10 @@ class _ConnectedDeviceCard extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
-      ),
-    );
-  }
-}
-
-/// 设备卡右侧露出的「下一张卡」提示（暗示可左右切换的设备轮播）。
-class _SideCardHint extends StatelessWidget {
-  const _SideCardHint();
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.42),
-        borderRadius: BorderRadius.circular(28),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.65)),
-      ),
+      ],
     );
   }
 }
@@ -515,35 +585,43 @@ class _DeviceOrbitMarkPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// 设备轮播指示点（3 点，首点高亮）。
+/// 设备轮播指示点（小程序 `.carousel-dots`）：每点 34×8rpx(=17×4)，间距 24rpx(=12)，
+/// 选中 #ff6922、未选 #d7dce3。点数等于已绑定设备数（至少 1 个）。
 class _CarouselDots extends StatelessWidget {
-  const _CarouselDots();
+  const _CarouselDots({this.count = 1, this.activeIndex = 0});
+
+  final int count;
+  final int activeIndex;
 
   @override
   Widget build(BuildContext context) {
+    final total = count < 1 ? 1 : count;
     return Row(
-      children: const [
-        _Dot(width: 18, color: Color(0xFFFF6A24)),
-        SizedBox(width: 12),
-        _Dot(width: 18, color: Color(0xFFD7DADD)),
-        SizedBox(width: 12),
-        _Dot(width: 18, color: Color(0xFFD7DADD)),
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < total; i++) ...[
+          if (i > 0) const SizedBox(width: 12),
+          _Dot(
+            color: i == activeIndex
+                ? const Color(0xFFFF6922)
+                : const Color(0xFFD7DCE3),
+          ),
+        ],
       ],
     );
   }
 }
 
 class _Dot extends StatelessWidget {
-  const _Dot({required this.width, required this.color});
+  const _Dot({required this.color});
 
-  final double width;
   final Color color;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width,
-      height: 3,
+      width: 17,
+      height: 4,
       decoration: BoxDecoration(
         color: color,
         borderRadius: BorderRadius.circular(999),
@@ -645,11 +723,11 @@ class _CastEntryCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        height: 155,
-        // 背景图整张铺满属于合理的层叠用法，内容用弹性布局叠在其上，
-        // 避免对标题/副标题/箭头逐个写死坐标。
+        // 小程序 .projection-card：366×358rpx = 183×179。
+        height: 179,
         child: Stack(
           children: [
+            // 卡片底图铺满（home-camera-card-bg.png / home-album-card-bg.png）。
             Positioned.fill(
               child: Image.asset(
                 backgroundAsset,
@@ -667,76 +745,74 @@ class _CastEntryCard extends StatelessWidget {
                 },
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(13, 22, 25, 22),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            // 顶部素材图：margin 46rpx(=23) top/left。
+            Positioned(
+              left: 23,
+              top: 23,
+              width: 66,
+              height: 66,
+              child: Image.asset(
+                artAsset,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(
+                    title == '拍照'
+                        ? Icons.photo_camera_rounded
+                        : Icons.photo_library_rounded,
+                    color: title == '拍照'
+                        ? const Color(0xFFFF6A24)
+                        : const Color(0xFF287BFF),
+                    size: 44,
+                  );
+                },
+              ),
+            ),
+            // 底部文案行：.projection-copy（名称 + 描述 + 大箭头）。
+            Positioned(
+              left: 23,
+              right: 13,
+              bottom: 8,
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 21),
-                    child: SizedBox(
-                      width: 55,
-                      height: 55,
-                      child: Image.asset(
-                        artAsset,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return Icon(
-                            title == '拍照'
-                                ? Icons.photo_camera_rounded
-                                : Icons.photo_library_rounded,
-                            color: title == '拍照'
-                                ? const Color(0xFFFF6A24)
-                                : const Color(0xFF287BFF),
-                            size: 38,
-                          );
-                        },
-                      ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _HomeTextStyles.cardTitle,
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _HomeTextStyles.cardSubtitle,
+                        ),
+                      ],
                     ),
                   ),
-                  const Spacer(),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _HomeTextStyles.cardTitle,
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _HomeTextStyles.cardSubtitle,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      SizedBox(
-                        width: 36,
-                        height: 36,
-                        child: Image.asset(
-                          arrowAsset,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(
-                              Icons.arrow_forward_rounded,
-                              color: title == '拍照'
-                                  ? const Color(0xFFFF6A24)
-                                  : const Color(0xFF287BFF),
-                              size: 26,
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                  const SizedBox(width: 4),
+                  SizedBox(
+                    width: 59,
+                    height: 59,
+                    child: Image.asset(
+                      arrowAsset,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(
+                          Icons.arrow_forward_rounded,
+                          color: title == '拍照'
+                              ? const Color(0xFFFF6A24)
+                              : const Color(0xFF287BFF),
+                          size: 30,
+                        );
+                      },
+                    ),
                   ),
                 ],
               ),
@@ -771,17 +847,17 @@ class _CastSheetRow extends StatelessWidget {
       onTap: onTap,
       child: Container(
         width: double.infinity,
-        height: 61,
-        padding: const EdgeInsets.fromLTRB(12, 8, 18, 8),
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF5F6F8),
+          color: const Color(0xFFF8F9FB),
           borderRadius: BorderRadius.circular(14),
         ),
         child: Row(
           children: [
             Image.asset(
               artAsset,
-              width: 48,
+              width: 49,
               height: 48,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
@@ -803,15 +879,16 @@ class _CastSheetRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(title, style: _HomeTextStyles.sheetOptionTitle),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 6),
                   Text(subtitle, style: _HomeTextStyles.sheetOptionBody),
                 ],
               ),
             ),
+            const SizedBox(width: 8),
             Image.asset(
               arrowAsset,
-              width: 36,
-              height: 36,
+              width: 59,
+              height: 59,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
                 return Icon(
