@@ -51,6 +51,19 @@ class _ProfilePageState extends State<ProfilePage> {
                   label: '昵称',
                   controller: _nicknameController,
                   hintText: '请输入昵称',
+                  trailing: Image.asset(
+                    'assets/images/edit-icon01.png',
+                    width: 14,
+                    height: 14,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.edit_outlined,
+                        size: 14,
+                        color: Color(0x992A2B2B),
+                      );
+                    },
+                  ),
                 ),
                 const FigmaFormDivider(),
                 FigmaInfoRow(label: 'ID', value: user.id),
@@ -89,6 +102,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 }
 
+/// 头像行（小程序 `.avatar-row`）：头像 `mine-header.png`（64rpx≈32 圆形）+ 右侧箭头。
 class _AvatarRow extends StatelessWidget {
   const _AvatarRow({required this.color});
 
@@ -97,25 +111,36 @@ class _AvatarRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 61,
+      height: 60,
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
         child: Row(
           children: [
             const Expanded(child: Text('头像', style: FigmaTextStyles.formLabel)),
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: color,
-              child: const Icon(
-                Icons.person_rounded,
-                color: Colors.white,
-                size: 24,
+            Container(
+              width: 32,
+              height: 32,
+              clipBehavior: Clip.antiAlias,
+              decoration: const BoxDecoration(shape: BoxShape.circle),
+              child: Image.asset(
+                'assets/images/mine-header.png',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Container(
+                    color: color,
+                    child: const Icon(
+                      Icons.person_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  );
+                },
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 9),
             const Icon(
               Icons.chevron_right_rounded,
-              color: Color(0x992A2B2B),
+              color: Color(0xFF777E88),
               size: 18,
             ),
           ],

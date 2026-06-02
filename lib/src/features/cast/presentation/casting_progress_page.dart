@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import 'cast_result_common.dart';
 
 /// 投屏进行中页：展示投屏传输进度，对应 UI 稿「投屏中」。
 class CastingProgressPage extends StatelessWidget {
@@ -20,24 +21,29 @@ class CastingProgressPage extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 68),
-          const Center(child: FigmaCastResultIcon(success: true)),
+          const SizedBox(height: 20),
+          const Center(
+            child: ProjectionResultArt(
+              asset: 'assets/images/upload-icon01.png',
+              fallbackIcon: Icons.cloud_upload_outlined,
+            ),
+          ),
           const SizedBox(height: 24),
           const Text(
             '投屏中',
             textAlign: TextAlign.center,
-            style: FigmaTextStyles.pageHeading,
+            style: projectionResultTitleStyle,
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 11),
           const Text(
             '投屏过程中请不要关闭手机',
             textAlign: TextAlign.center,
-            style: FigmaTextStyles.bodySmall,
+            style: projectionResultDescStyle,
           ),
-          const SizedBox(height: 40),
+          const SizedBox(height: 32),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 19),
-            child: FigmaProgressBar(progress: progress, label: progressLabel),
+            child: ProjectionProgress(percent: progress, label: progressLabel),
           ),
         ],
       ),

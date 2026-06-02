@@ -78,17 +78,22 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
   Widget build(BuildContext context) {
     return FigmaScreen(
       title: '我的设备',
-      trailing: _AddDeviceButton(onTap: widget.onAddDevice),
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 8),
+          // 顶部工具栏：右对齐添加按钮（小程序 .device-toolbar）。
+          const SizedBox(height: 20),
+          Align(
+            alignment: Alignment.centerRight,
+            child: _AddDeviceButton(onTap: widget.onAddDevice),
+          ),
+          const SizedBox(height: 12),
           Expanded(
             child: ListView.separated(
               padding: const EdgeInsets.only(bottom: 12),
               itemCount: _devices.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              separatorBuilder: (_, _) => const SizedBox(height: 12),
               itemBuilder: (context, index) {
                 final device = _devices[index];
                 return _DeviceCard(
@@ -148,6 +153,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
   }
 }
 
+/// 添加设备按钮（小程序 `.device-add-btn`，64rpx≈32，用 `home-add-icon.png`）。
 class _AddDeviceButton extends StatelessWidget {
   const _AddDeviceButton({this.onTap});
 
@@ -155,20 +161,53 @@ class _AddDeviceButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: const Color(0xFFFF6A24),
-      shape: const CircleBorder(),
-      child: InkWell(
-        customBorder: const CircleBorder(),
-        onTap: onTap,
-        child: const SizedBox(
-          width: 34,
-          height: 34,
-          child: Icon(Icons.add_rounded, color: Colors.white, size: 22),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFF661F).withValues(alpha: 0.18),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Image.asset(
+          'assets/images/home-add-icon.png',
+          width: 32,
+          height: 32,
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: 32,
+              height: 32,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFF6A24),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+            );
+          },
         ),
       ),
     );
   }
+}
+
+/// 电量百分比文案（如 "80%"）→ `BatteryLevel/battery-{档}.png` 资源路径。
+String _batteryIconForLabel(String label) {
+  final match = RegExp(r'\d+').firstMatch(label);
+  final value = match == null ? 100 : int.parse(match.group(0)!).clamp(0, 100);
+  const levels = <int>[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+  var nearest = levels.first;
+  for (final candidate in levels) {
+    if ((candidate - value).abs() < (nearest - value).abs()) {
+      nearest = candidate;
+    }
+  }
+  return 'assets/images/BatteryLevel/battery-$nearest.png';
 }
 
 class _DeviceCard extends StatelessWidget {
@@ -188,153 +227,254 @@ class _DeviceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return FigmaGlassCard(
-      // 卡片整体用纵向弹性布局：上半区图标 + 文字信息，下半区操作栏，
-      // 不再依赖写死的坐标，文字变长或字号变化都能自适应。
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 22, 11, 18),
-            child: Row(
-              children: [
-                Container(
-                  width: 60,
-                  height: 60,
-                  decoration: BoxDecoration(
-                    color: device.connected
-                        ? const Color(0xFFFFAF8B).withValues(alpha: 0.1)
-                        : const Color(0xFF2A2B2B).withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(16),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onOpenDetail,
+      child: FigmaGlassCard(
+        // 卡片圆角 40rpx=20；上半区图标 + 文字信息，下半区操作栏。
+        borderRadius: 20,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 17, 0),
+              child: Row(
+                children: [
+                  // 设备 Logo（连接态 device-list-icon04 / 离线 icon05，92rpx≈46）。
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: device.connected
+                          ? const Color(0xFFFFAF8B).withValues(alpha: 0.1)
+                          : const Color(0xFF2A2B2B).withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: Image.asset(
+                      device.connected
+                          ? 'assets/images/device-list-icon04.png'
+                          : 'assets/images/device-list-icon05.png',
+                      width: 46,
+                      height: 46,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Icon(
+                          Icons.photo_library_outlined,
+                          color: device.connected
+                              ? const Color(0xFFEB5F1B)
+                              : const Color(0x992A2B2B),
+                          size: 30,
+                        );
+                      },
+                    ),
                   ),
-                  child: Icon(
-                    Icons.photo_library_outlined,
-                    color: device.connected
-                        ? const Color(0xFFEB5F1B)
-                        : const Color(0x992A2B2B),
-                    size: 32,
-                  ),
-                ),
-                const SizedBox(width: 23),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              device.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFF2A2B2B),
-                                fontSize: 20,
-                                fontWeight: FontWeight.w500,
-                                height: 1.4,
+                  const SizedBox(width: 22),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                device.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF2A2D32),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.15,
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          GestureDetector(
-                            behavior: HitTestBehavior.opaque,
-                            onTap: onRename,
-                            child: const Icon(
-                              Icons.edit_outlined,
-                              size: 16,
-                              color: Color(0x992A2B2B),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.circle,
-                            size: 10,
-                            color: device.connected
-                                ? const Color(0xFF1AC27F)
-                                : const Color(0xFFD9D9D9),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            device.connected ? '已连接' : '未连接',
-                            style: FigmaTextStyles.bodySmall,
-                          ),
-                          if (device.connected &&
-                              device.battery.isNotEmpty) ...[
-                            const SizedBox(width: 20),
-                            const Icon(
-                              Icons.battery_4_bar_rounded,
-                              size: 18,
-                              color: Color(0x992A2B2B),
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              device.battery,
-                              style: FigmaTextStyles.bodySmall,
+                            const SizedBox(width: 3),
+                            GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: onRename,
+                              child: Image.asset(
+                                'assets/images/edit-icon01.png',
+                                width: 18,
+                                height: 18,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(
+                                    Icons.edit_outlined,
+                                    size: 16,
+                                    color: Color(0x992A2B2B),
+                                  );
+                                },
+                              ),
                             ),
                           ],
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(height: 7),
+                        Row(
+                          children: [
+                            // 连接状态：蓝牙图标 + 文案。
+                            Image.asset(
+                              device.connected
+                                  ? 'assets/images/bluetooth-icon.png'
+                                  : 'assets/images/bluetooth-icon-not.png',
+                              width: 11,
+                              height: 14,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const SizedBox(width: 11, height: 14),
+                            ),
+                            const SizedBox(width: 5),
+                            Text(
+                              device.connected ? '已连接' : '未连接',
+                              style: TextStyle(
+                                color: device.connected
+                                    ? const Color(0xFF287DFF)
+                                    : const Color(0xFF9BA2AD),
+                                fontSize: 12,
+                                height: 1,
+                              ),
+                            ),
+                            if (device.connected &&
+                                device.battery.isNotEmpty) ...[
+                              const SizedBox(width: 13),
+                              Image.asset(
+                                _batteryIconForLabel(device.battery),
+                                width: 24,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) =>
+                                    const Icon(
+                                      Icons.battery_4_bar_rounded,
+                                      size: 16,
+                                      color: Color(0xFF737B86),
+                                    ),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                device.battery,
+                                style: const TextStyle(
+                                  color: Color(0xFF737B86),
+                                  fontSize: 12,
+                                  height: 1,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.chevron_right_rounded, size: 22),
-                  color: const Color(0x992A2B2B),
-                  onPressed: onOpenDetail,
-                ),
-              ],
-            ),
-          ),
-          DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.55),
-              borderRadius: const BorderRadius.vertical(
-                bottom: Radius.circular(20),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: Color(0xFF777E88),
+                  ),
+                ],
               ),
             ),
-            child: SizedBox(
+            const SizedBox(height: 17),
+            // 操作栏（轮播设置 | 连接/断开）。
+            Container(
               height: 42,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.38),
+                    Colors.white.withValues(alpha: 0.55),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.31)),
+              ),
               child: Row(
                 children: [
                   Expanded(
-                    child: TextButton.icon(
-                      onPressed: onCarouselSettings,
-                      icon: const Icon(Icons.tune_rounded, size: 18),
-                      label: const Text('轮播设置'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: const Color(0xCC2A2B2B),
-                      ),
+                    child: _DeviceActionButton(
+                      iconAsset: 'assets/images/carousel-settings-icon01.png',
+                      fallbackIcon: Icons.tune_rounded,
+                      iconWidth: 16,
+                      iconHeight: 15,
+                      label: '轮播设置',
+                      color: const Color(0xFF777E88),
+                      onTap: onCarouselSettings,
                     ),
                   ),
                   Container(
                     width: 1,
-                    height: 18,
-                    color: const Color(0x1A2A2B2B),
+                    height: 19,
+                    color: const Color(0xFFDADDDF),
                   ),
                   Expanded(
-                    child: TextButton.icon(
-                      onPressed: onToggleConnection,
-                      icon: Icon(
-                        device.connected
-                            ? Icons.link_off_rounded
-                            : Icons.bluetooth_rounded,
-                        size: 18,
-                      ),
-                      label: Text(device.connected ? '断开' : '连接'),
-                      style: TextButton.styleFrom(
-                        foregroundColor: device.connected
-                            ? const Color(0xFFEB5F1B)
-                            : const Color(0xFF2079FC),
-                      ),
+                    child: _DeviceActionButton(
+                      iconAsset: device.connected
+                          ? 'assets/images/disconnect-icon01.png'
+                          : 'assets/images/bluetooth-connection.png',
+                      fallbackIcon: device.connected
+                          ? Icons.link_off_rounded
+                          : Icons.bluetooth_rounded,
+                      iconWidth: 14,
+                      iconHeight: 14,
+                      label: device.connected ? '断开' : '连接',
+                      color: device.connected
+                          ? const Color(0xFFEB5F1B)
+                          : const Color(0xFF2079FC),
+                      onTap: onToggleConnection,
                     ),
                   ),
                 ],
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 设备卡底部操作按钮（图标 + 文案）。
+class _DeviceActionButton extends StatelessWidget {
+  const _DeviceActionButton({
+    required this.iconAsset,
+    required this.fallbackIcon,
+    required this.iconWidth,
+    required this.iconHeight,
+    required this.label,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String iconAsset;
+  final IconData fallbackIcon;
+  final double iconWidth;
+  final double iconHeight;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset(
+            iconAsset,
+            width: iconWidth,
+            height: iconHeight,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                Icon(fallbackIcon, size: 16, color: color),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              height: 1,
             ),
           ),
         ],

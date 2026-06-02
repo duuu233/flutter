@@ -911,8 +911,9 @@ class _CastSheetRow extends StatelessWidget {
 // 「绑定设备」流程专用组件：蓝牙雷达、已发现设备列表项、扫描帮助插画。
 // -----------------------------------------------------------------------------
 
-/// 蓝牙搜索雷达插画。[success] 显示找到态，[failed] 叠加失败角标，
-/// [dimmed] 在弹出扫描帮助时压暗。
+/// 蓝牙搜索雷达插画（对照小程序 `.radar-art`）：
+/// 搜索中用动图 `search-devices.gif`，已发现 `device_found_art.png`，
+/// 未发现 `device_not_found_art.png`；[dimmed] 在弹出扫描帮助时压暗。
 class _BluetoothRadar extends StatelessWidget {
   const _BluetoothRadar({
     required this.failed,
@@ -928,30 +929,17 @@ class _BluetoothRadar extends StatelessWidget {
   Widget build(BuildContext context) {
     final asset = success
         ? 'assets/images/device_found_art.png'
-        : 'assets/images/device_scanning_art.png';
+        : failed
+        ? 'assets/images/device_not_found_art.png'
+        : 'assets/images/search-devices.gif';
     return Opacity(
       opacity: dimmed ? 0.56 : 1,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Image.asset(
-            asset,
-            width: 224,
-            height: 224,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) {
-              return const _RadarFallback();
-            },
-          ),
-          if (failed)
-            const Positioned(
-              left: 151,
-              top: 125,
-              width: 22,
-              height: 22,
-              child: _FailBadge(),
-            ),
-        ],
+      child: Image.asset(
+        asset,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) {
+          return const _RadarFallback();
+        },
       ),
     );
   }
@@ -1016,38 +1004,18 @@ class _RadarFallbackPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-/// 雷达中心的「未找到」失败角标。
-class _FailBadge extends StatelessWidget {
-  const _FailBadge();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-      ),
-      child: const Icon(
-        Icons.close_rounded,
-        color: Color(0xFFFF6A24),
-        size: 18,
-      ),
-    );
-  }
-}
-
-/// 「已搜索到设备」列表里的单台设备项，可选中。
+/// 「已搜索到设备」列表里的单台设备项，可选中（小程序 `.nearby-device`）。
 class _FoundDeviceTile extends StatelessWidget {
   const _FoundDeviceTile({
     required this.device,
     required this.selected,
-    required this.accent,
+    required this.iconAsset,
     required this.onTap,
   });
 
   final DeviceItem device;
   final bool selected;
-  final Color accent;
+  final String iconAsset;
   final VoidCallback onTap;
 
   @override
@@ -1056,53 +1024,70 @@ class _FoundDeviceTile extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        width: 327,
         height: 64,
-        padding: const EdgeInsets.fromLTRB(20, 8, 18, 8),
+        padding: const EdgeInsets.symmetric(horizontal: 17),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: selected ? 0.76 : 0.58),
+          color: selected
+              ? const Color(0xFFFFF7F2).withValues(alpha: 0.88)
+              : Colors.white.withValues(alpha: 0.54),
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: selected ? const Color(0xFFFF6A24) : Colors.white,
-            width: selected ? 1 : 0.8,
+            color: selected
+                ? const Color(0xFFFF6421)
+                : Colors.white.withValues(alpha: 0.86),
+            width: selected ? 2 : 2,
           ),
         ),
         child: Row(
           children: [
-            Container(
+            Image.asset(
+              iconAsset,
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(Icons.videocam_outlined, color: accent, size: 26),
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.videocam_outlined,
+                  color: Color(0xFFFF6A24),
+                  size: 26,
+                );
+              },
             ),
-            const SizedBox(width: 20),
+            const SizedBox(width: 18),
             Expanded(
               child: Text(
                 _displayDeviceName(device),
-                style: _HomeTextStyles.deviceName,
-              ),
-            ),
-            Container(
-              width: 26,
-              height: 26,
-              decoration: BoxDecoration(
-                color: selected ? const Color(0xFFFF7D36) : Colors.transparent,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: selected
-                      ? const Color(0xFFFF7D36)
-                      : const Color(0xFFB7BBC0),
-                  width: selected ? 0 : 1,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF2A2D32),
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
                 ),
               ),
+            ),
+            const SizedBox(width: 12),
+            SizedBox(
+              width: 26,
+              height: 26,
               child: selected
-                  ? const Icon(
-                      Icons.check_rounded,
-                      color: Colors.white,
-                      size: 22,
+                  ? Image.asset(
+                      'assets/images/selected-icon.png',
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFFF6421),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 18,
+                          ),
+                        );
+                      },
                     )
                   : null,
             ),

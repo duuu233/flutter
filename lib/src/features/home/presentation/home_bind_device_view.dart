@@ -88,11 +88,11 @@ class _BindDeviceView extends StatelessWidget {
                             ],
                           ),
                         ),
-                        const SizedBox(height: 18),
+                        const SizedBox(height: 28),
                         Center(
                           child: SizedBox(
-                            width: 270,
-                            height: 225,
+                            width: 250,
+                            height: 250,
                             child: _BluetoothRadar(
                               failed: _notFound || showScanHelp,
                               success: _found,
@@ -193,9 +193,10 @@ class _BindDeviceView extends StatelessWidget {
             behavior: HitTestBehavior.opaque,
             onTap: onRetry,
             child: Image.asset(
-              'assets/images/Frame3.png',
-              width: 22,
-              height: 22,
+              'assets/images/refresh-icon.png',
+              width: 28,
+              height: 28,
+              fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
                 return const Icon(
                   Icons.refresh_rounded,
@@ -212,10 +213,10 @@ class _BindDeviceView extends StatelessWidget {
         _FoundDeviceTile(
           device: devices[index],
           selected: index == selectedIndex,
-          accent: _deviceAccent(index),
+          iconAsset: _deviceIconAsset(index),
           onTap: () => onSelectDevice(index),
         ),
-        if (index != devices.length - 1) const SizedBox(height: 12),
+        if (index != devices.length - 1) const SizedBox(height: 11),
       ],
       const Spacer(),
       SizedBox(
@@ -225,11 +226,9 @@ class _BindDeviceView extends StatelessWidget {
     ];
   }
 
-  Color _deviceAccent(int index) {
-    return switch (index) {
-      0 => const Color(0xFFFF6A24),
-      1 => const Color(0xFF2FB46B),
-      _ => const Color(0xFF4A98FF),
-    };
+  /// 附近设备图标按列表序取 `device-list-icon01~03.png`（与小程序一致）。
+  String _deviceIconAsset(int index) {
+    final n = (index % 3) + 1;
+    return 'assets/images/device-list-icon0$n.png';
   }
 }

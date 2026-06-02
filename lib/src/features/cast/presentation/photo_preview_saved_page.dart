@@ -25,50 +25,29 @@ class PhotoPreviewSavedPage extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 8),
+          const SizedBox(height: 4),
+          // 计数胶囊（小程序 .preview-imageCount：浅灰底、居中）。
+          const Center(child: _PreviewCounter(label: '1/2')),
+          const SizedBox(height: 14),
           Expanded(
-            child: Stack(
-              children: const [
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Color(0xFFD9D9D9),
-                      borderRadius: BorderRadius.all(Radius.circular(16)),
-                    ),
-                    child: Center(
-                      child: Text(
-                        'Image Placeholder',
-                        style: TextStyle(
-                          color: Color(0xFF737373),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                    ),
-                  ),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xFFE6ECF4),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: const Center(
+                child: Text(
+                  '图片占位',
+                  style: TextStyle(color: Color(0xFF9AA1AB), fontSize: 14),
                 ),
-                Align(
-                  alignment: Alignment.topCenter,
-                  child: Padding(
-                    padding: EdgeInsets.only(top: 12),
-                    child: SizedBox(
-                      width: 71,
-                      height: 30,
-                      child: _PreviewCounter(label: '10/10'),
-                    ),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 74,
-            child: _PhotoToolBar(
-              onCrop: onCrop,
-              onRotate: onRotate,
-              onOriginal: onOriginal,
-            ),
+          const SizedBox(height: 14),
+          _PhotoToolBar(
+            onCrop: onCrop,
+            onRotate: onRotate,
+            onOriginal: onOriginal,
           ),
         ],
       ),
@@ -77,6 +56,7 @@ class PhotoPreviewSavedPage extends StatelessWidget {
   }
 }
 
+/// 计数胶囊（小程序 `.preview-imageCount`）：rgba(42,43,43,0.08) 底，文字 0.8。
 class _PreviewCounter extends StatelessWidget {
   const _PreviewCounter({required this.label});
 
@@ -84,19 +64,19 @@ class _PreviewCounter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 4),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.45),
-        borderRadius: BorderRadius.circular(16),
+        color: const Color(0xFF2A2B2B).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
       ),
-      child: Center(
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-          ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: const Color(0xFF2A2B2B).withValues(alpha: 0.8),
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+          height: 1.2,
         ),
       ),
     );
@@ -113,22 +93,26 @@ class _PhotoToolBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FigmaGlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      borderRadius: 20,
+      padding: const EdgeInsets.symmetric(vertical: 14),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        mainAxisAlignment: MainAxisAlignment.spaceAround,
         children: [
           _PhotoToolButton(
-            icon: Icons.crop_rounded,
+            iconAsset: 'assets/images/preview-icon01.png',
+            fallbackIcon: Icons.crop_rounded,
             label: '裁剪',
             onTap: onCrop,
           ),
           _PhotoToolButton(
-            icon: Icons.rotate_right_rounded,
+            iconAsset: 'assets/images/preview-icon02.png',
+            fallbackIcon: Icons.rotate_right_rounded,
             label: '旋转',
             onTap: onRotate,
           ),
           _PhotoToolButton(
-            icon: Icons.image_outlined,
+            iconAsset: 'assets/images/preview-icon03.png',
+            fallbackIcon: Icons.image_outlined,
             label: '原图',
             onTap: onOriginal,
           ),
@@ -138,30 +122,47 @@ class _PhotoToolBar extends StatelessWidget {
   }
 }
 
+/// 工具按钮（小程序 `.tool`）：图标 44rpx≈22 + 文案 24rpx≈12 / #777e88。
 class _PhotoToolButton extends StatelessWidget {
   const _PhotoToolButton({
-    required this.icon,
+    required this.iconAsset,
+    required this.fallbackIcon,
     required this.label,
     required this.onTap,
   });
 
-  final IconData icon;
+  final String iconAsset;
+  final IconData fallbackIcon;
   final String label;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
         width: 72,
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, color: const Color(0xFF2A2B2B), size: 22),
+            Image.asset(
+              iconAsset,
+              width: 22,
+              height: 22,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) =>
+                  Icon(fallbackIcon, color: const Color(0xFF777E88), size: 22),
+            ),
             const SizedBox(height: 7),
-            Text(label, style: FigmaTextStyles.bodySmall),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF777E88),
+                fontSize: 12,
+                height: 1,
+              ),
+            ),
           ],
         ),
       ),

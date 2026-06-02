@@ -75,21 +75,32 @@ class FigmaScreen extends StatelessWidget {
   }
 }
 
-/// 默认页面背景：顶部浅蓝渐变过渡到底部白。
+/// 默认页面背景：`bg01.png` 铺满（小程序 `.mock-bg__image`，设置/账户类页面统一用 bg01）。
+/// 加载失败回退到顶部浅蓝渐变过渡到底部白。
 class FigmaScreenBackground extends StatelessWidget {
   const FigmaScreenBackground({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFEAF1FB), Color(0xFFF4F7FC), Color(0xFFF2F5FC)],
-          stops: [0, 0.4, 1],
-        ),
-      ),
+    return Image.asset(
+      'assets/images/bg01.png',
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return const DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color(0xFFEAF1FB),
+                Color(0xFFF4F7FC),
+                Color(0xFFF2F5FC),
+              ],
+              stops: [0, 0.4, 1],
+            ),
+          ),
+        );
+      },
     );
   }
 }
@@ -191,34 +202,36 @@ class FigmaPrimaryButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
+    // .settings-primary：胶囊（圆角全圆）+ 渐变 #ff8b3d→#ff641f + 柔和投影。
+    final radius = BorderRadius.circular(height / 2);
     return SizedBox(
       height: height,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: enabled ? null : const Color(0xFFE2E2E2),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: radius,
           gradient: enabled
               ? const LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Color(0xFFFF7D36), Color(0xFFFF621F)],
+                  colors: [Color(0xFFFF8B3D), Color(0xFFFF641F)],
                 )
               : null,
           boxShadow: enabled
               ? [
                   BoxShadow(
-                    color: const Color(0xFFEB5F1B).withValues(alpha: 0.22),
-                    blurRadius: 10,
-                    offset: const Offset(0, 4),
+                    color: const Color(0xFFFF621F).withValues(alpha: 0.2),
+                    blurRadius: 18,
+                    offset: const Offset(0, 9),
                   ),
                 ]
               : null,
         ),
         child: Material(
           color: Colors.transparent,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: radius,
           child: InkWell(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: radius,
             onTap: onPressed,
             child: Center(
               child: Text(
@@ -249,16 +262,25 @@ class FigmaSecondaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // .result-secondary：白 0.86 胶囊 + 白描边。
+    final radius = BorderRadius.circular(height / 2);
     return SizedBox(
       height: height,
-      child: Material(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: onPressed,
-          child: Center(
-            child: Text(label, style: FigmaTextStyles.secondaryButton),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.86),
+          borderRadius: radius,
+          border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: radius,
+          child: InkWell(
+            borderRadius: radius,
+            onTap: onPressed,
+            child: Center(
+              child: Text(label, style: FigmaTextStyles.secondaryButton),
+            ),
           ),
         ),
       ),
@@ -266,12 +288,13 @@ class FigmaSecondaryButton extends StatelessWidget {
   }
 }
 
+/// 玻璃面板（小程序 `.glass-panel`）：半透明白 + 2rpx 白描边 + 28rpx(=14) 圆角 + 柔和投影。
 class FigmaGlassCard extends StatelessWidget {
   const FigmaGlassCard({
     super.key,
     required this.child,
     this.padding = EdgeInsets.zero,
-    this.borderRadius = 20,
+    this.borderRadius = 14,
   });
 
   final Widget child;
@@ -283,9 +306,16 @@ class FigmaGlassCard extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
+        color: Colors.white.withValues(alpha: 0.55),
         borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(color: Colors.white.withValues(alpha: 0.86)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7991B2).withValues(alpha: 0.13),
+            blurRadius: 27,
+            offset: const Offset(0, 12),
+          ),
+        ],
       ),
       child: child,
     );
@@ -313,6 +343,7 @@ class FigmaAccountField extends StatelessWidget {
     this.obscureText = false,
     this.readOnly = false,
     this.errorText,
+    this.trailing,
   });
 
   final String label;
@@ -322,6 +353,9 @@ class FigmaAccountField extends StatelessWidget {
   final bool obscureText;
   final bool readOnly;
   final String? errorText;
+
+  /// 输入框右侧附加控件（如昵称行的编辑图标）。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -353,6 +387,10 @@ class FigmaAccountField extends StatelessWidget {
                     ),
                   ),
                 ),
+                if (trailing != null) ...[
+                  const SizedBox(width: 9),
+                  trailing!,
+                ],
               ],
             ),
             if (errorText != null) ...[
@@ -775,11 +813,12 @@ class FigmaCastResultIcon extends StatelessWidget {
 class FigmaTextStyles {
   const FigmaTextStyles._();
 
+  // .mock-nav__title / page-nav title → 34rpx(=17) / weight 700 / #111111
   static const navigationTitle = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 16,
-    fontWeight: FontWeight.w500,
-    height: 1.4,
+    color: Color(0xFF111111),
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
+    height: 1.25,
   );
 
   static const pageHeading = TextStyle(
@@ -830,20 +869,22 @@ class FigmaTextStyles {
     height: 1.2,
   );
 
+  // .settings-primary → 34rpx(=17) / weight 700
   static const primaryButton = TextStyle(
     color: Colors.white,
-    fontSize: 18,
-    fontWeight: FontWeight.w400,
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
     height: 1.2,
-    letterSpacing: 2,
+    letterSpacing: 1,
   );
 
+  // .result-secondary → 34rpx(=17) / weight 700 / #2a2d32
   static const secondaryButton = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 18,
-    fontWeight: FontWeight.w400,
+    color: Color(0xFF2A2D32),
+    fontSize: 17,
+    fontWeight: FontWeight.w700,
     height: 1.2,
-    letterSpacing: 2,
+    letterSpacing: 1,
   );
 
   static const deviceName = TextStyle(

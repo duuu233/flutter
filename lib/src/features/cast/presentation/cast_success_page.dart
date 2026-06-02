@@ -1,13 +1,20 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import 'cast_result_common.dart';
 
 /// 投屏成功页：提示投屏完成并提供继续投屏 / 返回首页，对应 UI 稿「投屏成功」。
 class CastSuccessPage extends StatelessWidget {
-  const CastSuccessPage({super.key, this.onContinueCasting, this.onBackHome});
+  const CastSuccessPage({
+    super.key,
+    this.onContinueCasting,
+    this.onBackHome,
+    this.onOpenRecords,
+  });
 
   final VoidCallback? onContinueCasting;
   final VoidCallback? onBackHome;
+  final VoidCallback? onOpenRecords;
 
   @override
   Widget build(BuildContext context) {
@@ -15,23 +22,32 @@ class CastSuccessPage extends StatelessWidget {
       title: '投屏成功',
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: const [
-          SizedBox(height: 40),
-          Center(child: FigmaCastResultIcon(success: true)),
-          SizedBox(height: 24),
-          Text(
+        children: [
+          const SizedBox(height: 20),
+          const Center(
+            child: ProjectionResultArt(
+              asset: 'assets/images/upload-icon03.png',
+              fallbackIcon: Icons.check_circle_outline_rounded,
+            ),
+          ),
+          const SizedBox(height: 24),
+          const Text(
             '投屏成功',
             textAlign: TextAlign.center,
-            style: FigmaTextStyles.pageHeading,
+            style: projectionResultTitleStyle,
           ),
-          SizedBox(height: 8),
-          Text(
+          const SizedBox(height: 11),
+          const Text(
             '照片已成功投屏到设备，可前往相册查看',
             textAlign: TextAlign.center,
-            style: FigmaTextStyles.bodySmall,
+            style: projectionResultDescStyle,
           ),
-          SizedBox(height: 32),
-          _CastInfoCard(),
+          const SizedBox(height: 30),
+          ProjectionInfoCard(
+            deviceName: '房间相册',
+            recordLabel: '12张',
+            onTapRecords: onOpenRecords,
+          ),
         ],
       ),
       bottom: Column(
@@ -43,23 +59,6 @@ class CastSuccessPage extends StatelessWidget {
             label: '返回首页',
             onPressed: onBackHome ?? () => Navigator.maybePop(context),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CastInfoCard extends StatelessWidget {
-  const _CastInfoCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return FigmaGlassCard(
-      child: Column(
-        children: const [
-          FigmaInfoRow(label: '投屏设备', value: '房间相册'),
-          FigmaFormDivider(),
-          FigmaInfoRow(label: '投屏管理', value: '12张'),
         ],
       ),
     );

@@ -87,15 +87,17 @@ class _HomeTextStyles {
     height: 1.2,
   );
 
+  // .scan-title → 40rpx(=20) / weight 700 / #2a2d32
   static const bindTitle = TextStyle(
-    color: Color(0xFF2A2B2B),
+    color: Color(0xFF2A2D32),
     fontSize: 20,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
+    fontWeight: FontWeight.w700,
+    height: 1,
   );
 
+  // .scan-desc → 24rpx(=12) / #737a84
   static const bindSubtitle = TextStyle(
-    color: Color(0x992A2B2B),
+    color: Color(0xFF737A84),
     fontSize: 12,
     fontWeight: FontWeight.w400,
     height: 1.2,
@@ -134,13 +136,6 @@ class _HomeTextStyles {
     fontSize: 14,
     fontWeight: FontWeight.w400,
     height: 1.55,
-  );
-
-  static const deviceName = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 16,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
   );
 
   // .media-option-copy view → font-size 32rpx(=16) / weight 700 / #2a2d32

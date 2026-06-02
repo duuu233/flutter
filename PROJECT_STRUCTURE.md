@@ -213,3 +213,155 @@ lib/
 - **涉及文件**：`home_main_view.dart`、`home_widgets.dart`、`home_text_styles.dart`、
   `home_sheets.dart`、`home_page.dart`（引入 `flutter_svg`）、`pubspec.yaml`。
 - **校验**：`flutter analyze lib` 通过（仅 2 条与本次无关的既有 info 提示）。
+
+### 「我的」`mine`（对照 `photo-album/pages/mine`）— ✅ 已完成（2026-06-02）
+- **根因修复**：此前引用已删除的旧命名资源（`Group 194925/194926/194927/194799/194928.png`、
+  头像用 `logo.png`），全部走手绘兜底；现改用与小程序一致的真实资源。
+- **资源对齐**：
+  - 背景改 `bg01.png`（小程序 mine 用 bg01，非 bg02）；
+  - 资料卡底图 `mine-header-bg01.png` + 头像 `mine-header.png`（112rpx≈56 圆形）；
+  - 常用功能卡底图 `mine-bg02.png` + 图标 `mine-icon01/02/03.png`（112rpx≈56）；
+  - 服务行图标 `mine-icon05.png`（操作指南）/ `mine-icon04.png`（设置）（52rpx≈26）；
+  - 底部 Tab 改 `tabbar-home01.svg` / `tabbar-mine02.svg`（与首页同款胶囊）。
+- **样式对齐**：资料卡高 89、圆角 18；昵称改「江江江」(20/w700)、ID(12/#808690)；
+  常用功能宫格整宽 space-evenly、卡片 102×148、圆角 20；服务行高 54、圆角 11；
+  右侧箭头改用「›」字形（#777e88）；字号颜色按 wxss 重设（见文件内 `_MineTextStyles`）。
+- **涉及文件**：`mine_page.dart`（引入 `flutter_svg`）。
+- **校验**：`flutter analyze lib/src/features/mine` 通过（No issues）。
+
+### 个人资料 `profile`（对照 `photo-album/subpackages/settings/profile`）— ✅ 已完成（2026-06-02）
+- **共享脚手架对齐**（`shared/widgets/figma_common.dart`，惠及所有用 `FigmaScreen` 的
+  设置/账户/设备/投屏页面）：
+  - `FigmaScreenBackground` 改用 `bg01.png` 铺满（小程序 `.mock-bg__image`，回退渐变）；
+  - 导航标题 `navigationTitle` 改 #111111 / 17 / w700（`.mock-nav__title`）；
+  - `FigmaPrimaryButton` 改胶囊（圆角全圆）+ 渐变 #ff8b3d→#ff641f + 文案 17/w700（`.settings-primary`）；
+  - `FigmaGlassCard` 改圆角 14、白 0.55 + 柔和投影（`.glass-panel`）；
+  - `FigmaAccountField` 新增可选 `trailing`（供昵称行放编辑图标）。
+- **profile 专属**：头像行用 `mine-header.png`（64rpx≈32 圆形）；昵称行加 `edit-icon01.png`
+  编辑图标；右侧箭头色 #777e88。结构（头像/昵称/ID/邮箱 + 保存资料）本就对齐，未改路由逻辑。
+- **涉及文件**：`figma_common.dart`、`profile_page.dart`。
+- **校验**：`flutter analyze lib` 通过（仅 2 条与本次无关的既有 info）。
+- **附带收益**：因共享层已对齐，注册/忘记密码/改密/改邮箱/绑定邮箱/各 `settings` 子页的
+  背景、主按钮、玻璃卡、导航标题已同步贴近小程序；后续这些模块主要核对**专属图标与文案**即可。
+
+### 设备列表 `device/list`（对照 `photo-album/subpackages/device/list`）— ✅ 已完成（2026-06-02）
+- **资源对齐**：设备卡 Logo 用 `device-list-icon04.png`（已连接）/ `device-list-icon05.png`（离线，92rpx≈46）；
+  重命名 `edit-icon01.png`；连接状态 `bluetooth-icon.png` / `bluetooth-icon-not.png`（11×14）；
+  电量 `BatteryLevel/battery-{档}.png`；操作栏 `carousel-settings-icon01.png`（轮播设置）、
+  `disconnect-icon01.png`（断开）/ `bluetooth-connection.png`（连接）；添加按钮 `home-add-icon.png`（64rpx≈32）。
+- **样式对齐**：添加按钮移到导航下方右对齐工具栏；卡片圆角 20、设备名 20/w700/#2a2d32；
+  连接态文案 #287dff、离线 #9ba2ad、电量 #737b86；底部操作栏胶囊（白渐变 + 1px 描边）、
+  分隔线 #dadddf、断开 #eb5f1b / 连接 #2079fc；整卡点击进详情、重命名/操作用独立点击区。
+- **涉及文件**：`my_devices_page.dart`（顺手修一处 `unnecessary_underscores` lint）。
+- **校验**：`flutter analyze lib/src/features/devices` → No issues。
+
+### 设备详情 `device/detail`（对照 `photo-album/subpackages/device/detail`）— ✅ 已完成（2026-06-02）
+- **资源对齐**：摘要卡图标 `device-list-icon01.png`（橙底圆角盒）+ 名称编辑 `edit-icon01.png` +
+  连接 `bluetooth-icon.png` + 电量 `BatteryLevel/battery-80.png`；信息行图标
+  `device-detail-icon01~04.png`（轮播设置/设备ID/设备内存/OTA升级，20）；操作行图标
+  `device-detail-icon05.png`（一键清空 #ff6a20）/ `device-detail-icon06.png`（删除设备 #ff3045）。
+- **样式对齐**：移除原多出的「MAC地址」行（小程序无）；信息行标题 #33373d/14/w600、取值 #777e88、
+  「轮播设置」带箭头可点；两个确认弹窗改为小程序版式——彩色图标盒 + 左对齐标题(19/w700)/说明 +
+  「取消(#eee)/确认(橙渐变)」胶囊按钮（取消/确认抽成共享 `DeviceConfirmDialog`）。
+- **涉及文件**：`device_details_page.dart`（新增 `DeviceConfirmDialog`）、
+  `device_delete_confirm_page.dart`、`device_clear_confirm_page.dart`。
+- **校验**：`flutter analyze lib/src/features/devices` → No issues。
+
+### 轮播设置 `device/slideshow`（对照 `photo-album/subpackages/device/slideshow`）— ✅ 已完成（2026-06-02）
+- **样式对齐**：标题「开启轮播 / 轮播方式」改 #33373d/15/w700；开关改橙色轨道 #ff6a20；
+  提示行用圆圈「i」徽标 + #8a9099 文案；新增中间细分割线；轮播方式单选项改**胶囊样式**
+  （未选灰底 #eee/0.84，选中白底 0.1 + 橙描边）+ **自定义圆点**（未选空心环、选中橙环+实心点）、
+  文案 14/w700。
+- **涉及文件**：`carousel_settings_page.dart`（纯样式，保留 enabled/mode 回调逻辑）。
+- **校验**：`flutter analyze lib/src/features/devices` → No issues。
+
+### 绑定流程 `device/bind`（对照 `photo-album/pages/home` 绑定场景）— ✅ 已完成（2026-06-02）
+- **资源对齐**：雷达插画按状态切换——搜索中 `search-devices.gif`（动图）、已发现
+  `device_found_art.png`、未发现 `device_not_found_art.png`（移除原失败角标叠加）；
+  附近设备项图标按序用 `device-list-icon01~03.png`、选中标记 `selected-icon.png`、
+  刷新按钮 `refresh-icon.png`。
+- **样式对齐**：雷达区 250×250；标题 scan-title 20/w700/#2a2d32、说明 #737a84；
+  附近设备项改小程序 `.nearby-device`（高 64、半透明白底、选中橙描边 + 橙底浅底）、
+  名称 16/w700。
+- **涉及文件**：`home_bind_device_view.dart`、`home_widgets.dart`（`_BluetoothRadar` /
+  `_FoundDeviceTile` 重做，移除 `_FailBadge`）、`home_text_styles.dart`（scan 样式 + 清理未用）。
+- **校验**：`flutter analyze lib/src/features/home` → No issues。
+- **说明**：App 内可达的绑定流程即首页内 `_BindDeviceView`；`devices/bind_device_*`、
+  `bind_device_scan_help` 为未接入导航的 Figma 原型页，保持现状未动。
+
+> ✅ **设备模块（列表 / 详情 / 轮播设置 / 绑定流程）整体完成。**
+
+### 投屏结果 `projection/result`（对照 `photo-album/subpackages/projection/result`）— ✅ 已完成（2026-06-02）
+- **说明**：小程序 `result` 一页含 progress/success/fail 三态；Flutter 拆成 `casting_progress_page`
+  / `cast_success_page` / `cast_failed_page` 三页，统一对照还原。
+- **资源对齐**：顶部插画按状态用 `upload-icon01.png`（进行中）/ `upload-icon03.png`（成功）/
+  `upload-icon02.png`（失败），替换原手绘 `FigmaCastResultIcon`；信息卡两行图标
+  `projection-result-icon01.png`（投屏设备）/ `projection-result-icon02.png`（投屏管理 + 箭头）。
+- **样式对齐**：标题 40rpx(=20)/w700/#2a2d32、说明 #828a95/13/1.5；成功+失败均显示信息卡
+  （小程序失败态也有）；进度条改小程序内联版式（左条 #e6ebf2 + 橙渐变填充，右侧 当前/总数）；
+  主按钮胶囊（已对齐）、次按钮「返回首页」改白 0.86 胶囊 + 描边（`FigmaSecondaryButton` 一并对齐）。
+- **新增**：`cast/presentation/cast_result_common.dart`（`ProjectionResultArt` / `ProjectionInfoCard`
+  / `ProjectionProgress` + 标题/说明样式），三页复用。
+- **涉及文件**：`cast_result_common.dart`（新）、`cast_success_page.dart`、`cast_failed_page.dart`、
+  `casting_progress_page.dart`、`figma_common.dart`（`FigmaSecondaryButton` 胶囊化）。
+  注：原手绘 `FigmaCastResultIcon` / `FigmaProgressBar` 已不再被这些页引用。
+- **校验**：`flutter analyze lib/src/features/cast` → No issues。
+
+### 投屏预览 `projection/preview`（对照 `photo-album/subpackages/projection/preview`）— ✅ 已完成（2026-06-02）
+- **对应**：`cast/photo_preview_saved_page.dart`（照片预览基础态）。
+- **资源对齐**：工具栏图标改 `preview-icon01/02/03.png`（裁剪/旋转/原图，22），替换 Material 图标。
+- **样式对齐**：计数改图片上方浅灰胶囊（rgba(42,43,43,0.08) 底 / 文字 0.8 / 15 w600，原为图上黑色浮层）；
+  图片区圆角 20、底色 #e6ecf4、占位「图片占位」#9aa1ab；工具栏玻璃面板圆角 20、文案 #777e88；
+  「开始投屏」沿用胶囊主按钮。
+- **涉及文件**：`photo_preview_saved_page.dart`。
+- **校验**：`flutter analyze lib/src/features/cast` → No issues。
+- **说明**：`photo_preview_adjust_image_page.dart`（裁剪调整态，对应预览页 crop 工具激活 + 四角裁剪框）
+  暂保持现状，可后续作为 preview 的 crop 变体单独核对。
+
+### 投屏记录 `projection/records`（对照 `photo-album/subpackages/projection/records`）— ✅ 已完成（2026-06-02）
+- **对应**：`cast/cast_management_figma_page.dart`（`/我的 → 投屏管理` 入口）。
+- **样式对齐**：
+  - 分段切换改**单胶囊 + 滑动指示器**（成功橙 #ff6a20 / 失败红 #ff4350，激活白字、未激活 #858b94），
+    替换原两枚独立胶囊；
+  - 记录卡用玻璃卡（圆角 14），缩略图 72×72/圆角 7；状态徽标改胶囊（成功 #35b856/底 #e9f8ef、
+    失败 #ff3045/底 #fff0f1，11号）；时间行加 `date-icon01.png`、失败原因行加 `warning-icon01.png`
+    （#ef5b50）；操作区前加细分割线，「再次/重新投屏」(#ff6a20) 与「删除」(#8b9098) 间加竖线；
+  - 空态改玻璃卡 + 标题/说明（文案随成功/失败 tab 变化）。
+- **涉及文件**：`cast_management_figma_page.dart`（保留 state 记录数据与 recast/delete 逻辑）。
+- **校验**：`flutter analyze lib/src/features/cast` → No issues。
+
+> ✅ **投屏模块（结果 / 预览 / 记录）整体完成。**
+
+### 我的图库 `album/list`（对照 `photo-album/subpackages/album/list`）— ✅ 已完成（2026-06-02）
+- **对应**：`gallery/gallery_page.dart`（`/我的 → 我的图库` 入口）。
+- **交互模型对齐**：改为小程序的「常驻可选」——去掉原 nav「选择/取消」模式开关，
+  工具栏常显「全选 + 共 N 张 + 设备筛选」，每个图块常驻选择圈，选中任意张后底部出现操作栏。
+- **资源/样式对齐**：背景改 `bg02.png`（album 用 bg02）；全选 #ff5f1f、数量 #777e88；
+  筛选改白 0.78 胶囊；网格 3 列、图块圆角 11、间距 7；选择圈未选空心白环 / 选中 `selected-icon.png`；
+  底栏 = `del-icon.png` 圆形删除按钮 + 「已选 N 张」(N 橙) + 投屏橙渐变胶囊；
+  删除弹窗改小程序版式（橙图标盒 + 左对齐标题 19/w700 + 说明 + 取消(#eee)/确认(橙渐变)）；
+  空态标题 19/w700/#25282d、说明 #777e88、重新投屏胶囊主按钮。
+- **涉及文件**：`gallery_page.dart`（保留 state 的相册数据 / 删除 / 投屏逻辑）。
+- **校验**：`flutter analyze lib/src/features/gallery` → No issues。
+- **说明**：`album/album_page.dart`（`/album`）为未接入导航的孤儿页，未动；小程序 album 子包仅 list。
+
+### 后续待还原模块（按优先级，便于接续）
+- 设置 `subpackages/settings`（index/language/guide/update/privacy/agreement）→ `settings/*`
+- 账户其余页 `account/*`（注册/忘记密码/改密/改邮箱/绑定邮箱）核对专属图标文案
+> 注：登录页两端差异较大（App 邮箱密码 vs 小程序微信快捷登录），不做样式对照还原。
+> 注：`figma_common.dart` 的共享脚手架（背景/主次按钮/玻璃卡/导航标题/表单行）已对齐小程序，
+> 后续设置/账户类页面无需重复改这些公共件。
+> 注：投屏预览的裁剪态 `photo_preview_adjust_image_page.dart` 仍可作为 crop 变体后续核对。
+- 图库/相册 `subpackages/album` → `gallery/*`、`album/*`
+- 设置 `subpackages/settings`（index/language/guide/update/privacy/agreement）→ `settings/*`
+- 账户其余页 `account/*`（注册/忘记密码/改密/改邮箱/绑定邮箱）核对专属图标文案
+> 注：登录页两端差异较大（App 邮箱密码 vs 小程序微信快捷登录），不做样式对照还原。
+> 注：`figma_common.dart` 的共享脚手架（背景/主按钮/玻璃卡/导航标题/表单行）已对齐小程序，
+> 后续设置/账户类页面无需重复改这些公共件。
+- 投屏 `subpackages/projection`（preview/records/result）→ `cast/*`
+- 图库/相册 `subpackages/album` → `gallery/*`、`album/*`
+- 设置 `subpackages/settings`（index/language/guide/update/privacy/agreement）→ `settings/*`
+- 账户其余页 `account/*`（注册/忘记密码/改密/改邮箱/绑定邮箱）核对专属图标文案
+> 注：登录页两端差异较大（App 邮箱密码 vs 小程序微信快捷登录），不做样式对照还原。
+> 注：`figma_common.dart` 的共享脚手架（背景/主按钮/玻璃卡/导航标题/表单行）已对齐小程序，
+> 后续设置/账户类页面无需重复改这些公共件。

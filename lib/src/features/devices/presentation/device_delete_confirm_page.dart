@@ -16,12 +16,15 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
       children: [
         const FigmaScreen(title: '设备详情', body: DeviceDetailsBody()),
         Positioned.fill(
-          child: ColoredBox(color: Colors.black.withValues(alpha: 0.32)),
+          child: ColoredBox(color: Colors.black.withValues(alpha: 0.4)),
         ),
         Center(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: _ConfirmDialogCard(
+            child: DeviceConfirmDialog(
+              iconAsset: 'assets/images/device-detail-icon06.png',
+              fallbackIcon: Icons.delete_outline_rounded,
+              accent: const Color(0xFFFF3045),
               title: '删除设备',
               message: '删除后将解除与该相框设备的绑定，后续使用需重新添加设备。',
               onCancel: onCancel ?? () => Navigator.maybePop(context),
@@ -30,65 +33,6 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _ConfirmDialogCard extends StatelessWidget {
-  const _ConfirmDialogCard({
-    required this.title,
-    required this.message,
-    required this.onCancel,
-    required this.onConfirm,
-  });
-
-  final String title;
-  final String message;
-  final VoidCallback onCancel;
-  final VoidCallback? onConfirm;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(title, style: FigmaTextStyles.pageHeading),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: FigmaTextStyles.bodySmall.copyWith(fontSize: 14),
-            ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: FigmaSecondaryButton(
-                    label: '取消',
-                    height: 48,
-                    onPressed: onCancel,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FigmaPrimaryButton(
-                    label: '确认',
-                    height: 48,
-                    onPressed: onConfirm,
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
