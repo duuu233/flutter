@@ -722,9 +722,11 @@ class _CastEntryCard extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: SizedBox(
-        // 小程序 .projection-card：366×358rpx = 183×179。
-        height: 179,
+      child: AspectRatio(
+        // 小程序 .projection-card：366×358rpx = 183×179。底图 home-*-card-bg.png
+        // 自带阴影（画布 183×179，可见卡片仅 159×155，四周约 12rpx 透明阴影边距），
+        // 因此按图片真实宽高比布局，避免被拉伸导致圆角与阴影变形。
+        aspectRatio: 183 / 179,
         child: Stack(
           children: [
             // 卡片底图铺满（home-camera-card-bg.png / home-album-card-bg.png）。

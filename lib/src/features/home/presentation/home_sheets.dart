@@ -224,7 +224,8 @@ class _CastMethodSheet extends StatelessWidget {
                 arrowAsset: 'assets/images/home-camera-card-right-icon.png',
                 onTap: onCamera,
               ),
-              const SizedBox(height: 13),
+              // 小程序 .media-option margin-bottom: 20rpx = 10。
+              const SizedBox(height: 10),
               _CastSheetRow(
                 title: '相册',
                 subtitle: '从手机相册选择照片',

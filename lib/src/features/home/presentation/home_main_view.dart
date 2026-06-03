@@ -207,7 +207,8 @@ class _HomeMainView extends StatelessWidget {
                 onTap: onCamera,
               ),
             ),
-            const SizedBox(width: 6),
+            // 不额外留间距：两张底图各自带约 12rpx 透明阴影边距，并排即形成
+            // 与小程序一致的视觉间隙（小程序 .projection-grid 卡片溢出收缩后亦无显式间距）。
             Expanded(
               child: _CastEntryCard(
                 title: '相册',
