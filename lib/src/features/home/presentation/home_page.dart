@@ -80,7 +80,7 @@ class _HomePageState extends State<HomePage> {
   //      ② boundHome 的「设备轮播指示点」数量取自真正已连接的设备，默认数据里没有
   //         已连接设备，故点点为空；想看圆点可把 state.dart 里某台设备 connected 改 true。
   // ignore: unnecessary_nullable_for_final_variable_declarations  （需保持可空，便于改回 null）
-  final _DebugScene? _debugScene = _DebugScene.scanSearching;
+  final _DebugScene? _debugScene = null;
 
   // ---- 关键状态字段 ----
 

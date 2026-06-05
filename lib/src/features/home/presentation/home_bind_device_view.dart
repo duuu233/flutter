@@ -156,7 +156,7 @@ class _BindDeviceView extends StatelessWidget {
         textAlign: TextAlign.center,
         style: _HomeTextStyles.bindTitle,
       ),
-      const SizedBox(height: 6),
+      const SizedBox(height: 10),
       Text(
         subtitle,
         textAlign: TextAlign.center,
