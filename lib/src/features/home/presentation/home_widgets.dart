@@ -10,19 +10,24 @@ part of 'home_page.dart';
 // 背景：所有首页场景共用，铺满整屏。
 // -----------------------------------------------------------------------------
 
-/// 全屏背景：底色 + `bg02.png`（加载失败时回退到渐变光晕画笔）。
+/// 全屏背景：底色 + 背景图（[asset]，加载失败时回退到渐变光晕画笔）。
+///
+/// 背景图按场景区分（由 [_HomePageState] 传入）：首页主视图（已/未绑定及其各弹层）
+/// 用 `bg02.png`，绑定设备流程（搜索/未找到/已找到/扫描帮助）用 `bg01.png`。
 class _HomeBackground extends StatelessWidget {
-  const _HomeBackground();
+  const _HomeBackground({required this.asset});
+
+  final String asset;
 
   @override
   Widget build(BuildContext context) {
-    return const Stack(
+    return Stack(
       fit: StackFit.expand,
       children: [
-        ColoredBox(color: Color(0xFFF5F9FF)),
+        const ColoredBox(color: Color(0xFFF5F9FF)),
         _AssetImage(
-          path: 'assets/images/bg02.png',
-          fallback: _SoftBackgroundPainterWidget(),
+          path: asset,
+          fallback: const _SoftBackgroundPainterWidget(),
         ),
       ],
     );
@@ -797,7 +802,12 @@ class _CastEntryCard extends StatelessWidget {
                 // .projection-copy：padding 28/27/0/50rpx + flex space-between；换算到卡面后
                 // 上间距 14、左 13、右 2，行内为「名称/描述」+ 右侧大箭头。
                 Padding(
-                  padding: const EdgeInsets.only(top: 14, left: 13, right: 2),
+                  padding: const EdgeInsets.only(
+                    top: 10,
+                    left: 13,
+                    right: 2,
+                    bottom: 0,
+                  ),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [

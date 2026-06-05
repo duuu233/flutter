@@ -22,6 +22,25 @@ part 'home_text_styles.dart'; // 统一文字样式
 /// - [found]：已发现附近设备，等待用户选择并绑定。
 enum _HomeBindMode { none, searching, notFound, found }
 
+/// 调试用场景枚举：配合 [_HomePageState._debugScene] 强制首页停在某个整页场景，
+/// 便于逐个场景调样式（弹层类场景仍可在对应场景里点出来）。
+enum _DebugScene {
+  /// 首页-已绑定设备
+  boundHome,
+
+  /// 首页-未绑定设备
+  unboundHome,
+
+  /// 绑定设备-搜索中
+  scanSearching,
+
+  /// 绑定设备-未搜索到设备
+  scanNotFound,
+
+  /// 绑定设备-已搜索到设备
+  scanFound,
+}
+
 /// 首页：App 主页面，承载「设备绑定 + 投屏」的核心流程。
 ///
 /// 本页根据若干状态组合出多个 UI 场景，对应设计稿如下：
@@ -52,6 +71,17 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  // ================= 调试开关（调样式用，发布前改回 null）=================
+  // 把下面的 null 改成想看的场景，例如 `_DebugScene.boundHome`，即可让首页固定
+  // 停在该场景。改这个值后请用「热重启 Hot Restart（按大写 R）」生效；
+  // 之后改各组件样式用普通「热重载（按小写 r）」即可即时看到。
+  //
+  // 注意：① 非 null 时会覆盖真实交互逻辑（绑定流程里点返回也会被强制拉回该场景）；
+  //      ② boundHome 的「设备轮播指示点」数量取自真正已连接的设备，默认数据里没有
+  //         已连接设备，故点点为空；想看圆点可把 state.dart 里某台设备 connected 改 true。
+  // ignore: unnecessary_nullable_for_final_variable_declarations  （需保持可空，便于改回 null）
+  final _DebugScene? _debugScene = _DebugScene.scanSearching;
+
   // ---- 关键状态字段 ----
 
   /// 当前绑定子场景，决定显示主视图还是绑定流程视图。
@@ -135,15 +165,52 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    // 默认按真实状态/交互显示；_debugScene 非 null 时强制切到对应场景（调样式用）。
+    var bindMode = _bindMode;
+    var activeDevice = _activeDevice;
+    final debugScene = _debugScene;
+    if (debugScene != null) {
+      switch (debugScene) {
+        case _DebugScene.boundHome:
+          bindMode = _HomeBindMode.none;
+          activeDevice = widget.state.devices.isNotEmpty
+              ? widget.state.devices.first
+              : null;
+          break;
+        case _DebugScene.unboundHome:
+          bindMode = _HomeBindMode.none;
+          activeDevice = null;
+          break;
+        case _DebugScene.scanSearching:
+          bindMode = _HomeBindMode.searching;
+          activeDevice = null;
+          break;
+        case _DebugScene.scanNotFound:
+          bindMode = _HomeBindMode.notFound;
+          activeDevice = null;
+          break;
+        case _DebugScene.scanFound:
+          bindMode = _HomeBindMode.found;
+          activeDevice = null;
+          break;
+      }
+    }
+
+    // 背景图按场景区分：首页主视图（_bindMode == none，含其上各弹层）用 bg02，
+    // 绑定设备流程（搜索/未找到/已找到/扫描帮助）用 bg01。
+    final backgroundAsset = bindMode == _HomeBindMode.none
+        ? 'assets/images/bg02.png'
+        : 'assets/images/bg01.png';
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        const _HomeBackground(),
+        _HomeBackground(asset: backgroundAsset),
         SafeArea(
-          child: _bindMode == _HomeBindMode.none
+          child: bindMode == _HomeBindMode.none
               ? _HomeMainView(
                   state: widget.state,
-                  activeDevice: _activeDevice,
+                  activeDevice: activeDevice,
                   onBindDevice: _startScan,
                   onAddDevice: _startScan,
                   onShowCastSheet: _showCastMethodSheet,
@@ -152,7 +219,7 @@ class _HomePageState extends State<HomePage> {
                   onOpenMine: widget.onOpenMine,
                 )
               : _BindDeviceView(
-                  mode: _bindMode,
+                  mode: bindMode,
                   devices: _nearbyDevices,
                   selectedIndex: _selectedFoundDeviceIndex,
                   showScanHelp: _showScanHelp,
