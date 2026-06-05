@@ -429,9 +429,18 @@ class FigmaAccountField extends StatelessWidget {
                             color: const Color(0xFF777E88),
                           )
                         : FigmaTextStyles.formValue,
-                    decoration: InputDecoration(
+                    decoration: const InputDecoration(
                       isCollapsed: true,
+                      filled: false,
+                      fillColor: Colors.transparent,
+                      hoverColor: Colors.transparent,
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                    ).copyWith(
                       hintText: hintText,
                       hintStyle: FigmaTextStyles.formHint,
                     ),
@@ -499,7 +508,15 @@ class FigmaVerificationField extends StatelessWidget {
                 style: FigmaTextStyles.formValue,
                 decoration: const InputDecoration(
                   isCollapsed: true,
+                  filled: false,
+                  fillColor: Colors.transparent,
+                  hoverColor: Colors.transparent,
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                  errorBorder: InputBorder.none,
+                  focusedErrorBorder: InputBorder.none,
                   hintText: '请输入验证码',
                   hintStyle: TextStyle(
                     color: Color(0xFF8B9098),

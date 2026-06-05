@@ -260,7 +260,8 @@ class _HomeTabItem extends StatelessWidget {
           iconAsset,
           width: 28,
           height: 28,
-          placeholderBuilder: (context) => Icon(fallbackIcon, color: color, size: 28),
+          placeholderBuilder: (context) =>
+              Icon(fallbackIcon, color: color, size: 28),
         ),
         const SizedBox(height: 2),
         Text(
@@ -749,8 +750,8 @@ class _CastEntryCard extends StatelessWidget {
             ),
             // 顶部素材图：margin 46rpx(=23) top/left。
             Positioned(
-              left: 23,
-              top: 23,
+              left: 28,
+              top: 25,
               width: 66,
               height: 66,
               child: Image.asset(
@@ -771,9 +772,9 @@ class _CastEntryCard extends StatelessWidget {
             ),
             // 底部文案行：.projection-copy（名称 + 描述 + 大箭头）。
             Positioned(
-              left: 23,
-              right: 13,
-              bottom: 8,
+              left: 33,
+              right: 20,
+              bottom: 30,
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [

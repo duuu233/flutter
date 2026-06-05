@@ -408,3 +408,26 @@ lib/
 > 注：登录页两端差异较大（App 邮箱密码 vs 小程序微信快捷登录），不做样式对照还原。
 > 注：`figma_common.dart` 的共享脚手架（背景/主次按钮/玻璃卡/导航标题/表单行/分隔线/验证码按钮/返回键）
 > 已全面对齐小程序，后续无需重复改这些公共件。
+
+---
+
+## 待优化记录
+
+### 布局方案不统一：弹性自适应仅覆盖少数页面（待全面推广）— 🔲 待办（记录于 2026-06-05）
+
+- **问题**：`关键约定 → 布局方式` 中声明全项目采用「弹性 / 响应式布局（`SafeArea` + `Flex` + `Spacer`）」，
+  但实际只有少数页面真正落地，大多数页面仍是 Figma 直出的**固定像素**布局，两套方案并存。
+- **现状摸排**（`flutter/lib` 全量检索）：
+  - **真·弹性自适应（`LayoutBuilder` + `Flex`/`Spacer`）只有 3 个页面**：`home_main_view.dart`、
+    `home_bind_device_view.dart`、`mine_page.dart`。统一模式为
+    `Expanded → LayoutBuilder → SingleChildScrollView → ConstrainedBox(minHeight: maxHeight)
+    → IntrinsicHeight → Column(Spacer/Expanded 撑开)`——屏高够则撑开、过矮则滚动，避免溢出。
+  - **固定像素（`FigmaScreen` 脚手架 + 硬编码尺寸）约 45 个页面**：全项目硬编码 `width:`/`height:`
+    共 **728 处、分布 49 个文件**（如 `device_details_page.dart` 的 `width: 46, height: 46` 等）。
+  - 未使用 `flutter_screenutil` / rpx 等按屏宽缩放方案（`MediaQuery` 也几乎无按比例换算的用法），
+    固定像素页面**不随屏宽缩放控件尺寸**。
+  - 注：`demo_page.dart` 里的 `LayoutBuilder` 用于图片裁剪坐标换算，非页面布局自适应，不计入。
+- **影响**：`FigmaScreen` 仍提供 `SafeArea` + 可滚动内容的基本适配（不会溢出/被刘海遮挡），
+  但内部尺寸固定，在差异较大的屏宽/系统字号下还原比例会偏差。
+- **优化方向**：逐页将固定像素内容改造为弹性布局（沿用上述 home/mine 的标准模式），或引入统一的
+  尺寸缩放方案；优先级可参考各 feature 的使用频次。后续按页推进时在本条下追加进度。

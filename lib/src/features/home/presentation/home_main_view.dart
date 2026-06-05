@@ -80,7 +80,9 @@ class _HomeMainView extends StatelessWidget {
   /// 「首页-已绑定设备」布局。
   Widget _buildBound(BuildContext context) {
     // 设备轮播指示点：点数=已连接设备数，高亮当前设备。
-    final connected = state.devices.where((device) => device.connected).toList();
+    final connected = state.devices
+        .where((device) => device.connected)
+        .toList();
     final activeIndex = connected.indexWhere((d) => d.id == activeDevice!.id);
 
     return Column(
@@ -121,7 +123,10 @@ class _HomeMainView extends StatelessWidget {
         const Spacer(),
         ..._castSection(),
         const Spacer(),
-        Padding(padding: _textInset, child: _HomeTabBar(onOpenMine: onOpenMine)),
+        Padding(
+          padding: _textInset,
+          child: _HomeTabBar(onOpenMine: onOpenMine),
+        ),
         const SizedBox(height: 13),
       ],
     );
@@ -174,7 +179,10 @@ class _HomeMainView extends StatelessWidget {
         const Spacer(flex: 6),
         ..._castSection(),
         const Spacer(),
-        Padding(padding: _textInset, child: _HomeTabBar(onOpenMine: onOpenMine)),
+        Padding(
+          padding: _textInset,
+          child: _HomeTabBar(onOpenMine: onOpenMine),
+        ),
         const SizedBox(height: 13),
       ],
     );

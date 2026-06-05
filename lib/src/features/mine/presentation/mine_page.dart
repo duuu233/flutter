@@ -220,20 +220,9 @@ class _ProfileCard extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Container(
-        height: 89,
-        clipBehavior: Clip.antiAlias,
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.88)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF8097B8).withValues(alpha: 0.14),
-              blurRadius: 26,
-              offset: const Offset(0, 12),
-            ),
-          ],
-        ),
+      child: AspectRatio(
+        // 严格保持背景图比例 327:121，宽度随屏自适应、高度按比例算出。
+        aspectRatio: 327 / 121,
         child: Stack(
           fit: StackFit.expand,
           children: [
