@@ -50,7 +50,7 @@ class _HomeMainView extends StatelessWidget {
   static const _textInset = EdgeInsets.symmetric(horizontal: 24);
 
   /// 卡片区横向留白（24rpx）。
-  static const _cardInset = EdgeInsets.symmetric(horizontal: 12);
+  static const _cardInset = EdgeInsets.symmetric(horizontal: 24);
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +137,7 @@ class _HomeMainView extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Spacer(flex: 4),
+        const SizedBox(height: 95),
         const Center(
           child: SizedBox(width: 240, height: 189, child: _UnboundDeviceArt()),
         ),
@@ -176,7 +176,8 @@ class _HomeMainView extends StatelessWidget {
             ),
           ),
         ),
-        const Spacer(flex: 6),
+        // const Spacer(flex: 6),
+        const SizedBox(height: 68),
         ..._castSection(),
         const Spacer(),
         Padding(
@@ -202,31 +203,29 @@ class _HomeMainView extends StatelessWidget {
       const SizedBox(height: 8),
       Padding(
         padding: _cardInset,
+        // 两张卡为 UI 设计图实际尺寸 158×154（DevTools 选中即为该尺寸，不缩放/不拉伸）；
+        // 左右留白固定（_cardInset），中间间距用 spaceBetween 取剩余宽度自适应分配。
+        // 卡片阴影由卡内 boxShadow 在卡外绘制（不计入尺寸），自然形成卡间与边缘的视觉间隙。
         child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Expanded(
-              child: _CastEntryCard(
-                title: '拍照',
-                subtitle: '拍摄照片并投屏',
-                artAsset: 'assets/images/camera_material.png',
-                arrowAsset: 'assets/images/home-camera-card-right-icon.png',
-                backgroundAsset: 'assets/images/home-camera-card-bg.png',
-                fallbackColor: const Color(0xFFFFF8F4),
-                onTap: onCamera,
-              ),
+            _CastEntryCard(
+              title: '拍照',
+              subtitle: '拍摄照片并投屏',
+              artAsset: 'assets/images/camera_material.png',
+              arrowAsset: 'assets/images/home-camera-card-right-icon.png',
+              backgroundAsset: 'assets/images/home-camera-card-bg.png',
+              fallbackColor: const Color(0xFFFFF8F4),
+              onTap: onCamera,
             ),
-            // 不额外留间距：两张底图各自带约 12rpx 透明阴影边距，并排即形成
-            // 与小程序一致的视觉间隙（小程序 .projection-grid 卡片溢出收缩后亦无显式间距）。
-            Expanded(
-              child: _CastEntryCard(
-                title: '相册',
-                subtitle: '选择照片并投屏',
-                artAsset: 'assets/images/album_material.png',
-                arrowAsset: 'assets/images/home-album-card-right-icon.png',
-                backgroundAsset: 'assets/images/home-album-card-bg.png',
-                fallbackColor: const Color(0xFFEAF4FF),
-                onTap: onAlbum,
-              ),
+            _CastEntryCard(
+              title: '相册',
+              subtitle: '选择照片并投屏',
+              artAsset: 'assets/images/album_material.png',
+              arrowAsset: 'assets/images/home-album-card-right-icon.png',
+              backgroundAsset: 'assets/images/home-album-card-bg.png',
+              fallbackColor: const Color(0xFFEAF4FF),
+              onTap: onAlbum,
             ),
           ],
         ),

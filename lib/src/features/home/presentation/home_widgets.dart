@@ -723,102 +723,127 @@ class _CastEntryCard extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: AspectRatio(
-        // 小程序 .projection-card：366×358rpx = 183×179。底图 home-*-card-bg.png
-        // 自带阴影（画布 183×179，可见卡片仅 159×155，四周约 12rpx 透明阴影边距），
-        // 因此按图片真实宽高比布局，避免被拉伸导致圆角与阴影变形。
-        aspectRatio: 183 / 179,
+      child: SizedBox(
+        // 卡片为 UI 设计图实际尺寸 158×154（即背景图 home-*-card-bg.png 的真实宽高）。
+        // 阴影不再来自图片透明边距，改由下方 boxShadow 在卡外绘制，不计入布局尺寸。
+        width: 158,
+        height: 154,
         child: Stack(
+          fit: StackFit.expand,
           children: [
-            // 卡片底图铺满（home-camera-card-bg.png / home-album-card-bg.png）。
-            Positioned.fill(
-              child: Image.asset(
-                backgroundAsset,
-                fit: BoxFit.fill,
-                errorBuilder: (context, error, stackTrace) {
-                  return DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: fallbackColor,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.7),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-            // 顶部素材图：margin 46rpx(=23) top/left。
-            Positioned(
-              left: 28,
-              top: 25,
-              width: 66,
-              height: 66,
-              child: Image.asset(
-                artAsset,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(
-                    title == '拍照'
-                        ? Icons.photo_camera_rounded
-                        : Icons.photo_library_rounded,
-                    color: title == '拍照'
-                        ? const Color(0xFFFF6A24)
-                        : const Color(0xFF287BFF),
-                    size: 44,
-                  );
-                },
-              ),
-            ),
-            // 底部文案行：.projection-copy（名称 + 描述 + 大箭头）。
-            Positioned(
-              left: 33,
-              right: 20,
-              bottom: 30,
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _HomeTextStyles.cardTitle,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          subtitle,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _HomeTextStyles.cardSubtitle,
-                        ),
-                      ],
-                    ),
+            // 卡面层：圆角渐变底图 + 1px 白描边 + 0.64 半透明 + 柔和投影。
+            // 对照前端 CSS：border-radius:20; border:1px solid #FFF; opacity:0.64;
+            //              background:radial-gradient(...)（暖白/浅蓝已烘焙进底图）;
+            //              box-shadow:0 3px 12px rgba(44,63,97,0.04)。
+            // 投影放在最外层（全强度），卡面（描边+底图）整体 0.64，避免阴影一并被淡到不可见。
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color.fromRGBO(44, 63, 97, 0.04),
+                    offset: Offset(0, 3),
+                    blurRadius: 12,
                   ),
-                  const SizedBox(width: 4),
-                  SizedBox(
-                    width: 59,
-                    height: 59,
+                ],
+              ),
+              child: Opacity(
+                opacity: 0.64,
+                child: Container(
+                  clipBehavior: Clip.antiAlias,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.white, width: 1),
+                  ),
+                  child: Image.asset(
+                    backgroundAsset,
+                    fit: BoxFit.cover,
+                    errorBuilder: (context, error, stackTrace) {
+                      // 兜底：底图缺失时用纯色近似卡面（暖白/浅蓝）。
+                      return ColoredBox(color: fallbackColor);
+                    },
+                  ),
+                ),
+              ),
+            ),
+            // 内容层：左上素材图 + 底部「名称/描述 + 箭头」行，对照小程序 .projection-card
+            // 的 flex 纵向流（.media-art 在上、.projection-copy 在下），按 158×154 卡面换算留白。
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // .media-art：66×66，
+                Padding(
+                  padding: const EdgeInsets.only(top: 15, left: 18),
+                  child: SizedBox(
+                    width: 66,
+                    height: 66,
                     child: Image.asset(
-                      arrowAsset,
+                      artAsset,
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) {
                         return Icon(
-                          Icons.arrow_forward_rounded,
+                          title == '拍照'
+                              ? Icons.photo_camera_rounded
+                              : Icons.photo_library_rounded,
                           color: title == '拍照'
                               ? const Color(0xFFFF6A24)
                               : const Color(0xFF287BFF),
-                          size: 30,
+                          size: 44,
                         );
                       },
                     ),
                   ),
-                ],
-              ),
+                ),
+                // .projection-copy：padding 28/27/0/50rpx + flex space-between；换算到卡面后
+                // 上间距 14、左 13、右 2，行内为「名称/描述」+ 右侧大箭头。
+                Padding(
+                  padding: const EdgeInsets.only(top: 14, left: 13, right: 2),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _HomeTextStyles.cardTitle,
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _HomeTextStyles.cardSubtitle,
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      SizedBox(
+                        width: 59,
+                        height: 59,
+                        child: Image.asset(
+                          arrowAsset,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              Icons.arrow_forward_rounded,
+                              color: title == '拍照'
+                                  ? const Color(0xFFFF6A24)
+                                  : const Color(0xFF287BFF),
+                              size: 30,
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ],
         ),
