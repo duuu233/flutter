@@ -43,10 +43,16 @@ class _BleDebugPageState extends State<BleDebugPage> {
   double _uploadPercent = 0;
   String _uploadStatus = '';
 
+  // 六色量化调参（仅相册图生效，可在真机上实时 A/B，把上传图与原图差距调到最小）。
+  bool _dither = true;
+  double _contrast = 1.12;
+  double _saturation = 1.28;
+
   final List<_LogEntry> _logs = [];
   final TextEditingController _intervalCtrl = TextEditingController(text: '60');
   final TextEditingController _switchCtrl = TextEditingController(text: '0');
   final TextEditingController _deleteCtrl = TextEditingController();
+  final TextEditingController _uploadIndexCtrl = TextEditingController();
   String _playMode = 'order';
 
   @override
@@ -61,6 +67,7 @@ class _BleDebugPageState extends State<BleDebugPage> {
     _intervalCtrl.dispose();
     _switchCtrl.dispose();
     _deleteCtrl.dispose();
+    _uploadIndexCtrl.dispose();
     super.dispose();
   }
 
@@ -319,20 +326,90 @@ class _BleDebugPageState extends State<BleDebugPage> {
     _upload(frame, '上传纯白测试图(0x20~0x22)');
   }
 
+  /// 选相册图片 → 原生解码裁剪到设备分辨率 → 六色量化 → 走图传上传。
+  Future<void> _uploadFromGallery() async {
+    if (!_ensureUploadReady()) return;
+    final i = _info!;
+    setState(() {
+      _uploading = true;
+      _uploadPercent = 0;
+      _uploadStatus = '选择相册图片…';
+    });
+    try {
+      final perm = await NativeDeviceApi.requestPhotoPermission();
+      if (!perm.photoPermissionGranted) {
+        _toast('请先授予相册权限');
+        setState(() => _uploadStatus = '未授予相册权限');
+        return;
+      }
+      final sel = await NativeDeviceApi.openGallery();
+      if (sel == null) {
+        setState(() => _uploadStatus = '已取消选择');
+        return;
+      }
+      setState(() => _uploadStatus = '解码并裁剪到 ${i.width}×${i.height}…');
+      final rgba = await NativeDeviceApi.decodeImageRgba(
+        uri: sel.uri,
+        width: i.width,
+        height: i.height,
+      );
+      if (rgba == null || rgba.length != i.width * i.height * 4) {
+        _toast('图片解码失败');
+        setState(() => _uploadStatus = '图片解码失败');
+        return;
+      }
+      _log('act',
+          '相册图「${sel.title}」已解码 ${i.width}×${i.height}，量化(抖动${_dither ? '开' : '关'}/对比度${_contrast.toStringAsFixed(2)}/饱和度${_saturation.toStringAsFixed(2)})…');
+      setState(() => _uploadStatus = '六色量化中…');
+      final frame = FrameImageCodec.fromRgba(
+        rgba,
+        i.width,
+        i.height,
+        dither: _dither,
+        contrast: _contrast,
+        saturation: _saturation,
+      );
+      // _upload 内部自管 _uploading/进度，成功后保留其完成提示。
+      await _upload(frame, '上传相册图片「${sel.title}」(0x20~0x22)');
+    } catch (e) {
+      _log('err', '相册上传失败：$e');
+      if (mounted) setState(() => _uploadStatus = '相册上传失败：$e');
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
+  }
+
+  /// 解析图传目标槽位：输入框留空=自动选第一个空位；填数字=指定槽位(0~capacity-1)。
+  /// 返回 -1 表示出错(已 toast 提示)，调用方应中止本次上传。
+  int _resolveUploadIndex(FrameDeviceInfo i) {
+    final raw = _uploadIndexCtrl.text.trim();
+    if (raw.isEmpty) {
+      final auto = FrameProtocol.firstFreeIndex(i.imgMask, i.capacity);
+      if (auto < 0) _toast('设备已存满，请先删除图片或在上方指定要覆盖的索引');
+      return auto;
+    }
+    final maxIndex = (i.capacity > 0 ? i.capacity : 96) - 1;
+    final n = int.tryParse(raw) ?? -1;
+    if (n < 0 || n > maxIndex) {
+      _toast('索引超出范围，应为 0~$maxIndex');
+      return -1;
+    }
+    return n;
+  }
+
   Future<void> _upload(FrameBuffer frame, String label) async {
     final i = _info!;
-    final index = FrameProtocol.firstFreeIndex(i.imgMask, i.capacity);
-    if (index < 0) {
-      _toast('设备已存满，请先删除图片');
-      return;
-    }
+    final index = _resolveUploadIndex(i);
+    if (index < 0) return; // 错误已在 _resolveUploadIndex 内提示
+    final overwrite = FrameProtocol.maskToIndexes(i.imgMask).contains(index);
     final totalPackets = (frame.dataSize + 235) ~/ 236;
     setState(() {
       _uploading = true;
       _uploadPercent = 0;
       _uploadStatus = '传输中：槽位 $index，约 $totalPackets 包…';
     });
-    _log('act', '$label → 槽位 $index，数据 ${frame.dataSize} 字节');
+    _log('act',
+        '$label → 槽位 $index${overwrite ? '（覆盖已有）' : ''}，数据 ${frame.dataSize} 字节');
     try {
       final summary = await _client.uploadImage(
         screenType: i.screenType,
@@ -551,6 +628,8 @@ class _BleDebugPageState extends State<BleDebugPage> {
   }
 
   Widget _imageCard() {
+    final cap = _info?.capacity ?? 0;
+    final maxIdx = (cap > 0 ? cap : 96) - 1;
     return _section('图传', [
       Row(children: [
         const Text('发送速度：'),
@@ -566,6 +645,16 @@ class _BleDebugPageState extends State<BleDebugPage> {
         ),
       ]),
       const SizedBox(height: 6),
+      TextField(
+        controller: _uploadIndexCtrl,
+        keyboardType: TextInputType.number,
+        decoration: InputDecoration(
+          labelText: '上传到索引（留空=自动选空位，范围 0~$maxIdx）',
+          helperText: '填已占用的索引会覆盖该槽位',
+          isDense: true,
+        ),
+      ),
+      const SizedBox(height: 10),
       Wrap(spacing: 10, runSpacing: 8, children: [
         FilledButton(
           onPressed: _uploading ? null : _uploadColorBars,
@@ -577,14 +666,67 @@ class _BleDebugPageState extends State<BleDebugPage> {
         ),
       ]),
       const SizedBox(height: 6),
-      const Text('相册图片上传：需原生 RGBA 解码支持，下一步接入。',
-          style: TextStyle(fontSize: 12, color: Colors.grey)),
+      FilledButton.icon(
+        onPressed: _uploading ? null : _uploadFromGallery,
+        icon: const Icon(Icons.photo_library_outlined, size: 18),
+        label: const Text('选择相册图片上传'),
+      ),
+      _quantizeTuner(),
       if (_uploading || _uploadStatus.isNotEmpty) ...[
         const SizedBox(height: 10),
         LinearProgressIndicator(value: _uploading ? _uploadPercent : null),
         const SizedBox(height: 6),
         Text(_uploadStatus, style: const TextStyle(fontSize: 12)),
       ],
+    ]);
+  }
+
+  /// 相册图的六色量化调参面板：抖动开关 + 量化前对比度/饱和度增强，可在真机上 A/B。
+  Widget _quantizeTuner() {
+    return ExpansionTile(
+      tilePadding: EdgeInsets.zero,
+      childrenPadding: EdgeInsets.zero,
+      title: const Text('六色量化调参（相册图）',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+      subtitle: const Text('量化前增强 + 抖动，缓解六色硬量化的色块/发灰',
+          style: TextStyle(fontSize: 11, color: Colors.grey)),
+      children: [
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Floyd–Steinberg 抖动', style: TextStyle(fontSize: 13)),
+          subtitle: const Text('开=渐变自然但有颗粒；关=色块硬但干净',
+              style: TextStyle(fontSize: 11, color: Colors.grey)),
+          value: _dither,
+          onChanged: _uploading ? null : (v) => setState(() => _dither = v),
+        ),
+        _sliderRow('对比度', _contrast, 0.8, 1.8,
+            (v) => setState(() => _contrast = v)),
+        _sliderRow('饱和度', _saturation, 0.8, 2.0,
+            (v) => setState(() => _saturation = v)),
+      ],
+    );
+  }
+
+  Widget _sliderRow(String label, double value, double min, double max,
+      ValueChanged<double> onChanged) {
+    return Row(children: [
+      SizedBox(
+          width: 48, child: Text(label, style: const TextStyle(fontSize: 13))),
+      Expanded(
+        child: Slider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: ((max - min) / 0.02).round(),
+          label: value.toStringAsFixed(2),
+          onChanged: _uploading ? null : onChanged,
+        ),
+      ),
+      SizedBox(
+          width: 40,
+          child: Text(value.toStringAsFixed(2),
+              style: const TextStyle(fontSize: 12))),
     ]);
   }
 

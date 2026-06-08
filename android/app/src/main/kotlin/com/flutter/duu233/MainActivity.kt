@@ -6,7 +6,10 @@ import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Matrix
+import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
 import android.provider.MediaStore
@@ -53,6 +56,7 @@ class MainActivity : FlutterActivity() {
                 4104,
             )
             "openGallery" -> openGallery(result)
+            "decodeImageRgba" -> decodeImageRgba(call, result)
             "openBluetoothSettings" -> {
                 startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 result.success(null)
@@ -184,6 +188,113 @@ class MainActivity : FlutterActivity() {
             }
         }
         return "相册图片"
+    }
+
+    // 把相册 content:// 图片解码成「设备分辨率的 RGBA 像素」，返回给 Dart 端做六色量化。
+    private fun decodeImageRgba(call: MethodCall, result: MethodChannel.Result) {
+        val uriStr = call.argument<String>("uri")
+        val targetW = call.argument<Int>("width") ?: 0
+        val targetH = call.argument<Int>("height") ?: 0
+        if (uriStr.isNullOrEmpty() || targetW <= 0 || targetH <= 0) {
+            result.error("bad_args", "uri/width/height 必填且需 > 0", null)
+            return
+        }
+        // 大图解码 + 缩放较慢，放后台线程，结果回主线程返回，避免卡 UI。
+        Thread {
+            try {
+                val rgba = decodeToRgba(Uri.parse(uriStr), targetW, targetH)
+                runOnUiThread { result.success(rgba) }
+            } catch (error: Exception) {
+                runOnUiThread { result.error("decode_failed", error.message, null) }
+            }
+        }.start()
+    }
+
+    // 解码、按 EXIF 摆正、中心裁剪覆盖到 targetW×targetH，输出 RGBA(每像素 R,G,B,A 共 4 字节)。
+    private fun decodeToRgba(uri: Uri, targetW: Int, targetH: Int): ByteArray {
+        // 1) 先量边界并估算下采样倍数（省内存，避免大图 OOM）。
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+            throw IllegalStateException("无法解析图片尺寸")
+        }
+        val rotation = readExifRotation(uri)
+        val orientedW = if (rotation == 90 || rotation == 270) bounds.outHeight else bounds.outWidth
+        val orientedH = if (rotation == 90 || rotation == 270) bounds.outWidth else bounds.outHeight
+        var sample = 1
+        while (orientedW / (sample * 2) >= targetW && orientedH / (sample * 2) >= targetH) {
+            sample *= 2
+        }
+
+        // 2) 正式解码。
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        var bmp = contentResolver.openInputStream(uri)?.use {
+            BitmapFactory.decodeStream(it, null, opts)
+        } ?: throw IllegalStateException("图片解码失败")
+
+        // 3) 应用 EXIF 旋转，避免竖拍照片躺倒。
+        if (rotation != 0) {
+            val matrix = Matrix().apply { postRotate(rotation.toFloat()) }
+            val rotated = Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, matrix, true)
+            if (rotated != bmp) {
+                bmp.recycle()
+                bmp = rotated
+            }
+        }
+
+        // 4) 中心裁剪“覆盖”再精确缩放到目标分辨率。
+        val cover = centerCropCover(bmp, targetW, targetH)
+        if (cover != bmp) bmp.recycle()
+
+        // 5) ARGB_8888 → RGBA 字节序。
+        val pixels = IntArray(targetW * targetH)
+        cover.getPixels(pixels, 0, targetW, 0, 0, targetW, targetH)
+        cover.recycle()
+        val out = ByteArray(targetW * targetH * 4)
+        var o = 0
+        for (p in pixels) {
+            out[o++] = ((p shr 16) and 0xFF).toByte() // R
+            out[o++] = ((p shr 8) and 0xFF).toByte()  // G
+            out[o++] = (p and 0xFF).toByte()           // B
+            out[o++] = ((p ushr 24) and 0xFF).toByte() // A
+        }
+        return out
+    }
+
+    // 中心裁剪“覆盖”：等比放大到能盖满目标，再从正中裁出 targetW×targetH。
+    private fun centerCropCover(src: Bitmap, targetW: Int, targetH: Int): Bitmap {
+        val scale = maxOf(targetW.toFloat() / src.width, targetH.toFloat() / src.height)
+        val scaledW = Math.round(src.width * scale).coerceAtLeast(targetW)
+        val scaledH = Math.round(src.height * scale).coerceAtLeast(targetH)
+        val scaled = Bitmap.createScaledBitmap(src, scaledW, scaledH, true)
+        val left = (scaledW - targetW) / 2
+        val top = (scaledH - targetH) / 2
+        val cropped = Bitmap.createBitmap(scaled, left, top, targetW, targetH)
+        if (scaled != src && scaled != cropped) scaled.recycle()
+        return cropped
+    }
+
+    // 读取 EXIF 方向（ExifInterface 流构造需 API 24+，低版本跳过）。
+    private fun readExifRotation(uri: Uri): Int {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) return 0
+        return try {
+            contentResolver.openInputStream(uri)?.use { input ->
+                when (ExifInterface(input).getAttributeInt(
+                    ExifInterface.TAG_ORIENTATION,
+                    ExifInterface.ORIENTATION_NORMAL,
+                )) {
+                    ExifInterface.ORIENTATION_ROTATE_90 -> 90
+                    ExifInterface.ORIENTATION_ROTATE_180 -> 180
+                    ExifInterface.ORIENTATION_ROTATE_270 -> 270
+                    else -> 0
+                }
+            } ?: 0
+        } catch (_: Exception) {
+            0
+        }
     }
 
     private fun buildStatus(): Map<String, Boolean> {

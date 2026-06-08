@@ -113,6 +113,20 @@ class NativeDeviceApi {
     return GallerySelection.fromMap(result);
   }
 
+  /// 把相册图片(content:// uri)解码并中心裁剪到设备分辨率，返回 RGBA 像素
+  /// (长度 = width×height×4)。失败返回 null。解码/缩放在原生后台线程完成。
+  static Future<Uint8List?> decodeImageRgba({
+    required String uri,
+    required int width,
+    required int height,
+  }) async {
+    return _channel.invokeMethod<Uint8List>('decodeImageRgba', {
+      'uri': uri,
+      'width': width,
+      'height': height,
+    });
+  }
+
   static Future<void> openBluetoothSettings() async {
     await _channel.invokeMethod<void>('openBluetoothSettings');
   }
