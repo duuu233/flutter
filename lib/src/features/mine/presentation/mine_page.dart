@@ -482,6 +482,7 @@ class _DebugEntryRow extends StatelessWidget {
       children: [
         _DebugChip(label: '创建账户', route: AppRoutes.figmaRegister),
         _DebugChip(label: '邮箱登录', route: AppRoutes.auth),
+        _DebugChip(label: 'BLE调试', route: AppRoutes.bleDebug),
       ],
     );
   }

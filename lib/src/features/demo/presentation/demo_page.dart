@@ -35,6 +35,17 @@ class _DemoPageState extends State<DemoPage> {
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 120),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
+              FilledButton.icon(
+                // 跳转到 BLE 图传调试页（路由常量 AppRoutes.bleDebug = '/ble-debug'）
+                onPressed: () => Navigator.of(context).pushNamed('/ble-debug'),
+                icon: const Icon(Icons.bluetooth),
+                label: Text(state.tr(
+                  zh: '打开 BLE 图传调试',
+                  en: 'BLE Transfer Debug',
+                  ja: 'BLE 転送デバッグ',
+                )),
+              ),
+              const SizedBox(height: 16),
               Row(
                 children: [
                   Container(

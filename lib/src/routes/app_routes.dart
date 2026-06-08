@@ -22,6 +22,7 @@ import '../features/devices/presentation/bind_device_found.dart';
 import '../features/devices/presentation/bind_device_not_found.dart';
 import '../features/devices/presentation/bind_device_scan_help.dart';
 import '../features/devices/presentation/bind_device_searching.dart';
+import '../features/devices/presentation/ble_debug_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
 import '../features/devices/presentation/device_clear_confirm_page.dart';
 import '../features/devices/presentation/device_delete_confirm_page.dart';
@@ -51,6 +52,7 @@ class AppRoutes {
   static const castManagement = '/cast-management';
   static const guide = '/guide';
   static const settings = '/settings';
+  static const bleDebug = '/ble-debug';
   static const figmaForgotPassword = '/figma/forgot-password';
   static const figmaModifyPassword = '/figma/modify-password';
   static const figmaRegister = '/figma/register';
@@ -111,6 +113,9 @@ class AppRoutes {
         break;
       case AppRoutes.settings:
         builder = (_) => SettingsPage(state: state);
+        break;
+      case AppRoutes.bleDebug:
+        builder = (_) => const BleDebugPage();
         break;
       case AppRoutes.figmaForgotPassword:
         builder = (_) => const ForgotPassword();
