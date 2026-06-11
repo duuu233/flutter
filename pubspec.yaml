@@ -37,6 +37,8 @@ dependencies:
   flutter_svg: ^2.3.0
   # 蓝牙图传：扫描/连接/MTU/收发/notify，且自带 requestConnectionPriority(图传前后调连接间隔)
   flutter_blue_plus: ^2.3.8
+  # BoltFox 后端接口请求（lib/src/network）：JSON 请求与 form-data 文件上传
+  http: ^1.2.2
 
 dev_dependencies:
   flutter_test:
