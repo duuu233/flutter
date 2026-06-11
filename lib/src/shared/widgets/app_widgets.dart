@@ -241,12 +241,16 @@ class PhotoArtwork extends StatelessWidget {
     required this.source,
     this.width = 76,
     this.height = 92,
+    this.imageUrl,
   });
 
   final Color color;
   final ImageSourceType source;
   final double width;
   final double height;
+
+  /// 后端图片地址；存在时优先展示真实图，加载失败回退占位色块。
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -267,6 +271,18 @@ class PhotoArtwork extends StatelessWidget {
       ),
       child: Stack(
         children: [
+          if (imageUrl != null)
+            Positioned.fill(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(24),
+                child: Image.network(
+                  imageUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
+              ),
+            ),
           Align(
             alignment: Alignment.topRight,
             child: Padding(

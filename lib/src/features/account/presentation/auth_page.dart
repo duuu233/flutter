@@ -85,7 +85,12 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
-  void _login() {
+  bool _submitting = false;
+
+  Future<void> _login() async {
+    if (_submitting) {
+      return;
+    }
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final emailValid = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
@@ -101,8 +106,17 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
 
-    final feedback = widget.state.loginWithPassword(email, password);
+    setState(() => _submitting = true);
+    final feedback = await widget.state.loginWithPassword(email, password);
+    if (!mounted) {
+      return;
+    }
+    setState(() => _submitting = false);
     _showFeedback(feedback.message);
+    // 登录页通常以 pushNamedAndRemoveUntil 进入，成功后若可返回则回到主壳层。
+    if (feedback.success && Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   void _forgotPassword() {

@@ -15,6 +15,7 @@ class MyDevicesPage extends StatefulWidget {
     this.onCarouselSettings,
     this.onConnect,
     this.onDisconnect,
+    this.onRename,
   });
 
   final List<MyDeviceOverview>? devices;
@@ -23,6 +24,9 @@ class MyDevicesPage extends StatefulWidget {
   final ValueChanged<String>? onCarouselSettings;
   final ValueChanged<String>? onConnect;
   final ValueChanged<String>? onDisconnect;
+
+  /// 重命名回调：(设备 id, 新名称)。由上层接 `state.renameDevice` 走真实接口。
+  final void Function(String id, String name)? onRename;
 
   @override
   State<MyDevicesPage> createState() => _MyDevicesPageState();
@@ -50,8 +54,8 @@ class MyDeviceOverview {
 }
 
 class _MyDevicesPageState extends State<MyDevicesPage> {
-  late final List<MyDeviceOverview> _devices =
-      (widget.devices ?? _seedDevices()).map((device) => device.copy()).toList();
+  // 列表数据以上层传入的 `widget.devices` 为准（单一数据源），未传入时回退演示数据。
+  List<MyDeviceOverview> get _devices => widget.devices ?? _seedDevices();
 
   static List<MyDeviceOverview> _seedDevices() => [
     MyDeviceOverview(
@@ -113,11 +117,11 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
   }
 
   void _toggleConnection(MyDeviceOverview device) {
-    setState(() => device.connected = !device.connected);
+    // 连接态由上层状态维护（state.connectDevice 等会 notify 触发重建）。
     if (device.connected) {
-      widget.onConnect?.call(device.id);
-    } else {
       widget.onDisconnect?.call(device.id);
+    } else {
+      widget.onConnect?.call(device.id);
     }
   }
 
@@ -148,7 +152,8 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
     );
     controller.dispose();
     if (name != null && name.trim().isNotEmpty) {
-      setState(() => device.name = name.trim());
+      // 通过回调走真实接口；列表名称由上层 state 更新后重建。
+      widget.onRename?.call(device.id, name.trim());
     }
   }
 }

@@ -14,47 +14,22 @@ class GuidePage extends StatefulWidget {
   State<GuidePage> createState() => _GuidePageState();
 }
 
-class _FaqItem {
-  const _FaqItem({required this.question, required this.answer});
-
-  final String question;
-  final String answer;
-}
-
-const List<_FaqItem> _faqItems = [
-  _FaqItem(
-    question: '如何绑定设备?',
-    answer:
-        '1.确保相册设备已开机，并打开手机蓝牙。\n'
-        '2.进入首页点击绑定设备，或「我的设备」。\n'
-        '3.在设备列表中选择要连接的相册设备。\n'
-        '4.点击「立即绑定」完成连接。\n'
-        '若未搜索到设备，请确认设备在附近并重新搜索。',
-  ),
-  _FaqItem(
-    question: '如何进行照片投屏?',
-    answer: '进入首页，选择拍照或相册，确认照片后发送到已连接设备。',
-  ),
-  _FaqItem(
-    question: '如何管理我的相册?',
-    answer: '进入我的图库，可查看、删除和重新投屏已上传的照片。',
-  ),
-  _FaqItem(
-    question: '设备照片被清空怎么办?',
-    answer: '请在我的图库中重新选择照片投屏，或检查设备存储状态。',
-  ),
-  _FaqItem(
-    question: '相框空间已满怎么办?',
-    answer:
-        '设备空间已满时，新的照片将无法继续投屏。你可以前往「我的相册」删除部分照片，'
-        '或执行一键清空。清理完成后，再重新选择照片进行投屏即可。',
-  ),
-];
-
 class _GuidePageState extends State<GuidePage> {
   final TextEditingController _searchController = TextEditingController();
-  final Set<int> _expanded = {0, 4};
+  final Set<String> _expanded = <String>{};
   String _keyword = '';
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开时刷新常见问题（失败保留内置文案）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await widget.state.refreshFaq();
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -62,14 +37,30 @@ class _GuidePageState extends State<GuidePage> {
     super.dispose();
   }
 
+  void _toggle(FaqArticle faq) {
+    setState(() {
+      if (!_expanded.add(faq.id)) {
+        _expanded.remove(faq.id);
+      }
+    });
+    // 展开且当前无答案时，懒加载详情（getProductFaqDetail）。
+    if (_expanded.contains(faq.id) && faq.answer.isEmpty) {
+      widget.state.loadFaqDetail(faq.id).then((_) {
+        if (mounted) {
+          setState(() {});
+        }
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final items = <int>[
-      for (var i = 0; i < _faqItems.length; i++)
+    final items = <FaqArticle>[
+      for (final faq in widget.state.faqArticles)
         if (_keyword.isEmpty ||
-            _faqItems[i].question.contains(_keyword) ||
-            _faqItems[i].answer.contains(_keyword))
-          i,
+            faq.question.contains(_keyword) ||
+            faq.answer.contains(_keyword))
+          faq,
     ];
 
     return FigmaScreen(
@@ -92,17 +83,11 @@ class _GuidePageState extends State<GuidePage> {
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 5),
                 child: Column(
                   children: [
-                    for (final faqIndex in items)
+                    for (final faq in items)
                       _GuideItem(
-                        item: _faqItems[faqIndex],
-                        expanded: _expanded.contains(faqIndex),
-                        onTap: () {
-                          setState(() {
-                            if (!_expanded.add(faqIndex)) {
-                              _expanded.remove(faqIndex);
-                            }
-                          });
-                        },
+                        item: faq,
+                        expanded: _expanded.contains(faq.id),
+                        onTap: () => _toggle(faq),
                       ),
                   ],
                 ),
@@ -176,7 +161,7 @@ class _GuideItem extends StatelessWidget {
     required this.onTap,
   });
 
-  final _FaqItem item;
+  final FaqArticle item;
   final bool expanded;
   final VoidCallback onTap;
 

@@ -22,6 +22,22 @@ class _GalleryPageState extends State<GalleryPage> {
 
   PhotoFrameState get state => widget.state;
 
+  @override
+  void initState() {
+    super.initState();
+    // 打开时刷新设备 + 图库（失败保留本地数据）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      await state.refreshAlbum();
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
   List<AlbumPhoto> get _photos {
     final all = state.myAlbum;
     if (_deviceFilter == null) {
@@ -111,7 +127,10 @@ class _GalleryPageState extends State<GalleryPage> {
     if (confirmed != true || !mounted) {
       return;
     }
-    final feedback = state.deleteAlbumPhotos(_selectedIds);
+    final feedback = await state.deleteAlbumPhotos(_selectedIds);
+    if (!mounted) {
+      return;
+    }
     setState(_selectedIds.clear);
     _showFeedback(feedback.message);
   }
@@ -309,6 +328,15 @@ class _GalleryTile extends StatelessWidget {
                 ),
               ),
             ),
+            if (photo.imageUrl != null)
+              Positioned.fill(
+                child: Image.network(
+                  photo.imageUrl!,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
+              ),
             Align(
               alignment: Alignment.bottomLeft,
               child: Padding(

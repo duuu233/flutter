@@ -18,17 +18,16 @@ import '../features/cast/presentation/cast_success_page.dart';
 import '../features/cast/presentation/casting_progress_page.dart';
 import '../features/cast/presentation/photo_preview_adjust_image_page.dart';
 import '../features/cast/presentation/photo_preview_saved_page.dart';
+import '../features/devices/presentation/bind_device_flow.dart';
 import '../features/devices/presentation/bind_device_found.dart';
 import '../features/devices/presentation/bind_device_not_found.dart';
 import '../features/devices/presentation/bind_device_scan_help.dart';
-import '../features/devices/presentation/bind_device_searching.dart';
 import '../features/devices/presentation/ble_debug_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
 import '../features/devices/presentation/device_clear_confirm_page.dart';
 import '../features/devices/presentation/device_delete_confirm_page.dart';
 import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
-import '../features/devices/presentation/my_devices_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
 import '../features/guide/presentation/guide_page.dart';
 import '../features/settings/presentation/language_settings_page.dart';
@@ -118,13 +117,14 @@ class AppRoutes {
         builder = (_) => const BleDebugPage();
         break;
       case AppRoutes.figmaForgotPassword:
-        builder = (_) => const ForgotPassword();
+        builder = (_) => ForgotPassword(state: state);
         break;
       case AppRoutes.figmaModifyPassword:
-        builder = (_) => const ModifyPassword();
+        builder = (_) => ModifyPassword(state: state);
         break;
       case AppRoutes.figmaRegister:
         builder = (context) => RegisterPage(
+          state: state,
           onRegistered: () => Navigator.maybePop(context),
           onBackToLogin: () => Navigator.maybePop(context),
         );
@@ -136,7 +136,7 @@ class AppRoutes {
         builder = (_) => CastManagementFigmaPage(state: state);
         break;
       case AppRoutes.figmaBindDeviceSearching:
-        builder = (_) => const BindDeviceSearching();
+        builder = (_) => BindDeviceFlowPage(state: state);
         break;
       case AppRoutes.figmaBindDeviceFound:
         builder = (_) => const BindDeviceFound();
@@ -185,27 +185,14 @@ class AppRoutes {
         builder = (_) => const BindEmailCompletePage();
         break;
       case AppRoutes.figmaModifyEmail:
-        builder = (_) => const ModifyEmailPage();
+        builder = (_) => ModifyEmailPage(state: state);
         break;
       case AppRoutes.figmaMyDevices:
-        builder = (context) => MyDevicesPage(
-          onAddDevice: () {
-            Navigator.of(
-              context,
-            ).pushNamed<void>(AppRoutes.figmaBindDeviceSearching);
-          },
-          onOpenDetail: (_) {
-            Navigator.of(context).pushNamed<void>(AppRoutes.figmaDeviceDetails);
-          },
-          onCarouselSettings: (_) {
-            Navigator.of(
-              context,
-            ).pushNamed<void>(AppRoutes.figmaCarouselSettings);
-          },
-        );
+        builder = (_) => DevicesPage(state: state);
         break;
       case AppRoutes.figmaDeviceDetails:
         builder = (context) => DeviceDetailsPage(
+          state: state,
           onCarouselSettings: () {
             Navigator.of(
               context,
@@ -224,10 +211,10 @@ class AppRoutes {
         );
         break;
       case AppRoutes.figmaDeviceDeleteConfirm:
-        builder = (_) => const DeviceDeleteConfirmPage();
+        builder = (_) => DeviceDeleteConfirmPage(state: state);
         break;
       case AppRoutes.figmaDeviceClearConfirm:
-        builder = (_) => const DeviceClearConfirmPage();
+        builder = (_) => DeviceClearConfirmPage(state: state);
         break;
       case AppRoutes.figmaCarouselSettings:
         builder = (_) => const CarouselSettingsPage();

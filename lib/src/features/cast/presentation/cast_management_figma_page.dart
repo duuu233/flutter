@@ -22,6 +22,22 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
 
   PhotoFrameState get state => widget.state;
 
+  @override
+  void initState() {
+    super.initState();
+    // 打开时刷新设备 + 投屏记录（失败保留本地数据）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      await state.refreshCastRecords();
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
   List<CastRecord> get _records =>
       state.castRecords.where((record) => record.status == _tab).toList();
 
@@ -33,9 +49,15 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
       ..showSnackBar(SnackBar(content: Text(result.message)));
   }
 
-  void _delete(CastRecord record) {
-    state.deleteCastRecord(record.id);
+  Future<void> _delete(CastRecord record) async {
+    final feedback = await state.deleteCastRecord(record.id);
+    if (!mounted) {
+      return;
+    }
     setState(() {});
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(feedback.message)));
   }
 
   @override
@@ -233,12 +255,26 @@ class _RecordCard extends StatelessWidget {
                   ],
                 ),
               ),
-              child: Icon(
-                record.source == ImageSourceType.camera
-                    ? Icons.photo_camera_outlined
-                    : Icons.collections_outlined,
-                color: Colors.white.withValues(alpha: 0.9),
-                size: 24,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (record.imageUrl != null)
+                    Image.network(
+                      record.imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox.shrink(),
+                    ),
+                  Center(
+                    child: Icon(
+                      record.source == ImageSourceType.camera
+                          ? Icons.photo_camera_outlined
+                          : Icons.collections_outlined,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      size: 24,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

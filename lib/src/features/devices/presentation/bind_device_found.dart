@@ -9,11 +9,15 @@ class BindDeviceFound extends StatefulWidget {
     super.key,
     this.devices = const ['客厅相框', '卧室相框', '书房相框'],
     this.onBind,
+    this.onBindIndex,
     this.onRefresh,
   });
 
   final List<String> devices;
   final ValueChanged<String>? onBind;
+
+  /// 绑定回调（按选中下标），编排页用它映射回真实的扫描结果 / `ScanResult`。
+  final ValueChanged<int>? onBindIndex;
   final VoidCallback? onRefresh;
 
   @override
@@ -107,11 +111,14 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
             ? null
             : () {
                 widget.onBind?.call(selectedDevice);
-                ScaffoldMessenger.of(context)
-                  ..hideCurrentSnackBar()
-                  ..showSnackBar(
-                    SnackBar(content: Text('已选择 $selectedDevice')),
-                  );
+                widget.onBindIndex?.call(safeSelectedIndex);
+                if (widget.onBind == null && widget.onBindIndex == null) {
+                  ScaffoldMessenger.of(context)
+                    ..hideCurrentSnackBar()
+                    ..showSnackBar(
+                      SnackBar(content: Text('已选择 $selectedDevice')),
+                    );
+                }
               },
       ),
     );

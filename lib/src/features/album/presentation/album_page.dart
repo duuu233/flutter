@@ -17,6 +17,22 @@ class _AlbumPageState extends State<AlbumPage> {
   final Set<String> _selectedIds = <String>{};
 
   @override
+  void initState() {
+    super.initState();
+    // 打开时刷新设备 + 相册（失败保留本地数据）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await widget.state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      await widget.state.refreshAlbum();
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = widget.state;
     final photos = state.myAlbum;
@@ -32,8 +48,11 @@ class _AlbumPageState extends State<AlbumPage> {
         if (_selectedIds.isNotEmpty)
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            onPressed: () {
-              final feedback = state.deleteAlbumPhotos(_selectedIds);
+            onPressed: () async {
+              final feedback = await state.deleteAlbumPhotos(_selectedIds);
+              if (!mounted) {
+                return;
+              }
               setState(_selectedIds.clear);
               _showFeedback(context, feedback.message);
             },
@@ -78,6 +97,7 @@ class _AlbumPageState extends State<AlbumPage> {
                             source: photo.source,
                             width: 88,
                             height: 108,
+                            imageUrl: photo.imageUrl,
                           ),
                           const SizedBox(width: 14),
                           Expanded(
@@ -144,9 +164,12 @@ class _AlbumPageState extends State<AlbumPage> {
                                       ),
                                     ),
                                     TextButton(
-                                      onPressed: () {
-                                        final feedback = state
+                                      onPressed: () async {
+                                        final feedback = await state
                                             .deleteAlbumPhotos({photo.id});
+                                        if (!mounted) {
+                                          return;
+                                        }
                                         _showFeedback(
                                           context,
                                           feedback.message,
