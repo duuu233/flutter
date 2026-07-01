@@ -66,6 +66,10 @@ class DeviceItem {
     required this.playbackMode,
     required this.carouselIntervalSeconds,
     required this.carouselEnabled,
+    this.isUpdate = 0,
+    this.newVersionNo = '',
+    this.downloadPath = '',
+    this.firmwareSize = 0,
   });
 
   final String id;
@@ -84,6 +88,26 @@ class DeviceItem {
   FramePlaybackMode playbackMode;
   int carouselIntervalSeconds;
   bool carouselEnabled;
+
+  // ── OTA 固件更新信息（后端设备详情下发，见 getUserProductDetail）──────────
+  /// 后端「可更新」标记：1=有可用更新。
+  int isUpdate;
+
+  /// 后端下发的最新固件版本号。
+  String newVersionNo;
+
+  /// 后端固件包下载地址（.bin）。
+  String downloadPath;
+
+  /// 后端固件包字节数（0=未知，下载后确认）。
+  int firmwareSize;
+
+  /// 是否存在有效可升级包（有更新标记 + 版本号 + .bin 下载地址）。
+  bool get hasFirmwareUpdate =>
+      isUpdate == 1 &&
+      newVersionNo.isNotEmpty &&
+      downloadPath.isNotEmpty &&
+      RegExp(r'\.bin(?:[?#]|$)', caseSensitive: false).hasMatch(downloadPath);
 
   int get capacity => FrameProtocolConfig.maxImages;
 
@@ -1475,6 +1499,48 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 拉取单台设备详情（含 OTA 固件字段）：`/Client/UserProduct/getUserProductDetail`。
+  ///
+  /// 对齐小程序 `ota.js` 的 `api.getDeviceDetail`：把后端下发的
+  /// `isUpdate/newVersionNo/downloadPath/firmwareSize` 合并到本地 [DeviceItem]，供 OTA 页判定是否可升级。
+  /// 成功返回更新后的 [DeviceItem]（本地已存在则原地更新并 [notifyListeners]），失败返回 null。
+  Future<DeviceItem?> fetchDeviceFirmwareInfo(String deviceId) async {
+    try {
+      final data = await BoltFoxApi.getUserProductDetail(userProductId: deviceId);
+      Map<String, dynamic>? row;
+      if (data is Map) {
+        row = (data).map((k, v) => MapEntry(k.toString(), v));
+      } else {
+        final rows = _extractRows(data);
+        if (rows.isNotEmpty) row = rows.first;
+      }
+      if (row == null) return null;
+      row.putIfAbsent('userProductId', () => deviceId);
+      final detail = _deviceFromJson(row);
+
+      DeviceItem? device;
+      try {
+        device = _findDevice(deviceId);
+      } catch (_) {
+        device = null;
+      }
+      if (device != null) {
+        device.isUpdate = detail.isUpdate;
+        device.newVersionNo = detail.newVersionNo;
+        device.downloadPath = detail.downloadPath;
+        device.firmwareSize = detail.firmwareSize;
+        if (detail.firmwareVersion.isNotEmpty) {
+          device.firmwareVersion = detail.firmwareVersion;
+        }
+        notifyListeners();
+        return device;
+      }
+      return detail;
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 绑定设备：`/Client/UserProduct/addUserProduct`，成功后重新拉取列表取服务端 id。
   Future<ActionFeedback> bindDevice({
     required int productId,
@@ -1835,6 +1901,17 @@ class PhotoFrameState extends ChangeNotifier {
             .toString();
     final firmware =
         (data['productVersionNo'] ?? data['firmwareVersion'] ?? '').toString();
+    // OTA 固件字段（设备详情下发；列表接口一般不含，缺省即无更新）。
+    final isUpdate = _asInt(data['isUpdate']);
+    final newVersionNo =
+        (data['newVersionNo'] ?? data['latestVersion'] ?? data['versionNo'] ?? '')
+            .toString();
+    final downloadPath = (data['downloadPath'] ??
+            data['packageUrl'] ??
+            data['firmwareUrl'] ??
+            data['url'] ??
+            '')
+        .toString();
     return DeviceItem(
       id: id,
       name: name,
@@ -1853,7 +1930,19 @@ class PhotoFrameState extends ChangeNotifier {
       carouselIntervalSeconds:
           FrameProtocolConfig.defaultCarouselIntervalSeconds,
       carouselEnabled: false,
+      isUpdate: isUpdate,
+      newVersionNo: newVersionNo,
+      downloadPath: downloadPath,
+      firmwareSize: _asInt(data['firmwareSize'] ?? data['sizeBytes']),
     );
+  }
+
+  /// 宽松整数解析：兼容 int / num / 数字字符串，非法回落 0。
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value.trim()) ?? 0;
+    return 0;
   }
 
   /// 占位色板：后端不下发色块时按序号取色，保证列表视觉稳定。

@@ -16,12 +16,14 @@ class DeviceDetailsPage extends StatelessWidget {
     this.onCarouselSettings,
     this.onClearDevice,
     this.onDeleteDevice,
+    this.onOtaUpgrade,
   });
 
   final PhotoFrameState state;
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
   final VoidCallback? onDeleteDevice;
+  final VoidCallback? onOtaUpgrade;
 
   @override
   Widget build(BuildContext context) {
@@ -34,6 +36,7 @@ class DeviceDetailsPage extends StatelessWidget {
           onCarouselSettings: onCarouselSettings,
           onClearDevice: onClearDevice,
           onDeleteDevice: onDeleteDevice,
+          onOtaUpgrade: onOtaUpgrade,
         ),
       ),
     );
@@ -48,12 +51,14 @@ class DeviceDetailsBody extends StatelessWidget {
     this.onCarouselSettings,
     this.onClearDevice,
     this.onDeleteDevice,
+    this.onOtaUpgrade,
   });
 
   final PhotoFrameState state;
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
   final VoidCallback? onDeleteDevice;
+  final VoidCallback? onOtaUpgrade;
 
   String get _carouselLabel {
     final device = state.selectedDevice;
@@ -230,9 +235,13 @@ class DeviceDetailsBody extends StatelessWidget {
                 iconAsset: 'assets/images/device-detail-icon04.png',
                 fallbackIcon: Icons.system_update_alt_rounded,
                 label: 'OTA升级',
-                value: device.firmwareVersion.isEmpty
-                    ? '-'
-                    : device.firmwareVersion,
+                value: device.hasFirmwareUpdate
+                    ? '发现新版本 ${device.newVersionNo}'
+                    : (device.firmwareVersion.isEmpty
+                        ? '-'
+                        : device.firmwareVersion),
+                showChevron: true,
+                onTap: onOtaUpgrade,
               ),
             ],
           ),

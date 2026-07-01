@@ -7,6 +7,7 @@ import '../native_device_api.dart';
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
 import 'ble/image_codec.dart';
+import 'ble/ota_ble.dart';
 
 /// 全局 BLE 会话控制器（单例）。
 ///
@@ -172,6 +173,50 @@ class BleController extends ChangeNotifier {
       return end;
     } finally {
       uploading = false;
+      notifyListeners();
+    }
+  }
+
+  bool otaInProgress = false;
+
+  /// 设备固件 OTA(DFU) 升级。复用图传已建立的连接（OTA 走独立的 FF10 服务）。
+  ///
+  /// [dryRun]=true 时不连蓝牙，纯本地校验编码/分包（无硬件或无固件时用）。
+  /// 真实升级要求当前已连接设备（[connected]），否则抛 [OtaException]。
+  Future<OtaResult> upgradeFirmware(
+    OtaFirmwarePackage pkg, {
+    void Function(OtaProgress)? onProgress,
+    bool Function()? shouldAbort,
+    bool dryRun = false,
+    int pace = 20,
+  }) async {
+    if (dryRun) {
+      return FrameOtaClient.dryRunUpgrade(
+        pkg,
+        onProgress: onProgress,
+        shouldAbort: shouldAbort,
+      );
+    }
+
+    final dev = _client.device;
+    if (dev == null || !_client.connected) {
+      throw OtaException('设备未连接，请先在详情页连接设备后再升级');
+    }
+
+    final ota = FrameOtaClient(dev);
+    otaInProgress = true;
+    notifyListeners();
+    try {
+      return await ota.upgradeFirmware(
+        pkg,
+        onProgress: onProgress,
+        shouldAbort: shouldAbort,
+        pace: pace,
+      );
+    } finally {
+      // 只取消 OTA 自身的 FF11 通知订阅；物理连接由 _client 持有（升级后设备多半已重启断开）。
+      await ota.disconnect();
+      otaInProgress = false;
       notifyListeners();
     }
   }

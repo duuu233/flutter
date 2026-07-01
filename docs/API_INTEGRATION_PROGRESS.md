@@ -221,3 +221,31 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 | App 版本更新 | `getLastVersion` / `getAndroidDownload` | 入口被注释隐藏；APK 下载安装需 `url_launcher`/安装插件 |
 | 头像上传 | `setFileUpload` + `changeAvatar` | 需 `image_picker` 选图；模型需补头像 URL 字段 |
 | 基础数据 | `getBasicData` | 字典/配置，按需取用，暂无对应 UI |
+
+## 从小程序移植的功能（2026-07-01）
+
+对照小程序 `photo-album` 的 `.md` 说明与源码，把两块功能移植到 App。**未引入新依赖**（复用 `flutter_blue_plus` + `http`），无需 `flutter pub get`；BLE 相关部分**需真机联调验证**。
+
+### 1. 设备固件 OTA/DFU 蓝牙升级（移植自 `utils/ota-ble.js` + `subpackages/device/ota`）
+
+| 文件 | 职责 |
+| --- | --- |
+| `lib/src/device/ble/ota_ble.dart` | **新增** `FrameOtaClient`：独立 OTA 服务 FF10/FF11 的 DFU 协议（1 字节累加校验、START `0xF1`/DATA `0xF2`/RESULT `0xF3`/ACK `0xFC`、PRN 信用窗口、尾包不重发、断连即视为已写入重启、干跑/mock、CRC32-MPEG2 本地核对）。忠实移植小程序三轮真机修复后的定稿。 |
+| `lib/src/device/ble_controller.dart` | 新增 `upgradeFirmware(pkg, {dryRun, onProgress, shouldAbort})`：复用图传已连接设备跑 OTA（干跑不需连接）。 |
+| `lib/src/features/devices/presentation/ota_upgrade_page.dart` | **新增** OTA 页（移植 `ota.js`/`ota.wxml`）：检查/可升级/已最新/无法升级/升级中/成功/失败 + 「干跑测试(mock 固件)」。 |
+| `lib/src/state.dart` | `DeviceItem` 增 `isUpdate/newVersionNo/downloadPath/firmwareSize` + `hasFirmwareUpdate`；新增 `fetchDeviceFirmwareInfo(id)`（`getUserProductDetail` 合并固件字段）。 |
+| `lib/src/features/devices/presentation/device_details_page.dart` · `routes/app_routes.dart` | 设备详情「OTA升级」行接 `onOtaUpgrade` → 路由 `figmaDeviceOta` → OTA 页。 |
+
+- **固件来源**：真实固件走后端设备详情下发的 `downloadPath`（`.bin`）；无硬件/无固件时用「干跑」或 mock 固件校验编码链路。
+- **与「更新 BoltStar」区分**：`update_boltstar_page`（App 版本更新）是另一件事，本次不改。
+- 待办：真机联调（抓 `0xF3` 定 RESULT 偏移）；`保持屏幕常亮` 需引入 `wakelock_plus`（暂无）；`reportDeviceFirmwareUpgrade` 非 BoltFox `/Client/...` 接口，App 侧暂不回报。
+
+### 2. 服务器图片转换投屏（移植自 `subpackages/projection/result/result.js` + `server-image-processing-ble-transfer.md`）
+
+| 文件 | 职责 |
+| --- | --- |
+| `lib/src/network/boltfox_api.dart` | `setUserProductUpload` 增 `targetWidth/targetHeight`；新增 `editUserProductImgRecord({upirId, taskId, deviceUploadState})`。 |
+| `lib/src/features/cast/projection_service.dart` | **新增** `ServerImageProjectionService`：逐张「原图传后端转换(`setUserProductUpload`) → 下载 `.bin` → 校验长度==宽×高÷2 → BLE 图传 → 成功置 `editUserProductImgRecord(1)` → 刷新显示」，失败回滚删图。与本地量化 `BleController.uploadRgba` 并列。 |
+| `lib/src/features/cast/presentation/casting_progress_page.dart` | 改为可跑真实投屏：给 `userProductId` + `imagePaths`（原图本地路径）即走上面链路并在本页切成功/失败态；无参时保持原静态展示。 |
+
+- **待办（原图文件来源）**：真实投屏需**原图本地文件路径**喂给 `casting_progress`。App 现有 `NativeDeviceApi.openGallery()` 返回 `content://` uri，`MultipartFile.fromPath` 无法直接上传——需 `image_picker`（返回缓存文件路径）或扩展原生通道返回临时文件路径。此为剩余原生接入点，服务层与 API 已就绪。

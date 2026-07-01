@@ -59,11 +59,17 @@ class BoltFoxApi {
     return _http.upload('/Client/Basic/setFileUpload', filePaths: filePaths);
   }
 
-  /// 设备上传图片，单文件 15M 上限、最多 9 个，form-data 字段名 fileParam。
+  /// BLE 图片转换上传：form-data 上传原图，后端按设备宽高([targetWidth]×[targetHeight])
+  /// 转换成设备六色 4bpp 帧(.bin)并存 OSS，返回 `{ url, taskId, upirId }`。
+  ///
+  /// 对齐小程序 `setUserProductUpload`：投屏时先调本接口把原图转成设备帧，再下载 `.bin` 走 BLE 图传；
+  /// 设备图传成功后再用 [editUserProductImgRecord] 把投屏记录置为成功。
   static Future<dynamic> setUserProductUpload({
     required List<String> filePaths,
     Object? userProductId,
     Object? deviceUploadState,
+    int? targetWidth,
+    int? targetHeight,
   }) {
     return _http.upload(
       '/Client/Basic/setUserProductUpload',
@@ -71,6 +77,8 @@ class BoltFoxApi {
       query: {
         if (userProductId != null) 'userProductId': userProductId,
         if (deviceUploadState != null) 'deviceUploadState': deviceUploadState,
+        if (targetWidth != null) 'targetWidth': targetWidth,
+        if (targetHeight != null) 'targetHeight': targetHeight,
       },
     );
   }
@@ -302,5 +310,21 @@ class BoltFoxApi {
       '/Client/UserProduct/delUserProductImgRecord',
       body: {'id': upirId},
     );
+  }
+
+  /// 编辑投屏记录（设备图传成功后置设备上传状态）。
+  ///
+  /// 对齐小程序 `editUserProductImgRecord`：设备 BLE 图传成功后调用，把 [upirId] 对应记录的
+  /// [deviceUploadState] 置为 1（0=失败,1=成功）；[taskId] 为 [setUserProductUpload] 返回的任务 id。
+  static Future<dynamic> editUserProductImgRecord({
+    required Object upirId,
+    Object? taskId,
+    int deviceUploadState = 1,
+  }) {
+    return _http.postJson('/Client/UserProduct/editUserProductImgRecord', body: {
+      'upirId': upirId,
+      if (taskId != null) 'taskId': taskId,
+      'deviceUploadState': deviceUploadState,
+    });
   }
 }

@@ -34,6 +34,7 @@ import '../features/settings/presentation/language_settings_page.dart';
 import '../features/settings/presentation/privacy_policy_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/settings/presentation/update_boltstar_page.dart';
+import '../features/devices/presentation/ota_upgrade_page.dart';
 import '../features/settings/presentation/user_agreement_page.dart';
 import '../state.dart';
 
@@ -74,6 +75,7 @@ class AppRoutes {
   static const figmaModifyEmail = '/figma/profile/modify-email';
   static const figmaMyDevices = '/figma/devices/my-devices';
   static const figmaDeviceDetails = '/figma/devices/detail';
+  static const figmaDeviceOta = '/figma/devices/ota';
   static const figmaDeviceDeleteConfirm = '/figma/devices/delete-confirm';
   static const figmaDeviceClearConfirm = '/figma/devices/clear-confirm';
   static const figmaCarouselSettings = '/figma/devices/carousel-settings';
@@ -208,7 +210,13 @@ class AppRoutes {
               context,
             ).pushNamed<void>(AppRoutes.figmaDeviceDeleteConfirm);
           },
+          onOtaUpgrade: () {
+            Navigator.of(context).pushNamed<void>(AppRoutes.figmaDeviceOta);
+          },
         );
+        break;
+      case AppRoutes.figmaDeviceOta:
+        builder = (_) => OtaUpgradePage(state: state);
         break;
       case AppRoutes.figmaDeviceDeleteConfirm:
         builder = (_) => DeviceDeleteConfirmPage(state: state);
