@@ -208,6 +208,32 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       _progressText = dryRun ? '准备干跑' : '准备升级';
     });
 
+    // 逐帧联调日志（移植小程序 detail.js「OTA测试」）：设备→APP 的应答全部打印
+    // （START ACK / DATA ACK / 0xF3 最终结果），APP→设备海量 DATA 包只打印首包 + 计数避免刷屏；
+    // 并捕获最终结果帧(0xF3)，成功后按两种 RESULT 偏移解读打印，供真机抓帧定偏移。
+    int txDataCount = 0;
+    List<int> finalRxFrame = const [];
+    void monitor(String dir, String hex) {
+      final bytes = hex
+          .split(' ')
+          .where((s) => s.isNotEmpty)
+          .map((s) => int.tryParse(s, radix: 16) ?? 0)
+          .toList();
+      if (bytes.isEmpty) return;
+      if (dir == 'TX') {
+        if (bytes[0] == OtaOp.data) {
+          txDataCount += 1;
+          if (txDataCount > 1) return;
+        }
+        debugPrint('[OTA] APP→设备 ${describeOtaFrame(dir, bytes)} | $hex');
+        return;
+      }
+      final echo =
+          bytes[0] == OtaOp.ack ? (bytes.length > 1 ? bytes[1] : 0) : bytes[0];
+      if (echo == OtaOp.result) finalRxFrame = bytes;
+      debugPrint('[OTA] 设备→APP ${describeOtaFrame(dir, bytes)} | $hex');
+    }
+
     try {
       final result = await _ble.upgradeFirmware(
         _buildPackage(dryRun: dryRun),
@@ -215,6 +241,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         pace: 20,
         onProgress: _onProgress,
         shouldAbort: () => _aborted,
+        onMonitor: dryRun ? null : monitor,
       );
 
       if (!mounted) return;
@@ -239,19 +266,27 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         return;
       }
 
-      // 设备收满固件后会立即重启、可能来不及回 0xF3：confirmed:false 表示「数据已全部发送但未拿到显式成功应答」。
+      // 固件已确认(2026-07-01)：收满且 CRC32 无误必回 0xF3、回完约 2s 后才复位重启。confirmed:false 已成
+      // 兜底死路——真拿不到 0xF3 时 FrameOtaClient 会抛错走 catch，不再返回「软成功」。万一仍走到这里，
+      // 说明确实没收到 0xF3 → 升级未确认，如实提示重试，绝不谎报「升级完成」。
       final unconfirmed = !result.confirmed;
-      final doneText = unconfirmed ? '数据已发送，设备重启中，请确认固件版本' : '升级完成';
+      final doneText = unconfirmed ? '未确认(请重试)' : '升级完成';
       setState(() {
         _stage = _OtaStage.success;
-        _statusText = unconfirmed ? '请确认版本' : '升级完成';
+        _statusText = unconfirmed ? '未确认(请重试)' : '升级完成';
         _progress = 1;
         _progressText =
             '$doneText（${result.size} 字节 / ${result.totalPackets} 包）';
-        // 已升级：把本地当前版本置为新版本，隐藏可升级包。
-        _currentVersion = _latestVersion;
-        _hasPackage = false;
+        if (!unconfirmed) {
+          // 已确认升级成功：把本地当前版本置为新版本，隐藏可升级包。
+          _currentVersion = _latestVersion;
+          _hasPackage = false;
+        }
       });
+      if (!unconfirmed && finalRxFrame.isNotEmpty) {
+        // 真机联调：按两种 RESULT 偏移解读 0xF3，定下规格书 §5.2 未敲定的偏移。
+        debugPrint('[OTA] ${decodeFinalResultFrame(finalRxFrame)}');
+      }
       // NOTE: 小程序会 best-effort 调 reportDeviceFirmwareUpgrade 回报后台；
       // 该接口不在 BoltFox `/Client/...` 用户前端接口内，App 侧暂不回报（如后端提供再接）。
     } on OtaAbortedException {

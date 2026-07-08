@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'device/ble_controller.dart';
+import 'device/ble/frame_protocol.dart';
 import 'device/frame_device_protocol.dart';
 import 'network/api_exception.dart';
 import 'network/api_session.dart';
@@ -217,6 +219,7 @@ class CastRecord {
     this.imageMask,
     this.photoId,
     this.imageUrl,
+    this.imgBle,
   });
 
   final String id;
@@ -238,6 +241,10 @@ class CastRecord {
 
   /// 后端投屏图片地址（来自 `getUserProductImgRecordList`）；为空时回退占位色块。
   final String? imageUrl;
+
+  /// 后端转换好的设备帧文件地址(.bin，来自 `getUserProductImgRecordList` 的 imgBle)。
+  /// 再次/重新投屏时直接下载它走 BLE 图传，不再走后端上传/转码；为空则该记录无法直接再次投屏。
+  final String? imgBle;
 }
 
 class GuideArticle {
@@ -772,12 +779,105 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
   }
 
-  void connectDevice(String deviceId) {
-    for (final device in _devices) {
-      device.connected = device.id == deviceId;
+  /// 投屏「压缩图片」开关（对齐小程序预览页 switch）：开=后端压到约300-400KB，关=传原图。
+  /// 默认开启；小程序用 Storage 持久化，App 暂无本地持久化依赖，先记在会话内（重启回到默认开）。
+  bool projectionCompress = true;
+
+  void setProjectionCompress(bool value) {
+    if (projectionCompress == value) {
+      return;
+    }
+    projectionCompress = value;
+    notifyListeners();
+  }
+
+  /// 连接设备（真实 BLE，移植小程序「按需手动连接」模型）：先设为当前选中设备，
+  /// 再经 [BleController.connectBoundDevice] 复用活动会话或扫描匹配连接。
+  /// 连接已绑定设备只按硬件序列号容错匹配（广播 4 字节 vs 后端 6 字节互为子串
+  /// 也算同一台），与设备名无关——改名不影响连接、也不影响「已连接」显示。
+  Future<ActionFeedback> connectDevice(String deviceId) async {
+    DeviceItem? device;
+    for (final item in _devices) {
+      if (item.id == deviceId) {
+        device = item;
+        break;
+      }
+    }
+    if (device == null) {
+      return ActionFeedback(
+        success: false,
+        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+      );
     }
     _selectedDeviceId = deviceId;
     notifyListeners();
+
+    final ble = BleController.instance;
+    final error = await ble.connectBoundDevice(
+      serial: device.serialNumber,
+      name: device.name,
+    );
+    if (error != null) {
+      device.connected = false;
+      notifyListeners();
+      return ActionFeedback(success: false, message: error);
+    }
+    for (final item in _devices) {
+      item.connected = identical(item, device);
+    }
+    final info = ble.info;
+    if (info != null && info.battery > 0) {
+      device.batteryLevel = info.battery;
+    }
+    notifyListeners();
+    return ActionFeedback(
+      success: true,
+      message: tr(zh: '已连接设备。', en: 'Device connected.', ja: '端末に接続しました。'),
+    );
+  }
+
+  /// 断开设备的 BLE 连接（对齐小程序设备列表「断开」按钮）。
+  Future<ActionFeedback> disconnectDevice(String deviceId) async {
+    final ble = BleController.instance;
+    for (final device in _devices) {
+      if (device.id != deviceId) {
+        continue;
+      }
+      // 单连接模型：这台设备确实占着活动会话（序列号交叉匹配）或页面显示已连接时才真正断开。
+      if (device.connected || ble.sessionMatchesSerial(device.serialNumber)) {
+        await ble.disconnect();
+      }
+      device.connected = false;
+      notifyListeners();
+      return ActionFeedback(
+        success: true,
+        message: tr(zh: '已断开。', en: 'Disconnected.', ja: '切断しました。'),
+      );
+    }
+    return ActionFeedback(
+      success: false,
+      message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+    );
+  }
+
+  /// 这台设备是否正占着当前 BLE 活动会话（序列号容错交叉匹配）。
+  bool _sessionMatches(DeviceItem device) =>
+      BleController.instance.sessionMatchesSerial(device.serialNumber);
+
+  /// 用真实 BLE 会话对账各设备的「已连接」显示（回前台连接体检后调用，
+  /// 对齐小程序 app.onShow → reconcileConnections 落到 UI 的那一步）。
+  void reconcileConnectionFlags() {
+    var changed = false;
+    for (final device in _devices) {
+      final live = _sessionMatches(device);
+      if (device.connected != live) {
+        device.connected = live;
+        changed = true;
+      }
+    }
+    if (changed) {
+      notifyListeners();
+    }
   }
 
   /// 邮箱密码登录入口。
@@ -1287,8 +1387,11 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 删除相册照片（支持多选）：先调用 `/Client/UserProduct/delUserProductImg`，
-  /// 成功后再同步本地（对带 IMG_MASK 的种子照片更新设备掩码，统一软删除）。
+  /// 删除相册照片（支持多选）：设备优先——已连接时先删设备固件对应槽位(CMD 0x12)，
+  /// 若删到「屏幕当前正显示的图片」再刷屏(0x24)切到最近的有图槽位；设备删成功后再删后端记录，
+  /// 保证「列表 / 后端 / 设备」三处一致（对齐小程序 album/list.js confirmDeleteSelected +
+  /// refreshAfterDeleteIfNeeded）。设备删除失败即中止、不动后端，避免相框还挂着已删图片。
+  /// 未连接设备时跳过设备删除，仅删后端 + 本地软隐藏。
   Future<ActionFeedback> deleteAlbumPhotos(Set<String> photoIds) async {
     if (photoIds.isEmpty) {
       return ActionFeedback(
@@ -1318,6 +1421,67 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
+
+    // 1) 设备优先：已连接则先读设备信息(0x01)拿到已占槽位 + 当前屏显图，把选中照片解析成设备槽位，
+    //    一条 0x12 批量删除；删到当前屏显图再刷屏(0x24)。设备删除失败即中止、不动后端。
+    final client = BleController.instance.client;
+    String refreshWarn = '';
+    if (client.connected) {
+      try {
+        final info = await client.readDeviceInfo();
+        final occupied = FrameProtocol.maskToIndexes(info.imgMask);
+        final slotIndexes = <int>[];
+        for (final photo in photos) {
+          final slot = _resolveDeviceImageIndex(photo, occupied);
+          if (slot >= 0 && !slotIndexes.contains(slot)) {
+            slotIndexes.add(slot);
+          }
+        }
+        if (slotIndexes.isNotEmpty) {
+          final newMask = await client.deleteImage(slotIndexes);
+          // 只在删到「屏幕当前显示的图片」时才刷屏：切到删除后最近的有图槽位；
+          // 设备已无图片则不主动刷屏——固件在清空后会自动刷成空屏（无单独清屏指令）。
+          if (slotIndexes.contains(info.curImgIndex)) {
+            final remaining = FrameProtocol.maskToIndexes(newMask);
+            if (remaining.isNotEmpty) {
+              try {
+                await client.refreshScreen(remaining.first);
+              } catch (_) {
+                // 刷屏失败不抛出——设备侧已删成功，抛出会中止后端删除造成两边不一致。
+                refreshWarn = tr(
+                  zh: '已删除，但屏幕刷新失败，请稍后手动刷新屏幕。',
+                  en: 'Deleted, but screen refresh failed. Please refresh manually later.',
+                  ja: '削除しましたが画面更新に失敗しました。後で手動で更新してください。',
+                );
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // 设备忙(0x0B)：设备只是暂时在忙，别归成通用「设备删除失败」，原样提示稍后重试。
+        if (FrameProtocol.isBusyMessage(e.toString())) {
+          return ActionFeedback(
+            success: false,
+            message: tr(
+              zh: '当前设备繁忙，请稍后重试',
+              en: 'Device is busy, please try again later.',
+              ja: '端末が処理中です。しばらくしてから再試行してください。',
+            ),
+          );
+        }
+        // 设备没删成功就不动后端/本地，避免三处不一致。
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '设备删除失败，请检查设备连接后重试。',
+            en: 'Failed to delete from device. Check the connection and retry.',
+            ja: '端末からの削除に失敗しました。接続を確認して再試行してください。',
+          ),
+        );
+      }
+    }
+
+    // 2) 设备删成功（或未连接跳过）后再删后端记录。
     try {
       await BoltFoxApi.delUserProductImg(
         photos.map((photo) => photo.id as Object).toList(),
@@ -1325,47 +1489,50 @@ class PhotoFrameState extends ChangeNotifier {
     } catch (error) {
       return _apiFailure(error);
     }
-    final photosByDevice = <String, List<AlbumPhoto>>{};
+
+    // 3) 本地软隐藏；设备真实掩码以下次 readDeviceInfo/刷新为准，这里不再本地模拟掩码。
     for (final photo in photos) {
-      photosByDevice
-          .putIfAbsent(photo.deviceId, () => <AlbumPhoto>[])
-          .add(photo);
-    }
-    for (final entry in photosByDevice.entries) {
-      // 后端相册的 deviceId 可能不在当前设备列表中，找不到设备时跳过掩码同步。
-      final matches = _devices.where((device) => device.id == entry.key);
-      if (matches.isNotEmpty) {
-        final device = matches.first;
-        var deleteMask = 0;
-        for (final photo in entry.value) {
-          deleteMask |= photo.imageMaskBit;
-        }
-        if (deleteMask != 0) {
-          final result = FrameDeviceProtocol.simulateDeleteImages(
-            imageMask: device.imageMask,
-            deleteMask: deleteMask,
-            screenType: device.screenType,
-            currentImageIndex: device.currentImageIndex,
-          );
-          if (result.success) {
-            device.imageMask = result.imageMask;
-            device.currentImageIndex = result.currentImageIndex;
-          }
-        }
-      }
-      for (final photo in entry.value) {
-        photo.isOnDevice = false;
-      }
+      photo.isOnDevice = false;
     }
     notifyListeners();
     return ActionFeedback(
       success: true,
-      message: tr(
-        zh: '已删除所选照片。',
-        en: 'Selected photos deleted.',
-        ja: '選択した写真を削除しました。',
-      ),
+      message: refreshWarn.isNotEmpty
+          ? refreshWarn
+          : tr(
+              zh: '已删除所选照片。',
+              en: 'Selected photos deleted.',
+              ja: '選択した写真を削除しました。',
+            ),
     );
+  }
+
+  /// 选中照片 → 设备固件图片槽位索引（对齐小程序 album/list.js resolveDeviceImageIndex）。
+  ///
+  /// 固件已占用槽位 [occupied] 按索引升序；上传时用 firstFreeIndex 从最小空闲槽位起填，
+  /// 即最早上传的图落在最小槽位。所以本设备在库照片要按「上传先后」升序排（主键 uProductImgId
+  /// 越小越早，取不到时退回 uploadedAt），第 N 张才对应升序槽位 occupied[N]——直接按后端列表
+  /// 顺序去对会刷错图。读不到掩码时回退到位置本身；照片不在本设备上返回 -1。
+  int _resolveDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
+    final devicePhotos = _albumPhotos
+        .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
+        .toList()
+      ..sort((a, b) {
+        final ai = int.tryParse(a.id);
+        final bi = int.tryParse(b.id);
+        if (ai != null && bi != null && ai != bi) {
+          return ai.compareTo(bi);
+        }
+        return a.uploadedAt.compareTo(b.uploadedAt);
+      });
+    final pos = devicePhotos.indexWhere((item) => item.id == photo.id);
+    if (pos < 0) {
+      return -1;
+    }
+    if (occupied.isNotEmpty) {
+      return pos < occupied.length ? occupied[pos] : -1;
+    }
+    return pos;
   }
 
   CastAttemptResult recastAlbumPhoto(String photoId, String deviceId) {
@@ -1482,6 +1649,12 @@ class PhotoFrameState extends ChangeNotifier {
       final rows = _extractRows(data);
       if (rows.isNotEmpty) {
         final mapped = rows.map(_deviceFromJson).toList();
+        // 已连接回填：后端不存连接态/BLE 会话，若一律 connected:false 替换，
+        // 正连着的设备会被错显示成「未连接」（改名后刷新列表时尤其明显）。
+        // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
+        for (final device in mapped) {
+          device.connected = _sessionMatches(device);
+        }
         _devices
           ..clear()
           ..addAll(mapped);
@@ -1608,44 +1781,79 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 一键清空设备：先调用 `/Client/UserProduct/clearUserProductImg`，
-  /// 成功后再同步本地 IMG_MASK 与「我的相册」在设备上的照片。
+  /// 一键清空设备：与固件交互删除设备物理内存中的全部照片，成功后再清后端记录并同步本地相册。
+  /// 对齐小程序 detail.js confirmClearCopies：
+  /// - 未连接不自动重连，直接提示「请先连接设备」；
+  /// - 清空中途设备断联 / 连不上 / 应答超时 / 设备没删干净等蓝牙链路问题，统一提示「设备暂时无法连接」，
+  ///   不把底层设备错误码抛给用户；后端接口类错误仍如实提示（避免误报成设备连不上）。
   Future<ActionFeedback> clearDeviceMemory(String deviceId) async {
     final device = _findDevice(deviceId);
-    final deleteMask = device.imageMask;
-    if (deleteMask == 0) {
+    final client = BleController.instance.client;
+
+    // 清空需与固件交互：未连接不自动重连，直接提示先连接（对齐小程序 clearCopies 前置拦截）。
+    if (!client.connected) {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '设备内没有可清空的照片。',
-          en: 'There are no photos to clear.',
-          ja: 'クリアできる写真がありません。',
+          zh: '请先连接设备',
+          en: 'Please connect the device first.',
+          ja: '先に端末を接続してください。',
         ),
       );
     }
+
+    // 1) 设备优先：读设备信息(0x01)拿到已占槽位，一条 0x12 删除全部图片。
+    //    固件清空后会自动刷成空屏（无单独清屏指令），不主动刷屏。
+    //    任一蓝牙链路失败（断联 / 应答超时 / 未连接）或删完仍有残留 → 都视为设备侧未清成功。
+    var deviceCleared = false;
+    Object? clearError;
+    try {
+      final info = await client.readDeviceInfo();
+      final indexes = FrameProtocol.maskToIndexes(info.imgMask);
+      if (indexes.isEmpty) {
+        deviceCleared = true;
+      } else {
+        final newMask = await client.deleteImage(indexes);
+        // deleteImage 返回删除后最新 IMG_MASK：仍有占用说明设备没删干净（对齐小程序回读校验分支）。
+        deviceCleared = FrameProtocol.maskToIndexes(newMask).isEmpty;
+      }
+    } catch (e) {
+      clearError = e;
+      deviceCleared = false;
+    }
+    // 设备忙(0x0B)：设备答得上话、只是暂时在忙，别归成「设备暂时无法连接」，原样提示稍后重试。
+    if (!deviceCleared && FrameProtocol.isBusyMessage(clearError?.toString())) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '当前设备繁忙，请稍后重试',
+          en: 'Device is busy, please try again later.',
+          ja: '端末が処理中です。しばらくしてから再試行してください。',
+        ),
+      );
+    }
+    if (!deviceCleared) {
+      // 设备侧未清成功一律统一提示「设备暂时无法连接」，不把底层设备错误码抛给用户。
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '设备暂时无法连接',
+          en: 'Device temporarily unavailable, please try again.',
+          ja: '端末に一時的に接続できません。',
+        ),
+      );
+    }
+
+    // 2) 设备清空成功后再清后端记录；接口类错误如实提示，不误报成设备连不上。
     try {
       await BoltFoxApi.clearUserProductImg(deviceId);
     } catch (error) {
       return _apiFailure(error);
     }
-    final result = FrameDeviceProtocol.simulateDeleteImages(
-      imageMask: device.imageMask,
-      deleteMask: deleteMask,
-      screenType: device.screenType,
-      currentImageIndex: device.currentImageIndex,
-    );
-    if (!result.success) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '清空失败：${result.resultCode.labelZh}。',
-          en: 'Clear failed: ${result.resultCode.labelZh}.',
-          ja: 'クリアに失敗しました: ${result.resultCode.labelZh}。',
-        ),
-      );
-    }
-    device.imageMask = result.imageMask;
-    device.currentImageIndex = result.currentImageIndex;
+
+    // 3) 同步本地：设备已无图（IMG_MASK 清零 / 当前索引复位），相册对应照片标记为不在设备上。
+    device.imageMask = 0;
+    device.currentImageIndex = 0;
     var clearedCount = 0;
     for (final photo in _albumPhotos.where(
       (item) => item.deviceId == deviceId && item.isOnDevice,
@@ -1657,9 +1865,9 @@ class PhotoFrameState extends ChangeNotifier {
     return ActionFeedback(
       success: true,
       message: tr(
-        zh: '已通过删除全量 IMG_MASK 清空设备，共移除 $clearedCount 张照片。',
-        en: 'Device memory cleared. Removed $clearedCount photos.',
-        ja: '端末メモリをクリアし、$clearedCount 枚を削除しました。',
+        zh: '已清空设备照片，共移除 $clearedCount 张。',
+        en: 'Device photos cleared. Removed $clearedCount photos.',
+        ja: '端末の写真をクリアし、$clearedCount 枚を削除しました。',
       ),
     );
   }
@@ -2067,6 +2275,8 @@ class PhotoFrameState extends ChangeNotifier {
         (data['userProductId'] ?? data['deviceId'] ?? '').toString();
     final url = (data['img'] ?? data['imgUrl'] ?? data['url'] ?? data['imageUrl'])
         ?.toString();
+    // 设备帧文件地址：再次投屏直传设备用（不走后端转码）。
+    final imgBle = (data['imgBle'] ?? data['imgBleUrl'])?.toString();
     return CastRecord(
       id: id,
       title: (data['imgName'] ?? data['productName'] ?? data['title'] ?? '投屏记录')
@@ -2084,6 +2294,7 @@ class PhotoFrameState extends ChangeNotifier {
         data['createTime'] ?? data['createdAt'] ?? data['projectionTime'],
       ),
       imageUrl: (url == null || url.isEmpty) ? null : url,
+      imgBle: (imgBle == null || imgBle.isEmpty) ? null : imgBle,
     );
   }
 

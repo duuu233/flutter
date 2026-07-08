@@ -67,12 +67,21 @@ class _DevicesPageState extends State<DevicesPage> {
             }
             _showMessage(context, feedback.message);
           },
-          onConnect: (deviceId) {
-            state.connectDevice(deviceId);
-            _showMessage(context, '已切换连接设备');
+          onConnect: (deviceId) async {
+            // 真实 BLE 连接：复用活动会话或扫描匹配（只认序列号，改名不影响连接）。
+            _showMessage(context, '连接设备中…');
+            final feedback = await state.connectDevice(deviceId);
+            if (!context.mounted) {
+              return;
+            }
+            _showMessage(context, feedback.message);
           },
-          onDisconnect: (_) {
-            _showMessage(context, '当前版本暂未提供断开接口');
+          onDisconnect: (deviceId) async {
+            final feedback = await state.disconnectDevice(deviceId);
+            if (!context.mounted) {
+              return;
+            }
+            _showMessage(context, feedback.message);
           },
         );
       },

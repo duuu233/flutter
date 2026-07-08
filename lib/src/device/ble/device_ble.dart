@@ -64,8 +64,13 @@ class FrameBleClient {
   /// 收发监听回调（可选）。
   void Function(BleMonitorRecord record)? onMonitor;
 
+  // 物理链路是否存活：连接成功置 true，收到断开事件/主动断开置 false。
+  // 若只看 _device/_writeChar 非空，设备侧断开（重启/超距/后台被系统挂起）后 connected
+  // 仍会谎报 true——上层会复用这条死会话导致写失败/超时（对齐小程序「连接体检」治理的问题）。
+  bool _linkAlive = false;
+
   int get mtu => _mtu;
-  bool get connected => _device != null && _writeChar != null;
+  bool get connected => _device != null && _writeChar != null && _linkAlive;
   bool get writeWithoutResponse => _writeWithoutResponse;
   BluetoothDevice? get device => _device;
 
@@ -121,9 +126,11 @@ class FrameBleClient {
 
     _connSub = device.connectionState.listen((state) {
       if (state == BluetoothConnectionState.disconnected) {
+        _linkAlive = false;
         _failAllPending('连接已断开');
       }
     });
+    _linkAlive = true;
 
     // 协商 MTU：Android 顶到 512；iOS 由系统协商，读 mtuNow。
     if (Platform.isAndroid) {
@@ -168,6 +175,7 @@ class FrameBleClient {
   }
 
   Future<void> disconnect() async {
+    _linkAlive = false;
     await _notifySub?.cancel();
     _notifySub = null;
     await _connSub?.cancel();
@@ -244,6 +252,12 @@ class FrameBleClient {
       if (!pending.completer.isCompleted) {
         if (!parsed.crcOk) {
           pending.completer.completeError(FrameBleException('应答 CRC 校验失败'));
+        } else if (FrameProtocol.isBusyResult(ack.result)) {
+          // 设备忙（v1.5 §6.6.1，RESULT=0x0B）：设备在处理其它指令时对新指令回 0x0B。
+          // 所有走 ACK 的设备交互（读信息/电量/播放配置、设置播放/校时/删除/刷新、图传起止）都在此汇合，
+          // 集中拦截，无论读写一律以「当前设备繁忙，请稍后重试」抛出。
+          pending.completer
+              .completeError(FrameBleException(FrameProtocol.busyMessage));
         } else {
           pending.completer.complete(ack);
         }

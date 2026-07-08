@@ -70,6 +70,9 @@ class BoltFoxApi {
     Object? deviceUploadState,
     int? targetWidth,
     int? targetHeight,
+    // 是否压缩图片：1=压缩(后端压到约300-400KB) / 0=不压缩传原图，缺省压缩。
+    // ⚠️ 字段名 isCompress 为约定假设，待后端确认（与小程序 api.js 同一处约定，确认后只改这一处）。
+    int isCompress = 1,
   }) {
     return _http.upload(
       '/Client/Basic/setUserProductUpload',
@@ -79,6 +82,7 @@ class BoltFoxApi {
         if (deviceUploadState != null) 'deviceUploadState': deviceUploadState,
         if (targetWidth != null) 'targetWidth': targetWidth,
         if (targetHeight != null) 'targetHeight': targetHeight,
+        'isCompress': isCompress == 0 ? 0 : 1,
       },
     );
   }
@@ -287,10 +291,11 @@ class BoltFoxApi {
   }
 
   /// 删除产品图片，支持多选，id=uProductImgId。
+  /// 后端约定的字段名是 `idList`（不是 `ids`），与小程序 `api.js` 对齐。
   static Future<dynamic> delUserProductImg(List<Object> ids) {
     return _http.postJson(
       '/Client/UserProduct/delUserProductImg',
-      body: {'ids': ids},
+      body: {'idList': ids},
     );
   }
 
@@ -323,6 +328,29 @@ class BoltFoxApi {
   }) {
     return _http.postJson('/Client/UserProduct/editUserProductImgRecord', body: {
       'upirId': upirId,
+      if (taskId != null) 'taskId': taskId,
+      'deviceUploadState': deviceUploadState,
+    });
+  }
+
+  /// 新增投屏记录（再次/重新投屏用 imgBle 直传设备后调用）。
+  ///
+  /// 对齐小程序 `addUserProductImgRecord`：投屏记录页「再次投屏」直接用记录里的设备帧
+  /// [imgBle] 图传，不再走后端上传/转码；设备图传成功([deviceUploadState]=1)/失败(0)后
+  /// 都新增一条投屏记录。[taskId] 再次投屏链路没有，为空时不传（后端沿用旧记录不需要）。
+  static Future<dynamic> addUserProductImgRecord({
+    Object? upirId,
+    Object? userProductId,
+    String? img,
+    String? imgBle,
+    Object? taskId,
+    int deviceUploadState = 1,
+  }) {
+    return _http.postJson('/Client/UserProduct/addUserProductImgRecord', body: {
+      if (upirId != null) 'upirId': upirId,
+      if (userProductId != null) 'userProductId': userProductId,
+      if (img != null) 'img': img,
+      if (imgBle != null) 'imgBle': imgBle,
       if (taskId != null) 'taskId': taskId,
       'deviceUploadState': deviceUploadState,
     });

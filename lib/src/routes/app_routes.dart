@@ -150,7 +150,11 @@ class AppRoutes {
         builder = (_) => const BindDeviceScanHelp();
         break;
       case AppRoutes.figmaPhotoPreviewAdjustImage:
-        builder = (_) => const PhotoPreviewAdjustImagePage();
+        // 「压缩图片」开关接全局状态：投屏链路（castImages→setUserProductUpload.isCompress）据此取值
+        builder = (_) => PhotoPreviewAdjustImagePage(
+              compressImage: state.projectionCompress,
+              onCompressChanged: state.setProjectionCompress,
+            );
         break;
       case AppRoutes.figmaPhotoPreviewSaved:
         builder = (_) => const PhotoPreviewSavedPage();

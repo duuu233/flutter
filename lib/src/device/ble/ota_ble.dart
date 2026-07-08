@@ -1,23 +1,34 @@
 // 设备固件 OTA(DFU) 升级会话层 —— 由微信小程序版 `utils/ota-ble.js` 移植到 Dart，
-// 依据《产品需求规格书》6.3.2 / 6.3.3 的自定义 DFU 协议实现（真机三轮联调后的定稿）。
-// 与图传(FF00 主服务、0xAA 串行帧、见 device_ble.dart)完全无关：OTA 走独立的 OTA 服务 FF10。
-// v1.4 文档定义 FF11 为控制特征、FF12 为数据特征；旧固件若只暴露 FF11，则回退为单特征收发。
+// 依据《电子相框产品需求规格书 v1.5》§6.3 的自定义 DFU 协议实现。
+// 与图传(FF00 主服务、0xAA 串行帧、见 device_ble.dart)完全无关：OTA 走独立的 OTA 服务 FF10，
+// 且 §6.3.3 明确「OTA 通道不使用 6.4 的 0xAA 应用层帧格式」——旧版借用图传的 PKT_SEQ
+// 累计确认(ACK_SEQ)已作废，见下。
 //
-// 协议要点：
-//   1) 校验：每个 APP→设备的包，末尾 1 字节累加校验 = 前面所有字节之和 & 0xFF（不是 CRC16）。
-//   2) START(0xF1)：OBJ_TYPE(1) + FW_SIZE(4,小端) + checksum → 设备回 ACK，带 MTU(251) 与 PRN(3)。
-//      设备成功应答布局：[0xFC(帧头), 0xF1(回显), RESULT, MTU(1), PRN(1), checksum]。
-//   3) DATA (0xF2)：PKT_SEQ(2,小端) + DATA + checksum。每发 PRN 个包等一次设备 DATA ACK，
-//      ACK 带「已连续收到的最后包号」。包号没往前走 = 那一包丢了，从 ACK 包号 + 1 重发。
-//   4) APP 不发 END：设备自行累计到固件大小后自动算 CRC32、写 BootSetting，回 0xF3 最终结果，
-//      约 100ms 后重启跑新固件（此时连接会断开，见 transferData 的「断开即视为已写入重启」）。
+// ★ v1.5 关键变动（按新文档重写，与小程序 2026-07-06 版对齐）：手机端只负责「按文件内容读取并
+//   发送」升级包，一切校验数据(128 字节头信息里的 OTAINFO / 头部版本 / 面板类型 / CRC16 / 版本号 /
+//   原始 bin CRC32)都由固件方预先打进升级包文件、并由设备端校验；手机不再自行计算 CRC32、也不
+//   组装任何头部。升级包文件结构固定为 [128 字节头信息][原始 bin payload]。
 //
-// 移植要点（对应小程序三处真机修复）：
-//   · 设备应答帧头是 0xFC(RSP_OPCODE)，被应答的操作码回显在第 2 字节；据此区分 START/DATA ACK。
-//     早期误把 0xFC 当错误码、又把 MTU 当 2 字节小端读，导致合法应答被判无效而 START 超时。
-//   · DATA 必须写到「START 成功应答的那条特征」（本机 OTA 全程在 FF11 收发）；写错到 FF12 → 永不回 ACK。
-//   · 尾包（不足 PRN 的残包）设备不回 DATA ACK，要收满固件大小后直接回 0xF3；不可当停滞去重发，
-//     否则把已收满的设备喂爆 → 设备判错并断开（表现为卡在 ~97% 反复补发后断连）。
+// 协议流程(§6.3.4 时序图)：
+//   1) 校验位：每个 APP→设备的 OTA 请求末尾 1 字节累加 checksum = 前面所有字节之和 & 0xFF（不是 CRC16）。
+//   2) START(0xF1)：OBJ_TYPE(1) + FW_SIZE(4,小端) + checksum → 设备初始化写入区，回 ACK[0xFC,0xF1,
+//      RESULT,MTU(=251),PRN(=3),checksum]。RESULT!=0 立即停止并按结果码提示。
+//   3) 头信息握手：第一个 DATA(0xF2) 承载升级包文件最前面的 128 字节头信息（首包长度 128，设备据此
+//      识别为头信息）→ 设备校验 OTAINFO/头部版本/面板/CRC16/版本号 → 回 ACK[0xFC,0xF2,RESULT]。
+//      RESULT!=0 停止。
+//   4) 数据传输：后续 DATA(0xF2) 承载从升级包第 129 字节起的原始 bin payload 分片；PRN 信用窗口——
+//      每发 PRN 个 DATA 包等一次设备 ACK[0xFC,0xF2,RESULT]。新协议的 DATA ACK 只回结果码(不再回
+//      「已连续接收包号」)，故不做「按包号重发」；某一批超时/回错 = 传输中断，整轮升级判失败由用户
+//      重试(设备侧会等 APP 重新发起)。
+//   5) END(0xF3)：payload 发完后 APP 主动发结束包 [0xF3,checksum]，设备校验 total_bytes==bin_size 且
+//      CRC32(payload)==bin_crc32 → 回 ACK[0xFC,0xF3,RESULT]。RESULT==0 即升级成功，设备约 100ms 后
+//      复位运行新固件。
+//
+// 待与固件最终对齐的点（真机抓包后核对，与小程序侧 OTA_TODO 一致）：
+//   a) START 帧 OBJ_TYPE 的确切取值（此处默认 0x00，握手时兜底再试 0x01）；
+//   b) START 帧 FW_SIZE 语义——本实现取「原始 bin payload 大小 = 文件大小 - 128」（与头信息里的
+//      bin_size 对齐、也是设备 APP2 写入区大小）；若固件期望为「整包文件大小(含 128 头)」，改
+//      _computeFwSize 一处即可。
 //
 // iOS 不支持手动请求 MTU / 连接间隔：这里复用图传已协商好的连接（device.mtuNow），不再二次请求。
 
@@ -36,20 +47,36 @@ const String _otaControlUuid = 'FF11';
 const String _otaDataUuid = 'FF12';
 const String _otaAltControlUuid = 'FF13';
 
-const int _opStart = 0xF1; // APP→设备：开始
-const int _opData = 0xF2; // APP→设备：固件数据 / 设备→APP：DATA ACK
-const int _opResult = 0xF3; // 设备→APP：最终结果（CRC32 校验 + 写 BootSetting 之后）
-const int _opAck = 0xFC; // 设备→APP：START / DATA 应答的帧头(RSP_OPCODE)
+const int _opStart = 0xF1; // APP→设备：开始（携带 OBJ_TYPE + FW_SIZE）
+const int _opData = 0xF2; // APP→设备：128 字节头信息握手包 / 后续 bin payload 分片
+const int _opEnd = 0xF3; // APP→设备：结束包（v1.5 新增，由 APP 主动发送）→ 设备整包校验后回 ACK
+const int _opAck = 0xFC; // 设备→APP：START / DATA / END 应答的帧头(RSP_OPCODE)
 
-// OBJ_TYPE：文档只写「当前作为固件对象使用」，未给确切数值，默认 0x00。
+/// OTA 操作码（对齐小程序 `otaBle.OP` 导出，供页面做帧级日志过滤）。
+abstract final class OtaOp {
+  static const int start = _opStart;
+  static const int data = _opData;
+  static const int end = _opEnd;
+
+  /// 兼容旧引用：0xF3 现为 APP→设备 END 操作码，设备的最终结果以 END 的 ACK 形式返回。
+  static const int result = _opEnd;
+  static const int ack = _opAck;
+}
+
+/// 升级包文件最前面的头信息长度（§6.3.4）：第一个 DATA 包固定承载这 128 字节，设备据首包长度识别为头信息。
+const int otaHeaderSize = 128;
+
+// START 帧的对象类型。文档只写「当前作为固件对象使用」，未给确切数值，默认 0x00。
 const int _objTypeFirmware = 0x00;
-const int _defaultPrn = 3; // 信用窗口：每发这么多包等一次 DATA ACK
+const int _defaultPrn = 3; // 信用窗口：每发这么多包等一次 DATA ACK（START ACK 里固件回 3）
 const int _defaultDeviceMtu = 251; // 设备声明支持的 MTU；真实可写量以协商结果为准
-// 固件大小合法范围(6.3.x)：0x3000 ~ 0x3C000（约 12KB ~ 240KB）。越界只告警不强拦，最终以设备应答为准。
-const int _minFwSize = 0x3000;
+// bin payload 合法范围（v1.5 §6.3：FW_SIZE 范围 0x30000 ~ 0x3C000，约 192KB ~ 240KB）。越界只告警
+// 不强拦，最终以设备应答为准。注意 v1.5 已从旧的 0x3000 更正为 0x30000。
+const int _minFwSize = 0x30000;
 const int _maxFwSize = 0x3C000;
 
-// OTA 结果码 → 中文（规格书 §6.3.2 OTA 专用码表，与图传 0x7F 通用应答码表不同！）。
+// OTA 结果码 → 中文（规格书 v1.5 §6.3.2 OTA 专用码表，与图传 0x7F 通用应答码表不同！）。
+// 0x0A~0x0E 为 v1.5 新增的头信息握手校验码（§6.3.4「6. 结果码」表）。未知码回落十六进制原文。
 const Map<int, String> _otaResultText = {
   0x00: '成功',
   0x01: '校验/芯片信息错误',
@@ -61,12 +88,70 @@ const Map<int, String> _otaResultText = {
   0x07: '资源不足',
   0x08: '固件大小超限',
   0x09: '参数错误',
+  0x0A: '协议匹配字段不匹配（非 OTA 包或文件损坏）',
+  0x0B: '头部版本不兼容（工具链需升级）',
+  0x0C: '固件类型与面板不匹配',
+  0x0D: '头部 CRC16 校验失败（传输丢包或文件截断）',
+  0x0E: '版本号校验失败（格式/产品/面板不一致）',
 };
 
 String otaResultText(int code) {
   final text = _otaResultText[code];
   if (text != null) return text;
   return '设备返回错误码 0x${(code & 0xFF).toRadixString(16).padLeft(2, '0')}';
+}
+
+String _hexByte(int b) => (b & 0xFF).toRadixString(16).padLeft(2, '0').toUpperCase();
+
+/// 把一帧 OTA 收发数据解析成可读中文（配合原始 16 进制一起打印，方便与硬件日志逐帧比对）。
+/// [dir] 为 'TX'（APP→设备）或 'RX'（设备→APP）。移植自小程序 detail.js `describeOtaFrame`（v1.5 语义）。
+String describeOtaFrame(String dir, List<int> bytes) {
+  if (bytes.isEmpty) return '空帧';
+
+  if (dir == 'TX') {
+    if (bytes[0] == _opStart) return 'START(0xF1) 开始帧';
+    if (bytes[0] == _opData) {
+      // v1.5 DATA 帧无包序号：[0xF2, ...数据..., checksum]。数据长 128 即头信息握手包。
+      final dataLen = bytes.length - 2;
+      return dataLen == otaHeaderSize
+          ? 'DATA(0xF2) 128 字节头信息握手包'
+          : 'DATA(0xF2) payload 分片 $dataLen 字节';
+    }
+    if (bytes[0] == _opEnd) return 'END(0xF3) 结束帧';
+    return '发送 opcode=0x${_hexByte(bytes[0])}';
+  }
+
+  // 设备应答帧头为 0xFC(RSP_OPCODE)，第 2 字节回显被应答的操作码；兼容「不带 0xFC、直接以操作码打头」的旧固件。
+  final hasHeader = bytes[0] == _opAck;
+  final echo = hasHeader ? (bytes.length > 1 ? bytes[1] : 0) : bytes[0];
+  int at(int i) => i < bytes.length ? bytes[i] & 0xFF : 0;
+
+  if (echo == _opStart) {
+    final i = hasHeader ? 2 : 1;
+    return 'START 应答 回显0xF1 RESULT=0x${_hexByte(at(i))}(${otaResultText(at(i))}) '
+        'MTU=${at(i + 1)} PRN=${at(i + 2)}';
+  }
+  if (echo == _opData) {
+    final i = hasHeader ? 2 : 1;
+    return 'DATA 应答 回显0xF2 RESULT=0x${_hexByte(at(i))}(${otaResultText(at(i))})';
+  }
+  if (echo == _opEnd) {
+    final i = hasHeader ? 2 : 1;
+    return 'END 应答(整包校验结果) 回显0xF3 RESULT=0x${_hexByte(at(i))}(${otaResultText(at(i))})';
+  }
+  return '未识别应答';
+}
+
+/// END(0xF3) 应答帧的调试解读：v1.5 §6.3.4 权威布局 [0xFC,0xF3,RESULT,checksum]（解读A）；
+/// 保留解读B（0xF3 后夹 1 字节子操作码再到 RESULT）供真机抓帧核对。哪个是 0x00 成功，真实语义就是哪个。
+String decodeFinalResultFrame(List<int> bytes) {
+  final hasHeader = bytes.isNotEmpty && bytes[0] == _opAck;
+  final base = hasHeader ? 2 : 1; // 跳过可选的 0xFC 帧头 + 回显的 0xF3
+  String fmt(int i) => i >= bytes.length
+      ? '(无此字节)'
+      : '0x${_hexByte(bytes[i])}(${otaResultText(bytes[i])})';
+  final hex = bytes.map(_hexByte).join(' ');
+  return '0xF3 原始帧=$hex ｜ 解读A(F3+RESULT,现用)=${fmt(base)} ｜ 解读B(F3+子码+RESULT)=${fmt(base + 1)}';
 }
 
 class OtaException implements Exception {
@@ -101,14 +186,22 @@ List<int> _buildStartFrame(int size, int objType) => _withChecksum([
       (size >> 24) & 0xFF,
     ]);
 
-List<int> _buildDataFrame(int seq, List<int> chunk) =>
-    _withChecksum([_opData, seq & 0xFF, (seq >> 8) & 0xFF, ...chunk]);
+/// DATA(0xF2) 帧（v1.5）：[0xF2, ...数据..., checksum]。不再有 2 字节包序号。
+/// 数据可能是 128 字节头信息（首包），也可能是 bin payload 分片。
+List<int> _buildDataFrame(List<int> chunk) => _withChecksum([_opData, ...chunk]);
+
+/// END(0xF3) 结束帧（v1.5 新增）：[0xF3, checksum]。设备收到后做整包校验并回 ACK。
+List<int> _buildEndFrame() => _withChecksum([_opEnd]);
+
+/// START 帧 FW_SIZE：取 bin payload 大小 = 文件总大小 - 128 字节头（见文件头「待对齐点 b」）。
+int _computeFwSize(int fileSize) => fileSize > otaHeaderSize ? fileSize - otaHeaderSize : 0;
 
 /// 由 MTU 推算每个 DATA 包能装的固件字节数：
-///   单次可写 = MTU - 3(ATT 头)；DATA 帧固定开销 = 4（操作码1 + 包序号2 + 校验1）。上限 244。
+///   单次可写 = MTU - 3(ATT 头)；DATA 帧固定开销 = 2（操作码1 + 校验1，v1.5 不再有 2 字节包序号）。
+///   上限 244（MTU=251 时 248-2=246，为安全留一点余量取 244）。
 int _chunkFromMtu(int mtu) {
   final writable = (mtu <= 0 ? _defaultDeviceMtu : mtu) - 3;
-  final chunk = writable - 4;
+  final chunk = writable - 2;
   if (chunk < 1) return 1;
   return chunk > 244 ? 244 : chunk;
 }
@@ -119,6 +212,14 @@ class _StartAck {
   final int result;
   final int mtu;
   final int prn;
+  final String rawHex;
+}
+
+/// DATA / END 的结果码应答（v1.5 只回 RESULT，不带包号）。
+class _AckResult {
+  _AckResult({required this.opcode, required this.result, required this.rawHex});
+  final int opcode;
+  final int result;
   final String rawHex;
 }
 
@@ -134,7 +235,7 @@ class OtaProgress {
     this.retries,
   });
 
-  /// preparing / prepared / connecting / starting / transferring / retry / verifying / done。
+  /// preparing / prepared / connecting / starting / header / transferring / verifying / done。
   final String phase;
   final int percent; // 0~100
   final String message;
@@ -151,26 +252,31 @@ class OtaResult {
     required this.crc32,
     required this.totalPackets,
     required this.chunkSize,
+    this.payloadSize = 0,
     this.confirmed = false,
-    this.rebooted = false,
     this.dryRun = false,
     this.prn = _defaultPrn,
     this.startFrameHex = '',
+    this.headerFrameHex = '',
     this.firstDataFrameHex = '',
+    this.endFrameHex = '',
   });
 
-  final int size;
-  final int crc32;
-  final int totalPackets;
+  final int size; // 升级包文件总大小（含 128 字节头）
+  final int crc32; // 本地对整包算的 CRC32，仅展示/日志用（校验由设备完成）
+  final int totalPackets; // bin payload 分片包数（不含头信息握手包）
   final int chunkSize;
+  final int payloadSize; // bin payload 大小 = size - 128
 
-  /// true=收到设备 0xF3 成功码；false=数据发完但设备已断开/重启，未拿到显式成功应答。
+  /// true=设备 END(0xF3) 应答成功码（唯一的成功语义）。v1.5 下失败路径一律抛错，
+  /// 成功返回必为 true；保留字段供页面兜底判断。
   final bool confirmed;
-  final bool rebooted;
   final bool dryRun;
   final int prn;
   final String startFrameHex;
+  final String headerFrameHex;
   final String firstDataFrameHex;
+  final String endFrameHex;
 }
 
 /// 固件包来源（三选一）：内存 bytes / 远程下载地址 / mock 合成。
@@ -197,6 +303,8 @@ class _PreparedFirmware {
   _PreparedFirmware(this.bytes, this.crc32);
   final Uint8List bytes;
   final int crc32;
+  int get size => bytes.length;
+  int get payloadSize => _computeFwSize(bytes.length);
 }
 
 int? _normalizeChecksum(String? checksum) {
@@ -213,7 +321,7 @@ int? _normalizeChecksum(String? checksum) {
 /// 设备固件 OTA(DFU) 升级客户端。
 ///
 /// 复用图传已建立的物理连接（传入已连接的 [BluetoothDevice]）：OTA 只是在同一连接上
-/// 发现 FF10 服务、在 FF11 特征上收发。固件写完设备重启会断开该连接（属正常）。
+/// 发现 FF10 服务、在 FF11 特征上收发。升级成功设备复位重启会断开该连接（属正常）。
 class FrameOtaClient {
   FrameOtaClient(this.device);
 
@@ -222,7 +330,7 @@ class FrameOtaClient {
   BluetoothCharacteristic? _controlChar;
   BluetoothCharacteristic? _dataChar;
   BluetoothCharacteristic? _altControlChar;
-  BluetoothCharacteristic? _transferChar; // START 成功应答的那条特征，DATA 沿用它
+  BluetoothCharacteristic? _transferChar; // START 成功应答的那条特征，DATA/END 沿用它
   final List<StreamSubscription<List<int>>> _notifySubs = [];
   StreamSubscription<BluetoothConnectionState>? _connSub;
 
@@ -231,9 +339,13 @@ class FrameOtaClient {
   int _chunkSize = _chunkFromMtu(_defaultDeviceMtu);
   bool _writeWithoutResponse = true;
 
-  int _lastAckSeq = -1;
-  int? _finalResult;
   Completer<_StartAck>? _startCompleter;
+  // 当前在等的一次 DATA/END 结果码应答；同一时刻只有一个（OTA 全程串行：发一批→等一次 ACK→再发下一批）。
+  int _ackWaitOpcode = 0;
+  Completer<_AckResult>? _ackCompleter;
+  // 尚无人认领的结果码应答缓存（写完到收到 ACK 的竞态兜底）。
+  final List<_AckResult> _ackInbox = [];
+
   bool _disconnected = false;
   String _abortReason = '';
   bool _connected = false;
@@ -262,9 +374,13 @@ class FrameOtaClient {
       if (state == BluetoothConnectionState.disconnected) {
         _disconnected = true;
         _abortReason = '设备连接已断开';
-        final waiter = _startCompleter;
-        if (waiter != null && !waiter.isCompleted) {
-          waiter.completeError(OtaException(_abortReason));
+        final startWaiter = _startCompleter;
+        if (startWaiter != null && !startWaiter.isCompleted) {
+          startWaiter.completeError(OtaException(_abortReason));
+        }
+        final ackWaiter = _ackCompleter;
+        if (ackWaiter != null && !ackWaiter.isCompleted) {
+          ackWaiter.completeError(OtaException(_abortReason));
         }
       }
     });
@@ -333,37 +449,42 @@ class FrameOtaClient {
     // 设备应答帧头 0xFC，被应答的操作码回显在第 2 字节；兼容「不带 0xFC、直接以操作码打头」的旧固件。
     final echo = bytes[0] == _opAck ? (bytes.length > 1 ? bytes[1] : 0) : bytes[0];
 
-    // START ACK：回显 0xF1；或正等 START 应答且不是 DATA/最终结果。
-    final waiter = _startCompleter;
+    // START ACK：回显 0xF1；或正等 START 应答且不是 DATA/END，也按 START ACK 解析。
+    final startWaiter = _startCompleter;
     if (echo == _opStart ||
-        (waiter != null && echo != _opData && echo != _opResult)) {
+        (startWaiter != null && echo != _opData && echo != _opEnd)) {
       final ack = _parseStartAck(bytes);
       if (ack == null) {
         debugPrint('[OTA] 忽略无法识别的应答帧：${FrameProtocol.bytesToHex(bytes)}');
         return;
       }
-      if (waiter != null && !waiter.isCompleted) {
+      if (startWaiter != null && !startWaiter.isCompleted) {
         _startCompleter = null;
-        waiter.complete(ack);
+        startWaiter.complete(ack);
       }
       return;
     }
 
-    // 最终结果 0xF3（设备收齐后自算 CRC32 主动上报）。
-    if (echo == _opResult) {
-      _finalResult = _parseResult(bytes);
-      return;
-    }
-
-    // DATA ACK：回显 0xF2，取「已连续接收的最后包号」。
-    if (echo == _opData) {
-      final seq = _parseDataAckSeq(bytes);
-      if (seq > _lastAckSeq) _lastAckSeq = seq;
+    // DATA ACK（回显 0xF2）或 END ACK（回显 0xF3）：都只带 RESULT 结果码，交给对应 opcode 的等待者。
+    if (echo == _opData || echo == _opEnd) {
+      final offset = bytes[0] == _opAck ? 2 : 1;
+      final ack = _AckResult(
+        opcode: echo,
+        result: bytes.length > offset ? bytes[offset] & 0xFF : 0xFF,
+        rawHex: FrameProtocol.bytesToHex(bytes),
+      );
+      final waiter = _ackCompleter;
+      if (waiter != null && !waiter.isCompleted && _ackWaitOpcode == echo) {
+        _ackCompleter = null;
+        waiter.complete(ack);
+        return;
+      }
+      _ackInbox.add(ack); // 还没人在等（写完到收到 ACK 的竞态），先缓存到收件箱
     }
   }
 
   // START ACK 权威布局：[0xFC, 0xF1, RESULT, MTU(1,=251), PRN(1), checksum]。
-  // 兼容「不带 0xFC 帧头、直接回显 0xF1」的旧固件。MTU/PRN 越界则回落 0，由 applyStartAck 用默认值兜底。
+  // 兼容「不带 0xFC 帧头、直接回显 0xF1」的旧固件。MTU/PRN 越界则回落 0，由 _applyStartAck 用默认值兜底。
   _StartAck? _parseStartAck(List<int> bytes) {
     final valid = bytes[0] == _opAck || bytes[0] == _opStart;
     if (!valid) return null;
@@ -378,19 +499,28 @@ class FrameOtaClient {
     return _StartAck(result: result, mtu: mtu, prn: prn, rawHex: FrameProtocol.bytesToHex(bytes));
   }
 
-  // DATA ACK 权威布局：[0xFC, 0xF2, RESULT, SEQ(2,小端), checksum]，SEQ 在偏移 3；
-  // 兼容旧固件 [0xF2, SEQ(2,小端), checksum]（偏移 1）。
-  int _parseDataAckSeq(List<int> bytes) {
-    final offset = bytes[0] == _opAck ? 3 : 1;
-    if (bytes.length < offset + 2) return _lastAckSeq;
-    return FrameProtocol.readUint16LE(bytes, offset);
-  }
+  // ── 等待原语 ──────────────────────────────────────────────
+  /// 等某个 opcode(0xF2 DATA / 0xF3 END) 的结果码应答：命中返回 [_AckResult]，
+  /// 超时抛 [timeoutMessage]，连接断开抛断开错误。调用前若 ACK 已到并落入收件箱，直接取走。
+  Future<_AckResult> _waitAck(int opcode, Duration timeout, String timeoutMessage) async {
+    if (_disconnected) throw OtaException(_abortReason.isEmpty ? 'OTA 连接已断开' : _abortReason);
 
-  // 0xF3 最终结果：[0xF3, RESULT, ..] 或带 0xFC 帧头 [0xFC, 0xF3, RESULT, ..]。
-  // ⚠️ 时序图疑似在 0xF3 后另有 1 字节子操作码再到 RESULT——真机抓一帧确认后再调整偏移。
-  int _parseResult(List<int> bytes) {
-    final offset = bytes[0] == _opAck ? 2 : 1;
-    return bytes.length > offset ? bytes[offset] & 0xFF : 0xFF;
+    final bufferedIndex = _ackInbox.indexWhere((a) => a.opcode == opcode);
+    if (bufferedIndex >= 0) {
+      return _ackInbox.removeAt(bufferedIndex);
+    }
+
+    final completer = Completer<_AckResult>();
+    _ackWaitOpcode = opcode;
+    _ackCompleter = completer;
+    try {
+      return await completer.future.timeout(
+        timeout,
+        onTimeout: () => throw OtaException(timeoutMessage),
+      );
+    } finally {
+      if (_ackCompleter == completer) _ackCompleter = null;
+    }
   }
 
   // ── 裸写一帧（带「发送缓冲忙就退避重试」）────────────────────
@@ -406,6 +536,18 @@ class FrameOtaClient {
         await Future<void>.delayed(const Duration(milliseconds: 80));
       }
     }
+  }
+
+  /// 发一帧 DATA/END 并等它的结果码应答。发送前先清空收件箱（本次只认这一帧的应答）。
+  Future<_AckResult> _sendFrameAwaitAck(
+    List<int> frame,
+    int opcode,
+    Duration timeout,
+    String timeoutMessage,
+  ) async {
+    _ackInbox.clear();
+    await _writeFrame(frame, _transferChar ?? _controlChar!);
+    return _waitAck(opcode, timeout, timeoutMessage);
   }
 
   // ── START 握手 ────────────────────────────────────────────
@@ -450,7 +592,7 @@ class FrameOtaClient {
             ),
           );
           _applyStartAck(ack);
-          // 设备在哪条特征上应答了 START，后续 DATA 就走同一条（本机 OTA 全程 FF11）。
+          // 设备在哪条特征上应答了 START，后续 DATA/END 就走同一条（本机 OTA 全程 FF11）。
           _transferChar = target;
           if (_startCompleter == completer) _startCompleter = null;
           return;
@@ -479,178 +621,151 @@ class FrameOtaClient {
     _chunkSize = _chunkFromMtu(effectiveMtu);
   }
 
-  // ── 窗口化数据传输 ─────────────────────────────────────────
-  // 每发 PRN 个包等一次 DATA ACK；ACK 不前进就从 ACK 包号+1 重发。卡顿时缩窗+减速破死结。
-  // 「等待+退避」必须远小于 1s：固件超过 1 秒没收到下一包即判定传输中断（图传红线，OTA 同样适用）。
+  // ── 分阶段数据传输（v1.5 §6.3.4）─────────────────────────────
+  // 手机只负责按文件内容读取并发送：先发 128 字节头信息握手包，再按 PRN 信用窗口发 bin payload，最后
+  // 发 END。一切完整性校验(CRC16/CRC32/版本/面板)由设备依据升级包里已打好的头信息完成，手机不重发、
+  // 不补包——某一批 ACK 超时或回错即判传输中断，整轮升级失败由用户重试（设备侧会等 APP 重新发起 DFU）。
   Future<OtaResult> _transferData(
     Uint8List bytes,
     int crc32, {
     int pace = 20,
     void Function(OtaProgress)? onProgress,
     bool Function()? shouldAbort,
-    Duration finalTimeout = const Duration(seconds: 10),
+    Duration finalTimeout = const Duration(seconds: 15),
   }) async {
     final total = bytes.length;
+    if (total < otaHeaderSize) {
+      throw OtaException('升级包过小（$total 字节），缺少 128 字节头信息，可能不是有效的 OTA 升级包');
+    }
+
+    final header = bytes.sublist(0, otaHeaderSize); // 升级包最前面的 128 字节头信息
+    final payload = bytes.sublist(otaHeaderSize); // 从第 129 字节起的原始 bin payload
+    final payloadLen = payload.length;
     final chunkSize = _chunkSize;
-    final totalPackets = (total + chunkSize - 1) ~/ chunkSize;
+    final totalPackets = (payloadLen + chunkSize - 1) ~/ chunkSize;
     final prn = _prn <= 0 ? _defaultPrn : _prn;
-    final transferChar = _transferChar ?? _controlChar!;
 
-    _lastAckSeq = -1;
-    _finalResult = null;
+    _ackCompleter = null;
+    _ackInbox.clear();
 
-    int nextSeq = 0;
-    int retries = 0;
-
+    // ── 步骤 3：128 字节头信息握手包 ──
     onProgress?.call(OtaProgress(
-      phase: 'transferring',
+      phase: 'header',
       percent: 15,
       sent: 0,
-      total: total,
-      message: '开始传输，共 $totalPackets 包，每包 $chunkSize 字节，窗口 PRN=$prn',
+      total: payloadLen,
+      message: '发送 128 字节头信息，等待设备校验头部',
+    ));
+    final headerAck = await _sendFrameAwaitAck(
+      _buildDataFrame(header),
+      _opData,
+      const Duration(seconds: 5),
+      '头信息握手超时：设备未应答 128 字节头信息校验（请确认升级包与设备面板/型号匹配）',
+    );
+    if (headerAck.result != 0x00) {
+      // 0x0A~0x0E 明确指向「包不对/头版本/面板/CRC16/版本号」——直接把设备语义透传给用户。
+      throw OtaException('头信息校验未通过：${otaResultText(headerAck.result)}');
+    }
+
+    // ── 步骤 4：后续 bin payload，PRN 信用窗口 ──
+    onProgress?.call(OtaProgress(
+      phase: 'transferring',
+      percent: _progressPercent(0, payloadLen),
+      sent: 0,
+      total: payloadLen,
+      message: '头部校验通过，开始传输：共 $totalPackets 包，每包 $chunkSize 字节，窗口 PRN=$prn',
     ));
 
-    while (nextSeq < totalPackets && _finalResult == null) {
+    final transferChar = _transferChar ?? _controlChar!;
+    int seq = 0;
+    while (seq < totalPackets) {
       if (shouldAbort?.call() ?? false) throw OtaAbortedException();
       if (_disconnected) throw OtaException(_abortReason);
 
-      // 卡住后逐步收敛：每多重试一次窗口缩一包、每包间隔拉大一截。
-      final burst = retries == 0 ? prn : (prn - retries < 1 ? 1 : prn - retries);
-      final sendPace = retries == 0 ? pace : (pace + 30 * retries > 150 ? 150 : pace + 30 * retries);
-      final windowEnd = nextSeq + burst > totalPackets ? totalPackets : nextSeq + burst;
-
-      for (int seq = nextSeq; seq < windowEnd && _finalResult == null; seq++) {
-        final start = seq * chunkSize;
-        final end = start + chunkSize > total ? total : start + chunkSize;
-        await _writeFrame(_buildDataFrame(seq, bytes.sublist(start, end)), transferChar);
-        if (sendPace > 0) {
-          await Future<void>.delayed(Duration(milliseconds: sendPace));
+      final batchEnd = seq + prn > totalPackets ? totalPackets : seq + prn;
+      _ackInbox.clear();
+      for (int k = seq; k < batchEnd; k++) {
+        final start = k * chunkSize;
+        final end = start + chunkSize > payloadLen ? payloadLen : start + chunkSize;
+        // DATA 沿用 START 成功的那条特征（见 _doStart）；缺省回落到控制特征 FF11。
+        await _writeFrame(_buildDataFrame(payload.sublist(start, end)), transferChar);
+        if (pace > 0) {
+          await Future<void>.delayed(Duration(milliseconds: pace));
         }
       }
 
-      if (_finalResult != null) break; // 设备已收齐并给出最终结果
-
-      // 尾窗特判：最后一包（不足 PRN 的残包）设备不回 DATA ACK——要收满固件大小后才直接回 0xF3。
-      // 一旦把最后一包发出，就跳出发送循环去等 0xF3 / 设备重启，绝不重发尾包（否则喂爆设备致断开）。
-      if (windowEnd >= totalPackets) break;
-
-      final advanced = await _waitAckAdvance(nextSeq - 1, const Duration(milliseconds: 600));
-      if (!advanced) {
-        if (_disconnected) throw OtaException(_abortReason);
-        if (_finalResult != null) break;
-        if (++retries > 15) {
-          throw OtaException(
-            'OTA 中断：设备停在已接收第 $_lastAckSeq 包不再前进（共 $totalPackets 包）。'
-            '可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunkSize 字节',
-          );
-        }
-        onProgress?.call(OtaProgress(
-          phase: 'retry',
-          percent: _progressPercent(nextSeq * chunkSize > total ? total : nextSeq * chunkSize, total),
-          sent: nextSeq * chunkSize > total ? total : nextSeq * chunkSize,
-          total: total,
-          stuckAt: _lastAckSeq,
-          retries: retries,
-          message: '补发数据（设备停在第 $_lastAckSeq 包，第 $retries 次重试）',
-        ));
-        final backoff = 50 * retries > 150 ? 150 : 50 * retries; // 极短退避
-        await Future<void>.delayed(Duration(milliseconds: backoff));
-        nextSeq = _lastAckSeq + 1;
-        continue;
+      // 每发 PRN 个 DATA 包等一次设备应答；1s 收不到即判中断（§6.4 传输超时红线，OTA 同样适用），留 1.5s 余量。
+      final ack = await _waitAck(
+        _opData,
+        const Duration(milliseconds: 1500),
+        'OTA 传输中断：已发送 $batchEnd/$totalPackets 包后，设备未在 1.5s 内应答（疑似丢包），请重试整个升级',
+      );
+      if (ack.result != 0x00) {
+        throw OtaException('设备接收数据报错：${otaResultText(ack.result)}');
       }
 
-      nextSeq = _lastAckSeq + 1;
-      retries = 0;
-      final sent = nextSeq * chunkSize > total ? total : nextSeq * chunkSize;
+      seq = batchEnd;
+      final sent = seq * chunkSize > payloadLen ? payloadLen : seq * chunkSize;
       onProgress?.call(OtaProgress(
         phase: 'transferring',
-        percent: _progressPercent(sent, total),
+        percent: _progressPercent(sent, payloadLen),
         sent: sent,
-        total: total,
-        message: '传输中：$sent/$total 字节',
+        total: payloadLen,
+        message: '传输中：$sent/$payloadLen 字节（$seq/$totalPackets 包）',
       ));
     }
 
-    // 数据已全部送达：APP 不发 END，等设备自行算 CRC32 + 写 BootSetting 后回 0xF3。
+    // ── 步骤 5：END 结束包，设备整包校验 total_bytes==bin_size 且 CRC32(payload)==bin_crc32 ──
     onProgress?.call(OtaProgress(
       phase: 'verifying',
-      percent: 99,
-      sent: total,
-      total: total,
-      message: '写入完成，等待设备校验',
+      percent: 98,
+      sent: payloadLen,
+      total: payloadLen,
+      message: '数据已发完，发送结束包(0xF3)，等待设备整包校验',
     ));
-
-    final finalCode = await _waitFinalResult(finalTimeout);
-    if (finalCode == null) {
-      // 数据 100% 发完后设备断开：DFU 固件收满、写好 BootSetting 后通常立即重启，表现为断连，
-      // 可能来不及/丢失 0xF3。视为「已发送完毕、设备重启中」，但不谎报确认成功——请到设备端核对版本。
-      if (_disconnected) {
-        onProgress?.call(OtaProgress(
-          phase: 'done',
-          percent: 100,
-          sent: total,
-          total: total,
-          message: '数据已全部发送，设备已断开——通常表示已写入并重启进入新固件。请在设备端确认固件版本是否已更新。',
-        ));
-        return OtaResult(
-          size: total,
-          crc32: crc32,
-          totalPackets: totalPackets,
-          chunkSize: chunkSize,
-          prn: prn,
-          rebooted: true,
-        );
+    // 校验窗口需覆盖「设备最后一批落盘 + CRC32 计算」，给足时长（默认 15s，可由 finalTimeout 覆盖）。
+    _AckResult finalAck;
+    try {
+      finalAck = await _sendFrameAwaitAck(
+        _buildEndFrame(),
+        _opEnd,
+        finalTimeout,
+        'OTA 校验超时：结束包已发送，但 ${finalTimeout.inSeconds}s 内未收到设备整包校验结果(0xF3 应答)，请重试',
+      );
+    } on OtaException catch (e) {
+      if (shouldAbort?.call() ?? false) throw OtaAbortedException();
+      if (_disconnected || e.message.contains('断开')) {
+        throw OtaException('OTA 传输中断：结束包已发送，但设备在返回整包校验结果前断开，升级未完成，请重试。');
       }
-      throw OtaException('OTA 等待设备校验结果超时');
+      rethrow;
     }
 
-    if (finalCode != 0x00) {
-      throw OtaException('设备校验失败：${otaResultText(finalCode)}');
+    if (finalAck.result != 0x00) {
+      throw OtaException('设备整包校验失败：${otaResultText(finalAck.result)}');
     }
 
     onProgress?.call(OtaProgress(
       phase: 'done',
       percent: 100,
-      sent: total,
-      total: total,
-      message: '升级完成，设备即将重启',
+      sent: payloadLen,
+      total: payloadLen,
+      message: '升级完成，设备校验通过，约 100ms 后复位运行新固件',
     ));
     return OtaResult(
       size: total,
       crc32: crc32,
       totalPackets: totalPackets,
       chunkSize: chunkSize,
+      payloadSize: payloadLen,
       prn: prn,
       confirmed: true,
     );
   }
 
-  /// 轮询等待「已连续接收包号」越过 minExclusive，或收到最终结果/断开；超时返回 false。
-  Future<bool> _waitAckAdvance(int minExclusive, Duration timeout) async {
-    final deadline = DateTime.now().add(timeout);
-    while (_lastAckSeq <= minExclusive) {
-      if (_finalResult != null || _disconnected) return true;
-      if (DateTime.now().isAfter(deadline)) return false;
-      await Future<void>.delayed(const Duration(milliseconds: 15));
-    }
-    return true;
-  }
-
-  /// 轮询等待设备 0xF3 最终结果（算 CRC32 + 写 BootSetting 可能要几秒）；断开/超时返回 null。
-  Future<int?> _waitFinalResult(Duration timeout) async {
-    final deadline = DateTime.now().add(timeout);
-    while (_finalResult == null) {
-      if (_disconnected) return null;
-      if (DateTime.now().isAfter(deadline)) return null;
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-    }
-    return _finalResult;
-  }
-
   int _progressPercent(int sent, int total) {
-    if (total == 0) return 98;
-    final p = 15 + (sent / total * 83).floor();
-    return p > 98 ? 98 : p;
+    if (total == 0) return 97;
+    final p = 15 + (sent / total * 82).floor();
+    return p > 97 ? 97 : p;
   }
 
   // ── 固件包加载 / 准备 ──────────────────────────────────────
@@ -663,7 +778,8 @@ class FrameOtaClient {
   }
 
   static Uint8List _mockFirmwareBuffer(int size, String? version) {
-    final total = size < _minFwSize ? 65536 : size;
+    // mock 包也按 v1.5 结构合成：[128 字节头][payload]，payload 落在合法范围下限，便于干跑校验分包。
+    final total = size > otaHeaderSize ? size : _minFwSize + otaHeaderSize;
     final seed = (version == null || version.isEmpty) ? 'mock' : version;
     final bytes = Uint8List(total);
     for (int i = 0; i < total; i++) {
@@ -692,11 +808,17 @@ class FrameOtaClient {
     if (pkg.sizeBytes > 0 && size != pkg.sizeBytes) {
       throw OtaException('固件包大小不一致：期望 ${pkg.sizeBytes} 字节，实际 $size 字节');
     }
-    if (size < _minFwSize || size > _maxFwSize) {
-      debugPrint('[OTA] 固件大小 $size 字节超出建议范围 '
-          '0x${_minFwSize.toRadixString(16)}~0x${_maxFwSize.toRadixString(16)}');
+    // v1.5 升级包结构固定为 [128 字节头信息][bin payload]，文件必须至少含这 128 字节头。
+    if (size <= otaHeaderSize) {
+      throw OtaException('升级包过小（$size 字节），至少应含 128 字节头信息 + bin payload，可能不是有效的 OTA 升级包');
     }
-    // CRC32 仅用于本地完整性核对/展示；START 不携带 CRC32，校验由设备自行完成（协议要求）。
+    final payloadSize = _computeFwSize(size);
+    if (payloadSize < _minFwSize || payloadSize > _maxFwSize) {
+      debugPrint('[OTA] bin payload $payloadSize 字节超出建议范围 '
+          '0x${_minFwSize.toRadixString(16)}~0x${_maxFwSize.toRadixString(16)}（仅告警，最终以设备应答为准）');
+    }
+    // v1.5：一切校验数据(含 CRC32)由固件方预先打进升级包头信息、并由设备端校验；手机不再计算/携带
+    // CRC32。这里仅为本地展示/日志算一次整包 CRC32；调用方显式给了期望值才做核对。
     final crc32 = FrameProtocol.crc32Mpeg2(bytes);
     final expectedCrc = _normalizeChecksum(pkg.checksum);
     if (expectedCrc != null && expectedCrc != crc32) {
@@ -711,27 +833,41 @@ class FrameOtaClient {
     return _PreparedFirmware(bytes, crc32);
   }
 
-  // ── 干跑（无 BLE）：校验「读包 + 组帧 + 校验 + 分包」，真机才跑真实传输。──
+  // ── 干跑（无 BLE）：校验「读包 + 拆头/payload + 组帧 + 校验 + 分包」，真机才跑真实传输。──
   static Future<OtaResult> _dryRun(
     _PreparedFirmware prepared, {
     void Function(OtaProgress)? onProgress,
     bool Function()? shouldAbort,
   }) async {
     final bytes = prepared.bytes;
-    final total = bytes.length;
-    final chunkSize = _chunkFromMtu(_defaultDeviceMtu); // 244：按满 MTU 估算
-    final totalPackets = (total + chunkSize - 1) ~/ chunkSize;
+    if (bytes.length <= otaHeaderSize) {
+      throw OtaException('升级包过小（${bytes.length} 字节），缺少 128 字节头信息');
+    }
+    final header = bytes.sublist(0, otaHeaderSize);
+    final payload = bytes.sublist(otaHeaderSize);
+    final payloadLen = payload.length;
+    final chunkSize = _chunkFromMtu(_defaultDeviceMtu); // 244：按设备满 MTU 估算
+    final totalPackets = (payloadLen + chunkSize - 1) ~/ chunkSize;
     const prn = _defaultPrn;
 
-    final startFrame = _buildStartFrame(total, _objTypeFirmware);
-    final firstChunkEnd = chunkSize < total ? chunkSize : total;
-    final firstDataFrame = _buildDataFrame(0, bytes.sublist(0, firstChunkEnd));
+    final startFrame = _buildStartFrame(prepared.payloadSize, _objTypeFirmware);
+    final headerFrame = _buildDataFrame(header); // 首个 DATA = 128 字节头信息
+    final firstChunkEnd = chunkSize < payloadLen ? chunkSize : payloadLen;
+    final firstDataFrame = _buildDataFrame(payload.sublist(0, firstChunkEnd));
+    final endFrame = _buildEndFrame();
 
+    // 头信息帧自检
+    if (_checksum8(headerFrame.sublist(0, headerFrame.length - 1)) !=
+        headerFrame[headerFrame.length - 1]) {
+      throw OtaException('头信息帧校验位自检失败');
+    }
+
+    // 逐包「发送」并自校验累加校验位是否正确，模拟窗口节奏推进进度。
     for (int seq = 0; seq < totalPackets; seq++) {
       if (shouldAbort?.call() ?? false) throw OtaAbortedException();
       final start = seq * chunkSize;
-      final end = start + chunkSize > total ? total : start + chunkSize;
-      final frame = _buildDataFrame(seq, bytes.sublist(start, end));
+      final end = start + chunkSize > payloadLen ? payloadLen : start + chunkSize;
+      final frame = _buildDataFrame(payload.sublist(start, end));
       if (_checksum8(frame.sublist(0, frame.length - 1)) != frame[frame.length - 1]) {
         throw OtaException('第 $seq 包校验位自检失败');
       }
@@ -739,10 +875,10 @@ class FrameOtaClient {
       if (seq % prn == 0 || seq == totalPackets - 1) {
         onProgress?.call(OtaProgress(
           phase: 'transferring',
-          percent: total == 0 ? 98 : (15 + (sent / total * 83).floor()).clamp(15, 98).toInt(),
+          percent: payloadLen == 0 ? 97 : (15 + (sent / payloadLen * 82).floor()).clamp(15, 97).toInt(),
           sent: sent,
-          total: total,
-          message: '干跑：$sent/$total 字节（${seq + 1}/$totalPackets 包）',
+          total: payloadLen,
+          message: '干跑：$sent/$payloadLen 字节（${seq + 1}/$totalPackets 包）',
         ));
         await Future<void>.delayed(const Duration(milliseconds: 8));
       }
@@ -751,25 +887,28 @@ class FrameOtaClient {
     onProgress?.call(OtaProgress(
       phase: 'done',
       percent: 100,
-      sent: total,
-      total: total,
+      sent: payloadLen,
+      total: payloadLen,
       message: '干跑完成（未经过真实蓝牙）',
     ));
 
     return OtaResult(
-      size: total,
+      size: bytes.length,
       crc32: prepared.crc32,
       totalPackets: totalPackets,
       chunkSize: chunkSize,
+      payloadSize: payloadLen,
       prn: prn,
       dryRun: true,
       startFrameHex: FrameProtocol.bytesToHex(startFrame),
+      headerFrameHex: FrameProtocol.bytesToHex(headerFrame),
       firstDataFrameHex: FrameProtocol.bytesToHex(firstDataFrame),
+      endFrameHex: FrameProtocol.bytesToHex(endFrame),
     );
   }
 
   // ── 对外主流程 ────────────────────────────────────────────
-  /// 干跑：纯本地校验「读包 + 组帧 + 校验 + 分包」，不连蓝牙、无需设备实例。
+  /// 干跑：纯本地校验「读包 + 拆头/payload + 组帧 + 校验 + 分包」，不连蓝牙、无需设备实例。
   /// 开发者工具 / 无硬件 / 无真实固件时用来验证编码链路。
   static Future<OtaResult> dryRunUpgrade(
     OtaFirmwarePackage pkg, {
@@ -780,9 +919,10 @@ class FrameOtaClient {
     return _dryRun(prepared, onProgress: onProgress, shouldAbort: shouldAbort);
   }
 
-  /// 升级设备固件。
+  /// 升级设备固件（v1.5：START → 128 字节头信息握手 → PRN 窗口发 payload → END → 设备整包校验）。
   ///
   /// [dryRun]=true 时纯本地校验编码与分包，不连蓝牙（无硬件/无固件时用）。
+  /// [finalTimeout]：END 发出后等设备整包校验结果(0xF3 应答)的时长。
   Future<OtaResult> upgradeFirmware(
     OtaFirmwarePackage pkg, {
     void Function(OtaProgress)? onProgress,
@@ -790,7 +930,7 @@ class FrameOtaClient {
     bool dryRun = false,
     int pace = 20,
     int? objType,
-    Duration finalTimeout = const Duration(seconds: 10),
+    Duration finalTimeout = const Duration(seconds: 15),
   }) async {
     final prepared = await _prepareFirmware(pkg, onProgress: onProgress);
 
@@ -802,7 +942,8 @@ class FrameOtaClient {
     await _ensureConnection();
 
     onProgress?.call(OtaProgress(phase: 'starting', percent: 14, message: '握手中（MTU $_mtu）'));
-    await _doStart(prepared.bytes.length, objType: objType);
+    // START 携带 FW_SIZE = bin payload 大小（文件大小 - 128 头，见 _computeFwSize）。
+    await _doStart(prepared.payloadSize, objType: objType);
 
     return _transferData(
       prepared.bytes,

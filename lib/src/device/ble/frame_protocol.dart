@@ -29,6 +29,26 @@ class FrameScreen {
   final int capacity;
 }
 
+/// 广播厂商数据解析结果（6.10.7）—— 由小程序 `frame-protocol.parseAdvertising` 移植。
+/// [deviceId] 为广播里的 4 字节 Device_ID（`AA:BB:CC:DD` 形式）：跨扫描会话稳定，
+/// 是「连接前」就能拿到的硬件序列号，用于把扫描结果和后端已绑定记录容错匹配
+///（与连上后 0x01 读到的 6 字节 Device_ID 互为子串，见 serial_match.dart）。
+class FrameAdvertising {
+  const FrameAdvertising({
+    required this.screenType,
+    required this.screen,
+    required this.model,
+    required this.deviceId,
+    required this.battery,
+  });
+
+  final int screenType;
+  final String screen;
+  final String model;
+  final String deviceId;
+  final int battery;
+}
+
 /// 解析出的一帧。
 class ParsedFrame {
   const ParsedFrame({
@@ -206,6 +226,18 @@ class FrameProtocol {
     if (text != null) return text;
     return '未知结果码 0x${code.toRadixString(16).padLeft(2, '0')}';
   }
+
+  // 设备忙（v1.5 §6.6.1）：设备正忙于处理其它指令时，对新指令回 RESULT=0x0B。
+  // busyMessage 是面向用户的统一提示；device_ble 收到任意指令的 0x0B 应答即以它抛出 FrameBleException，
+  // 各处「设备交互的判断」据此提示，避免各写一套文案。
+  static const int busyResult = 0x0b;
+  static const String busyMessage = '当前设备繁忙，请稍后重试';
+
+  static bool isBusyResult(int code) => (code & 0xFF) == busyResult;
+
+  // 判断一条错误文案是否为「设备忙」：供 UI 层归类时先短路，避免被更泛的「未连接」文案覆盖。
+  static bool isBusyMessage(String? message) =>
+      message != null && message.contains(busyMessage);
 
   // ── 基础工具 ──────────────────────────────────────────────
 
@@ -453,6 +485,33 @@ class FrameProtocol {
       height: screen?.height ?? 0,
       curImgIndex: b.length > 27 ? b[27] & 0xFF : 0,
     );
+  }
+
+  /// 解析广播厂商数据（6.10.7）：Screen_Type(1) + Device_ID(4) + Battery(1)，
+  /// 可能带 0xFF 0xFF Company_ID 前缀（此时从第 2 字节起为 Screen_Type）。
+  /// 屏型不认识或电量非法（>100）视为非相框广播，返回 null。
+  static FrameAdvertising? parseAdvertising(List<int> bytes) {
+    FrameAdvertising? attempt(int offset) {
+      if (bytes.length < offset + 6) return null;
+      final screenType = bytes[offset] & 0xFF;
+      final battery = bytes[offset + 5] & 0xFF;
+      final screen = screenTypes[screenType];
+      if (screen == null || battery > 100) return null;
+      return FrameAdvertising(
+        screenType: screenType,
+        screen: screen.label,
+        model: screen.model,
+        deviceId: _bytesToId(bytes, offset + 1, 4),
+        battery: battery,
+      );
+    }
+
+    // 含 Company_ID：前两字节为 0xFF 0xFF，则从第 2 字节起为 Screen_Type
+    if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFF) {
+      final withId = attempt(2);
+      if (withId != null) return withId;
+    }
+    return attempt(0);
   }
 
   /// CMD=0x03 软件版本：ASCII，遇 \0 截断(6.7.5)。

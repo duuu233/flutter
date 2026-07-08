@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../../../device/ble_controller.dart';
+import '../../../device/serial_match.dart';
 import '../../../state.dart';
 import 'bind_device_found.dart';
 import 'bind_device_not_found.dart';
@@ -85,11 +86,40 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       _toast('连接失败：$error');
       return;
     }
-    // 连接成功（蓝牙会话已建立，可用于投屏）。上报后端绑定。
-    // productId 需后端「产品匹配」规则（按机型/SN 配 getProductList），此处用 screenType 占位，待确认。
+    // 连接成功（蓝牙会话已建立，可用于投屏）。
     final info = _ble.info;
     final serial = info?.deviceId ?? result.device.remoteId.str;
     final name = BleController.displayName(result);
+
+    // 绑定判重（移植小程序 bind.js findBoundDevice）：把这台设备的两个序列号
+    //（广播 4 字节 + 固件 6 字节 Device_ID）与已绑定记录容错比对（互为子串也算同一台），
+    // 已绑定的不再新建记录——否则同一台相框会在设备列表反复出现（重复绑定记录）。
+    // 先尽力刷新一次列表再判；刷新失败沿用本地列表，不把老设备误判成新设备。
+    await widget.state.refreshDevices();
+    if (!mounted) {
+      return;
+    }
+    final serials = [_ble.broadcastDeviceId, info?.deviceId ?? '']
+        .where((s) => s.isNotEmpty)
+        .toList();
+    DeviceItem? bound;
+    for (final device in widget.state.devices) {
+      if (serials.any((s) => serialsMatch(s, device.serialNumber))) {
+        bound = device;
+        break;
+      }
+    }
+    if (bound != null) {
+      widget.state.selectDevice(bound.id);
+      widget.state.reconcileConnectionFlags();
+      setState(() => _binding = false);
+      _toast('该设备已绑定，已为你直接连接');
+      Navigator.of(context).maybePop();
+      return;
+    }
+
+    // 上报后端绑定。
+    // productId 需后端「产品匹配」规则（按机型/SN 配 getProductList），此处用 screenType 占位，待确认。
     final productId = info?.screenType ?? 0;
     final feedback = await widget.state.bindDevice(
       productId: productId,

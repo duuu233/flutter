@@ -85,7 +85,7 @@
 | POST | `/Client/UserProduct/delUserProduct` | `delUserProduct()` | `id`=userProductId |
 | POST | `/Client/UserProduct/clearUserProductImg` | `clearUserProductImg()` | `id`=userProductId（格式化） |
 | GET | `/Client/UserProduct/getUserProductImgList` | `getUserProductImgList()` | 分页 + userProductId（我的图库） |
-| POST | `/Client/UserProduct/delUserProductImg` | `delUserProductImg()` | `ids`=[uProductImgId]，支持多选 |
+| POST | `/Client/UserProduct/delUserProductImg` | `delUserProductImg()` | `idList`=[uProductImgId]，支持多选（后端约定字段名 idList，非 ids） |
 | GET | `/Client/UserProduct/getUserProductImgRecordList` | `getUserProductImgRecordList()` | 投屏记录列表 |
 | POST | `/Client/UserProduct/delUserProductImgRecord` | `delUserProductImgRecord()` | `id`=upirId |
 
@@ -132,7 +132,7 @@
 | --- | --- | --- |
 | 我的设备列表 | `devices/devices_page.dart`（包装 `my_devices_page.dart`）| 打开拉取 → `refreshDevices` → `getUserProductList`；重命名 → `renameDevice` → `editUserProduct` |
 | 设备详情 | `devices/device_details_page.dart` | 渲染 `state.selectedDevice`（名称/连接/电量/SN/内存/固件）；打开前 `selectDevice(id)` |
-| 一键清空 | `devices/device_clear_confirm_page.dart` | 确认 → `clearDeviceMemory` → `clearUserProductImg`（+ 本地 IMG_MASK / 相册同步）|
+| 一键清空 | `devices/device_clear_confirm_page.dart` | 确认 → `clearDeviceMemory`：**设备优先真实 BLE**（读信息 0x01 → 删全部 0x12）→ `clearUserProductImg` →（本地 IMG_MASK / 相册同步）。未连接提示「请先连接设备」；中途断联/超时/没删干净统一提示「设备暂时无法连接」（见 2026-07-08 同步）|
 | 删除设备 | `devices/device_delete_confirm_page.dart` | 确认 → `deleteDevice` → `delUserProduct`（+ 本地设备/相册/记录清理）→ 退回列表 |
 | 绑定设备 | （待 BLE 流程联调）| `bindDevice` → `addUserProduct` + `refreshDevices`（方法就绪，绑定 UI 流程未接）|
 
@@ -249,3 +249,28 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 | `lib/src/features/cast/presentation/casting_progress_page.dart` | 改为可跑真实投屏：给 `userProductId` + `imagePaths`（原图本地路径）即走上面链路并在本页切成功/失败态；无参时保持原静态展示。 |
 
 - **待办（原图文件来源）**：真实投屏需**原图本地文件路径**喂给 `casting_progress`。App 现有 `NativeDeviceApi.openGallery()` 返回 `content://` uri，`MultipartFile.fromPath` 无法直接上传——需 `image_picker`（返回缓存文件路径）或扩展原生通道返回临时文件路径。此为剩余原生接入点，服务层与 API 已就绪。
+
+## 从小程序移植的功能（2026-07-08）
+
+### 一键清空改真实 BLE + 设备断联友好提示（移植自 `subpackages/device/detail/detail.js` `confirmClearCopies`）
+
+小程序侧 `一键清空` 本轮新增「清空中途设备断联或其它情况 → 统一提示『设备暂时无法连接』」，同步到 App。
+
+| 文件 | 改动 |
+| --- | --- |
+| `lib/src/state.dart` `clearDeviceMemory` | 由**模拟删除**（`FrameDeviceProtocol.simulateDeleteImages`）改为**真实 BLE 设备优先**，对齐小程序 `confirmClearCopies` 与同文件 `deleteAlbumPhotos` 的真机模式 |
+
+流程（对齐 `confirmClearCopies`）：
+
+1. **未连接不自动重连** → 直接提示「请先连接设备」（`BleController.instance.client.connected` 前置拦截，等价小程序 `clearCopies`/`findConnectedDeviceId` 双重拦截）。
+2. **设备优先真实 BLE**：`readDeviceInfo()`(0x01) 拿 `imgMask` → `maskToIndexes` → 一条 `deleteImage()`(0x12) 删全部；`deleteImage` 返回删除后最新 IMG_MASK，仍有占用即视为「没删干净」（对齐小程序回读校验分支）。固件清空后自动刷空屏，不主动刷屏。
+3. **蓝牙链路失败（断联/应答超时/未连接）或没删干净** → 一律 `catch(_)` 归一，统一提示「**设备暂时无法连接**」，不把底层设备错误码抛给用户（对齐小程序：`设备-` 类错误统一友好提示，具体错误仅进日志）。
+4. **后端 `clearUserProductImg` 失败** → 走 `_apiFailure` 如实提示（接口类错误不误报成「设备连不上」）。
+5. 设备清成功后同步本地：`imageMask=0` / `currentImageIndex=0` / 相册对应照片 `isOnDevice=false`。
+
+差异/说明：
+
+- App 的 `FrameBleClient.request` 对**非零结果码不抛异常**（只在 CRC/超时/写失败/断连时抛），故设备侧「拒删」表现为 `deleteImage` 返回的 IMG_MASK 仍有残留——用「删完仍有占用」判定未清成功，等价小程序回读校验。
+- 小程序把「设备仍剩 N 张」的具体张数只写进 console 日志、toast 统一显示「设备暂时无法连接」；App 同样不在 UI 暴露张数（App 侧无对应逐帧日志通道）。
+- `FrameDeviceProtocol.simulateDeleteImages` 仍被单测 `test/frame_device_protocol_test.dart` 引用，未删除。
+- 本机无 Flutter SDK，未跑 `dart analyze`，需开发机验证编译。
