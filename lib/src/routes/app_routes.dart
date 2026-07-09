@@ -18,23 +18,23 @@ import '../features/cast/presentation/cast_success_page.dart';
 import '../features/cast/presentation/casting_progress_page.dart';
 import '../features/cast/presentation/photo_preview_adjust_image_page.dart';
 import '../features/cast/presentation/photo_preview_saved_page.dart';
+import '../features/devices/presentation/bind_device_flow.dart';
 import '../features/devices/presentation/bind_device_found.dart';
 import '../features/devices/presentation/bind_device_not_found.dart';
 import '../features/devices/presentation/bind_device_scan_help.dart';
-import '../features/devices/presentation/bind_device_searching.dart';
 import '../features/devices/presentation/ble_debug_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
 import '../features/devices/presentation/device_clear_confirm_page.dart';
 import '../features/devices/presentation/device_delete_confirm_page.dart';
 import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
-import '../features/devices/presentation/my_devices_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
 import '../features/guide/presentation/guide_page.dart';
 import '../features/settings/presentation/language_settings_page.dart';
 import '../features/settings/presentation/privacy_policy_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/settings/presentation/update_boltstar_page.dart';
+import '../features/devices/presentation/ota_upgrade_page.dart';
 import '../features/settings/presentation/user_agreement_page.dart';
 import '../state.dart';
 
@@ -75,6 +75,7 @@ class AppRoutes {
   static const figmaModifyEmail = '/figma/profile/modify-email';
   static const figmaMyDevices = '/figma/devices/my-devices';
   static const figmaDeviceDetails = '/figma/devices/detail';
+  static const figmaDeviceOta = '/figma/devices/ota';
   static const figmaDeviceDeleteConfirm = '/figma/devices/delete-confirm';
   static const figmaDeviceClearConfirm = '/figma/devices/clear-confirm';
   static const figmaCarouselSettings = '/figma/devices/carousel-settings';
@@ -118,13 +119,14 @@ class AppRoutes {
         builder = (_) => const BleDebugPage();
         break;
       case AppRoutes.figmaForgotPassword:
-        builder = (_) => const ForgotPassword();
+        builder = (_) => ForgotPassword(state: state);
         break;
       case AppRoutes.figmaModifyPassword:
-        builder = (_) => const ModifyPassword();
+        builder = (_) => ModifyPassword(state: state);
         break;
       case AppRoutes.figmaRegister:
         builder = (context) => RegisterPage(
+          state: state,
           onRegistered: () => Navigator.maybePop(context),
           onBackToLogin: () => Navigator.maybePop(context),
         );
@@ -136,7 +138,7 @@ class AppRoutes {
         builder = (_) => CastManagementFigmaPage(state: state);
         break;
       case AppRoutes.figmaBindDeviceSearching:
-        builder = (_) => const BindDeviceSearching();
+        builder = (_) => BindDeviceFlowPage(state: state);
         break;
       case AppRoutes.figmaBindDeviceFound:
         builder = (_) => const BindDeviceFound();
@@ -148,7 +150,11 @@ class AppRoutes {
         builder = (_) => const BindDeviceScanHelp();
         break;
       case AppRoutes.figmaPhotoPreviewAdjustImage:
-        builder = (_) => const PhotoPreviewAdjustImagePage();
+        // 「压缩图片」开关接全局状态：投屏链路（castImages→setUserProductUpload.isCompress）据此取值
+        builder = (_) => PhotoPreviewAdjustImagePage(
+              compressImage: state.projectionCompress,
+              onCompressChanged: state.setProjectionCompress,
+            );
         break;
       case AppRoutes.figmaPhotoPreviewSaved:
         builder = (_) => const PhotoPreviewSavedPage();
@@ -185,27 +191,14 @@ class AppRoutes {
         builder = (_) => const BindEmailCompletePage();
         break;
       case AppRoutes.figmaModifyEmail:
-        builder = (_) => const ModifyEmailPage();
+        builder = (_) => ModifyEmailPage(state: state);
         break;
       case AppRoutes.figmaMyDevices:
-        builder = (context) => MyDevicesPage(
-          onAddDevice: () {
-            Navigator.of(
-              context,
-            ).pushNamed<void>(AppRoutes.figmaBindDeviceSearching);
-          },
-          onOpenDetail: (_) {
-            Navigator.of(context).pushNamed<void>(AppRoutes.figmaDeviceDetails);
-          },
-          onCarouselSettings: (_) {
-            Navigator.of(
-              context,
-            ).pushNamed<void>(AppRoutes.figmaCarouselSettings);
-          },
-        );
+        builder = (_) => DevicesPage(state: state);
         break;
       case AppRoutes.figmaDeviceDetails:
         builder = (context) => DeviceDetailsPage(
+          state: state,
           onCarouselSettings: () {
             Navigator.of(
               context,
@@ -221,13 +214,19 @@ class AppRoutes {
               context,
             ).pushNamed<void>(AppRoutes.figmaDeviceDeleteConfirm);
           },
+          onOtaUpgrade: () {
+            Navigator.of(context).pushNamed<void>(AppRoutes.figmaDeviceOta);
+          },
         );
         break;
+      case AppRoutes.figmaDeviceOta:
+        builder = (_) => OtaUpgradePage(state: state);
+        break;
       case AppRoutes.figmaDeviceDeleteConfirm:
-        builder = (_) => const DeviceDeleteConfirmPage();
+        builder = (_) => DeviceDeleteConfirmPage(state: state);
         break;
       case AppRoutes.figmaDeviceClearConfirm:
-        builder = (_) => const DeviceClearConfirmPage();
+        builder = (_) => DeviceClearConfirmPage(state: state);
         break;
       case AppRoutes.figmaCarouselSettings:
         builder = (_) => const CarouselSettingsPage();

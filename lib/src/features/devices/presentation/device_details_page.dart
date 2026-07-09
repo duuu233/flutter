@@ -1,31 +1,43 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../device/frame_device_protocol.dart';
+import '../../../state.dart';
 
 /// 设备详情页：查看单个设备信息并进入轮播设置 / 清空 / 删除等操作。
 ///
 /// 对照微信小程序 `photo-album/subpackages/device/detail`：摘要卡 + 信息列表 +
 /// 操作列表（清空 / 删除），删除/清空走二次确认弹窗（见 [DeviceConfirmDialog]）。
+/// 展示当前选中设备（`state.selectedDevice`），随 [PhotoFrameState] 变化自动刷新。
 class DeviceDetailsPage extends StatelessWidget {
   const DeviceDetailsPage({
     super.key,
+    required this.state,
     this.onCarouselSettings,
     this.onClearDevice,
     this.onDeleteDevice,
+    this.onOtaUpgrade,
   });
 
+  final PhotoFrameState state;
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
   final VoidCallback? onDeleteDevice;
+  final VoidCallback? onOtaUpgrade;
 
   @override
   Widget build(BuildContext context) {
     return FigmaScreen(
       title: '设备详情',
-      body: DeviceDetailsBody(
-        onCarouselSettings: onCarouselSettings,
-        onClearDevice: onClearDevice,
-        onDeleteDevice: onDeleteDevice,
+      body: AnimatedBuilder(
+        animation: state,
+        builder: (context, _) => DeviceDetailsBody(
+          state: state,
+          onCarouselSettings: onCarouselSettings,
+          onClearDevice: onClearDevice,
+          onDeleteDevice: onDeleteDevice,
+          onOtaUpgrade: onOtaUpgrade,
+        ),
       ),
     );
   }
@@ -35,22 +47,50 @@ class DeviceDetailsPage extends StatelessWidget {
 class DeviceDetailsBody extends StatelessWidget {
   const DeviceDetailsBody({
     super.key,
+    required this.state,
     this.onCarouselSettings,
     this.onClearDevice,
     this.onDeleteDevice,
+    this.onOtaUpgrade,
   });
 
+  final PhotoFrameState state;
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
   final VoidCallback? onDeleteDevice;
+  final VoidCallback? onOtaUpgrade;
+
+  String get _carouselLabel {
+    final device = state.selectedDevice;
+    // 轮播设置是「连接才可信」的实时数据：未连接（含断开设备后）一律 -- 占位，与小程序详情页一致。
+    if (!device.connected) {
+      return '--';
+    }
+    if (!device.carouselEnabled) {
+      return '已关闭';
+    }
+    return device.playbackMode == FramePlaybackMode.sequence ? '顺序轮播' : '随机轮播';
+  }
+
+  static String _batteryAsset(int level) {
+    const levels = <int>[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+    var nearest = levels.first;
+    for (final candidate in levels) {
+      if ((candidate - level).abs() < (nearest - level).abs()) {
+        nearest = candidate;
+      }
+    }
+    return 'assets/images/BatteryLevel/battery-$nearest.png';
+  }
 
   @override
   Widget build(BuildContext context) {
+    final device = state.selectedDevice;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 12),
-        // 摘要卡：设备图标 + 名称（可编辑）+ 连接状态 / 电量。
+        // 摘要卡：设备图标 + 名称 + 连接状态 / 电量。
         FigmaGlassCard(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           child: Row(
@@ -81,12 +121,12 @@ class DeviceDetailsBody extends StatelessWidget {
                   children: [
                     Row(
                       children: [
-                        const Flexible(
+                        Flexible(
                           child: Text(
-                            '客厅相框',
+                            device.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
+                            style: const TextStyle(
                               color: Color(0xFF2A2D32),
                               fontSize: 15,
                               fontWeight: FontWeight.w700,
@@ -113,7 +153,9 @@ class DeviceDetailsBody extends StatelessWidget {
                     Row(
                       children: [
                         Image.asset(
-                          'assets/images/bluetooth-icon.png',
+                          device.connected
+                              ? 'assets/images/bluetooth-icon.png'
+                              : 'assets/images/bluetooth-icon-not.png',
                           width: 11,
                           height: 14,
                           fit: BoxFit.contain,
@@ -121,35 +163,39 @@ class DeviceDetailsBody extends StatelessWidget {
                               const SizedBox(width: 11, height: 14),
                         ),
                         const SizedBox(width: 5),
-                        const Text(
-                          '已连接',
+                        Text(
+                          device.connected ? '已连接' : '未连接',
                           style: TextStyle(
-                            color: Color(0xFF287DFF),
+                            color: device.connected
+                                ? const Color(0xFF287DFF)
+                                : const Color(0xFF9BA2AD),
                             fontSize: 12,
                             height: 1,
                           ),
                         ),
-                        const SizedBox(width: 15),
-                        Image.asset(
-                          'assets/images/BatteryLevel/battery-80.png',
-                          width: 24,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(
-                                Icons.battery_4_bar_rounded,
-                                size: 16,
-                                color: Color(0xFF777E88),
-                              ),
-                        ),
-                        const SizedBox(width: 5),
-                        const Text(
-                          '80%',
-                          style: TextStyle(
-                            color: Color(0xFF777E88),
-                            fontSize: 12,
-                            height: 1,
+                        if (device.connected) ...[
+                          const SizedBox(width: 15),
+                          Image.asset(
+                            _batteryAsset(device.batteryLevel),
+                            width: 24,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
+                                  Icons.battery_4_bar_rounded,
+                                  size: 16,
+                                  color: Color(0xFF777E88),
+                                ),
                           ),
-                        ),
+                          const SizedBox(width: 5),
+                          Text(
+                            '${device.batteryLevel}%',
+                            style: const TextStyle(
+                              color: Color(0xFF777E88),
+                              fontSize: 12,
+                              height: 1,
+                            ),
+                          ),
+                        ],
                       ],
                     ),
                   ],
@@ -168,30 +214,42 @@ class DeviceDetailsBody extends StatelessWidget {
                 iconAsset: 'assets/images/device-detail-icon01.png',
                 fallbackIcon: Icons.tune_rounded,
                 label: '轮播设置',
-                value: '顺序轮播',
+                value: _carouselLabel,
                 showChevron: true,
                 onTap: onCarouselSettings,
               ),
               const _ThinDivider(),
-              const _DetailRow(
+              _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon02.png',
                 fallbackIcon: Icons.tag_rounded,
                 label: '设备ID',
-                value: '123456',
+                value: device.serialNumber.isEmpty
+                    ? device.id
+                    : device.serialNumber,
               ),
               const _ThinDivider(),
-              const _DetailRow(
+              _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon03.png',
                 fallbackIcon: Icons.sd_storage_outlined,
                 label: '设备内存',
-                value: '68/100',
+                // 内存占用是连接才读得到的实时数据（0x01 的 IMG_MASK）：未连接（含断开设备后）一律 --，
+                // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
+                value: device.connected
+                    ? '${device.imageCount}/${device.capacity}'
+                    : '--',
               ),
               const _ThinDivider(),
-              const _DetailRow(
+              _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon04.png',
                 fallbackIcon: Icons.system_update_alt_rounded,
                 label: 'OTA升级',
-                value: '版本1.2.0',
+                value: device.hasFirmwareUpdate
+                    ? '发现新版本 ${device.newVersionNo}'
+                    : (device.firmwareVersion.isEmpty
+                        ? '-'
+                        : device.firmwareVersion),
+                showChevron: true,
+                onTap: onOtaUpgrade,
               ),
             ],
           ),

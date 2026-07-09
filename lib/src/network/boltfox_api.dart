@@ -59,11 +59,20 @@ class BoltFoxApi {
     return _http.upload('/Client/Basic/setFileUpload', filePaths: filePaths);
   }
 
-  /// 设备上传图片，单文件 15M 上限、最多 9 个，form-data 字段名 fileParam。
+  /// BLE 图片转换上传：form-data 上传原图，后端按设备宽高([targetWidth]×[targetHeight])
+  /// 转换成设备六色 4bpp 帧(.bin)并存 OSS，返回 `{ url, taskId, upirId }`。
+  ///
+  /// 对齐小程序 `setUserProductUpload`：投屏时先调本接口把原图转成设备帧，再下载 `.bin` 走 BLE 图传；
+  /// 设备图传成功后再用 [editUserProductImgRecord] 把投屏记录置为成功。
   static Future<dynamic> setUserProductUpload({
     required List<String> filePaths,
     Object? userProductId,
     Object? deviceUploadState,
+    int? targetWidth,
+    int? targetHeight,
+    // 是否压缩图片：1=压缩(后端压到约300-400KB) / 0=不压缩传原图，缺省压缩。
+    // ⚠️ 字段名 isCompress 为约定假设，待后端确认（与小程序 api.js 同一处约定，确认后只改这一处）。
+    int isCompress = 1,
   }) {
     return _http.upload(
       '/Client/Basic/setUserProductUpload',
@@ -71,6 +80,9 @@ class BoltFoxApi {
       query: {
         if (userProductId != null) 'userProductId': userProductId,
         if (deviceUploadState != null) 'deviceUploadState': deviceUploadState,
+        if (targetWidth != null) 'targetWidth': targetWidth,
+        if (targetHeight != null) 'targetHeight': targetHeight,
+        'isCompress': isCompress == 0 ? 0 : 1,
       },
     );
   }
@@ -243,15 +255,31 @@ class BoltFoxApi {
     });
   }
 
-  /// 编辑设备信息（重命名）。
+  /// 编辑设备信息。[productName] 传入即重命名；[isClearImg] 传入即复位一键清除标记
+  /// （对齐小程序 `editUserProduct({userProductId, isClearImg:0})`：确认「重新上传」提醒后置 0，
+  /// 后端不再返回「已清除」，避免每次进入图库都弹）。两者可单独或同时传。
   static Future<dynamic> editUserProduct({
     required Object userProductId,
-    required String productName,
+    String? productName,
+    int? isClearImg,
   }) {
     return _http.postJson('/Client/UserProduct/editUserProduct', body: {
       'userProductId': userProductId,
-      'productName': productName,
+      if (productName != null) 'productName': productName,
+      if (isClearImg != null) 'isClearImg': isClearImg,
     });
+  }
+
+  /// 获取设备一键清除状态，id=userProductId。retData：0=未清除、1=已清除。
+  ///
+  /// 对齐小程序 `getUserProductClearImg`：图库页进入 / 切换设备筛选时后台查询——
+  /// 设备在别处被执行过清空时（图库照片已不在设备上）弹「请重新上传图片」提醒。
+  /// 小程序侧 `showError:false` 静默失败；App 端由调用方 catch 忽略异常（下次进入/切换再查）。
+  static Future<dynamic> getUserProductClearImg(Object userProductId) {
+    return _http.getJson(
+      '/Client/UserProduct/getUserProductClearImg',
+      query: {'id': userProductId},
+    );
   }
 
   /// 删除设备，id=userProductId。
@@ -279,10 +307,11 @@ class BoltFoxApi {
   }
 
   /// 删除产品图片，支持多选，id=uProductImgId。
+  /// 后端约定的字段名是 `idList`（不是 `ids`），与小程序 `api.js` 对齐。
   static Future<dynamic> delUserProductImg(List<Object> ids) {
     return _http.postJson(
       '/Client/UserProduct/delUserProductImg',
-      body: {'ids': ids},
+      body: {'idList': ids},
     );
   }
 
@@ -302,5 +331,44 @@ class BoltFoxApi {
       '/Client/UserProduct/delUserProductImgRecord',
       body: {'id': upirId},
     );
+  }
+
+  /// 编辑投屏记录（设备图传成功后置设备上传状态）。
+  ///
+  /// 对齐小程序 `editUserProductImgRecord`：设备 BLE 图传成功后调用，把 [upirId] 对应记录的
+  /// [deviceUploadState] 置为 1（0=失败,1=成功）；[taskId] 为 [setUserProductUpload] 返回的任务 id。
+  static Future<dynamic> editUserProductImgRecord({
+    required Object upirId,
+    Object? taskId,
+    int deviceUploadState = 1,
+  }) {
+    return _http.postJson('/Client/UserProduct/editUserProductImgRecord', body: {
+      'upirId': upirId,
+      if (taskId != null) 'taskId': taskId,
+      'deviceUploadState': deviceUploadState,
+    });
+  }
+
+  /// 新增投屏记录（再次/重新投屏用 imgBle 直传设备后调用）。
+  ///
+  /// 对齐小程序 `addUserProductImgRecord`：投屏记录页「再次投屏」直接用记录里的设备帧
+  /// [imgBle] 图传，不再走后端上传/转码；设备图传成功([deviceUploadState]=1)/失败(0)后
+  /// 都新增一条投屏记录。[taskId] 再次投屏链路没有，为空时不传（后端沿用旧记录不需要）。
+  static Future<dynamic> addUserProductImgRecord({
+    Object? upirId,
+    Object? userProductId,
+    String? img,
+    String? imgBle,
+    Object? taskId,
+    int deviceUploadState = 1,
+  }) {
+    return _http.postJson('/Client/UserProduct/addUserProductImgRecord', body: {
+      if (upirId != null) 'upirId': upirId,
+      if (userProductId != null) 'userProductId': userProductId,
+      if (img != null) 'img': img,
+      if (imgBle != null) 'imgBle': imgBle,
+      if (taskId != null) 'taskId': taskId,
+      'deviceUploadState': deviceUploadState,
+    });
   }
 }

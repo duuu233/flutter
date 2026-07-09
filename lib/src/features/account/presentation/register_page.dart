@@ -3,14 +3,21 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../state.dart';
 
 /// 创建账户 / 注册页，对应 UI 稿「创建账户-未输入 / 已输入可注册 / 密码不一致」。
 ///
 /// 三种状态由用户输入自然驱动：未填写时主按钮置灰，填写后变为可点击，
 /// 点击时若两次密码不一致则在密码、确认密码下方提示。
 class RegisterPage extends StatefulWidget {
-  const RegisterPage({super.key, this.onRegistered, this.onBackToLogin});
+  const RegisterPage({
+    super.key,
+    required this.state,
+    this.onRegistered,
+    this.onBackToLogin,
+  });
 
+  final PhotoFrameState state;
   final VoidCallback? onRegistered;
   final VoidCallback? onBackToLogin;
 
@@ -25,6 +32,7 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _confirmController = TextEditingController();
 
   bool _showMismatch = false;
+  bool _submitting = false;
   int _countdown = 0;
   Timer? _timer;
 
@@ -65,11 +73,27 @@ class _RegisterPageState extends State<RegisterPage> {
       _passwordController.text.isNotEmpty &&
       _confirmController.text.isNotEmpty;
 
-  void _getCode() {
+  Future<void> _getCode() async {
     if (_countdown > 0) {
       return;
     }
+    // sendType:1 = 注册验证码。
+    final feedback = await widget.state.sendEmailCode(
+      email: _emailController.text,
+      sendType: 1,
+    );
+    if (!mounted) {
+      return;
+    }
+    _showSnack(feedback.message);
+    if (feedback.success) {
+      _startCountdown();
+    }
+  }
+
+  void _startCountdown() {
     setState(() => _countdown = 30);
+    _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_countdown <= 1) {
         timer.cancel();
@@ -78,20 +102,36 @@ class _RegisterPageState extends State<RegisterPage> {
         setState(() => _countdown -= 1);
       }
     });
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('验证码已发送')));
   }
 
-  void _register() {
+  Future<void> _register() async {
+    if (_submitting) {
+      return;
+    }
     if (_passwordController.text != _confirmController.text) {
       setState(() => _showMismatch = true);
       return;
     }
-    widget.onRegistered?.call();
+    setState(() => _submitting = true);
+    final feedback = await widget.state.registerWithEmail(
+      email: _emailController.text,
+      password: _passwordController.text,
+      emailCode: _codeController.text,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _submitting = false);
+    _showSnack(feedback.message);
+    if (feedback.success) {
+      widget.onRegistered?.call();
+    }
+  }
+
+  void _showSnack(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('注册成功')));
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

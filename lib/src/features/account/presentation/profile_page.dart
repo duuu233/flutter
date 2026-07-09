@@ -88,14 +88,24 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  void _saveProfile() {
+  bool _saving = false;
+
+  Future<void> _saveProfile() async {
+    if (_saving) {
+      return;
+    }
     final user = widget.state.currentUser;
-    final feedback = widget.state.updateProfile(
+    setState(() => _saving = true);
+    final feedback = await widget.state.updateProfile(
       nickname: _nicknameController.text,
       email: user.email,
       signature: user.signature,
       avatarColor: user.avatarColor,
     );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _saving = false);
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(feedback.message)));

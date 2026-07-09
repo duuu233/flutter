@@ -20,7 +20,31 @@ class _GalleryPageState extends State<GalleryPage> {
   final Set<String> _selectedIds = <String>{};
   String? _deviceFilter;
 
+  // 一键清除状态查询的防竞态：自增序号标记「最新一次查询」（切换设备时旧结果丢弃），
+  // _clearModalShowing 防止提醒弹窗叠加（对齐小程序 clearCheckSeq / clearImgModalShowing）。
+  int _clearCheckSeq = 0;
+  bool _clearModalShowing = false;
+
   PhotoFrameState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开时刷新设备 + 图库（失败保留本地数据），随后查一次当前设备的一键清除状态。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      await state.refreshAlbum();
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+      // 进入图库即查一次一键清除状态：设备在别处被清空过则弹「请重新上传图片」提醒。
+      _checkDeviceClearStatus();
+    });
+  }
 
   List<AlbumPhoto> get _photos {
     final all = state.myAlbum;
@@ -96,6 +120,72 @@ class _GalleryPageState extends State<GalleryPage> {
       _deviceFilter = selected == '__all__' ? null : selected;
       _selectedIds.clear();
     });
+    // 每次切换设备筛选都查一次该设备的一键清除状态（与进入图库同一汇合点）。
+    _checkDeviceClearStatus();
+  }
+
+  /// 查询当前设备的一键清除状态并按需弹「请重新上传图片」提醒（对齐小程序 checkDeviceClearStatus）。
+  ///
+  /// 进入图库 / 每次切换设备筛选时调用。取查询设备：优先当前筛选设备；筛选为「全部相框」或图库为空
+  /// （设备被清空后图库自然为空）时，回退用设备列表第一台——正需靠它弹「重新上传」提醒；设备也没有则不查。
+  /// 自增序号防切换竞态（查询期间又切了设备则丢弃旧结果），_clearModalShowing 防叠弹窗。
+  Future<void> _checkDeviceClearStatus() async {
+    final userProductId = _deviceFilter ??
+        (state.devices.isNotEmpty ? state.devices.first.id : null);
+    if (userProductId == null || userProductId.isEmpty) {
+      return;
+    }
+    final seq = ++_clearCheckSeq;
+    final cleared = await state.fetchDeviceClearImgStatus(userProductId);
+    if (!mounted || seq != _clearCheckSeq || _clearModalShowing) {
+      return;
+    }
+    if (cleared != true) {
+      return;
+    }
+    _clearModalShowing = true;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('提示'),
+        content: const Text('当前设备已被执行清空操作，请重新上传图片'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+    _clearModalShowing = false;
+    if (confirmed == true) {
+      // 确认后复位清除标记，避免每次进入都弹（失败静默，下次进入会再提醒）。
+      await state.resetDeviceClearImgFlag(userProductId);
+    }
+  }
+
+  /// 图库为空时的正文：设备接口有数据则顶部仍展示设备筛选载体（filter-wrap，不因无照片而隐藏）+
+  /// 空态引导重新投屏；设备也没有则只显示空态（对齐小程序「无照片有设备 / 都空」两态）。
+  Widget _buildEmptyBody() {
+    if (state.devices.isEmpty) {
+      return const _GalleryEmptyState();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(23, 7, 23, 11),
+          child: Row(
+            children: [
+              const Spacer(),
+              _DeviceFilterChip(label: _filterLabel, onTap: _pickDeviceFilter),
+            ],
+          ),
+        ),
+        const Expanded(child: _GalleryEmptyState()),
+      ],
+    );
   }
 
   Future<void> _confirmDelete() async {
@@ -111,7 +201,10 @@ class _GalleryPageState extends State<GalleryPage> {
     if (confirmed != true || !mounted) {
       return;
     }
-    final feedback = state.deleteAlbumPhotos(_selectedIds);
+    final feedback = await state.deleteAlbumPhotos(_selectedIds);
+    if (!mounted) {
+      return;
+    }
     setState(_selectedIds.clear);
     _showFeedback(feedback.message);
   }
@@ -152,7 +245,7 @@ class _GalleryPageState extends State<GalleryPage> {
       // 图库背景用 bg02（小程序 album 用 bg02，非 bg01）。
       background: Image.asset('assets/images/bg02.png', fit: BoxFit.cover),
       body: photos.isEmpty
-          ? const _GalleryEmptyState()
+          ? _buildEmptyBody()
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -309,6 +402,17 @@ class _GalleryTile extends StatelessWidget {
                 ),
               ),
             ),
+            if (photo.imageUrl != null)
+              Positioned.fill(
+                child: Image.network(
+                  photo.imageUrl!,
+                  // aspectFit：完整显示原图、保持比例不裁切不拉伸（对齐小程序 list.wxml mode=aspectFit），
+                  // 留白落在下方色块渐变上；避免 cover 中心裁切与后端记录 img 比例不一致。
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const SizedBox.shrink(),
+                ),
+              ),
             Align(
               alignment: Alignment.bottomLeft,
               child: Padding(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import 'casting_progress_page.dart';
 
 /// 投屏管理（投屏记录），对照微信小程序 `photo-album/subpackages/projection/records`。
 ///
@@ -22,20 +23,77 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
 
   PhotoFrameState get state => widget.state;
 
+  @override
+  void initState() {
+    super.initState();
+    // 打开时刷新设备 + 投屏记录（失败保留本地数据）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      await state.refreshCastRecords();
+      if (mounted) {
+        setState(() {});
+      }
+    });
+  }
+
   List<CastRecord> get _records =>
       state.castRecords.where((record) => record.status == _tab).toList();
 
-  void _recast(CastRecord record) {
-    final result = state.recastRecord(record.id, record.deviceId);
+  // 再次/重新投屏：一律直接用记录里的设备帧 imgBle 图传（不再走后端上传/转码，对齐小程序 records.js）。
+  // 就算当前没连接设备，也先连设备再投屏；连上后跳投屏进度页走 imgBle 直传链路，返回后刷新记录。
+  Future<void> _recast(CastRecord record) async {
+    final imgBle = record.imgBle;
+    if (imgBle == null || imgBle.isEmpty) {
+      _showSnack('该记录缺少设备帧文件，无法再次投屏');
+      return;
+    }
+    _showSnack('正在连接设备…');
+    final feedback = await state.connectDevice(record.deviceId);
+    if (!mounted) {
+      return;
+    }
+    if (!feedback.success) {
+      _showSnack(feedback.message);
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => CastingProgressPage(
+          userProductId: record.deviceId,
+          recastImgBle: imgBle,
+          recastUpirId: record.id,
+          recastImgUrl: record.imageUrl,
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    // 再次投屏会新增一条投屏记录：返回后刷新列表。
+    await state.refreshCastRecords();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _showSnack(String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _delete(CastRecord record) async {
+    final feedback = await state.deleteCastRecord(record.id);
+    if (!mounted) {
+      return;
+    }
     setState(() {});
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(result.message)));
-  }
-
-  void _delete(CastRecord record) {
-    state.deleteCastRecord(record.id);
-    setState(() {});
+      ..showSnackBar(SnackBar(content: Text(feedback.message)));
   }
 
   @override
@@ -233,12 +291,28 @@ class _RecordCard extends StatelessWidget {
                   ],
                 ),
               ),
-              child: Icon(
-                record.source == ImageSourceType.camera
-                    ? Icons.photo_camera_outlined
-                    : Icons.collections_outlined,
-                color: Colors.white.withValues(alpha: 0.9),
-                size: 24,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (record.imageUrl != null)
+                    Image.network(
+                      record.imageUrl!,
+                      // aspectFit：与我的图库一致，保持比例不裁切不拉伸，按后端记录 img 原样展示
+                      // （对齐小程序 records.wxml mode=aspectFit）；留白落在下方色块渐变上。
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox.shrink(),
+                    ),
+                  Center(
+                    child: Icon(
+                      record.source == ImageSourceType.camera
+                          ? Icons.photo_camera_outlined
+                          : Icons.collections_outlined,
+                      color: Colors.white.withValues(alpha: 0.9),
+                      size: 24,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

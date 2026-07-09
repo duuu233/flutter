@@ -135,7 +135,10 @@ class SettingsPage extends StatelessWidget {
     if (confirmed != true || !context.mounted) {
       return;
     }
-    state.logout();
+    await state.logout();
+    if (!context.mounted) {
+      return;
+    }
     Navigator.of(
       context,
     ).pushNamedAndRemoveUntil(AppRoutes.auth, (route) => false);
@@ -150,7 +153,10 @@ class SettingsPage extends StatelessWidget {
     if (confirmed != true || !context.mounted) {
       return;
     }
-    state.deleteAccount();
+    await state.deleteAccount();
+    if (!context.mounted) {
+      return;
+    }
     Navigator.of(
       context,
     ).pushNamedAndRemoveUntil(AppRoutes.auth, (route) => false);
