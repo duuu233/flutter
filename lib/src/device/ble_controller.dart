@@ -39,6 +39,10 @@ class BleController extends ChangeNotifier {
   /// device-ble 会话登记 + active-device.findConnectedDeviceId）。
   String broadcastDeviceId = '';
 
+  /// 当前会话连接时从广播解析到的屏幕类型码（0=未知）。与序列号一起用于「跨型号串台」防护：
+  /// 交叉匹配设备记录与活动会话时，型号(尺寸)对不上直接一票否决。
+  int broadcastScreenType = 0;
+
   bool uploading = false;
   double uploadPercent = 0;
   String uploadStatus = '';
@@ -51,10 +55,19 @@ class BleController extends ChangeNotifier {
         if ((info?.deviceId ?? '').isNotEmpty) info!.deviceId,
       ];
 
+  /// 当前活动会话的屏幕类型码：优先固件 0x01 读到的，其次连接时广播里的（都没有则 0=未知）。
+  int get sessionScreenCode =>
+      info != null ? info!.screenType : broadcastScreenType;
+
   /// 这台后端记录的序列号是否指向当前活动会话（容错交叉匹配：
   /// 广播 4 字节 vs 后端 6 字节互为子串也算同一台）。
-  bool sessionMatchesSerial(String serial) {
+  /// [screenCode]：设备记录的屏幕类型码（FrameScreenType.code）。传入后先按型号一票否决，
+  /// 防「序列号 4/6 字节偶合」把不同型号设备误认成当前会话（跨型号串台）。
+  bool sessionMatchesSerial(String serial, {int screenCode = 0}) {
     if (!connected || serial.isEmpty) {
+      return false;
+    }
+    if (!sameScreenCode(screenCode, sessionScreenCode)) {
       return false;
     }
     return sessionSerials.any((s) => serialsMatch(s, serial));
@@ -98,11 +111,19 @@ class BleController extends ChangeNotifier {
     List<ScanResult> found, {
     required String serial,
     String name = '',
+    int screenCode = 0,
   }) {
     if (serial.trim().isNotEmpty) {
       for (final result in found) {
         final ad = advertisingOf(result);
-        if (ad != null && serialsMatch(ad.deviceId, serial)) {
+        if (ad == null) {
+          continue;
+        }
+        // 型号(尺寸)对不上直接跳过，防扫描重连时把不同型号设备误配上（跨型号串台）。
+        if (!sameScreenCode(screenCode, ad.screenType)) {
+          continue;
+        }
+        if (serialsMatch(ad.deviceId, serial)) {
           return result;
         }
       }
@@ -150,6 +171,7 @@ class BleController extends ChangeNotifier {
     deviceName = displayName(result);
     // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
     broadcastDeviceId = advertisingOf(result)?.deviceId ?? '';
+    broadcastScreenType = advertisingOf(result)?.screenType ?? 0;
     notifyListeners();
     try {
       await _client.connect(result.device);
@@ -184,6 +206,7 @@ class BleController extends ChangeNotifier {
     info = null;
     deviceName = '';
     broadcastDeviceId = '';
+    broadcastScreenType = 0;
     uploading = false;
     uploadPercent = 0;
     uploadStatus = '';
@@ -198,8 +221,9 @@ class BleController extends ChangeNotifier {
   Future<String?> connectBoundDevice({
     required String serial,
     String name = '',
+    int screenCode = 0,
   }) async {
-    if (sessionMatchesSerial(serial)) {
+    if (sessionMatchesSerial(serial, screenCode: screenCode)) {
       return null;
     }
     if (!await ensurePermission()) {
@@ -210,7 +234,12 @@ class BleController extends ChangeNotifier {
       await disconnect();
     }
     final found = await scan(timeout: const Duration(seconds: 6));
-    final target = matchScannedDevice(found, serial: serial, name: name);
+    final target = matchScannedDevice(
+      found,
+      serial: serial,
+      name: name,
+      screenCode: screenCode,
+    );
     if (target == null) {
       return '未搜索到该设备，请确认设备已开机并在附近';
     }

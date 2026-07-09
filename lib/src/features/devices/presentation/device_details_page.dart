@@ -62,6 +62,10 @@ class DeviceDetailsBody extends StatelessWidget {
 
   String get _carouselLabel {
     final device = state.selectedDevice;
+    // 轮播设置是「连接才可信」的实时数据：未连接（含断开设备后）一律 -- 占位，与小程序详情页一致。
+    if (!device.connected) {
+      return '--';
+    }
     if (!device.carouselEnabled) {
       return '已关闭';
     }
@@ -228,7 +232,11 @@ class DeviceDetailsBody extends StatelessWidget {
                 iconAsset: 'assets/images/device-detail-icon03.png',
                 fallbackIcon: Icons.sd_storage_outlined,
                 label: '设备内存',
-                value: '${device.imageCount}/${device.capacity}',
+                // 内存占用是连接才读得到的实时数据（0x01 的 IMG_MASK）：未连接（含断开设备后）一律 --，
+                // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
+                value: device.connected
+                    ? '${device.imageCount}/${device.capacity}'
+                    : '--',
               ),
               const _ThinDivider(),
               _DetailRow(

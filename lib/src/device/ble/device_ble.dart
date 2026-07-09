@@ -348,9 +348,20 @@ class FrameBleClient {
         payload: FrameProtocol.buildSetTimePayload(date));
   }
 
-  Future<List<int>> deleteImage(List<int> indexes) async {
-    final ack = await request(FrameProtocol.cmdDeleteImg,
-        payload: FrameProtocol.buildDeleteImagePayload(indexes));
+  /// 删除图片（0x12）：传图片索引数组，内部转 12 字节掩码；设备返回删除后的 IMG_MASK。
+  ///
+  /// 删除由设备逐张擦除 flash，张数越多越慢（一键清空可能一次删几十张，设备全部删完才回一次应答）。
+  /// 按张数放宽应答等待，避免设备还在删就被判「应答超时」误报「设备暂时无法连接」：
+  /// 每张 2s 预算（60 张≈120s）、下限 6s、上限封顶 180s；调用方可传 [timeout] 显式覆盖。
+  Future<List<int>> deleteImage(List<int> indexes, {Duration? timeout}) async {
+    var waitMs = indexes.length * 2000;
+    if (waitMs < 6000) waitMs = 6000;
+    if (waitMs > 180000) waitMs = 180000;
+    final ack = await request(
+      FrameProtocol.cmdDeleteImg,
+      payload: FrameProtocol.buildDeleteImagePayload(indexes),
+      timeout: timeout ?? Duration(milliseconds: waitMs),
+    );
     return FrameProtocol.parseMaskResult(ack.data);
   }
 

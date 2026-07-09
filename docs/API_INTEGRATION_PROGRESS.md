@@ -274,3 +274,71 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 - 小程序把「设备仍剩 N 张」的具体张数只写进 console 日志、toast 统一显示「设备暂时无法连接」；App 同样不在 UI 暴露张数（App 侧无对应逐帧日志通道）。
 - `FrameDeviceProtocol.simulateDeleteImages` 仍被单测 `test/frame_device_protocol_test.dart` 引用，未删除。
 - 本机无 Flutter SDK，未跑 `dart analyze`，需开发机验证编译。
+
+## 从小程序移植的功能（2026-07-09）
+
+本轮同步小程序 `photo-album` 近期改动（图库一键清除提醒 / 一键清空 60 张误报修复 / 断开后 -- / 缩略图不拉伸）。
+
+### 1. 图库「一键清除状态」提醒（移植自 `subpackages/album/list/list.js` `checkDeviceClearStatus`）
+
+设备在别处被执行过清空后，图库照片已不在设备上；进入图库 / 切换设备筛选时后台查一次状态，`已清除` 则弹「请重新上传图片」提醒，确认后复位标记避免重复弹。
+
+| 文件 | 改动 |
+| --- | --- |
+| `lib/src/network/boltfox_api.dart` | 新增 `getUserProductClearImg(userProductId)`（GET，`id` 参数，retData 0/1）；`editUserProduct` 的 `productName` 改可选并新增可选 `isClearImg`（对齐小程序 `editUserProduct({userProductId, isClearImg:0})` 复位）。 |
+| `lib/src/state.dart` | 新增 `fetchDeviceClearImgStatus`（`true`=已清除/`false`/`null`=静默失败）、`resetDeviceClearImgFlag`（`isClearImg:0`，静默失败）。 |
+| `lib/src/features/gallery/presentation/gallery_page.dart` | `initState` 加载后 + 切换筛选后调 `_checkDeviceClearStatus`：取查询设备=当前筛选设备，回退设备列表第一台（**空图库回退**：设备被清空后图库为空、正需靠它弹提醒）；`_clearCheckSeq` 防切换竞态 + `_clearModalShowing` 防叠弹窗；`已清除` 弹 `AlertDialog`（=小程序 `wx.showModal`）确认后复位。**空图库有设备时**顶部仍展示设备筛选载体（`_buildEmptyBody`，filter-wrap 不因无照片隐藏）。 |
+
+差异/说明：
+
+- Flutter `deviceId == userProductId`（`_deviceFromJson` 用后端 `userProductId` 作 id），故查询目标 ID 直接取筛选设备 id / 首台设备 id，无需小程序的「设备名反查 userProductId」。
+- 保留 Flutter 图库现有「全部相框(all)」筛选模型；筛选为 all / 图库空时清除检查回退到首台设备（等价小程序「默认选中第一台」的功能意图），未移除 all 选项以降低改动面。
+
+### 2. 一键清空「60 张误报无法连接」修复 + 清空后即时刷新（移植自 `utils/device-ble.js` `deleteImage` + `detail.js` `confirmClearCopies`/`refreshDeviceMemoryFromBle`）
+
+根因：清空是单条 `0x12` 带全掩码、设备逐张擦 flash 全删完才回一次应答；原 `deleteImage` 应答超时固定 6s，删几十张必超时 → 回读也因设备还忙而失败 → 误报「设备暂时无法连接」。
+
+| 文件 | 改动 |
+| --- | --- |
+| `lib/src/device/ble/device_ble.dart` `deleteImage` | 应答超时**按张数放宽**：每张 2s、下限 6s、上限 180s（60 张≈120s）；新增可选 `{Duration? timeout}` 供显式覆盖（4 处调用均位置传参，不受影响）。 |
+| `lib/src/state.dart` `clearDeviceMemory` | `0x12` 超时/断连后**回读校验最多 3 次、每次间隔 4s**（设备可能还在擦除），任一次读到空掩码即按成功，全部失败/仍有残留才判失败；设备忙(0x0B)先短路交给 busy 分支。清空成功后**即时回读 0x01** 刷新内存/电量（内存已随 `imageMask=0` 即时归位），读失败静默。 |
+
+### 3. 断开设备后「设备ID/内存」归位（移植自 `detail.js` `performDisconnect`）
+
+| 文件 | 改动 |
+| --- | --- |
+| `lib/src/features/devices/presentation/device_details_page.dart` | **设备内存**、**轮播设置**改按 `device.connected` 显示：未连接（含断开后）一律 `--`（内存/轮播是连接才读得到的实时数据，未连接时显示后端不下发而回落的 `0/容量`、`已关闭` 会误导）。 |
+
+差异/说明：
+
+- **设备ID未改**：Flutter 详情页设备ID展示后端 `serialNumber`（连接无关的稳定标识），非小程序的固件 0x01 读值；若按连接态置 `--`，会使常态未连接的已绑定设备设备ID全变 `--`（退化），故保留展示序列号。小程序里设备ID变 `--` 是因它原展示固件读值、断开即失效——Flutter 无此「实时设备ID」概念。
+
+### 4. 图库 / 投屏管理缩略图不拉伸（移植自 `list.wxml` / `records.wxml` `mode=aspectFit`）
+
+| 文件 | 改动 |
+| --- | --- |
+| `lib/src/features/gallery/presentation/gallery_page.dart` `_GalleryTile` | 缩略图 `Image.network` 的 `BoxFit.cover` → `BoxFit.contain`（保持比例不裁切不拉伸，留白落在下方色块渐变上）。 |
+| `lib/src/features/cast/presentation/cast_management_figma_page.dart` `_RecordCard` | 同上 `BoxFit.cover` → `BoxFit.contain`，按后端记录 `img` 原样比例展示。 |
+
+### 5. 跨型号串台修复：serialsMatch 收紧 + 屏幕型号闸（移植自 `utils/active-device.js` `serialsMatch`/`sameScreen` + `device-ble.js` 会话登记 + `bind.js` `findBoundDevice`）
+
+小程序侧根因：已连 5.89寸(EF6-589) 时新绑 3.7寸(EF6-370)，结果操作全发到 EF6-589。原因＝连接复用/扫描匹配的序列号交叉匹配用**任意位置子串**（只 ≥8hex 一个防线），广播 4 字节与后端/固件 6 字节偶合被误判成同一台。修法两条同步到 App：
+
+| 文件 | 改动 |
+| --- | --- |
+| `lib/src/device/serial_match.dart` `serialsMatch` | **收紧**：完全相等→真；**长度相同却不相等→直接否**（6vs6 别机必弹开）；长度不同(4vs6)只认**前缀/后缀锚定**（`startsWith`/`endsWith`，不再任意位置 `contains`）。新增 `sameScreenCode(a,b)`：两侧屏型码都已知且不同→否，任一侧 0(未知)→放行（对齐小程序 `sameScreen` 的「信息缺失不拦」）。 |
+| `lib/src/device/ble_controller.dart` | 会话新增 `broadcastScreenType`（连接时从广播登记）+ `sessionScreenCode`（优先固件 `info.screenType`，其次广播）。`sessionMatchesSerial`/`matchScannedDevice`/`connectBoundDevice` 增加可选 `screenCode`：序列号匹配前先 `sameScreenCode` 一票否决，防不同型号设备串到当前会话。 |
+| `lib/src/state.dart` `_deviceFromJson` | ①`serialNumber` 增加 `deviceId` 兜底源——`getUserProductList` 现返回 6 字节 `Device_ID`（如 `E9:48:C2:1E:D4:28`），不取则真机记录无可比对硬件号；②`screenType` 由**写死 inch589** 改为按后端 `width/height` 推断（新增 `_screenTypeFromSize`，480×720→3.7寸 / 680×960→5.89寸），使型号闸可靠。图传尺寸走连上后的 `info.screenType`，不受此处影响。三处调用（`connectDevice`/`disconnectDevice`/`_sessionMatches`）传入 `device.screenType.code`。 |
+| `lib/src/features/devices/presentation/bind_device_flow.dart` `findBoundDevice` | 判重前加同一屏型闸：广播/固件屏型与后端记录屏型对不上直接跳过，防新设备(3.7寸)被广播 4 字节偶合误判成已绑定的别台(5.89寸)而不新建绑定。 |
+
+**依赖前提待真机验**：`serialsMatch` 的前缀/后缀锚定假设「广播 4 字节是 6 字节 Device_ID 的头或尾」；若已绑设备重连报「未搜索到该设备」需放宽锚定（屏型闸仍兜底防串台）。
+
+### 未移植（评估后不适用）
+
+- **图库下拉「显示全部绑定设备」修复**（小程序 `list.js`：有照片时只按照片里的设备名生成筛选项、漏掉无照片设备）：Flutter `gallery_page.dart` 的设备下拉本就 `for (final device in state.devices)` 全量遍历后端设备 + 额外「全部相框」项，**已符合期望、无需改动**。
+- **照片预览未编辑时按 aspectFill 裁切上传**（小程序 `preview.js` `coverCropUnedited`）：Flutter `photo_preview_adjust_image_page.dart` 是占位页、无客户端裁剪/旋转实现，且裁剪到设备尺寸由**后端** `setUserProductUpload(targetWidth/targetHeight)` 完成，不存在「客户端预览裁切以做所见即所得」的对应面，**无可移植目标**。待 Flutter 实装真实客户端裁剪后再评估。
+- **首页 UI 微调**（本轮小程序侧 projection-card 阴影 / home-icon05-06 图标 / tabbar 背景图 / 卡片排版居中）：均为微信 rpx 像素级样式，Flutter 首页为独立 widget 布局、无 1:1 对应面，未移植。
+
+### 注意
+
+- 本机无 Flutter SDK，本轮改动未跑 `dart analyze`，需开发机验证编译。

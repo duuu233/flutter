@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../../../device/ble_controller.dart';
+import '../../../device/frame_device_protocol.dart';
 import '../../../device/serial_match.dart';
 import '../../../state.dart';
 import 'bind_device_found.dart';
@@ -102,8 +103,14 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     final serials = [_ble.broadcastDeviceId, info?.deviceId ?? '']
         .where((s) => s.isNotEmpty)
         .toList();
+    // 本机屏幕类型码（优先固件 0x01 读到的，其次广播）：判重时按型号一票否决，
+    // 防广播 4 字节与后端 6 字节偶合，把新设备(如 3.7寸)误判成已绑定的别台(如 5.89寸)而不新建绑定。
+    final scannedScreen = info?.screenType ?? _ble.broadcastScreenType;
     DeviceItem? bound;
     for (final device in widget.state.devices) {
+      if (!sameScreenCode(scannedScreen, device.screenType.code)) {
+        continue;
+      }
       if (serials.any((s) => serialsMatch(s, device.serialNumber))) {
         bound = device;
         break;

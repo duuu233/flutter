@@ -255,15 +255,31 @@ class BoltFoxApi {
     });
   }
 
-  /// 编辑设备信息（重命名）。
+  /// 编辑设备信息。[productName] 传入即重命名；[isClearImg] 传入即复位一键清除标记
+  /// （对齐小程序 `editUserProduct({userProductId, isClearImg:0})`：确认「重新上传」提醒后置 0，
+  /// 后端不再返回「已清除」，避免每次进入图库都弹）。两者可单独或同时传。
   static Future<dynamic> editUserProduct({
     required Object userProductId,
-    required String productName,
+    String? productName,
+    int? isClearImg,
   }) {
     return _http.postJson('/Client/UserProduct/editUserProduct', body: {
       'userProductId': userProductId,
-      'productName': productName,
+      if (productName != null) 'productName': productName,
+      if (isClearImg != null) 'isClearImg': isClearImg,
     });
+  }
+
+  /// 获取设备一键清除状态，id=userProductId。retData：0=未清除、1=已清除。
+  ///
+  /// 对齐小程序 `getUserProductClearImg`：图库页进入 / 切换设备筛选时后台查询——
+  /// 设备在别处被执行过清空时（图库照片已不在设备上）弹「请重新上传图片」提醒。
+  /// 小程序侧 `showError:false` 静默失败；App 端由调用方 catch 忽略异常（下次进入/切换再查）。
+  static Future<dynamic> getUserProductClearImg(Object userProductId) {
+    return _http.getJson(
+      '/Client/UserProduct/getUserProductClearImg',
+      query: {'id': userProductId},
+    );
   }
 
   /// 删除设备，id=userProductId。

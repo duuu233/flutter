@@ -297,7 +297,9 @@ class _RecordCard extends StatelessWidget {
                   if (record.imageUrl != null)
                     Image.network(
                       record.imageUrl!,
-                      fit: BoxFit.cover,
+                      // aspectFit：与我的图库一致，保持比例不裁切不拉伸，按后端记录 img 原样展示
+                      // （对齐小程序 records.wxml mode=aspectFit）；留白落在下方色块渐变上。
+                      fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) =>
                           const SizedBox.shrink(),
                     ),

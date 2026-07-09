@@ -816,6 +816,7 @@ class PhotoFrameState extends ChangeNotifier {
     final error = await ble.connectBoundDevice(
       serial: device.serialNumber,
       name: device.name,
+      screenCode: device.screenType.code,
     );
     if (error != null) {
       device.connected = false;
@@ -844,7 +845,9 @@ class PhotoFrameState extends ChangeNotifier {
         continue;
       }
       // 单连接模型：这台设备确实占着活动会话（序列号交叉匹配）或页面显示已连接时才真正断开。
-      if (device.connected || ble.sessionMatchesSerial(device.serialNumber)) {
+      if (device.connected ||
+          ble.sessionMatchesSerial(device.serialNumber,
+              screenCode: device.screenType.code)) {
         await ble.disconnect();
       }
       device.connected = false;
@@ -862,7 +865,8 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 这台设备是否正占着当前 BLE 活动会话（序列号容错交叉匹配）。
   bool _sessionMatches(DeviceItem device) =>
-      BleController.instance.sessionMatchesSerial(device.serialNumber);
+      BleController.instance.sessionMatchesSerial(device.serialNumber,
+          screenCode: device.screenType.code);
 
   /// 用真实 BLE 会话对账各设备的「已连接」显示（回前台连接体检后调用，
   /// 对齐小程序 app.onShow → reconcileConnections 落到 UI 的那一步）。
@@ -1387,6 +1391,37 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 查询设备一键清除状态（对齐小程序 `getUserProductClearImg`）：`true`=已清除、`false`=未清除、
+  /// `null`=查询失败（接口层 showError:false 静默，下次进入/切换设备会再查）。
+  ///
+  /// 设备在别处被执行过清空时（图库照片已不在设备上），图库页据此弹「请重新上传图片」提醒。
+  Future<bool?> fetchDeviceClearImgStatus(String userProductId) async {
+    if (userProductId.isEmpty) {
+      return null;
+    }
+    try {
+      final data = await BoltFoxApi.getUserProductClearImg(userProductId);
+      // retData 通常就是 0/1，兼容后端包一层对象返回 { isClearImg } 的情况。
+      final cleared = data is Map ? data['isClearImg'] : data;
+      return _asInt(cleared) == 1;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 复位设备一键清除标记（对齐小程序 `editUserProduct({userProductId, isClearImg:0})`）：
+  /// 用户确认「重新上传」提醒后置 0，后端不再返回「已清除」，避免每次进入图库都弹。静默失败。
+  Future<void> resetDeviceClearImgFlag(String userProductId) async {
+    if (userProductId.isEmpty) {
+      return;
+    }
+    try {
+      await BoltFoxApi.editUserProduct(userProductId: userProductId, isClearImg: 0);
+    } catch (_) {
+      // 复位失败静默（下次进入图库会再次提醒）。
+    }
+  }
+
   /// 删除相册照片（支持多选）：设备优先——已连接时先删设备固件对应槽位(CMD 0x12)，
   /// 若删到「屏幕当前正显示的图片」再刷屏(0x24)切到最近的有图槽位；设备删成功后再删后端记录，
   /// 保证「列表 / 后端 / 设备」三处一致（对齐小程序 album/list.js confirmDeleteSelected +
@@ -1813,9 +1848,34 @@ class PhotoFrameState extends ChangeNotifier {
       if (indexes.isEmpty) {
         deviceCleared = true;
       } else {
-        final newMask = await client.deleteImage(indexes);
-        // deleteImage 返回删除后最新 IMG_MASK：仍有占用说明设备没删干净（对齐小程序回读校验分支）。
-        deviceCleared = FrameProtocol.maskToIndexes(newMask).isEmpty;
+        try {
+          // deleteImage 应答等待已按张数放宽（每张 2s、下限 6s、上限 180s，见 device_ble.deleteImage），
+          // 一次删几十张也不会一超 6s 就误判超时。返回删除后最新 IMG_MASK：仍有占用=没删干净。
+          final newMask = await client.deleteImage(indexes);
+          deviceCleared = FrameProtocol.maskToIndexes(newMask).isEmpty;
+        } catch (deleteError) {
+          // 0x12 应答超时/断连——但不少固件其实已把图删干净了，只是应答异常/迟到
+          //（设备逐张擦 flash 全删完才回一次应答，慢一点就顶到超时）。设备忙(0x0B)先短路交给下方 busy 分支。
+          clearError = deleteError;
+          if (!FrameProtocol.isBusyMessage(deleteError.toString())) {
+            // 回读校验（最多 3 次、每次间隔 4s）：设备可能还在擦除、此刻回不了 0x01，给它删完的时间；
+            // 任一次读到空掩码就按成功，全部失败/仍有残留才判失败——治「一键清空 60 张误报设备无法连接」。
+            FrameDeviceInfo? after;
+            for (var attempt = 1; attempt <= 3 && after == null; attempt++) {
+              if (attempt > 1) {
+                await Future<void>.delayed(const Duration(seconds: 4));
+              }
+              try {
+                after = await client.readDeviceInfo();
+              } catch (_) {
+                after = null;
+              }
+            }
+            if (after != null) {
+              deviceCleared = FrameProtocol.maskToIndexes(after.imgMask).isEmpty;
+            }
+          }
+        }
       }
     } catch (e) {
       clearError = e;
@@ -1854,6 +1914,20 @@ class PhotoFrameState extends ChangeNotifier {
     // 3) 同步本地：设备已无图（IMG_MASK 清零 / 当前索引复位），相册对应照片标记为不在设备上。
     device.imageMask = 0;
     device.currentImageIndex = 0;
+    // 清空成功后即时回读设备信息(0x01)刷新内存/电量，不等下次列表/详情接口往返（对齐小程序 refreshDeviceMemoryFromBle）。
+    // 读失败静默（设备刚擦完可能短暂无响应），随后 refreshDevices/详情会再同步；内存已随上面清零即时归位。
+    try {
+      final info = await client.readDeviceInfo();
+      if (info.battery > 0) {
+        device.batteryLevel = info.battery;
+      }
+      if (FrameProtocol.maskToIndexes(info.imgMask).isEmpty) {
+        device.imageMask = 0;
+        device.currentImageIndex = 0;
+      }
+    } catch (_) {
+      // 回读失败不影响清空结果（已按成功处理）。
+    }
     var clearedCount = 0;
     for (final photo in _albumPhotos.where(
       (item) => item.deviceId == deviceId && item.isOnDevice,
@@ -2104,9 +2178,18 @@ class PhotoFrameState extends ChangeNotifier {
   DeviceItem _deviceFromJson(Map<String, dynamic> data) {
     final id = (data['userProductId'] ?? data['id'] ?? _nextId('dev')).toString();
     final name = (data['productName'] ?? data['name'] ?? '相框').toString();
-    final serial =
-        (data['productSerialNo'] ?? data['serialNo'] ?? data['sn'] ?? '')
-            .toString();
+    // 序列号（用于与广播 4 字节 / 固件 6 字节 Device_ID 交叉匹配）：优先后端各序列号字段，
+    // 缺省时取 deviceId —— getUserProductList 现会返回 6 字节 Device_ID（如 E9:48:C2:1E:D4:28），
+    // 不取的话真机记录没有可比对的硬件号，连接复用 / 绑定判重都会失效。
+    final serial = [
+      data['productSerialNo'],
+      data['serialNo'],
+      data['sn'],
+      data['deviceId'],
+    ].map((v) => (v ?? '').toString()).firstWhere(
+          (s) => s.isNotEmpty,
+          orElse: () => '',
+        );
     final firmware =
         (data['productVersionNo'] ?? data['firmwareVersion'] ?? '').toString();
     // OTA 固件字段（设备详情下发；列表接口一般不含，缺省即无更新）。
@@ -2124,7 +2207,10 @@ class PhotoFrameState extends ChangeNotifier {
       id: id,
       name: name,
       kind: (data['productTypeName'] ?? data['kind'] ?? '').toString(),
-      screenType: FrameScreenType.inch589,
+      // 由后端下发的屏幕像素宽高推断真实屏型（原来一律写死 589，3.7寸也被当 589）。
+      // 连接复用 / 扫描匹配时据此按型号一票否决，防跨型号串台；只影响记录与该防护，
+      // 图传尺寸走的是连上后读到的 info.screenType，不受此处影响。
+      screenType: _screenTypeFromSize(data['width'], data['height']),
       batteryLevel: 0,
       charging: false,
       connected: false,
@@ -2143,6 +2229,19 @@ class PhotoFrameState extends ChangeNotifier {
       downloadPath: downloadPath,
       firmwareSize: _asInt(data['firmwareSize'] ?? data['sizeBytes']),
     );
+  }
+
+  /// 由后端下发的屏幕像素宽高推断屏型（对齐小程序 SCREEN_TYPES：3.7寸 480×720 / 5.89寸 680×960）。
+  /// 用于「跨型号串台」防护：设备记录带上真实屏型，连接复用 / 扫描匹配才能按型号一票否决。
+  /// 无法识别（后端没下发宽高或未知尺寸）时回落 5.89 寸，与旧默认一致、不制造回归。
+  static FrameScreenType _screenTypeFromSize(dynamic w, dynamic h) {
+    final width = _asInt(w);
+    final height = _asInt(h);
+    final lo = width < height ? width : height;
+    final hi = width < height ? height : width;
+    if (lo == 480 && hi == 720) return FrameScreenType.inch37;
+    if (lo == 680 && hi == 960) return FrameScreenType.inch589;
+    return FrameScreenType.inch589;
   }
 
   /// 宽松整数解析：兼容 int / num / 数字字符串，非法回落 0。
