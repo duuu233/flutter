@@ -264,7 +264,10 @@ class _HomeTabItem extends StatelessWidget {
           iconAsset,
           width: 28,
           height: 28,
+          semanticsLabel: label,
           placeholderBuilder: (context) =>
+              Icon(fallbackIcon, color: color, size: 28),
+          errorBuilder: (context, error, stackTrace) =>
               Icon(fallbackIcon, color: color, size: 28),
         ),
         const SizedBox(height: 2),
@@ -728,10 +731,10 @@ class _CastEntryCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        // 卡片为 UI 设计图实际尺寸 158×154（即背景图 home-*-card-bg.png 的真实宽高）。
+        // 小程序 `.projection-card` 为 318×310rpx，换算为 159×155。
         // 阴影不再来自图片透明边距，改由下方 boxShadow 在卡外绘制，不计入布局尺寸。
-        width: 158,
-        height: 154,
+        width: 159,
+        height: 155,
         child: Stack(
           fit: StackFit.expand,
           children: [
@@ -771,16 +774,17 @@ class _CastEntryCard extends StatelessWidget {
               ),
             ),
             // 内容层：左上素材图 + 底部「名称/描述 + 箭头」行，对照小程序 .projection-card
-            // 的 flex 纵向流（.media-art 在上、.projection-copy 在下），按 158×154 卡面换算留白。
+            // 的 flex 纵向流（.media-art 在上、.projection-copy 在下），按小程序数值换算留白。
             Column(
+              mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // .media-art：66×66，
+                // `.media-art`：96rpx = 48；margin 28rpx 0 8rpx 34rpx。
                 Padding(
-                  padding: const EdgeInsets.only(top: 15, left: 18),
+                  padding: const EdgeInsets.only(top: 14, left: 17, bottom: 4),
                   child: SizedBox(
-                    width: 66,
-                    height: 66,
+                    width: 48,
+                    height: 48,
                     child: Image.asset(
                       artAsset,
                       fit: BoxFit.contain,
@@ -798,15 +802,9 @@ class _CastEntryCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                // .projection-copy：padding 28/27/0/50rpx + flex space-between；换算到卡面后
-                // 上间距 14、左 13、右 2，行内为「名称/描述」+ 右侧大箭头。
+                // `.projection-copy` 左内边距 34rpx = 17；右侧为完整的 132rpx = 66 图标画布。
                 Padding(
-                  padding: const EdgeInsets.only(
-                    top: 10,
-                    left: 13,
-                    right: 2,
-                    bottom: 0,
-                  ),
+                  padding: const EdgeInsets.only(left: 17),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
@@ -831,22 +829,25 @@ class _CastEntryCard extends StatelessWidget {
                           ],
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      SizedBox(
-                        width: 59,
-                        height: 59,
-                        child: Image.asset(
-                          arrowAsset,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(
-                              Icons.arrow_forward_rounded,
-                              color: title == '拍照'
-                                  ? const Color(0xFFFF6A24)
-                                  : const Color(0xFF287BFF),
-                              size: 30,
-                            );
-                          },
+                      Transform.translate(
+                        // 对齐小程序 `translateY(4rpx)`，抵消图标内置阴影的透明留白。
+                        offset: const Offset(0, 2),
+                        child: SizedBox(
+                          width: 66,
+                          height: 66,
+                          child: Image.asset(
+                            arrowAsset,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(
+                                Icons.arrow_forward_rounded,
+                                color: title == '拍照'
+                                    ? const Color(0xFFFF6A24)
+                                    : const Color(0xFF287BFF),
+                                size: 30,
+                              );
+                            },
+                          ),
                         ),
                       ),
                     ],

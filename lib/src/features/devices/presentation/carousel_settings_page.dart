@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../device/frame_device_protocol.dart';
 import '../../../state.dart';
 
 /// 轮播设置页：开启/关闭轮播 + 选择轮播方式（顺序 / 随机）。
@@ -218,9 +219,7 @@ class _CarouselOption extends StatelessWidget {
                 ? Colors.white.withValues(alpha: 0.1)
                 : const Color(0xFFEEEEEE).withValues(alpha: 0.84),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(
-              color: selected ? accent : Colors.transparent,
-            ),
+            border: Border.all(color: selected ? accent : Colors.transparent),
           ),
           child: Row(
             children: [

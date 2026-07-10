@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'api_config.dart';
@@ -63,10 +64,13 @@ class ApiClient {
     Map<String, dynamic>? query,
     bool auth = true,
   }) async {
+    final uri = _uri(path, query);
+    _logRequest('GET', uri, data: query);
     try {
       final response = await http
-          .get(_uri(path, query), headers: _headers(auth: auth))
+          .get(uri, headers: _headers(auth: auth))
           .timeout(ApiConfig.timeout);
+      _logResponse('GET', uri, response);
       return _parse(response);
     } on ApiException {
       rethrow;
@@ -80,17 +84,21 @@ class ApiClient {
     Map<String, dynamic>? body,
     bool auth = true,
   }) async {
+    final uri = _uri(path);
+    final payload = body ?? <String, dynamic>{};
+    _logRequest('POST', uri, data: payload);
     try {
       final response = await http
           .post(
-            _uri(path),
+            uri,
             headers: _headers(
               auth: auth,
               extra: {'content-type': 'application/json'},
             ),
-            body: jsonEncode(body ?? <String, dynamic>{}),
+            body: jsonEncode(payload),
           )
           .timeout(ApiConfig.timeout);
+      _logResponse('POST', uri, response);
       return _parse(response);
     } on ApiException {
       rethrow;
@@ -113,8 +121,14 @@ class ApiClient {
     }
     final results = <dynamic>[];
     for (final filePath in filePaths) {
+      final uri = _uri(path, query);
+      _logRequest(
+        'POST multipart',
+        uri,
+        data: {...?formData, 'fileName': filePath.split(RegExp(r'[/\\]')).last},
+      );
       try {
-        final request = http.MultipartRequest('POST', _uri(path, query));
+        final request = http.MultipartRequest('POST', uri);
         request.headers.addAll(_headers(auth: auth));
         formData?.forEach((key, value) {
           if (value != null) {
@@ -124,6 +138,7 @@ class ApiClient {
         request.files.add(await http.MultipartFile.fromPath(field, filePath));
         final streamed = await request.send().timeout(ApiConfig.timeout);
         final response = await http.Response.fromStream(streamed);
+        _logResponse('POST multipart', uri, response);
         results.add(_parse(response));
       } on ApiException {
         rethrow;
@@ -161,10 +176,7 @@ class ApiClient {
 
     // 非 2xx 视为服务器异常
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(
-        response.statusCode,
-        retMsg?.toString() ?? '服务器异常',
-      );
+      throw ApiException(response.statusCode, retMsg?.toString() ?? '服务器异常');
     }
 
     // BoltFox 约定 retCode=200 表示成功
@@ -180,5 +192,52 @@ class ApiClient {
     }
 
     return body;
+  }
+
+  void _logRequest(String method, Uri uri, {Object? data}) {
+    if (!kDebugMode) return;
+    debugPrint('[HTTP] --> $method $uri');
+    if (data != null) {
+      debugPrint('[HTTP] request: ${jsonEncode(_redact(data))}');
+    }
+  }
+
+  void _logResponse(String method, Uri uri, http.Response response) {
+    if (!kDebugMode) return;
+    final text = response.bodyBytes.isEmpty
+        ? ''
+        : utf8.decode(response.bodyBytes, allowMalformed: true);
+    debugPrint('[HTTP] <-- ${response.statusCode} $method $uri');
+    debugPrint('[HTTP] response: ${jsonEncode(_redactJson(text))}');
+  }
+
+  Object? _redactJson(String text) {
+    try {
+      return _redact(jsonDecode(text));
+    } catch (_) {
+      return text;
+    }
+  }
+
+  Object? _redact(Object? value, [String? key]) {
+    const sensitiveKeys = <String>{
+      'authorization',
+      'password',
+      'confirmpassword',
+      'token',
+      'usertoken',
+    };
+    if (key != null && sensitiveKeys.contains(key.toLowerCase())) {
+      return '***';
+    }
+    if (value is Map) {
+      return value.map(
+        (key, item) => MapEntry(key.toString(), _redact(item, key.toString())),
+      );
+    }
+    if (value is Iterable) {
+      return value.map((item) => _redact(item)).toList();
+    }
+    return value;
   }
 }

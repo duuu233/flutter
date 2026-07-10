@@ -504,7 +504,6 @@ class _ServiceRow extends StatelessWidget {
   }
 }
 
-
 /// 底部导航栏（与首页一致的胶囊样式；「我的」高亮）。
 class _MineTabBar extends StatelessWidget {
   const _MineTabBar({required this.onOpenHome});
@@ -576,7 +575,10 @@ class _MineTabItem extends StatelessWidget {
           iconAsset,
           width: 28,
           height: 28,
+          semanticsLabel: label,
           placeholderBuilder: (context) =>
+              Icon(fallbackIcon, color: color, size: 28),
+          errorBuilder: (context, error, stackTrace) =>
               Icon(fallbackIcon, color: color, size: 28),
         ),
         const SizedBox(height: 2),
