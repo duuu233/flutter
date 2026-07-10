@@ -7,7 +7,7 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 class BindDeviceFound extends StatefulWidget {
   const BindDeviceFound({
     super.key,
-    this.devices = const ['客厅相框', '卧室相框', '书房相框'],
+    this.devices = const [],
     this.onBind,
     this.onBindIndex,
     this.onRefresh,

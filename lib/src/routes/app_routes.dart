@@ -1,16 +1,12 @@
 import 'package:flutter/material.dart';
 
 import '../features/account/presentation/auth_page.dart';
-import '../features/account/presentation/bind_email_complete_page.dart';
 import '../features/account/presentation/bind_email_incomplete_page.dart';
 import '../features/account/presentation/forgot_password.dart';
 import '../features/account/presentation/modify_email_page.dart';
 import '../features/account/presentation/modify_password.dart';
-import '../features/account/presentation/profile_bound_email_page.dart';
 import '../features/account/presentation/profile_page.dart';
-import '../features/account/presentation/profile_unbound_email_page.dart';
 import '../features/account/presentation/register_page.dart';
-import '../features/album/presentation/album_page.dart';
 import '../features/cast/presentation/cast_failed_page.dart';
 import '../features/cast/presentation/cast_management_figma_page.dart';
 import '../features/cast/presentation/cast_management_page.dart';
@@ -47,7 +43,6 @@ class AppRoutes {
 
   static const auth = '/auth';
   static const profile = '/profile';
-  static const album = '/album';
   static const devices = '/devices';
   static const castManagement = '/cast-management';
   static const guide = '/guide';
@@ -67,11 +62,8 @@ class AppRoutes {
   static const figmaCastingProgress = '/figma/cast/progress';
   static const figmaCastSuccess = '/figma/cast/success';
   static const figmaCastFailed = '/figma/cast/failed';
-  static const figmaProfileUnboundEmail = '/figma/profile/unbound-email';
-  static const figmaProfileBoundEmail = '/figma/profile/bound-email';
   static const figmaBindEmailIncomplete =
       '/figma/profile/bind-email/incomplete';
-  static const figmaBindEmailComplete = '/figma/profile/bind-email/complete';
   static const figmaModifyEmail = '/figma/profile/modify-email';
   static const figmaMyDevices = '/figma/devices/my-devices';
   static const figmaDeviceDetails = '/figma/devices/detail';
@@ -99,9 +91,6 @@ class AppRoutes {
         break;
       case AppRoutes.profile:
         builder = (_) => ProfilePage(state: state);
-        break;
-      case AppRoutes.album:
-        builder = (_) => AlbumPage(state: state);
         break;
       case AppRoutes.devices:
         builder = (_) => DevicesPage(state: state);
@@ -168,27 +157,8 @@ class AppRoutes {
       case AppRoutes.figmaCastFailed:
         builder = (_) => const CastFailedPage();
         break;
-      case AppRoutes.figmaProfileUnboundEmail:
-        builder = (context) => ProfileUnboundEmailPage(
-          onBindEmail: () {
-            Navigator.of(
-              context,
-            ).pushNamed<void>(AppRoutes.figmaBindEmailIncomplete);
-          },
-        );
-        break;
-      case AppRoutes.figmaProfileBoundEmail:
-        builder = (context) => ProfileBoundEmailPage(
-          onModifyEmail: () {
-            Navigator.of(context).pushNamed<void>(AppRoutes.figmaModifyEmail);
-          },
-        );
-        break;
       case AppRoutes.figmaBindEmailIncomplete:
-        builder = (_) => const BindEmailIncompletePage();
-        break;
-      case AppRoutes.figmaBindEmailComplete:
-        builder = (_) => const BindEmailCompletePage();
+        builder = (_) => BindEmailIncompletePage(state: state);
         break;
       case AppRoutes.figmaModifyEmail:
         builder = (_) => ModifyEmailPage(state: state);
@@ -229,7 +199,7 @@ class AppRoutes {
         builder = (_) => DeviceClearConfirmPage(state: state);
         break;
       case AppRoutes.figmaCarouselSettings:
-        builder = (_) => const CarouselSettingsPage();
+        builder = (_) => CarouselSettingsPage(state: state);
         break;
       case AppRoutes.figmaLanguageSettings:
         builder = (_) => LanguageSettingsPage(state: state);

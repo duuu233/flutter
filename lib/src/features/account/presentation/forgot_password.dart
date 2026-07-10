@@ -30,7 +30,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
   @override
   void initState() {
     super.initState();
-    _emailController = TextEditingController(text: '123456789@qq.com');
+    _emailController = TextEditingController();
   }
 
   @override

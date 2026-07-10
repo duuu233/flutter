@@ -75,8 +75,8 @@ class FigmaScreen extends StatelessWidget {
   }
 }
 
-/// 默认页面背景：`bg01.png` 铺满（小程序 `.mock-bg__image`，设置/账户类页面统一用 bg01；
-/// 少数页面如「修改邮箱」用 bg02，可通过 [asset] 覆盖）。加载失败回退到顶部浅蓝渐变过渡到底部白。
+/// 默认页面背景：`bg01.png` 铺满（对应小程序全屏 `.mock-bg__image`，全部页面统一用同一张背景）。
+/// 加载失败回退到顶部浅蓝渐变过渡到底部白。
 class FigmaScreenBackground extends StatelessWidget {
   const FigmaScreenBackground({super.key, this.asset = 'assets/images/bg01.png'});
 

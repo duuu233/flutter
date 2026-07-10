@@ -44,8 +44,8 @@ class CastSuccessPage extends StatelessWidget {
           ),
           const SizedBox(height: 30),
           ProjectionInfoCard(
-            deviceName: '房间相册',
-            recordLabel: '12张',
+            deviceName: '',
+            recordLabel: '',
             onTapRecords: onOpenRecords,
           ),
         ],

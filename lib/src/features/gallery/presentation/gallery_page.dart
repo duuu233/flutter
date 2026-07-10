@@ -209,24 +209,6 @@ class _GalleryPageState extends State<GalleryPage> {
     _showFeedback(feedback.message);
   }
 
-  void _castSelected() {
-    if (_selectedIds.isEmpty) {
-      return;
-    }
-    final photos = _photos
-        .where((photo) => _selectedIds.contains(photo.id))
-        .toList();
-    var success = 0;
-    for (final photo in photos) {
-      final result = state.recastAlbumPhoto(photo.id, photo.deviceId);
-      if (result.success) {
-        success += 1;
-      }
-    }
-    setState(_selectedIds.clear);
-    _showFeedback('已投屏 $success/${photos.length} 张');
-  }
-
   void _showFeedback(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -242,8 +224,8 @@ class _GalleryPageState extends State<GalleryPage> {
       title: '我的图库',
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
-      // 图库背景用 bg02（小程序 album 用 bg02，非 bg01）。
-      background: Image.asset('assets/images/bg02.png', fit: BoxFit.cover),
+      // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
+      background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
       body: photos.isEmpty
           ? _buildEmptyBody()
           : Column(
@@ -310,7 +292,6 @@ class _GalleryPageState extends State<GalleryPage> {
                   _SelectionBar(
                     count: _selectedIds.length,
                     onDelete: _confirmDelete,
-                    onCast: _castSelected,
                   ),
               ],
             ),
@@ -486,12 +467,10 @@ class _SelectionBar extends StatelessWidget {
   const _SelectionBar({
     required this.count,
     required this.onDelete,
-    required this.onCast,
   });
 
   final int count;
   final VoidCallback onDelete;
-  final VoidCallback onCast;
 
   @override
   Widget build(BuildContext context) {
@@ -560,32 +539,6 @@ class _SelectionBar extends StatelessWidget {
                       ),
                       const TextSpan(text: ' 张'),
                     ],
-                  ),
-                ),
-              ),
-            ),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onCast,
-              child: Container(
-                width: 105,
-                height: 44,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFFFF8B3D), Color(0xFFFF641F)],
-                  ),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: const Text(
-                  '投屏',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 17,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
                   ),
                 ),
               ),

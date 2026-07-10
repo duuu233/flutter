@@ -43,11 +43,14 @@ class UserProfile {
     required this.signature,
   });
 
-  final String id;
+  String id;
   String nickname;
   String email;
   Color avatarColor;
   String signature;
+
+  /// 后端头像地址（登录后 getUserInfo 下发）；空则用本地默认头像。
+  String avatarUrl = '';
 }
 
 class DeviceItem {
@@ -283,239 +286,27 @@ class FaqArticle {
 class PhotoFrameState extends ChangeNotifier {
   PhotoFrameState.seeded()
     : _language = AppLanguage.zh,
-      _cameraCounter = 4,
-      _isLoggedIn = true,
+      _cameraCounter = 0,
+      _isLoggedIn = false,
       _isOffline = false,
       _currentUser = UserProfile(
-        id: 'USR-2048',
-        nickname: '林岚',
-        email: 'linlan@example.com',
+        id: '',
+        nickname: '',
+        email: '',
         avatarColor: const Color(0xFFBC6C25),
-        signature: '把生活里的光，留给会发亮的相框。',
+        signature: '',
       ),
       _permissions = {
-        PermissionKind.location: true,
-        PermissionKind.bluetooth: true,
+        PermissionKind.location: false,
+        PermissionKind.bluetooth: false,
         PermissionKind.album: false,
         PermissionKind.camera: false,
       },
-      _devices = [
-        DeviceItem(
-          id: 'dev-aurora',
-          name: '房间相册',
-          kind: '5.89寸六色墨水屏',
-          screenType: FrameScreenType.inch589,
-          batteryLevel: 30,
-          charging: false,
-          connected: false,
-          role: DeviceRole.owner,
-          serialNumber: 'SN-AUR-240018',
-          hardwareVersion: 'HW-1.0',
-          firmwareVersion: 'FW_V1.0.5_20260402',
-          imageMask: 0x00000003,
-          currentImageIndex: 1,
-          playbackMode: FramePlaybackMode.sequence,
-          carouselIntervalSeconds:
-              FrameProtocolConfig.defaultCarouselIntervalSeconds,
-          carouselEnabled: true,
-        ),
-        DeviceItem(
-          id: 'dev-gallery',
-          name: '卧室相框',
-          kind: '7.3寸六色墨水屏',
-          screenType: FrameScreenType.inch73,
-          batteryLevel: 43,
-          charging: true,
-          connected: false,
-          role: DeviceRole.user,
-          serialNumber: 'SN-GAL-983602',
-          hardwareVersion: 'HW-1.0',
-          firmwareVersion: 'FW_V1.0.5_20260402',
-          imageMask: 0x00000001,
-          currentImageIndex: 0,
-          playbackMode: FramePlaybackMode.manual,
-          carouselIntervalSeconds:
-              FrameProtocolConfig.defaultCarouselIntervalSeconds,
-          carouselEnabled: false,
-        ),
-        DeviceItem(
-          id: 'dev-pocket',
-          name: '书房相框',
-          kind: '3.7寸六色墨水屏',
-          screenType: FrameScreenType.inch37,
-          batteryLevel: 91,
-          charging: false,
-          connected: false,
-          role: DeviceRole.user,
-          serialNumber: 'SN-PKT-661245',
-          hardwareVersion: 'HW-1.0',
-          firmwareVersion: 'FW_V1.0.5_20260402',
-          imageMask: 0x00000000,
-          currentImageIndex: -1,
-          playbackMode: FramePlaybackMode.sequence,
-          carouselIntervalSeconds:
-              FrameProtocolConfig.defaultCarouselIntervalSeconds,
-          carouselEnabled: true,
-        ),
-      ],
-      _selectedDeviceId = 'dev-aurora',
-      _draftLibrary = const [
-        DraftPhoto(
-          id: 'draft-1',
-          title: '玄关晨光',
-          source: ImageSourceType.album,
-          width: 3024,
-          height: 4032,
-          color: Color(0xFFE07A5F),
-          note: '自动裁剪为 3:4，适合竖版相框',
-        ),
-        DraftPhoto(
-          id: 'draft-2',
-          title: '海风留白',
-          source: ImageSourceType.album,
-          width: 3840,
-          height: 2160,
-          color: Color(0xFF3D5A80),
-          note: '横版照片，建议投放壁挂设备',
-        ),
-        DraftPhoto(
-          id: 'draft-3',
-          title: '窗边手作',
-          source: ImageSourceType.album,
-          width: 2400,
-          height: 2400,
-          color: Color(0xFF6B705C),
-          note: '正方形构图，将保留完整边距',
-        ),
-        DraftPhoto(
-          id: 'draft-4',
-          title: '夜色吧台',
-          source: ImageSourceType.album,
-          width: 2592,
-          height: 3872,
-          color: Color(0xFF6D597A),
-          note: '高对比度照片，适合深色边框',
-        ),
-        DraftPhoto(
-          id: 'draft-5',
-          title: '晚霞远山',
-          source: ImageSourceType.album,
-          width: 4080,
-          height: 3072,
-          color: Color(0xFFCB997E),
-          note: '预处理后输出 1600px 长边',
-        ),
-      ],
-      _albumPhotos = [
-        AlbumPhoto(
-          id: 'photo-1',
-          title: '栖居午后',
-          source: ImageSourceType.album,
-          deviceId: 'dev-aurora',
-          ownerUserId: 'USR-2048',
-          imageIndex: 0,
-          imageMaskBit: FrameDeviceProtocol.bitForIndex(0),
-          width: 2400,
-          height: 3200,
-          targetWidth: FrameScreenType.inch589.width,
-          targetHeight: FrameScreenType.inch589.height,
-          transferBytes: FrameScreenType.inch589.frameBufferBytes,
-          crc32: 0x1A2B3C40,
-          color: const Color(0xFF7F5539),
-          note: '已成功上传至 Aurora S1',
-          uploadedAt: DateTime(2026, 4, 22, 10, 12),
-        ),
-        AlbumPhoto(
-          id: 'photo-2',
-          title: '山谷云层',
-          source: ImageSourceType.camera,
-          deviceId: 'dev-aurora',
-          ownerUserId: 'USR-2048',
-          imageIndex: 1,
-          imageMaskBit: FrameDeviceProtocol.bitForIndex(1),
-          width: 3024,
-          height: 4032,
-          targetWidth: FrameScreenType.inch589.width,
-          targetHeight: FrameScreenType.inch589.height,
-          transferBytes: FrameScreenType.inch589.frameBufferBytes,
-          crc32: 0x1A2B3C41,
-          color: const Color(0xFF588157),
-          note: '由拍照流程上传',
-          uploadedAt: DateTime(2026, 4, 22, 17, 40),
-        ),
-        AlbumPhoto(
-          id: 'photo-3',
-          title: '暮色灯塔',
-          source: ImageSourceType.album,
-          deviceId: 'dev-gallery',
-          ownerUserId: 'USR-2048',
-          imageIndex: 0,
-          imageMaskBit: FrameDeviceProtocol.bitForIndex(0),
-          width: 3840,
-          height: 2160,
-          targetWidth: FrameScreenType.inch73.width,
-          targetHeight: FrameScreenType.inch73.height,
-          transferBytes: FrameScreenType.inch73.frameBufferBytes,
-          crc32: 0x1A2B3C42,
-          color: const Color(0xFF355070),
-          note: '横版样片，适配壁挂设备',
-          uploadedAt: DateTime(2026, 4, 21, 20, 18),
-        ),
-      ],
-      _castRecords = [
-        CastRecord(
-          id: 'record-1',
-          title: '栖居午后',
-          deviceId: 'dev-aurora',
-          ownerUserId: 'USR-2048',
-          status: CastStatus.success,
-          source: ImageSourceType.album,
-          color: const Color(0xFF7F5539),
-          width: 2400,
-          height: 3200,
-          message: '投屏完成，已写入设备存储。',
-          createdAt: DateTime(2026, 4, 22, 10, 13),
-          imageIndex: 0,
-          command: FrameCommand.finishTransfer,
-          resultCode: FrameProtocolResultCode.success,
-          imageMask: 0x00000003,
-          photoId: 'photo-1',
-        ),
-        CastRecord(
-          id: 'record-2',
-          title: '山谷云层',
-          deviceId: 'dev-aurora',
-          ownerUserId: 'USR-2048',
-          status: CastStatus.success,
-          source: ImageSourceType.camera,
-          color: const Color(0xFF588157),
-          width: 3024,
-          height: 4032,
-          message: '拍照处理成功，已投放到当前设备。',
-          createdAt: DateTime(2026, 4, 22, 17, 41),
-          imageIndex: 1,
-          command: FrameCommand.finishTransfer,
-          resultCode: FrameProtocolResultCode.success,
-          imageMask: 0x00000003,
-          photoId: 'photo-2',
-        ),
-        CastRecord(
-          id: 'record-3',
-          title: '雨夜街口',
-          deviceId: 'dev-gallery',
-          ownerUserId: 'USR-2048',
-          status: CastStatus.failed,
-          source: ImageSourceType.album,
-          color: const Color(0xFF9C6644),
-          width: 3024,
-          height: 4032,
-          message: '设备内存已满，请清理相册或联系设备所有者。',
-          createdAt: DateTime(2026, 4, 21, 22, 06),
-          command: FrameCommand.startTransfer,
-          resultCode: FrameProtocolResultCode.storageFull,
-          imageMask: 0xFFFFFFFF,
-        ),
-      ];
+      _devices = [],
+      _selectedDeviceId = '',
+      _draftLibrary = const [],
+      _albumPhotos = [],
+      _castRecords = [];
 
   AppLanguage _language;
   int _cameraCounter;
@@ -1094,6 +885,7 @@ class PhotoFrameState extends ChangeNotifier {
   Future<ActionFeedback> changeBoundEmail({
     required String email,
     required String emailCode,
+    String? password,
   }) async {
     final target = email.trim();
     if (!_isValidEmail(target)) {
@@ -1120,6 +912,7 @@ class PhotoFrameState extends ChangeNotifier {
       await BoltFoxApi.changeUserEmail(
         email: target,
         emailCode: emailCode.trim(),
+        password: password,
       );
       _currentUser.email = target;
       notifyListeners();
@@ -1389,16 +1182,15 @@ class PhotoFrameState extends ChangeNotifier {
         'userProductId': ?userProductId,
       });
       final rows = _extractRows(data);
-      if (rows.isNotEmpty) {
-        final mapped = <AlbumPhoto>[];
-        for (var i = 0; i < rows.length; i++) {
-          mapped.add(_albumPhotoFromJson(rows[i], i));
-        }
-        _albumPhotos
-          ..clear()
-          ..addAll(mapped);
-        notifyListeners();
+      // 后端为准：即使返回空也要覆盖本地（清空后相册应显示空态，不保留旧数据）。
+      final mapped = <AlbumPhoto>[];
+      for (var i = 0; i < rows.length; i++) {
+        mapped.add(_albumPhotoFromJson(rows[i], i));
       }
+      _albumPhotos
+        ..clear()
+        ..addAll(mapped);
+      notifyListeners();
       return ActionFeedback(
         success: true,
         message: tr(zh: '相册已更新。', en: 'Album refreshed.', ja: 'アルバムを更新しました。'),
@@ -1623,16 +1415,15 @@ class PhotoFrameState extends ChangeNotifier {
         'userProductId': ?userProductId,
       });
       final rows = _extractRows(data);
-      if (rows.isNotEmpty) {
-        final mapped = <CastRecord>[];
-        for (var i = 0; i < rows.length; i++) {
-          mapped.add(_castRecordFromJson(rows[i], i));
-        }
-        _castRecords
-          ..clear()
-          ..addAll(mapped);
-        notifyListeners();
+      // 后端为准：即使返回空也覆盖本地（无记录时应显示空态，不保留旧数据）。
+      final mapped = <CastRecord>[];
+      for (var i = 0; i < rows.length; i++) {
+        mapped.add(_castRecordFromJson(rows[i], i));
       }
+      _castRecords
+        ..clear()
+        ..addAll(mapped);
+      notifyListeners();
       return ActionFeedback(
         success: true,
         message: tr(
@@ -1710,22 +1501,23 @@ class PhotoFrameState extends ChangeNotifier {
         'pageSize': 50,
       });
       final rows = _extractRows(data);
-      if (rows.isNotEmpty) {
-        final mapped = rows.map(_deviceFromJson).toList();
-        // 已连接回填：后端不存连接态/BLE 会话，若一律 connected:false 替换，
-        // 正连着的设备会被错显示成「未连接」（改名后刷新列表时尤其明显）。
-        // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
-        for (final device in mapped) {
-          device.connected = _sessionMatches(device);
-        }
-        _devices
-          ..clear()
-          ..addAll(mapped);
-        if (!_devices.any((device) => device.id == _selectedDeviceId)) {
-          _selectedDeviceId = _devices.first.id;
-        }
-        notifyListeners();
+      // 后端为准：即使返回空也覆盖本地（删到 0 台时应显示空态，不保留旧数据）。
+      final mapped = rows.map(_deviceFromJson).toList();
+      // 已连接回填：后端不存连接态/BLE 会话，若一律 connected:false 替换，
+      // 正连着的设备会被错显示成「未连接」（改名后刷新列表时尤其明显）。
+      // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
+      for (final device in mapped) {
+        device.connected = _sessionMatches(device);
       }
+      _devices
+        ..clear()
+        ..addAll(mapped);
+      if (_devices.isEmpty) {
+        _selectedDeviceId = '';
+      } else if (!_devices.any((device) => device.id == _selectedDeviceId)) {
+        _selectedDeviceId = _devices.first.id;
+      }
+      notifyListeners();
       return ActionFeedback(
         success: true,
         message: tr(
@@ -1848,6 +1640,64 @@ class PhotoFrameState extends ChangeNotifier {
     device.carouselIntervalSeconds =
         FrameProtocolConfig.defaultCarouselIntervalSeconds;
     notifyListeners();
+  }
+
+  /// 设置设备轮播（对齐小程序 `slideshow.js applyPlayback`）：需已连接设备，走 BLE
+  /// `setPlayback` 下发播放模式(顺序 order / 随机 random / 关闭 manual) + 间隔秒，成功后更新本地。
+  /// 未连接直接提示「请先连接设备」、不改状态（页面据此还原开关）；蓝牙失败统一「设备暂时无法连接」。
+  ///
+  /// [enabled] 为 false 时下发 manual（关闭轮播）；为 true 时用 [mode]（manual 会被纠正为 sequence）。
+  Future<ActionFeedback> setDeviceCarousel(
+    String deviceId, {
+    required bool enabled,
+    FramePlaybackMode mode = FramePlaybackMode.sequence,
+  }) async {
+    final device = _findDevice(deviceId);
+    final client = BleController.instance.client;
+    if (!client.connected) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '请先连接设备',
+          en: 'Please connect the device first.',
+          ja: '先に端末を接続してください。',
+        ),
+      );
+    }
+    final targetMode = !enabled
+        ? FramePlaybackMode.manual
+        : (mode == FramePlaybackMode.manual ? FramePlaybackMode.sequence : mode);
+    final modeStr = targetMode == FramePlaybackMode.random
+        ? 'random'
+        : (targetMode == FramePlaybackMode.manual ? 'manual' : 'order');
+    final intervalSeconds = device.carouselIntervalSeconds > 0
+        ? device.carouselIntervalSeconds
+        : FrameProtocolConfig.defaultCarouselIntervalSeconds;
+    try {
+      await client.setPlayback(modeStr, intervalSeconds);
+      device.playbackMode = targetMode;
+      device.carouselEnabled = enabled;
+      device.carouselIntervalSeconds = intervalSeconds;
+      notifyListeners();
+      return ActionFeedback(
+        success: true,
+        message: tr(
+          zh: '轮播设置已保存。',
+          en: 'Slideshow setting saved.',
+          ja: 'スライドショー設定を保存しました。',
+        ),
+      );
+    } catch (_) {
+      // 蓝牙链路失败（断联/超时等）统一友好提示，不把底层错误码抛给用户（对齐小程序）。
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '设备暂时无法连接',
+          en: 'The device is temporarily unavailable.',
+          ja: '端末に一時的に接続できません。',
+        ),
+      );
+    }
   }
 
   /// 一键清空设备：与固件交互删除设备物理内存中的全部照片，成功后再清后端记录并同步本地相册。
@@ -2164,6 +2014,16 @@ class PhotoFrameState extends ChangeNotifier {
     return null;
   }
 
+  /// 供页面主动刷新一次用户资料（对齐小程序 `mine.onShow` / `home.loadUserAvatar`）。
+  /// 未登录直接跳过；成功后 `notifyListeners` 让「我的」等页面同步真实昵称/头像。
+  Future<void> refreshCurrentUser() async {
+    if (!_isLoggedIn) {
+      return;
+    }
+    await _refreshUserInfo();
+    notifyListeners();
+  }
+
   /// 登录后尽力拉取一次用户信息，失败不阻断登录流程。
   Future<void> _refreshUserInfo() async {
     try {
@@ -2174,11 +2034,16 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 用后端用户信息覆盖本地展示字段（昵称 / 邮箱）。
-  /// 设备、相册等数据仍走本地 mock，故此处不改写用户 id，避免本地数据过滤错乱。
+  /// 用后端用户信息覆盖本地展示字段（id / 昵称 / 邮箱 / 头像）。
+  /// 相册/记录的 ownerUserId 映射时同样取 `_currentUser.id`，故 id 前后一致、过滤不会错乱。
   void _applyUserInfo(dynamic data) {
     if (data is! Map) {
       return;
+    }
+    // 对齐小程序 profile：ID 取 id / userNo / userId。
+    final id = data['id'] ?? data['userNo'] ?? data['userId'];
+    if (id != null && '$id'.isNotEmpty) {
+      _currentUser.id = '$id';
     }
     final nick = data['nickName'] ?? data['nickname'];
     if (nick is String && nick.isNotEmpty) {
@@ -2187,6 +2052,12 @@ class PhotoFrameState extends ChangeNotifier {
     final email = data['email'] ?? data['userEmail'];
     if (email is String && email.isNotEmpty) {
       _currentUser.email = email;
+    }
+    // 对齐小程序 home/mine：头像取 avatarUrl / avatar / headImg。
+    final avatar =
+        data['avatarUrl'] ?? data['avatar'] ?? data['headImg'] ?? data['headImgUrl'];
+    if (avatar is String) {
+      _currentUser.avatarUrl = avatar;
     }
   }
 

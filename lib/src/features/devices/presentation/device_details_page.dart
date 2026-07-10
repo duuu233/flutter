@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import 'package:image_picker/image_picker.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../state.dart';
+import '../../cast/presentation/casting_progress_page.dart';
 
-/// 设备详情页：查看单个设备信息并进入轮播设置 / 清空 / 删除等操作。
+/// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
 ///
-/// 对照微信小程序 `photo-album/subpackages/device/detail`：摘要卡 + 信息列表 +
-/// 操作列表（清空 / 删除），删除/清空走二次确认弹窗（见 [DeviceConfirmDialog]）。
+/// 对照微信小程序 `photo-album/subpackages/device/detail`：摘要卡 + 顶部操作栏（投屏 / 连接·断开）+
+/// 信息列表 + 操作列表（清空 / 删除），删除/清空走二次确认弹窗（见 [DeviceConfirmDialog]）。
 /// 展示当前选中设备（`state.selectedDevice`），随 [PhotoFrameState] 变化自动刷新。
 class DeviceDetailsPage extends StatelessWidget {
   const DeviceDetailsPage({
@@ -33,6 +35,9 @@ class DeviceDetailsPage extends StatelessWidget {
         animation: state,
         builder: (context, _) => DeviceDetailsBody(
           state: state,
+          onEditName: () => _renameDevice(context),
+          onConnectToggle: () => _toggleConnection(context),
+          onCast: () => _startCast(context),
           onCarouselSettings: onCarouselSettings,
           onClearDevice: onClearDevice,
           onDeleteDevice: onDeleteDevice,
@@ -41,6 +46,92 @@ class DeviceDetailsPage extends StatelessWidget {
       ),
     );
   }
+
+  void _snack(BuildContext context, String message) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 摘要卡编辑图标：重命名当前设备（对齐小程序 detail.js `showRenameModal`）。
+  Future<void> _renameDevice(BuildContext context) async {
+    final device = state.selectedDevice;
+    final controller = TextEditingController(text: device.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重命名设备'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 20,
+          decoration: const InputDecoration(hintText: '请输入设备名称'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, controller.text.trim()),
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || name == device.name) {
+      return;
+    }
+    final feedback = await state.renameDevice(device.id, name);
+    if (context.mounted) {
+      _snack(context, feedback.message);
+    }
+  }
+
+  /// 顶部操作栏「连接蓝牙 / 断开连接」（对齐小程序 detail.js `toggleConnection`）。
+  Future<void> _toggleConnection(BuildContext context) async {
+    final device = state.selectedDevice;
+    final feedback = device.connected
+        ? await state.disconnectDevice(device.id)
+        : await state.connectDevice(device.id);
+    if (context.mounted) {
+      _snack(context, feedback.message);
+    }
+  }
+
+  /// 顶部操作栏「投屏」：选图 → 真实投屏链路（对齐小程序 detail.js `startProjection`）。
+  Future<void> _startCast(BuildContext context) async {
+    final device = state.selectedDevice;
+    if (!device.connected) {
+      _snack(context, '请先连接设备后再投屏');
+      return;
+    }
+    final picker = ImagePicker();
+    List<String> imagePaths;
+    try {
+      final files = await picker.pickMultiImage();
+      imagePaths = files.map((file) => file.path).toList();
+    } catch (_) {
+      if (context.mounted) {
+        _snack(context, '无法读取照片，请检查相册权限后重试。');
+      }
+      return;
+    }
+    if (!context.mounted || imagePaths.isEmpty) {
+      return;
+    }
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CastingProgressPage(
+          userProductId: device.id,
+          imagePaths: imagePaths,
+          compressImage: state.projectionCompress,
+        ),
+      ),
+    );
+    state.refreshAlbum();
+    state.refreshCastRecords();
+  }
 }
 
 /// 设备详情正文（供详情页与「删除 / 清空确认」页复用）。
@@ -48,6 +139,9 @@ class DeviceDetailsBody extends StatelessWidget {
   const DeviceDetailsBody({
     super.key,
     required this.state,
+    this.onEditName,
+    this.onConnectToggle,
+    this.onCast,
     this.onCarouselSettings,
     this.onClearDevice,
     this.onDeleteDevice,
@@ -55,6 +149,16 @@ class DeviceDetailsBody extends StatelessWidget {
   });
 
   final PhotoFrameState state;
+
+  /// 摘要卡编辑图标点击（重命名）；为空则不可点（如清空/删除确认页复用正文时）。
+  final VoidCallback? onEditName;
+
+  /// 顶部操作栏「连接/断开」；[onConnectToggle] 或 [onCast] 任一非空才渲染操作栏。
+  final VoidCallback? onConnectToggle;
+
+  /// 顶部操作栏「投屏」。
+  final VoidCallback? onCast;
+
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
   final VoidCallback? onDeleteDevice;
@@ -135,17 +239,21 @@ class DeviceDetailsBody extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(width: 3),
-                        Image.asset(
-                          'assets/images/edit-icon01.png',
-                          width: 18,
-                          height: 18,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) =>
-                              const Icon(
-                                Icons.edit_outlined,
-                                size: 16,
-                                color: Color(0x992A2B2B),
-                              ),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: onEditName,
+                          child: Image.asset(
+                            'assets/images/edit-icon01.png',
+                            width: 18,
+                            height: 18,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) =>
+                                const Icon(
+                                  Icons.edit_outlined,
+                                  size: 16,
+                                  color: Color(0x992A2B2B),
+                                ),
+                          ),
                         ),
                       ],
                     ),
@@ -204,6 +312,32 @@ class DeviceDetailsBody extends StatelessWidget {
             ],
           ),
         ),
+        // 顶部操作栏：投屏 / 连接·断开（仅详情页渲染；清空/删除确认页复用正文时无这些回调，不渲染）。
+        if (onConnectToggle != null || onCast != null) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (onCast != null)
+                Expanded(
+                  child: _DeviceActionButton(
+                    label: '投屏',
+                    primary: true,
+                    onTap: onCast,
+                  ),
+                ),
+              if (onCast != null && onConnectToggle != null)
+                const SizedBox(width: 12),
+              if (onConnectToggle != null)
+                Expanded(
+                  child: _DeviceActionButton(
+                    label: device.connected ? '断开连接' : '连接蓝牙',
+                    primary: false,
+                    onTap: onConnectToggle,
+                  ),
+                ),
+            ],
+          ),
+        ],
         const SizedBox(height: 12),
         // 信息列表：轮播设置 / 设备ID / 设备内存 / OTA升级。
         FigmaGlassCard(
@@ -376,6 +510,52 @@ class _ThinDivider extends StatelessWidget {
     return Container(
       height: 1,
       color: const Color(0xFF2A2B2B).withValues(alpha: 0.08),
+    );
+  }
+}
+
+/// 详情页顶部操作按钮：投屏=橙色渐变主按钮，连接/断开=白底橙描边次按钮。
+class _DeviceActionButton extends StatelessWidget {
+  const _DeviceActionButton({
+    required this.label,
+    required this.primary,
+    this.onTap,
+  });
+
+  final String label;
+  final bool primary;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: primary
+              ? const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
+                )
+              : null,
+          color: primary ? null : Colors.white.withValues(alpha: 0.86),
+          borderRadius: BorderRadius.circular(22),
+          border: primary ? null : Border.all(color: const Color(0xFFFF6A20)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: primary ? Colors.white : const Color(0xFFFF6A20),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            height: 1,
+          ),
+        ),
+      ),
     );
   }
 }

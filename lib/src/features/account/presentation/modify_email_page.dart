@@ -53,8 +53,8 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
   Widget build(BuildContext context) {
     return FigmaScreen(
       title: '修改邮箱',
-      // 小程序 change-email 用 bg02 背景。
-      background: const FigmaScreenBackground(asset: 'assets/images/bg02.png'),
+      // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
+      background: const FigmaScreenBackground(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -138,10 +138,18 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
     if (_submitting) {
       return;
     }
+    final password = _passwordController.text;
+    final confirmPassword = _confirmPasswordController.text;
+    // 密码与确认密码一致性校验（对齐小程序 change-email 提交前校验）。
+    if (password != confirmPassword) {
+      _showSnack('两次输入的密码不一致，请重新输入。');
+      return;
+    }
     setState(() => _submitting = true);
     final feedback = await widget.state.changeBoundEmail(
       email: _newEmailController.text,
       emailCode: _codeController.text,
+      password: password,
     );
     if (!mounted) {
       return;

@@ -54,29 +54,8 @@ class MyDeviceOverview {
 }
 
 class _MyDevicesPageState extends State<MyDevicesPage> {
-  // 列表数据以上层传入的 `widget.devices` 为准（单一数据源），未传入时回退演示数据。
-  List<MyDeviceOverview> get _devices => widget.devices ?? _seedDevices();
-
-  static List<MyDeviceOverview> _seedDevices() => [
-    MyDeviceOverview(
-      id: 'room-album',
-      name: '房间相册',
-      connected: true,
-      battery: '80%',
-    ),
-    MyDeviceOverview(
-      id: 'living-room-album',
-      name: '客厅相册',
-      connected: false,
-      battery: '60%',
-    ),
-    MyDeviceOverview(
-      id: 'study-album',
-      name: '书房相框',
-      connected: false,
-      battery: '45%',
-    ),
-  ];
+  // 列表数据以上层传入的 `widget.devices` 为准（单一数据源）；未传入时为空列表（不再用演示数据）。
+  List<MyDeviceOverview> get _devices => widget.devices ?? const [];
 
   @override
   Widget build(BuildContext context) {

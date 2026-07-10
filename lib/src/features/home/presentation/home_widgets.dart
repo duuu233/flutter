@@ -12,8 +12,7 @@ part of 'home_page.dart';
 
 /// 全屏背景：底色 + 背景图（[asset]，加载失败时回退到渐变光晕画笔）。
 ///
-/// 背景图按场景区分（由 [_HomePageState] 传入）：首页主视图（已/未绑定及其各弹层）
-/// 用 `bg02.png`，绑定设备流程（搜索/未找到/已找到/扫描帮助）用 `bg01.png`。
+/// 全部页面统一用同一张背景 `bg01.png`（对应小程序全屏 `.mock-bg__image`）。
 class _HomeBackground extends StatelessWidget {
   const _HomeBackground({required this.asset});
 
@@ -1136,15 +1135,7 @@ class _FoundDeviceTile extends StatelessWidget {
   }
 
   String _displayDeviceName(DeviceItem device) {
-    if (device.name.contains('Aurora')) {
-      return '客厅相框';
-    }
-    if (device.name.contains('Gallery')) {
-      return '卧室相框';
-    }
-    if (device.name.contains('Pocket')) {
-      return '书房相框';
-    }
+    // 真实设备名直接展示（后端 productName / 蓝牙广播名），不再做演示别名映射。
     return device.name;
   }
 }

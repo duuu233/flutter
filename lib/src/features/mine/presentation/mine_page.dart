@@ -8,16 +8,34 @@ import '../../../state.dart';
 ///
 /// 换算约定：小程序 1rpx ≈ 0.5 逻辑像素（750rpx = 屏宽）。
 /// 横向留白分区设置：文字/卡片区 48rpx(=24)，常用功能宫格为整宽 space-evenly。
-class MinePage extends StatelessWidget {
+class MinePage extends StatefulWidget {
   const MinePage({super.key, required this.state, required this.onOpenHome});
 
   final PhotoFrameState state;
   final VoidCallback onOpenHome;
 
+  @override
+  State<MinePage> createState() => _MinePageState();
+}
+
+class _MinePageState extends State<MinePage> {
   static const _inset = EdgeInsets.symmetric(horizontal: 24);
 
   @override
+  void initState() {
+    super.initState();
+    // 对齐小程序 mine.onShow：登录后刷新用户资料 + 设备/图库计数（真实数据；未登录则跳过）。
+    if (widget.state.isLoggedIn) {
+      widget.state.refreshCurrentUser();
+      widget.state.refreshDevices();
+      widget.state.refreshAlbum();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final state = widget.state;
+    final onOpenHome = widget.onOpenHome;
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -45,12 +63,19 @@ class MinePage extends StatelessWidget {
                         Padding(
                           padding: _inset,
                           child: _ProfileCard(
-                            nickName: '江江江',
-                            userId: '123456',
+                            nickName: state.currentUser.nickname.isNotEmpty
+                                ? state.currentUser.nickname
+                                : '未登录',
+                            userId: state.currentUser.id,
+                            avatarUrl: state.currentUser.avatarUrl,
                             onTap: () {
-                              Navigator.of(
-                                context,
-                              ).pushNamed<void>(AppRoutes.profile);
+                              // 未登录点资料卡进登录页（对齐小程序 requireLogin 游客态）；
+                              // 已登录进个人资料页。
+                              Navigator.of(context).pushNamed<void>(
+                                state.isLoggedIn
+                                    ? AppRoutes.profile
+                                    : AppRoutes.auth,
+                              );
                             },
                           ),
                         ),
@@ -150,14 +175,6 @@ class MinePage extends StatelessWidget {
                             },
                           ),
                         ),
-                        const SizedBox(height: 16),
-                        const Padding(
-                          padding: _inset,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: _DebugEntryRow(),
-                          ),
-                        ),
                         const Spacer(),
                         Padding(
                           padding: _inset,
@@ -209,10 +226,12 @@ class _ProfileCard extends StatelessWidget {
     required this.nickName,
     required this.userId,
     required this.onTap,
+    this.avatarUrl = '',
   });
 
   final String nickName;
   final String userId;
+  final String avatarUrl;
   final VoidCallback onTap;
 
   @override
@@ -249,7 +268,7 @@ class _ProfileCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(24, 0, 17, 0),
               child: Row(
                 children: [
-                  const _Avatar(),
+                  _Avatar(avatarUrl: avatarUrl),
                   const SizedBox(width: 17),
                   Expanded(
                     child: Column(
@@ -262,13 +281,15 @@ class _ProfileCard extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                           style: _MineTextStyles.profileName,
                         ),
-                        const SizedBox(height: 10),
-                        Text(
-                          'ID：$userId',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _MineTextStyles.profileId,
-                        ),
+                        if (userId.isNotEmpty) ...[
+                          const SizedBox(height: 10),
+                          Text(
+                            'ID：$userId',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _MineTextStyles.profileId,
+                          ),
+                        ],
                       ],
                     ),
                   ),
@@ -293,7 +314,10 @@ class _ProfileCard extends StatelessWidget {
 
 /// 个人资料卡头像（`mine-header.png`，112rpx≈56 圆形）。
 class _Avatar extends StatelessWidget {
-  const _Avatar();
+  const _Avatar({this.avatarUrl = ''});
+
+  /// 后端头像地址（真实用户数据，非静态资源）；为空或加载失败回退本地默认头像。
+  final String avatarUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -302,19 +326,29 @@ class _Avatar extends StatelessWidget {
       height: 56,
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(shape: BoxShape.circle),
-      child: Image.asset(
-        'assets/images/mine-header.png',
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFFFF7D36),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.person_rounded, color: Colors.white),
-          );
-        },
-      ),
+      child: avatarUrl.isNotEmpty
+          ? Image.network(
+              avatarUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (context, error, stackTrace) => _defaultAvatar(),
+            )
+          : _defaultAvatar(),
+    );
+  }
+
+  Widget _defaultAvatar() {
+    return Image.asset(
+      'assets/images/mine-header.png',
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFFFF7D36),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.person_rounded, color: Colors.white),
+        );
+      },
     );
   }
 }
@@ -470,57 +504,6 @@ class _ServiceRow extends StatelessWidget {
   }
 }
 
-/// 临时调试入口：方便直接进入应用内无入口的页面（非小程序原有，仅调试用）。
-class _DebugEntryRow extends StatelessWidget {
-  const _DebugEntryRow();
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
-      children: [
-        _DebugChip(label: '创建账户', route: AppRoutes.figmaRegister),
-        _DebugChip(label: '邮箱登录', route: AppRoutes.auth),
-        _DebugChip(label: 'BLE调试', route: AppRoutes.bleDebug),
-      ],
-    );
-  }
-}
-
-class _DebugChip extends StatelessWidget {
-  const _DebugChip({required this.label, required this.route});
-
-  final String label;
-  final String route;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.of(context).pushNamed<void>(route),
-      child: Container(
-        height: 34,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.7),
-          borderRadius: BorderRadius.circular(17),
-          border: Border.all(color: const Color(0x33FF6A24)),
-        ),
-        child: Text(
-          label,
-          style: const TextStyle(
-            color: Color(0xFFFF6A24),
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            height: 1.2,
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// 底部导航栏（与首页一致的胶囊样式；「我的」高亮）。
 class _MineTabBar extends StatelessWidget {

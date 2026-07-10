@@ -145,12 +145,23 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _confirmDeleteAccount(BuildContext context) async {
-    final confirmed = await _showConfirmDialog(
+    // 两步确认（对齐小程序 index.js delete-warn → delete）：
+    // 第一步警示设备照片需自行清空，否则注销后无法再删。
+    final step1 = await _showConfirmDialog(
       context,
       title: '用户注销',
-      message: '注销后您的所有数据将会彻底删除且无法恢复，确定要注销账号?',
+      message: '注销将永久删除您的所有账号数据，请确认设备照片已自行清空，否则注销后将无法删除设备照片。',
     );
-    if (confirmed != true || !context.mounted) {
+    if (step1 != true || !context.mounted) {
+      return;
+    }
+    // 第二步二次确认。
+    final step2 = await _showConfirmDialog(
+      context,
+      title: '确认注销',
+      message: '我已了解设备照片需自行处理的说明，并确认继续注销。',
+    );
+    if (step2 != true || !context.mounted) {
       return;
     }
     await state.deleteAccount();

@@ -2,10 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:image_picker/image_picker.dart';
 
-import '../../../native_device_api.dart';
 import '../../../state.dart';
-import 'widgets/cast_preview_sheet.dart';
+import '../../cast/presentation/casting_progress_page.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
 part 'home_main_view.dart'; // 首页主视图（已绑定 / 未绑定）
@@ -196,11 +196,8 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // 背景图按场景区分：首页主视图（_bindMode == none，含其上各弹层）用 bg02，
-    // 绑定设备流程（搜索/未找到/已找到/扫描帮助）用 bg01。
-    final backgroundAsset = bindMode == _HomeBindMode.none
-        ? 'assets/images/bg02.png'
-        : 'assets/images/bg01.png';
+    // 全ページ共通背景 bg01（小程序は首页/绑定流程とも同一 mock-bg 背景）。
+    const backgroundAsset = 'assets/images/bg01.png';
 
     return Stack(
       fit: StackFit.expand,
@@ -314,11 +311,50 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    if (source == ImageSourceType.camera) {
-      await _startCameraCast();
-    } else {
-      await _startAlbumCast();
+    // 拍照/相册选真实照片（image_picker 返回可上传的本地文件路径；content:// 无法直接上传）。
+    final picker = ImagePicker();
+    List<String> imagePaths;
+    try {
+      if (source == ImageSourceType.camera) {
+        final file = await picker.pickImage(source: ImageSource.camera);
+        imagePaths = file == null ? const [] : [file.path];
+      } else {
+        final files = await picker.pickMultiImage();
+        imagePaths = files.map((file) => file.path).toList();
+      }
+    } catch (_) {
+      if (mounted) {
+        _showFeedback('无法读取照片，请检查相机/相册权限后重试。');
+      }
+      return;
     }
+    if (!mounted || imagePaths.isEmpty) {
+      return;
+    }
+    widget.state.setPermission(
+      source == ImageSourceType.camera
+          ? PermissionKind.camera
+          : PermissionKind.album,
+      true,
+    );
+
+    // 进入真实投屏链路：原图上传后端转码 → 下载设备帧 → BLE 图传 → 本页切成功/失败态
+    //（对齐小程序 拍照/相册 → 结果页 result.js 的真实投屏；不做客户端裁剪编辑器）。
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CastingProgressPage(
+          userProductId: activeDevice.id,
+          imagePaths: imagePaths,
+          compressImage: widget.state.projectionCompress,
+        ),
+      ),
+    );
+    if (!mounted) {
+      return;
+    }
+    // 投屏返回后刷新相册 / 投屏记录（真实数据同步）。
+    widget.state.refreshAlbum();
+    widget.state.refreshCastRecords();
   }
 
   /// 通用提示弹层（立即绑定 / 重新连接 / 离线模式均复用）。
@@ -374,74 +410,6 @@ class _HomePageState extends State<HomePage> {
           },
         );
       },
-    );
-  }
-
-  Future<void> _startCameraCast() async {
-    final status = await NativeDeviceApi.requestCameraPermission();
-    _syncPermissionState(status);
-    if (!mounted) {
-      return;
-    }
-    if (!status.cameraPermissionGranted) {
-      _showFeedback('相机权限未开启，请授权后再使用拍照投屏。');
-      return;
-    }
-    final draft = widget.state.createCameraDraft();
-    await _showCastPreview(draft);
-  }
-
-  Future<void> _startAlbumCast() async {
-    final status = await NativeDeviceApi.requestPhotoPermission();
-    _syncPermissionState(status);
-    if (!mounted) {
-      return;
-    }
-
-    final selection = await NativeDeviceApi.openGallery();
-    if (!mounted || selection == null) {
-      return;
-    }
-    widget.state.setPermission(PermissionKind.album, true);
-    final draft = widget.state.createAlbumDraft(
-      title: selection.title,
-      width: selection.width,
-      height: selection.height,
-      uri: selection.uri,
-    );
-    await _showCastPreview(draft);
-  }
-
-  Future<void> _showCastPreview(DraftPhoto draft) async {
-    final deviceId = await showModalBottomSheet<String>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) => CastPreviewSheet(state: widget.state, draft: draft),
-    );
-    if (!mounted || deviceId == null) {
-      return;
-    }
-    final result = widget.state.castDraft(draft: draft, deviceId: deviceId);
-    _showFeedback(result.message);
-    if (result.deviceFull) {
-      widget.onOpenMine();
-    }
-  }
-
-  void _syncPermissionState(DevicePermissionStatus status) {
-    widget.state.setPermission(
-      PermissionKind.location,
-      status.locationPermissionGranted,
-    );
-    widget.state.setPermission(PermissionKind.bluetooth, status.bluetoothReady);
-    widget.state.setPermission(
-      PermissionKind.album,
-      status.photoPermissionGranted,
-    );
-    widget.state.setPermission(
-      PermissionKind.camera,
-      status.cameraPermissionGranted,
     );
   }
 

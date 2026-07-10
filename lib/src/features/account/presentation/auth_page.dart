@@ -268,7 +268,7 @@ class _LoginBackground extends StatelessWidget {
     return const ColoredBox(
       color: Color(0xFFF7FAFF),
       child: _AssetImageWithFallback(
-        assetPath: 'assets/images/bg02.png',
+        assetPath: 'assets/images/bg01.png',
         fallback: _LoginBackgroundFallback(),
       ),
     );

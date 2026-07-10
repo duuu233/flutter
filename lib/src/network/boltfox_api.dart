@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import 'crypto_util.dart';
 
 /// BoltFox 业务接口（App 版），对齐小程序端 `utils/api.js`。
 ///
@@ -119,7 +120,7 @@ class BoltFoxApi {
   }) {
     return _http.postJson(
       '/Client/User/userLogin',
-      body: {'email': email, 'password': password},
+      body: {'email': email, 'password': md5Hex(password)},
       auth: false,
     );
   }
@@ -135,7 +136,7 @@ class BoltFoxApi {
       '/Client/User/userRegister',
       body: {
         'email': email,
-        'password': password,
+        'password': md5Hex(password),
         'emailCode': emailCode,
         'nickName': ?nickName,
       },
@@ -151,7 +152,7 @@ class BoltFoxApi {
   }) {
     return _http.postJson(
       '/Client/User/resetPassword',
-      body: {'email': email, 'password': password, 'emailCode': emailCode},
+      body: {'email': email, 'password': md5Hex(password), 'emailCode': emailCode},
       auth: false,
     );
   }
@@ -175,18 +176,30 @@ class BoltFoxApi {
   }) {
     return _http.postJson(
       '/Client/User/changePassword',
-      body: {'oldPassword': oldPassword, 'newPassword': newPassword},
+      body: {'oldPassword': md5Hex(oldPassword), 'newPassword': md5Hex(newPassword)},
     );
   }
 
   /// 绑定 / 修改邮箱（已登录）。[emailCode] 为 `sendEmail(sendType:3)` 验证码。
+  ///
+  /// 契约与小程序 `api.js changeUserEmail` 完全一致：body = `userEmail / verifyCode /
+  /// password(md5) / confirmPassword(md5)`。同时设置 App 登录密码：[password] 非空时
+  /// 以 md5(32位小写) 传输（后端账号体系存 md5）；为空则传空串（仅换邮箱、不改密码）。
   static Future<dynamic> changeUserEmail({
     required String email,
     required String emailCode,
+    String? password,
   }) {
+    final md5Password =
+        (password == null || password.isEmpty) ? '' : md5Hex(password);
     return _http.postJson(
       '/Client/User/changeUserEmail',
-      body: {'email': email, 'emailCode': emailCode},
+      body: {
+        'userEmail': email,
+        'verifyCode': emailCode,
+        'password': md5Password,
+        'confirmPassword': md5Password,
+      },
     );
   }
 
