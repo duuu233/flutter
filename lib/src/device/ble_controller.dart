@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -51,9 +49,9 @@ class BleController extends ChangeNotifier {
 
   /// 当前会话登记的序列号（广播 4 字节 + 固件 6 字节，可能只有其一）。
   List<String> get sessionSerials => [
-        if (broadcastDeviceId.isNotEmpty) broadcastDeviceId,
-        if ((info?.deviceId ?? '').isNotEmpty) info!.deviceId,
-      ];
+    if (broadcastDeviceId.isNotEmpty) broadcastDeviceId,
+    if ((info?.deviceId ?? '').isNotEmpty) info!.deviceId,
+  ];
 
   /// 当前活动会话的屏幕类型码：优先固件 0x01 读到的，其次连接时广播里的（都没有则 0=未知）。
   int get sessionScreenCode =>
@@ -257,8 +255,9 @@ class BleController extends ChangeNotifier {
       return false; // 没有会话，零开销
     }
     try {
-      final alive = FlutterBluePlus.connectedDevices
-          .any((d) => d.remoteId == dev.remoteId);
+      final alive = FlutterBluePlus.connectedDevices.any(
+        (d) => d.remoteId == dev.remoteId,
+      );
       if (alive) {
         return false;
       }
@@ -312,9 +311,7 @@ class BleController extends ChangeNotifier {
         data: frame.data,
         onProgress: (done, total, phase, {stuckAt, retries}) {
           uploadPercent = total == 0 ? 0 : done / total;
-          uploadStatus = phase == 'retry'
-              ? '传输卡顿，正在重试…'
-              : '传输中 $done/$total';
+          uploadStatus = phase == 'retry' ? '传输卡顿，正在重试…' : '传输中 $done/$total';
           notifyListeners();
         },
       );

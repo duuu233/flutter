@@ -846,8 +846,10 @@ class PhotoFrameState extends ChangeNotifier {
       }
       // 单连接模型：这台设备确实占着活动会话（序列号交叉匹配）或页面显示已连接时才真正断开。
       if (device.connected ||
-          ble.sessionMatchesSerial(device.serialNumber,
-              screenCode: device.screenType.code)) {
+          ble.sessionMatchesSerial(
+            device.serialNumber,
+            screenCode: device.screenType.code,
+          )) {
         await ble.disconnect();
       }
       device.connected = false;
@@ -865,8 +867,10 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 这台设备是否正占着当前 BLE 活动会话（序列号容错交叉匹配）。
   bool _sessionMatches(DeviceItem device) =>
-      BleController.instance.sessionMatchesSerial(device.serialNumber,
-          screenCode: device.screenType.code);
+      BleController.instance.sessionMatchesSerial(
+        device.serialNumber,
+        screenCode: device.screenType.code,
+      );
 
   /// 用真实 BLE 会话对账各设备的「已连接」显示（回前台连接体检后调用，
   /// 对齐小程序 app.onShow → reconcileConnections 落到 UI 的那一步）。
@@ -888,7 +892,10 @@ class PhotoFrameState extends ChangeNotifier {
   ///
   /// 调用 `/Client/User/userLogin`，成功后把返回的登录 token 写入
   /// [ApiSession]（后续接口才会带上 `userToken` header），并尽力拉取一次用户信息。
-  Future<ActionFeedback> loginWithPassword(String email, String password) async {
+  Future<ActionFeedback> loginWithPassword(
+    String email,
+    String password,
+  ) async {
     final target = email.trim();
     if (!_isValidEmail(target)) {
       return ActionFeedback(
@@ -912,7 +919,10 @@ class PhotoFrameState extends ChangeNotifier {
     }
 
     try {
-      final data = await BoltFoxApi.userLogin(email: target, password: password);
+      final data = await BoltFoxApi.userLogin(
+        email: target,
+        password: password,
+      );
       final token = _readToken(data);
       if (token != null && token.isNotEmpty) {
         ApiSession.instance.setToken(token);
@@ -1107,7 +1117,10 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     try {
-      await BoltFoxApi.changeUserEmail(email: target, emailCode: emailCode.trim());
+      await BoltFoxApi.changeUserEmail(
+        email: target,
+        emailCode: emailCode.trim(),
+      );
       _currentUser.email = target;
       notifyListeners();
       return ActionFeedback(
@@ -1166,7 +1179,11 @@ class PhotoFrameState extends ChangeNotifier {
       notifyListeners();
       return ActionFeedback(
         success: true,
-        message: tr(zh: '个人信息已更新。', en: 'Profile updated.', ja: 'プロフィールを更新しました。'),
+        message: tr(
+          zh: '个人信息已更新。',
+          en: 'Profile updated.',
+          ja: 'プロフィールを更新しました。',
+        ),
       );
     } catch (error) {
       return _apiFailure(error);
@@ -1369,7 +1386,7 @@ class PhotoFrameState extends ChangeNotifier {
       final data = await BoltFoxApi.getUserProductImgList({
         'pageIndex': 1,
         'pageSize': 100,
-        if (userProductId != null) 'userProductId': userProductId,
+        'userProductId': ?userProductId,
       });
       final rows = _extractRows(data);
       if (rows.isNotEmpty) {
@@ -1416,7 +1433,10 @@ class PhotoFrameState extends ChangeNotifier {
       return;
     }
     try {
-      await BoltFoxApi.editUserProduct(userProductId: userProductId, isClearImg: 0);
+      await BoltFoxApi.editUserProduct(
+        userProductId: userProductId,
+        isClearImg: 0,
+      );
     } catch (_) {
       // 复位失败静默（下次进入图库会再次提醒）。
     }
@@ -1549,17 +1569,18 @@ class PhotoFrameState extends ChangeNotifier {
   /// 越小越早，取不到时退回 uploadedAt），第 N 张才对应升序槽位 occupied[N]——直接按后端列表
   /// 顺序去对会刷错图。读不到掩码时回退到位置本身；照片不在本设备上返回 -1。
   int _resolveDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
-    final devicePhotos = _albumPhotos
-        .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
-        .toList()
-      ..sort((a, b) {
-        final ai = int.tryParse(a.id);
-        final bi = int.tryParse(b.id);
-        if (ai != null && bi != null && ai != bi) {
-          return ai.compareTo(bi);
-        }
-        return a.uploadedAt.compareTo(b.uploadedAt);
-      });
+    final devicePhotos =
+        _albumPhotos
+            .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
+            .toList()
+          ..sort((a, b) {
+            final ai = int.tryParse(a.id);
+            final bi = int.tryParse(b.id);
+            if (ai != null && bi != null && ai != bi) {
+              return ai.compareTo(bi);
+            }
+            return a.uploadedAt.compareTo(b.uploadedAt);
+          });
     final pos = devicePhotos.indexWhere((item) => item.id == photo.id);
     if (pos < 0) {
       return -1;
@@ -1599,7 +1620,7 @@ class PhotoFrameState extends ChangeNotifier {
       final data = await BoltFoxApi.getUserProductImgRecordList({
         'pageIndex': 1,
         'pageSize': 100,
-        if (userProductId != null) 'userProductId': userProductId,
+        'userProductId': ?userProductId,
       });
       final rows = _extractRows(data);
       if (rows.isNotEmpty) {
@@ -1614,7 +1635,11 @@ class PhotoFrameState extends ChangeNotifier {
       }
       return ActionFeedback(
         success: true,
-        message: tr(zh: '投屏记录已更新。', en: 'Records refreshed.', ja: '投映履歴を更新しました。'),
+        message: tr(
+          zh: '投屏记录已更新。',
+          en: 'Records refreshed.',
+          ja: '投映履歴を更新しました。',
+        ),
       );
     } catch (error) {
       return _apiFailure(error);
@@ -1650,7 +1675,10 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     try {
-      await BoltFoxApi.editUserProduct(userProductId: deviceId, productName: value);
+      await BoltFoxApi.editUserProduct(
+        userProductId: deviceId,
+        productName: value,
+      );
       _findDevice(deviceId).name = value;
       notifyListeners();
       return ActionFeedback(
@@ -1700,7 +1728,11 @@ class PhotoFrameState extends ChangeNotifier {
       }
       return ActionFeedback(
         success: true,
-        message: tr(zh: '设备列表已更新。', en: 'Devices refreshed.', ja: '端末一覧を更新しました。'),
+        message: tr(
+          zh: '设备列表已更新。',
+          en: 'Devices refreshed.',
+          ja: '端末一覧を更新しました。',
+        ),
       );
     } catch (error) {
       return _apiFailure(error);
@@ -1714,7 +1746,9 @@ class PhotoFrameState extends ChangeNotifier {
   /// 成功返回更新后的 [DeviceItem]（本地已存在则原地更新并 [notifyListeners]），失败返回 null。
   Future<DeviceItem?> fetchDeviceFirmwareInfo(String deviceId) async {
     try {
-      final data = await BoltFoxApi.getUserProductDetail(userProductId: deviceId);
+      final data = await BoltFoxApi.getUserProductDetail(
+        userProductId: deviceId,
+      );
       Map<String, dynamic>? row;
       if (data is Map) {
         row = (data).map((k, v) => MapEntry(k.toString(), v));
@@ -1872,7 +1906,9 @@ class PhotoFrameState extends ChangeNotifier {
               }
             }
             if (after != null) {
-              deviceCleared = FrameProtocol.maskToIndexes(after.imgMask).isEmpty;
+              deviceCleared = FrameProtocol.maskToIndexes(
+                after.imgMask,
+              ).isEmpty;
             }
           }
         }
@@ -2159,7 +2195,8 @@ class PhotoFrameState extends ChangeNotifier {
   List<Map<String, dynamic>> _extractRows(dynamic data) {
     dynamic rows = data;
     if (data is Map) {
-      rows = data['list'] ??
+      rows =
+          data['list'] ??
           data['rows'] ??
           data['records'] ??
           data['data'] ??
@@ -2168,7 +2205,9 @@ class PhotoFrameState extends ChangeNotifier {
     if (rows is List) {
       return rows
           .whereType<Map>()
-          .map((row) => row.map((key, value) => MapEntry(key.toString(), value)))
+          .map(
+            (row) => row.map((key, value) => MapEntry(key.toString(), value)),
+          )
           .toList();
     }
     return const [];
@@ -2176,33 +2215,38 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 把后端设备记录映射为 [DeviceItem]；蓝牙字段给安全默认值，连接后再由 BLE 更新。
   DeviceItem _deviceFromJson(Map<String, dynamic> data) {
-    final id = (data['userProductId'] ?? data['id'] ?? _nextId('dev')).toString();
+    final id = (data['userProductId'] ?? data['id'] ?? _nextId('dev'))
+        .toString();
     final name = (data['productName'] ?? data['name'] ?? '相框').toString();
     // 序列号（用于与广播 4 字节 / 固件 6 字节 Device_ID 交叉匹配）：优先后端各序列号字段，
     // 缺省时取 deviceId —— getUserProductList 现会返回 6 字节 Device_ID（如 E9:48:C2:1E:D4:28），
     // 不取的话真机记录没有可比对的硬件号，连接复用 / 绑定判重都会失效。
-    final serial = [
-      data['productSerialNo'],
-      data['serialNo'],
-      data['sn'],
-      data['deviceId'],
-    ].map((v) => (v ?? '').toString()).firstWhere(
-          (s) => s.isNotEmpty,
-          orElse: () => '',
-        );
-    final firmware =
-        (data['productVersionNo'] ?? data['firmwareVersion'] ?? '').toString();
+    final serial =
+        [
+              data['productSerialNo'],
+              data['serialNo'],
+              data['sn'],
+              data['deviceId'],
+            ]
+            .map((v) => (v ?? '').toString())
+            .firstWhere((s) => s.isNotEmpty, orElse: () => '');
+    final firmware = (data['productVersionNo'] ?? data['firmwareVersion'] ?? '')
+        .toString();
     // OTA 固件字段（设备详情下发；列表接口一般不含，缺省即无更新）。
     final isUpdate = _asInt(data['isUpdate']);
     final newVersionNo =
-        (data['newVersionNo'] ?? data['latestVersion'] ?? data['versionNo'] ?? '')
+        (data['newVersionNo'] ??
+                data['latestVersion'] ??
+                data['versionNo'] ??
+                '')
             .toString();
-    final downloadPath = (data['downloadPath'] ??
-            data['packageUrl'] ??
-            data['firmwareUrl'] ??
-            data['url'] ??
-            '')
-        .toString();
+    final downloadPath =
+        (data['downloadPath'] ??
+                data['packageUrl'] ??
+                data['firmwareUrl'] ??
+                data['url'] ??
+                '')
+            .toString();
     return DeviceItem(
       id: id,
       name: name,
@@ -2294,7 +2338,11 @@ class PhotoFrameState extends ChangeNotifier {
       }
       return ActionFeedback(
         success: true,
-        message: tr(zh: '帮助文档已更新。', en: 'Help docs refreshed.', ja: 'ヘルプを更新しました。'),
+        message: tr(
+          zh: '帮助文档已更新。',
+          en: 'Help docs refreshed.',
+          ja: 'ヘルプを更新しました。',
+        ),
       );
     } catch (error) {
       return _apiFailure(error);
@@ -2337,12 +2385,13 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 把后端相册图片记录映射为 [AlbumPhoto]；BLE 相关字段给默认值。
   AlbumPhoto _albumPhotoFromJson(Map<String, dynamic> data, int index) {
-    final id =
-        (data['uProductImgId'] ?? data['id'] ?? _nextId('photo')).toString();
-    final deviceId =
-        (data['userProductId'] ?? data['deviceId'] ?? '').toString();
-    final url = (data['img'] ?? data['imgUrl'] ?? data['url'] ?? data['imageUrl'])
-        ?.toString();
+    final id = (data['uProductImgId'] ?? data['id'] ?? _nextId('photo'))
+        .toString();
+    final deviceId = (data['userProductId'] ?? data['deviceId'] ?? '')
+        .toString();
+    final url =
+        (data['img'] ?? data['imgUrl'] ?? data['url'] ?? data['imageUrl'])
+            ?.toString();
     return AlbumPhoto(
       id: id,
       title: (data['imgName'] ?? data['name'] ?? data['title'] ?? '照片')
@@ -2370,10 +2419,11 @@ class PhotoFrameState extends ChangeNotifier {
   /// 把后端投屏记录映射为 [CastRecord]；成功/失败由后端状态字段判定（取值待确认）。
   CastRecord _castRecordFromJson(Map<String, dynamic> data, int index) {
     final id = (data['upirId'] ?? data['id'] ?? _nextId('record')).toString();
-    final deviceId =
-        (data['userProductId'] ?? data['deviceId'] ?? '').toString();
-    final url = (data['img'] ?? data['imgUrl'] ?? data['url'] ?? data['imageUrl'])
-        ?.toString();
+    final deviceId = (data['userProductId'] ?? data['deviceId'] ?? '')
+        .toString();
+    final url =
+        (data['img'] ?? data['imgUrl'] ?? data['url'] ?? data['imageUrl'])
+            ?.toString();
     // 设备帧文件地址：再次投屏直传设备用（不走后端转码）。
     final imgBle = (data['imgBle'] ?? data['imgBleUrl'])?.toString();
     return CastRecord(
@@ -2399,7 +2449,8 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 由后端状态字段判定投屏成功/失败（字段与取值以后端为准，待联调确认）。
   CastStatus _castStatusFromJson(Map<String, dynamic> data) {
-    final raw = data['uploadState'] ??
+    final raw =
+        data['uploadState'] ??
         data['state'] ??
         data['status'] ??
         data['deviceUploadState'] ??

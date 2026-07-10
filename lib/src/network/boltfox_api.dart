@@ -30,10 +30,10 @@ class BoltFoxApi {
 
   /// 发送邮箱验证码（已登录，userToken 走 header）。
   static Future<dynamic> sendEmailToken({String? userEmail, int? sendType}) {
-    return _http.postJson('/Client/Basic/sendEmailToken', body: {
-      if (userEmail != null) 'userEmail': userEmail,
-      if (sendType != null) 'sendType': sendType,
-    });
+    return _http.postJson(
+      '/Client/Basic/sendEmailToken',
+      body: {'userEmail': ?userEmail, 'sendType': ?sendType},
+    );
   }
 
   /// 获取基础数据（配置/字典等），具体字段以后端返回为准。
@@ -45,7 +45,7 @@ class BoltFoxApi {
   static Future<dynamic> getLastVersion({String? appVersionNo}) {
     return _http.getJson(
       '/Client/Basic/getLastVersion',
-      query: {if (appVersionNo != null) 'appVersionNo': appVersionNo},
+      query: {'appVersionNo': ?appVersionNo},
     );
   }
 
@@ -78,10 +78,10 @@ class BoltFoxApi {
       '/Client/Basic/setUserProductUpload',
       filePaths: filePaths,
       query: {
-        if (userProductId != null) 'userProductId': userProductId,
-        if (deviceUploadState != null) 'deviceUploadState': deviceUploadState,
-        if (targetWidth != null) 'targetWidth': targetWidth,
-        if (targetHeight != null) 'targetHeight': targetHeight,
+        'userProductId': ?userProductId,
+        'deviceUploadState': ?deviceUploadState,
+        'targetWidth': ?targetWidth,
+        'targetHeight': ?targetHeight,
         'isCompress': isCompress == 0 ? 0 : 1,
       },
     );
@@ -137,7 +137,7 @@ class BoltFoxApi {
         'email': email,
         'password': password,
         'emailCode': emailCode,
-        if (nickName != null) 'nickName': nickName,
+        'nickName': ?nickName,
       },
       auth: false,
     );
@@ -163,7 +163,7 @@ class BoltFoxApi {
   }) {
     return _http.postJson(
       '/Client/User/chkUserEmailNotExist',
-      body: {'email': email, if (emailCode != null) 'emailCode': emailCode},
+      body: {'email': email, 'emailCode': ?emailCode},
       auth: false,
     );
   }
@@ -229,11 +229,14 @@ class BoltFoxApi {
     required String productName,
     required String productSerialNo,
   }) {
-    return _http.postJson('/Client/UserProduct/addUserProduct', body: {
-      'productId': productId,
-      'productName': productName,
-      'productSerialNo': productSerialNo,
-    });
+    return _http.postJson(
+      '/Client/UserProduct/addUserProduct',
+      body: {
+        'productId': productId,
+        'productName': productName,
+        'productSerialNo': productSerialNo,
+      },
+    );
   }
 
   /// 获取用户设备列表。[params]：pageIndex、pageSize、keyword、startDate、endDate。
@@ -249,10 +252,13 @@ class BoltFoxApi {
     required Object userProductId,
     Object? productVersionNo,
   }) {
-    return _http.getJson('/Client/UserProduct/getUserProductDetail', query: {
-      'userProductId': userProductId,
-      if (productVersionNo != null) 'productVersionNo': productVersionNo,
-    });
+    return _http.getJson(
+      '/Client/UserProduct/getUserProductDetail',
+      query: {
+        'userProductId': userProductId,
+        'productVersionNo': ?productVersionNo,
+      },
+    );
   }
 
   /// 编辑设备信息。[productName] 传入即重命名；[isClearImg] 传入即复位一键清除标记
@@ -263,11 +269,14 @@ class BoltFoxApi {
     String? productName,
     int? isClearImg,
   }) {
-    return _http.postJson('/Client/UserProduct/editUserProduct', body: {
-      'userProductId': userProductId,
-      if (productName != null) 'productName': productName,
-      if (isClearImg != null) 'isClearImg': isClearImg,
-    });
+    return _http.postJson(
+      '/Client/UserProduct/editUserProduct',
+      body: {
+        'userProductId': userProductId,
+        'productName': ?productName,
+        'isClearImg': ?isClearImg,
+      },
+    );
   }
 
   /// 获取设备一键清除状态，id=userProductId。retData：0=未清除、1=已清除。
@@ -342,11 +351,14 @@ class BoltFoxApi {
     Object? taskId,
     int deviceUploadState = 1,
   }) {
-    return _http.postJson('/Client/UserProduct/editUserProductImgRecord', body: {
-      'upirId': upirId,
-      if (taskId != null) 'taskId': taskId,
-      'deviceUploadState': deviceUploadState,
-    });
+    return _http.postJson(
+      '/Client/UserProduct/editUserProductImgRecord',
+      body: {
+        'upirId': upirId,
+        'taskId': ?taskId,
+        'deviceUploadState': deviceUploadState,
+      },
+    );
   }
 
   /// 新增投屏记录（再次/重新投屏用 imgBle 直传设备后调用）。
@@ -362,13 +374,16 @@ class BoltFoxApi {
     Object? taskId,
     int deviceUploadState = 1,
   }) {
-    return _http.postJson('/Client/UserProduct/addUserProductImgRecord', body: {
-      if (upirId != null) 'upirId': upirId,
-      if (userProductId != null) 'userProductId': userProductId,
-      if (img != null) 'img': img,
-      if (imgBle != null) 'imgBle': imgBle,
-      if (taskId != null) 'taskId': taskId,
-      'deviceUploadState': deviceUploadState,
-    });
+    return _http.postJson(
+      '/Client/UserProduct/addUserProductImgRecord',
+      body: {
+        'upirId': ?upirId,
+        'userProductId': ?userProductId,
+        'img': ?img,
+        'imgBle': ?imgBle,
+        'taskId': ?taskId,
+        'deviceUploadState': deviceUploadState,
+      },
+    );
   }
 }

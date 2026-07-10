@@ -125,7 +125,7 @@ class _CompressSwitchRowState extends State<_CompressSwitchRow> {
           ),
           Switch(
             value: _value,
-            activeColor: const Color(0xFFEB5F1B),
+            activeThumbColor: const Color(0xFFEB5F1B),
             onChanged: (value) {
               setState(() => _value = value);
               widget.onChanged?.call(value);
