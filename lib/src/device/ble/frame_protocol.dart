@@ -277,35 +277,54 @@ class FrameProtocol {
     return count;
   }
 
-  /// CRC16-Modbus：初值 0xFFFF，多项式 0xA001(反转)，覆盖 SOF~PAYLOAD(6.4.1)。
+  /// CRC16-Modbus 查表（性能优化 D1）：图传一张要对上千个 0x21 帧算 CRC16，逐位版在发送热路径上。
+  /// 表按同一多项式 0xA001 生成，结果与逐位版完全一致。
+  static final Uint16List _crc16ModbusTable = _buildCrc16ModbusTable();
+  static Uint16List _buildCrc16ModbusTable() {
+    final table = Uint16List(256);
+    for (int n = 0; n < 256; n++) {
+      int crc = n;
+      for (int bit = 0; bit < 8; bit++) {
+        crc = (crc & 1) != 0 ? (crc >> 1) ^ 0xA001 : crc >> 1;
+      }
+      table[n] = crc & 0xFFFF;
+    }
+    return table;
+  }
+
+  /// CRC16-Modbus：初值 0xFFFF，多项式 0xA001(反转)，覆盖 SOF~PAYLOAD(6.4.1)。查表实现（见 D1）。
   static int crc16Modbus(List<int> bytes) {
     int crc = 0xFFFF;
     for (final raw in bytes) {
-      crc ^= raw & 0xFF;
-      for (int bit = 0; bit < 8; bit++) {
-        if (crc & 1 != 0) {
-          crc = (crc >> 1) ^ 0xA001;
-        } else {
-          crc >>= 1;
-        }
-      }
+      crc = (crc >> 8) ^ _crc16ModbusTable[(crc ^ (raw & 0xFF)) & 0xFF];
     }
     return crc & 0xFFFF;
   }
 
+  /// CRC32-MPEG2 查表（性能优化 D2）：一张 5.89 寸帧 326KB 逐位算要 260 万次循环、卡在 0x20 发出之前，
+  /// 查表约快 8 倍；表按同一多项式 0x04C11DB7 生成，结果与逐位版完全一致。
+  static final Uint32List _crc32Mpeg2Table = _buildCrc32Mpeg2Table();
+  static Uint32List _buildCrc32Mpeg2Table() {
+    final table = Uint32List(256);
+    for (int n = 0; n < 256; n++) {
+      int crc = (n << 24) & 0xFFFFFFFF;
+      for (int bit = 0; bit < 8; bit++) {
+        crc = (crc & 0x80000000) != 0
+            ? ((crc << 1) ^ 0x04C11DB7) & 0xFFFFFFFF
+            : (crc << 1) & 0xFFFFFFFF;
+      }
+      table[n] = crc;
+    }
+    return table;
+  }
+
   /// 整图 CRC32-MPEG2(6.8.1 的 IMG_CRC32)：初值 0xFFFFFFFF，多项式 0x04C11DB7，
-  /// 输入/输出都不反转，最终不异或。与帧用的 CRC16-Modbus 不是一回事。
+  /// 输入/输出都不反转，最终不异或。与帧用的 CRC16-Modbus 不是一回事。查表实现（见 D2）。
   static int crc32Mpeg2(List<int> bytes) {
     int crc = 0xFFFFFFFF;
     for (final raw in bytes) {
-      crc = (crc ^ ((raw & 0xFF) << 24)) & 0xFFFFFFFF;
-      for (int bit = 0; bit < 8; bit++) {
-        if (crc & 0x80000000 != 0) {
-          crc = ((crc << 1) ^ 0x04C11DB7) & 0xFFFFFFFF;
-        } else {
-          crc = (crc << 1) & 0xFFFFFFFF;
-        }
-      }
+      crc = ((crc << 8) ^ _crc32Mpeg2Table[((crc >> 24) ^ (raw & 0xFF)) & 0xFF]) &
+          0xFFFFFFFF;
     }
     return crc & 0xFFFFFFFF;
   }
@@ -453,6 +472,29 @@ class FrameProtocol {
       payload.add(b & 0xFF);
     }
     return payload;
+  }
+
+  /// 组一帧完整的 CMD=0x21 图片数据帧（性能优化 D1，含 SOF/LEN/CRC16，返回可直接写特征的 Uint8List）。
+  /// 字节与 buildFrame(cmdImgData, buildImgDataPayload(seq, chunk)) 完全一致，但用 Uint8List 整块
+  /// setRange + 查表 CRC16，免去逐字节拼接——一张图要组上千帧，这条路径在图传热路径/预组包上。
+  /// [data] 整图字节；[seq] 包号(0 起)；[chunkSize] 每包数据字节数(末包自动截短)。
+  static Uint8List buildImgDataFrame(Uint8List data, int seq, int chunkSize) {
+    final start = seq * chunkSize;
+    final end = (start + chunkSize) > data.length ? data.length : start + chunkSize;
+    final dataLen = end - start;
+    final payloadLen = dataLen + 2; // PKT_SEQ(2) + DATA
+    final frame = Uint8List(4 + payloadLen + 2); // SOF+CMD+LEN(2) + PAYLOAD + CRC16(2)
+    frame[0] = sof;
+    frame[1] = cmdImgData;
+    frame[2] = payloadLen & 0xFF;
+    frame[3] = (payloadLen >> 8) & 0xFF;
+    frame[4] = seq & 0xFF;
+    frame[5] = (seq >> 8) & 0xFF;
+    frame.setRange(6, 6 + dataLen, data, start);
+    final crc = crc16Modbus(frame.sublist(0, frame.length - 2));
+    frame[frame.length - 2] = crc & 0xFF;
+    frame[frame.length - 1] = (crc >> 8) & 0xFF;
+    return frame;
   }
 
   /// CMD=0x12 删除图片：12 字节掩码。

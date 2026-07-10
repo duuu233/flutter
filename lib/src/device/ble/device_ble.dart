@@ -41,6 +41,23 @@ class FrameBleException implements Exception {
   String toString() => message;
 }
 
+/// 图传预处理结果（性能优化 D1/D2）：整图 CRC32 + 按分包大小预组好的全部 0x21 帧。
+/// 由 [FrameBleClient.prepareImageTransfer] 在「预取阶段」产出，[FrameBleClient.uploadImage]
+/// 可选传入以跳过发送热路径上的 CRC 计算与逐帧组包。[frames] 在会话未就绪时为 null（只含 crc32）。
+class PreparedTransfer {
+  PreparedTransfer({
+    required this.crc32,
+    required this.dataSize,
+    required this.chunkSize,
+    required this.frames,
+  });
+
+  final int crc32;
+  final int dataSize;
+  final int chunkSize;
+  final List<Uint8List>? frames;
+}
+
 class _Pending {
   _Pending(this.completer, this.timer);
   final Completer<ParsedAck> completer;
@@ -311,9 +328,15 @@ class FrameBleClient {
 
   // ── 业务指令 ──────────────────────────────────────────────
 
-  Future<FrameDeviceInfo> readDeviceInfo() async {
+  /// 只读投屏关键路径需要的设备核心信息（CMD=0x01），不附带固件版本请求（性能优化 B2）：
+  /// 0x03 固件版本对图传无用，却要多一个 BLE 往返挡在首张之前，故投屏走这条精简读取。
+  Future<FrameDeviceInfo> readTransferInfo() async {
     final infoAck = await request(FrameProtocol.cmdGetInfo);
-    var info = FrameProtocol.parseDeviceInfo(infoAck.data);
+    return FrameProtocol.parseDeviceInfo(infoAck.data);
+  }
+
+  Future<FrameDeviceInfo> readDeviceInfo() async {
+    var info = await readTransferInfo();
     try {
       final swAck = await request(FrameProtocol.cmdGetSwVer);
       info = info.copyWith(firmwareVersion: FrameProtocol.parseSwVer(swAck.data));
@@ -374,22 +397,59 @@ class FrameBleClient {
 
   // ── 图传 ──────────────────────────────────────────────────
 
+  /// 图传预处理（性能优化 D1/D2）：整图 CRC32 + 按当前会话分包大小预组好全部 0x21 帧。
+  /// 纯计算、不碰蓝牙，设计为在「预取阶段」调用——与上一张图的 BLE 传输/本张的网络下载重叠，
+  /// 把这两块耗时从「发 0x20 → 逐包发送」的串行热路径上挪走。每 256 帧让出一次事件循环，
+  /// 避免长同步计算饿死正在并行进行的上一张图传的 0x23 ACK 处理。
+  /// 未连接（分包大小未知）时只算 CRC32、frames 返回 null；[uploadImage] 收到对不上的 prepared
+  /// 会自动回退为逐包现组，不影响正确性。
+  Future<PreparedTransfer> prepareImageTransfer(Uint8List data) async {
+    final crc = FrameImageCodec.crc32(data);
+    if (!connected) {
+      return PreparedTransfer(
+          crc32: crc, dataSize: data.length, chunkSize: 0, frames: null);
+    }
+    final chunk = dataChunk;
+    final total = data.isEmpty ? 0 : (data.length + chunk - 1) ~/ chunk;
+    final frames = <Uint8List>[];
+    for (int seq = 0; seq < total; seq++) {
+      frames.add(FrameProtocol.buildImgDataFrame(data, seq, chunk));
+      if ((seq & 0xFF) == 0xFF) {
+        await Future<void>.delayed(Duration.zero); // 让出事件循环
+      }
+    }
+    return PreparedTransfer(
+        crc32: crc, dataSize: data.length, chunkSize: chunk, frames: frames);
+  }
+
   /// 上传一张图片（含连接间隔提速）。onProgress(done, total, phase)；phase=retry 时带 stuckAt/retries。
+  ///
+  /// 数据段以「累计 ACK 驱动的滑动窗口」发送（性能优化 A1/A2/B1）：始终保持 ≤[window] 个未确认包在途，
+  /// 设备每回一个 0x23 推进一格就立刻补包填满窗口，填掉 ACK 往返空档，不再「发满一批→停等→再发下一批」。
+  /// [pace] 是发送节奏的上界（AIMD 自适应，B2）：连续多个干净窗口就下探更快（探到 0），一卡顿就回调并
+  /// 上调一档兜底；[prepared] 为预取阶段的预处理结果（D1/D2），dataSize/分包对得上才用，否则自动回退现组。
   Future<FrameImgEnd> uploadImage({
     required int screenType,
     required int index,
     required int width,
     required int height,
     required Uint8List data,
-    int pace = 45,
+    int pace = 10,
+    int window = 10,
+    PreparedTransfer? prepared,
     bool Function()? shouldAbort,
     void Function(int done, int total, String phase, {int? stuckAt, int? retries})?
         onProgress,
   }) async {
     final dataSize = data.length;
-    final crc = FrameImageCodec.crc32(data);
+    // D2：只认 dataSize 对得上的预处理结果（防止把别张图的 prepared 传错进来——CRC32/帧都会错，
+    // 设备端 0x22 校验必失败）；对得上就复用其整图 CRC32，跳过 0x20 前对整图再扫一遍。
+    final PreparedTransfer? pre =
+        (prepared != null && prepared.dataSize == dataSize) ? prepared : null;
+    final crc = pre != null ? pre.crc32 : FrameImageCodec.crc32(data);
 
     // 图传前请求短连接间隔（吞吐翻几倍、往返延迟骤降，远离设备 1s 接收超时）。
+    // 【App 自有方案】用系统级 ConnectionPriority.high（Android），而非小程序的 0x13/0x05 设备指令。
     await requestFastConnection();
     try {
       final startAck = await request(
@@ -409,54 +469,92 @@ class FrameBleClient {
       }
 
       final chunk = dataChunk;
-      const window = 5;
+      final win = window < 1 ? 1 : (window > 10 ? 10 : window); // 固件收包缓冲 10 包，夹到 [1,10]
       final totalPackets = (dataSize + chunk - 1) ~/ chunk;
-      final settlePause = pace < 10 ? 10 : pace; // 窗口间小停顿，必须远小于 1s
+
+      // D1：预取阶段按会话分包大小预组好的全部 0x21 帧，分包/帧数对得上才用（会话重建后 MTU 可能变化）；
+      // 没有或对不上（调试页直调、首张早于连接预取）则发送时逐包现组——buildImgDataFrame 也走查表，仍很快。
+      final List<Uint8List>? prebuilt = (pre != null &&
+              pre.chunkSize == chunk &&
+              pre.frames != null &&
+              pre.frames!.length == totalPackets)
+          ? pre.frames
+          : null;
+
       int nextSeq = 0;
       int retries = 0;
+      const paceFloor = 0.0;
+      const paceStep = 0.5;
+      const paceProbeAfter = 6;
+      double curPace = pace.toDouble();
+      int cleanRun = 0;
       _lastImgAck = -1;
       onProgress?.call(0, totalPackets, 'start');
 
-      while (nextSeq < totalPackets) {
+      while (_lastImgAck < totalPackets - 1) {
         if (shouldAbort?.call() ?? false) {
           throw FrameBleException('UPLOAD_ABORTED');
         }
         // 卡住重试时收敛：窗口逐步缩到 1 包、每包间隔逐步拉大，专门救「设备只收按序包、忙时丢包」。
-        final burst = retries == 0 ? window : (window - retries < 1 ? 1 : window - retries);
+        final curWindow = retries == 0 ? win : (win - retries < 1 ? 1 : win - retries);
         final sendPace = retries == 0
-            ? pace
-            : (pace + 30 * retries > 150 ? 150 : pace + 30 * retries);
-        final windowEnd =
-            (nextSeq + burst) > totalPackets ? totalPackets : nextSeq + burst;
-        for (int seq = nextSeq; seq < windowEnd; seq++) {
-          final start = seq * chunk;
-          final end = (start + chunk) > dataSize ? dataSize : start + chunk;
-          await _writePacket(seq, data.sublist(start, end));
-          if (sendPace > 0) {
-            await Future<void>.delayed(Duration(milliseconds: sendPace));
+            ? curPace
+            : (curPace + 30 * retries > 150 ? 150.0 : curPace + 30 * retries);
+
+        // 填窗：保持在途未确认包 < curWindow，每次 0x23 推进后回到这里补满。
+        while (nextSeq < totalPackets && nextSeq - _lastImgAck - 1 < curWindow) {
+          if (shouldAbort?.call() ?? false) {
+            throw FrameBleException('UPLOAD_ABORTED');
+          }
+          final seq = nextSeq;
+          final frame =
+              prebuilt != null ? prebuilt[seq] : FrameProtocol.buildImgDataFrame(data, seq, chunk);
+          await _writePacket(frame);
+          nextSeq++;
+          final moreThisRound =
+              nextSeq < totalPackets && nextSeq - _lastImgAck - 1 < curWindow;
+          if (sendPace > 0 && moreThisRound) {
+            await _sleepMs(sendPace);
           }
         }
 
-        // 等设备 0x23 把「已连续接收包号」推过 nextSeq-1；超时 600ms（< 设备 1s 红线，PRD 6.4.1）。
+        // 尾包 ACK 可能已在最后一次 write 的回调返回前到达，先复查，避免完成后再空等 600ms（B5）。
+        if (_lastImgAck >= totalPackets - 1) break;
+
+        final before = _lastImgAck;
+        // 等设备 0x23 把「已连续接收包号」推过 before；超时 600ms（< 设备 1s 红线，PRD 6.4.1）。
         final advanced =
-            await _waitAckAdvance(nextSeq - 1, const Duration(milliseconds: 600));
+            await _waitAckAdvance(before, const Duration(milliseconds: 600));
         if (!advanced) {
+          // 超时回调和通知可能同时发生；重发前再复查一次，已推进就直接继续填窗。
+          if (_lastImgAck > before) {
+            retries = 0;
+            onProgress?.call(_confirmed(totalPackets), totalPackets, 'data');
+            continue;
+          }
           if (++retries > 15) {
             throw FrameBleException(
                 '图传中断：设备停在已接收第 $_lastImgAck 包不再前进。可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunk 字节');
           }
-          onProgress?.call(nextSeq, totalPackets, 'retry',
+          onProgress?.call(_confirmed(totalPackets), totalPackets, 'retry',
               stuckAt: _lastImgAck, retries: retries);
+          nextSeq = _lastImgAck + 1;
+          curPace = curPace + paceStep > pace ? pace.toDouble() : curPace + paceStep;
+          cleanRun = 0;
           final backoff = (50 * retries) > 150 ? 150 : 50 * retries; // 极短退避(≤150ms)
           await Future<void>.delayed(Duration(milliseconds: backoff));
           continue;
         }
 
-        nextSeq = _lastImgAck + 1;
+        // 干净窗口：连续 paceProbeAfter 个就下探更快一档（AIMD，探到 0）。
+        if (retries != 0) {
+          cleanRun = 0;
+        } else if (curPace > paceFloor && ++cleanRun >= paceProbeAfter) {
+          curPace = curPace - paceStep < paceFloor ? paceFloor : curPace - paceStep;
+          cleanRun = 0;
+        }
         retries = 0;
-        onProgress?.call(
-            nextSeq > totalPackets ? totalPackets : nextSeq, totalPackets, 'data');
-        await Future<void>.delayed(Duration(milliseconds: settlePause));
+        onProgress?.call(_confirmed(totalPackets), totalPackets, 'data');
       }
 
       // 0x22 结束：设备核对整图 CRC32 并落盘，给足 20s。
@@ -473,15 +571,19 @@ class FrameBleClient {
     }
   }
 
-  /// 写一个图传数据包，带「缓冲忙就退避重试」。
-  Future<void> _writePacket(int seq, List<int> chunk) async {
+  // 已确认包数（用于进度回调）：_lastImgAck+1，夹到 totalPackets。
+  int _confirmed(int totalPackets) {
+    final c = _lastImgAck + 1;
+    return c > totalPackets ? totalPackets : c;
+  }
+
+  /// 写一个图传数据包（[frame] 为已组好的完整 0x21 帧），带「缓冲忙就退避重试」。
+  Future<void> _writePacket(Uint8List frame) async {
     final chr = _writeChar;
     if (chr == null) throw FrameBleException('未连接或未发现写特征');
     int attempt = 0;
     while (true) {
       try {
-        final frame = FrameProtocol.buildFrame(
-            FrameProtocol.cmdImgData, FrameProtocol.buildImgDataPayload(seq, chunk));
         await chr.write(frame, withoutResponse: _writeWithoutResponse);
         return;
       } catch (e) {
@@ -489,6 +591,12 @@ class FrameBleClient {
         await Future<void>.delayed(const Duration(milliseconds: 80));
       }
     }
+  }
+
+  // 支持小数毫秒的节流（AIMD 的 pace 以 0.5ms 为步进）。Duration 只接受整数，用微秒承载。
+  Future<void> _sleepMs(double ms) {
+    if (ms <= 0) return Future<void>.value();
+    return Future<void>.delayed(Duration(microseconds: (ms * 1000).round()));
   }
 
   /// 轮询等待 _lastImgAck 超过 minExclusive；超时返回 false。15ms 轮询足够（BLE notify 延迟级别）。

@@ -10,6 +10,7 @@
 // 与 App 已有的「本地六色量化 + 图传」(BleController.uploadRgba) 并列：那条是端上处理；
 // 本条是「后端转换」，两者最终都复用同一 BLE 图传协议(FrameBleClient.uploadImage)。
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -108,9 +109,9 @@ class ServerImageProjectionService {
     }
 
     try {
-      // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。
+      // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。B2：走精简读取，不带 0x03 固件版本。
       emit(0, '正在读取设备信息…');
-      final info = await client.readDeviceInfo();
+      final info = await client.readTransferInfo();
       if (info.screenType == 0x03 || info.width == 0 || info.height == 0) {
         throw FrameBleException('该型号暂不支持图传');
       }
@@ -123,19 +124,35 @@ class ServerImageProjectionService {
         throw FrameBleException('设备空间不足：剩余 ${free < 0 ? 0 : free} 张，待投 $total 张');
       }
 
-      // 2) 逐张：原图传后端转换得 .bin → 下载 → 选空闲槽位 → 图传 → 设备成功才写记录 → 刷新显示。
-      for (int i = 0; i < total; i++) {
-        if (shouldAbort?.call() ?? false) throw ProjectionAbortedException();
-
-        emit(i / total, '正在转换第 ${i + 1}/$total 张照片…');
-        final converted = await _convertOnServer(
-          filePath: images[i],
+      // A3 预取流水线：设备帧的「后端转码 + 下载 + D1/D2 预处理」是纯网络/纯计算，与 BLE 图传互不占用
+      // 资源。投第 i 张(走蓝牙)的同时并行预取第 i+1 张的设备帧；只预取下一张(最多 1 张在后台)，中断浪费
+      // 最小。预取失败不在此处抛，留到主循环 await 时再抛，走原有失败处理。
+      // （F1 首张与连接并行：App 在进入本方法前 BLE 连接已建立，无冷连接可重叠，故只做批量内的下一张预取。）
+      final prefetch = List<Future<_AcquiredFrame>?>.filled(total, null);
+      void startPrefetch(int idx) {
+        if (idx < 0 || idx >= total || prefetch[idx] != null) return;
+        prefetch[idx] = _acquireFrame(
+          client: client,
+          filePath: images[idx],
           userProductId: userProductId,
           width: info.width,
           height: info.height,
           isCompress: compressImage ? 1 : 0,
         );
-        final frameData = await _downloadFrameBin(converted.url);
+      }
+
+      startPrefetch(0);
+
+      // 2) 逐张：预取的 .bin 帧 → 选空闲槽位 → 图传 → 设备成功才写记录 → 刷新显示。
+      for (int i = 0; i < total; i++) {
+        if (shouldAbort?.call() ?? false) throw ProjectionAbortedException();
+
+        emit(i / total, '正在准备第 ${i + 1}/$total 张…');
+        final acquired = await prefetch[i]!;
+        // 本张帧一到手，立刻启动下一张的预取，让它与本张 BLE 图传并行。
+        startPrefetch(i + 1);
+
+        final frameData = acquired.frameData;
         if (frameData.length != expected4bpp) {
           final head = FrameProtocol.bytesToHex(
               frameData.sublist(0, frameData.length < 16 ? frameData.length : 16));
@@ -159,6 +176,7 @@ class ServerImageProjectionService {
             width: info.width,
             height: info.height,
             data: frameData,
+            prepared: acquired.prepared, // D1/D2：预取阶段算好的 CRC32 + 预组帧
             shouldAbort: shouldAbort,
             onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
               final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
@@ -174,8 +192,8 @@ class ServerImageProjectionService {
         // 不回滚设备、不把整单判失败（避免设备已传成功却被误判失败）。
         try {
           await BoltFoxApi.editUserProductImgRecord(
-            upirId: converted.upirId ?? '',
-            taskId: converted.taskId,
+            upirId: acquired.upirId ?? '',
+            taskId: acquired.taskId,
             deviceUploadState: 1,
           );
         } catch (_) {}
@@ -185,13 +203,12 @@ class ServerImageProjectionService {
         uploaded++;
         emit(uploaded / total, '已投 $uploaded/$total 张');
 
-        // 只有最后一张传完后才刷新屏幕(0x24)：部分固件收到 0x24 会断开蓝牙，
-        // 批量传输时中途刷屏会导致后续图片传输失败。故中间张一律不刷屏，
-        // 等全部传完只对最后一张执行一次 0x24，切到最后这张显示（失败不影响整体成功）。
+        // 只有最后一张传完后才刷新屏幕(0x24)：部分固件收到 0x24 会断开蓝牙，批量传输中途刷屏会导致
+        // 后续图片传输失败。故中间张一律不刷屏，等全部传完只对最后一张执行一次 0x24。
+        // 追加3：0x24 改 fire-and-forget，不 await——图片已全部写入设备，立即返回成功页，刷屏在后台继续
+        //（真机墨水屏刷完要 ~4s，成功页因此提前）。刷屏成败本就不影响投屏结果。
         if (i == total - 1) {
-          try {
-            await client.refreshScreen(index);
-          } catch (_) {}
+          unawaited(client.refreshScreen(index).catchError((_) => 0xFF));
         }
       }
 
@@ -267,7 +284,7 @@ class ServerImageProjectionService {
 
     try {
       emit(0, '正在读取设备信息…');
-      final info = await client.readDeviceInfo();
+      final info = await client.readTransferInfo(); // B2：精简读取，不带 0x03 固件版本
       if (info.screenType == 0x03 || info.width == 0 || info.height == 0) {
         throw FrameBleException('该型号暂不支持图传');
       }
@@ -295,6 +312,14 @@ class ServerImageProjectionService {
           FrameProtocol.indexesToMask(usedIndexes), info.capacity);
       if (index < 0) throw FrameBleException('设备已存满');
 
+      // D1/D2 图传预处理（整图 CRC32 + 预组 0x21 帧），失败回退不阻断本张。
+      PreparedTransfer? prepared;
+      try {
+        prepared = await client.prepareImageTransfer(frameData);
+      } catch (_) {
+        prepared = null;
+      }
+
       emit(0, '正在投屏…');
       try {
         await client.uploadImage(
@@ -303,6 +328,7 @@ class ServerImageProjectionService {
           width: info.width,
           height: info.height,
           data: frameData,
+          prepared: prepared,
           shouldAbort: shouldAbort,
           onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
             final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
@@ -314,10 +340,8 @@ class ServerImageProjectionService {
         rethrow;
       }
 
-      // 单张再次投屏：传完刷新到这张（0x24，失败不影响整体成功）。
-      try {
-        await client.refreshScreen(index);
-      } catch (_) {}
+      // 单张再次投屏：传完刷新到这张（0x24）。追加3：fire-and-forget 不阻塞成功页，刷屏失败不影响结果。
+      unawaited(client.refreshScreen(index).catchError((_) => 0xFF));
 
       // 设备图传成功 → 新增一条成功记录（尽力而为，失败只忽略）。
       await _addRetryRecord(
@@ -391,6 +415,40 @@ class ServerImageProjectionService {
     } catch (_) {}
   }
 
+  /// 取本张要发给设备的六色 4bpp 帧 + 后端记录 id（原图传后端转换 → 下载 .bin → D1/D2 预处理）。
+  /// 纯网络 + 纯计算、无 UI 副作用：可被主循环「预取下一张」提前并行调用（见 castImages 的预取流水线）。
+  Future<_AcquiredFrame> _acquireFrame({
+    required FrameBleClient client,
+    required String filePath,
+    required Object userProductId,
+    required int width,
+    required int height,
+    required int isCompress,
+  }) async {
+    final converted = await _convertOnServer(
+      filePath: filePath,
+      userProductId: userProductId,
+      width: width,
+      height: height,
+      isCompress: isCompress,
+    );
+    final frameData = await _downloadFrameBin(converted.url);
+    // D1/D2 图传预处理（整图 CRC32 + 按会话分包预组 0x21 帧），与上一张 BLE 传输/本张下载重叠。
+    // 失败回退不阻断本张（uploadImage 拿不到 prepared 会现算现组）。
+    PreparedTransfer? prepared;
+    try {
+      prepared = await client.prepareImageTransfer(frameData);
+    } catch (_) {
+      prepared = null;
+    }
+    return _AcquiredFrame(
+      frameData: frameData,
+      taskId: converted.taskId,
+      upirId: converted.upirId,
+      prepared: prepared,
+    );
+  }
+
   /// 本张照片传后端转换：上传原图 → 后端按设备宽高转换成设备帧并存 OSS，返回 url/taskId/upirId。
   Future<_ConvertResult> _convertOnServer({
     required String filePath,
@@ -454,4 +512,19 @@ class _ConvertResult {
   final String url;
   final Object? taskId;
   final Object? upirId;
+}
+
+/// 预取流水线的一张成品：可直接图传的设备帧 + 记账 id + D1/D2 预处理结果。
+class _AcquiredFrame {
+  _AcquiredFrame({
+    required this.frameData,
+    this.taskId,
+    this.upirId,
+    this.prepared,
+  });
+
+  final Uint8List frameData;
+  final Object? taskId;
+  final Object? upirId;
+  final PreparedTransfer? prepared;
 }

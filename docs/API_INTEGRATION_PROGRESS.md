@@ -342,3 +342,43 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 ### 注意
 
 - 本机无 Flutter SDK，本轮改动未跑 `dart analyze`，需开发机验证编译。
+
+## 从小程序移植的功能（2026-07-10）：图片传输性能优化
+
+本轮同步小程序 `photo-album` 的**图传提速**改动（A/B/D 及二阶段 D1/D2/F1、追加项），详见小程序 `docs/图片传输性能优化计划.md`。协议字节与 v1.5 完全一致，**不改图片格式、BLE 协议、10 包窗口上限**。CRC 查表与 `buildImgDataFrame` 已用 Node 逐字节等价性验证（含标准校验向量 `CRC32-MPEG2("123456789")=0x0376E6E7`）通过。
+
+### 1. 查表 CRC + 预组帧（D1/D2，`lib/src/device/ble/frame_protocol.dart`）
+
+| 改动 | 说明 |
+| --- | --- |
+| `crc16Modbus` / `crc32Mpeg2` 改**查表**实现 | 新增 `_crc16ModbusTable`(0xA001) / `_crc32Mpeg2Table`(0x04C11DB7)；多项式/初值/字节序不变，结果与旧逐位版**完全一致**。图传一张要对上千个 0x21 帧算 CRC16、5.89 寸整图 326KB 算 CRC32，都在发送热路径/0x20 前，查表约快 8 倍。 |
+| 新增 `buildImgDataFrame(data, seq, chunkSize)` | 用 `Uint8List` 整块 `setRange` + 查表 CRC16 组一帧完整 0x21 帧，与旧 `buildFrame(cmdImgData, buildImgDataPayload(...))` **逐字节等价**（已验证末包截短、chunk 174/236）。 |
+
+### 2. 滑动窗口 + 自适应 pace + 预组帧路径（A1/A2/B1/B2/B5/D1/D2，`lib/src/device/ble/device_ble.dart`）
+
+| 改动 | 说明 |
+| --- | --- |
+| `uploadImage` 数据段由 **window=5 批量停等** 重写为 **累计 ACK 驱动的滑动窗口(window=10)** | 始终保持 ≤10 个未确认包在途，0x23 每推进一格立刻补包填满窗口，填掉 ACK 往返空档；去掉旧的窗间 `settlePause`。窗口 10 对齐固件「每 10 包回一次 0x23」的 ACK 节奏（旧的 5 与固件节奏不匹配）。 |
+| **B2 自适应 pace（AIMD）** | `pace` 改为节奏上界：连续 6 个干净窗口下探 0.5ms（探到 0）更快，一卡顿上调一档兜底（≤150ms）+ 缩窗（逐步缩到 1 包）。默认 `pace=10`（旧 45，过慢）；小数毫秒经 `_sleepMs` 用微秒承载。 |
+| **B5 尾包 ACK 复查** | 最后一次 write 后、进入 600ms 等待前先复查是否已确认；超时后也先复查已推进就继续填窗，避免完成后空等/误重发。 |
+| 新增 `prepareImageTransfer(data)` → `PreparedTransfer`（**D1/D2**） | 整图 CRC32 + 按会话分包预组全部 0x21 帧，每 256 帧让出事件循环（避免饿死并行的上一张 ACK 处理）。`uploadImage` 新增可选 `prepared`：`dataSize` 对得上才用其 CRC32、`chunkSize`/帧数对得上才用预组帧，任一不符自动回退现算现组（调试页/`uploadRgba` 不传 prepared，行为不变）。`_writePacket` 改收整帧。 |
+| 新增 `readTransferInfo()`（**B2**） | 只读 0x01 设备核心信息、不带 0x03 固件版本，投屏关键路径少一个 BLE 往返。`readDeviceInfo` 复用它再补 0x03。 |
+
+### 3. 预取流水线 + 非阻塞刷屏（A3/追加3，`lib/src/features/cast/projection_service.dart`）
+
+| 改动 | 说明 |
+| --- | --- |
+| **A3 预取流水线** | `castImages` 重构：投第 i 张(走蓝牙)时并行预取第 i+1 张的设备帧（后端转码+下载+D1/D2 预处理，纯网络/纯计算，与 BLE 不抢资源）。新增私有 `_acquireFrame`/`_AcquiredFrame`。`recastRecord`(单张) 也在 uploadImage 前 `prepareImageTransfer` 并传 `prepared`。 |
+| **追加3：最后一张 0x24 fire-and-forget** | `refreshScreen` 由 `await` 改 `unawaited(... .catchError(...))`——图片已全部写入设备，立即返回成功页，刷屏在后台继续（真机墨水屏刷完 ~4s，成功页因此提前）。刷屏成败本就不影响投屏结果。 |
+
+### 差异 / 未移植（App 自有方案，见用户「用 APP 自己的方案」要求）
+
+- **连接间隔优化 追加2(0x05 回读探针) / 追加4(平台默认 7.5/15ms)**：小程序靠 **0x13/0x05 设备指令**请求短连接间隔（微信无连接间隔 API 的变通）；**App 用系统级 `requestConnectionPriority(ConnectionPriority.high)`**（Android，`device_ble.dart` 早有，注释即「小程序做不到」），iOS 由系统协商。二者机制不同、App 方案更干净，故 0x05 探针 / 平台默认毫秒值 **不移植**（App 无 0x13/0x05 命令实现）。
+- **F1 首张转码与「连接」并行**：小程序 `ensureConnection` 在投屏内、可能冷连接，故让首张网络准备与连接重叠；**App 的 BLE 连接在进入 `castImages` 前已由 `BleController` 建立**（入口即校验 `client.connected`），无冷连接可重叠，故只实现批量内「下一张预取」(A3)，首张不做 guessedSize 早启动。
+- **登录流程 / 选择语种**：App 自有登录（`auth_page`/`register_page`）与语种设置（`language_settings_page`），与小程序不同，本轮不涉及。
+
+### 注意 / 待真机验证
+
+- 本机无 Flutter SDK，未跑 `dart analyze`；CRC/组帧等价性已用 Node 验证，滑动窗口/预取逻辑按符号与调用点交叉核对。
+- **窗口连续喂数据的丢包风险**（同小程序 B1 待验）：旧窗间停顿可能兼作「给设备腾出落 Flash 时间」；滑动窗口若在真机抬高丢包率→触发缩窗减速兜底→反而变慢，需真机 A/B。若丢包变多可在填窗后加 3~5ms 小停顿折中。
+- `pace` 默认 10ms 为保守取值（无 App 真机基线）；调试页 `ble_debug_page` 的 `_pace` 滑块仍可手动调，AIMD 会自动向下收敛。真机测得稳定值后可下调默认。
