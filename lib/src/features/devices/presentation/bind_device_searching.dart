@@ -26,7 +26,11 @@ class BindDeviceSearching extends StatelessWidget {
             child: SizedBox(
               width: 280,
               height: 280,
-              child: FigmaDeviceRadar(animate: true),
+              // 搜索中动画：对齐小程序 bind.wxml 扫描态的 radar gif，使用本地 search-devices.gif。
+              child: Image(
+                image: AssetImage('assets/images/search-devices.gif'),
+                fit: BoxFit.contain,
+              ),
             ),
           ),
           const SizedBox(height: 20),

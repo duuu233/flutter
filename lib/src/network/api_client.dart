@@ -41,6 +41,33 @@ class ApiClient {
     return headers;
   }
 
+  /// 是否 BoltFox 业务接口（`/Client/` 前缀）。对齐小程序 `request.js isClientApi`。
+  bool _isClientApi(String path) => path.startsWith('/Client/');
+
+  /// `/Client/` 接口的公共 query 参数：`terminal` / `language` / `device` / `userToken`。
+  ///
+  /// 对齐小程序 `request.js getClientQuery` —— 这些公共参数**既放 header 也拼进 query string**。
+  /// 后端按 query 里的 `userToken` 鉴权，仅放 header 会导致已登录接口（如绑定设备 addUserProduct）
+  /// 鉴权失败（这正是「小程序能绑、App 绑不了」的根因）。非 `/Client/` 或绝对外链不追加。
+  /// [auth]=false（登录/注册/发验证码）时不带 `userToken`。
+  Map<String, dynamic> _clientQuery(String path, {bool auth = true}) {
+    if (!_isClientApi(path)) {
+      return const <String, dynamic>{};
+    }
+    final session = ApiSession.instance;
+    final query = <String, dynamic>{
+      'terminal': ApiConfig.terminal.toString(),
+      'language': session.languageCode.toString(),
+    };
+    if (session.device.isNotEmpty) {
+      query['device'] = session.device;
+    }
+    if (auth && session.userToken.isNotEmpty) {
+      query['userToken'] = session.userToken;
+    }
+    return query;
+  }
+
   /// 拼接 URL，绝对地址原样使用，并按需附加 query（自动过滤 null / 空串）。
   Uri _uri(String path, [Map<String, dynamic>? query]) {
     final base = path.startsWith('http') ? path : '${ApiConfig.baseUrl}$path';
@@ -65,7 +92,8 @@ class ApiClient {
     Map<String, dynamic>? query,
     bool auth = true,
   }) async {
-    final uri = _uri(path, query);
+    // /Client/ 公共 query 参数（terminal/language/device/userToken）+ 业务 query，对齐小程序。
+    final uri = _uri(path, {..._clientQuery(path, auth: auth), ...?query});
     _logRequest('GET', uri, data: query);
     return _sendWithRetry(
       'GET',
@@ -81,7 +109,9 @@ class ApiClient {
     Map<String, dynamic>? body,
     bool auth = true,
   }) async {
-    final uri = _uri(path);
+    // POST 也要把公共参数拼进 query string（body 仍为 JSON 业务字段）：后端按 query 里的 userToken
+    // 鉴权，此前 postJson 未带 query 导致 addUserProduct 等已登录 POST 鉴权失败、绑定不上。
+    final uri = _uri(path, _clientQuery(path, auth: auth));
     final payload = body ?? <String, dynamic>{};
     _logRequest('POST', uri, data: payload);
     return _sendWithRetry(
@@ -151,7 +181,8 @@ class ApiClient {
     }
     final results = <dynamic>[];
     for (final filePath in filePaths) {
-      final uri = _uri(path, query);
+      // 上传同样带 /Client/ 公共 query 参数（terminal/language/device/userToken）+ 业务 query。
+      final uri = _uri(path, {..._clientQuery(path, auth: auth), ...?query});
       _logRequest(
         'POST multipart',
         uri,
