@@ -67,7 +67,7 @@ class NativeDeviceApi {
   NativeDeviceApi._();
 
   static const MethodChannel _channel = MethodChannel(
-    'com.flutter.duu233/device_api',
+    'com.boltfox.boltstar/device_api',
   );
 
   static Future<DevicePermissionStatus> getStatus() async {

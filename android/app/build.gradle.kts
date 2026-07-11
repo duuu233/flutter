@@ -19,7 +19,7 @@ fun requiredKeystoreProperty(name: String): String =
         ?: throw org.gradle.api.GradleException("Missing '$name' in ${keystorePropertiesFile.path}")
 
 android {
-    namespace = "com.flutter.duu233"
+    namespace = "com.boltfox.boltstar"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -29,7 +29,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.flutter.duu233"
+        applicationId = "com.boltfox.boltstar"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
