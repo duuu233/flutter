@@ -192,7 +192,7 @@ class _CircleIconButton extends StatelessWidget {
 /// 底部导航栏（首页主视图底部，「首页 / 我的」两个 Tab）。
 ///
 /// 对齐小程序 `custom-tabbar`：白色半透明胶囊（圆角全圆 + 柔和投影），
-/// 图标用 `tabbar-*.svg`，首页态高亮 #ff6421、未选态 #777d86。
+/// 图标用 `tabbar-*.png`，首页态高亮 #ff6421、未选态 #777d86。
 class _HomeTabBar extends StatelessWidget {
   const _HomeTabBar({required this.onOpenMine});
 
@@ -218,7 +218,7 @@ class _HomeTabBar extends StatelessWidget {
         children: [
           const Expanded(
             child: _HomeTabItem(
-              iconAsset: 'assets/images/tabbar-home02.svg',
+              iconAsset: 'assets/images/tabbar-home02.png',
               fallbackIcon: Icons.home_rounded,
               label: '首页',
               color: Color(0xFFFF6421),
@@ -229,7 +229,7 @@ class _HomeTabBar extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: onOpenMine,
               child: const _HomeTabItem(
-                iconAsset: 'assets/images/tabbar-mine01.svg',
+                iconAsset: 'assets/images/tabbar-mine01.png',
                 fallbackIcon: Icons.person_outline_rounded,
                 label: '我的',
                 color: Color(0xFF777D86),
@@ -260,13 +260,12 @@ class _HomeTabItem extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        SvgPicture.asset(
+        Image.asset(
           iconAsset,
           width: 28,
           height: 28,
-          semanticsLabel: label,
-          placeholderBuilder: (context) =>
-              Icon(fallbackIcon, color: color, size: 28),
+          fit: BoxFit.contain,
+          semanticLabel: label,
           errorBuilder: (context, error, stackTrace) =>
               Icon(fallbackIcon, color: color, size: 28),
         ),

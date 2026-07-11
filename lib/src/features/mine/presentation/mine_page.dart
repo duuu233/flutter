@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
@@ -532,7 +531,7 @@ class _MineTabBar extends StatelessWidget {
               behavior: HitTestBehavior.opaque,
               onTap: onOpenHome,
               child: const _MineTabItem(
-                iconAsset: 'assets/images/tabbar-home01.svg',
+                iconAsset: 'assets/images/tabbar-home01.png',
                 fallbackIcon: Icons.home_outlined,
                 label: '首页',
                 color: Color(0xFF777D86),
@@ -541,7 +540,7 @@ class _MineTabBar extends StatelessWidget {
           ),
           const Expanded(
             child: _MineTabItem(
-              iconAsset: 'assets/images/tabbar-mine02.svg',
+              iconAsset: 'assets/images/tabbar-mine02.png',
               fallbackIcon: Icons.person_rounded,
               label: '我的',
               color: Color(0xFFFF6421),
@@ -571,13 +570,12 @@ class _MineTabItem extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        SvgPicture.asset(
+        Image.asset(
           iconAsset,
           width: 28,
           height: 28,
-          semanticsLabel: label,
-          placeholderBuilder: (context) =>
-              Icon(fallbackIcon, color: color, size: 28),
+          fit: BoxFit.contain,
+          semanticLabel: label,
           errorBuilder: (context, error, stackTrace) =>
               Icon(fallbackIcon, color: color, size: 28),
         ),
