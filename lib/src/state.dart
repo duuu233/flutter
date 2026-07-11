@@ -1812,14 +1812,28 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   /// 绑定设备：`/Client/UserProduct/addUserProduct`，成功后重新拉取列表取服务端 id。
+  ///
+  /// productId 对齐小程序 `api.js bindDevice`：蓝牙扫描到的设备本身不带 productId，绑定前先拉产品列表，
+  /// 用扫描到的设备(型号 [model] / 屏幕 [screen] / 名称 [scanName])逐条打分匹配出对应产品的 productId
+  ///（[_resolveProductId]）。匹配不到 / 拉列表失败都中止绑定并明确提示，绝不缺 productId 硬往后端发请求。
   Future<ActionFeedback> bindDevice({
-    required int productId,
     required String productName,
     required String productSerialNo,
+    String model = '',
+    String screen = '',
+    String scanName = '',
   }) async {
+    final resolved = await _resolveProductId(
+      model: model,
+      screen: screen,
+      scanName: scanName,
+    );
+    if (resolved.productId == null) {
+      return ActionFeedback(success: false, message: resolved.error!);
+    }
     try {
       await BoltFoxApi.addUserProduct(
-        productId: productId,
+        productId: resolved.productId!,
         productName: productName,
         productSerialNo: productSerialNo,
       );
@@ -1831,6 +1845,75 @@ class PhotoFrameState extends ChangeNotifier {
     } catch (error) {
       return _apiFailure(error);
     }
+  }
+
+  /// 解析 addUserProduct 必传的 productId（对齐小程序 `api.js` 的 `bindDevice` + `productScore`）。
+  ///
+  /// 拉「全部产品列表」，用扫描到的设备(型号/屏幕/名称)与每个产品的
+  /// (productName/model/screen/width/height) 拼成的文本做子串命中打分，取匹配度最高的一条的 productId。
+  /// 与小程序一致：即便全 0 分也取排在最前的产品（productId 存在即可）；拉列表失败或选中产品无
+  /// productId → 返回错误信息（productId 为 null），由 [bindDevice] 据此中止绑定。
+  Future<({int? productId, String? error})> _resolveProductId({
+    required String model,
+    required String screen,
+    required String scanName,
+  }) async {
+    List<Map<String, dynamic>> products;
+    try {
+      final data = await BoltFoxApi.getProductList({
+        'pageIndex': 1,
+        'pageSize': 100,
+      });
+      products = _extractRows(data);
+    } catch (_) {
+      return (
+        productId: null,
+        error: tr(
+          zh: '获取产品列表失败，无法确定产品，请稍后重试。',
+          en: 'Failed to load the product list; cannot determine the product. Please retry.',
+          ja: '製品リストの取得に失敗し、製品を特定できません。後で再試行してください。',
+        ),
+      );
+    }
+    final terms = [model, screen, scanName]
+        .map((s) => s.trim().toLowerCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    int scoreOf(Map<String, dynamic> product) {
+      final text = [
+        product['productName'],
+        product['model'],
+        product['screen'],
+        product['width'],
+        product['height'],
+      ].map((v) => (v ?? '').toString()).join(' ').toLowerCase();
+      return terms.fold(
+        0,
+        (score, term) => score + (text.contains(term) ? 1 : 0),
+      );
+    }
+
+    Map<String, dynamic>? best;
+    var bestScore = -1;
+    for (final product in products) {
+      final score = scoreOf(product);
+      if (score > bestScore) {
+        bestScore = score;
+        best = product;
+      }
+    }
+    final productId = best == null ? 0 : _asInt(best['productId']);
+    if (productId == 0) {
+      return (
+        productId: null,
+        error: tr(
+          zh: '未匹配到对应产品，请确认该设备在产品列表中存在。',
+          en: 'No matching product found. Please confirm the device exists in the product list.',
+          ja: '対応する製品が見つかりません。製品リストに存在するか確認してください。',
+        ),
+      );
+    }
+    return (productId: productId, error: null);
   }
 
   /// 删除 / 解绑设备：`/Client/UserProduct/delUserProduct`，成功后清理本地设备与相关数据。

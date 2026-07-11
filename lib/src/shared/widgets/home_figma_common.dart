@@ -557,21 +557,30 @@ class FigmaBindDeviceCard extends StatelessWidget {
     required this.name,
     required this.iconColor,
     required this.iconBackground,
+    this.subtitle = '',
     this.selected = false,
     this.onTap,
+    this.onLongPress,
   });
 
   final String name;
+
+  /// 副标题：尺寸 · 电量XX% · 信号XX（对齐小程序 `nearby-sub`）。空串则不显示。
+  final String subtitle;
   final Color iconColor;
   final Color iconBackground;
   final bool selected;
   final VoidCallback? onTap;
+
+  /// 长按：进入该设备的硬件联调调试台（对齐小程序 `bindlongpress="openDebug"`）。
+  final VoidCallback? onLongPress;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
+      onLongPress: onLongPress,
       child: Container(
         width: 327,
         height: 64,
@@ -596,7 +605,30 @@ class FigmaBindDeviceCard extends StatelessWidget {
               child: Icon(Icons.videocam_outlined, color: iconColor, size: 26),
             ),
             const SizedBox(width: 20),
-            Expanded(child: Text(name, style: FigmaHomeTextStyles.deviceName)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: FigmaHomeTextStyles.deviceName,
+                  ),
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FigmaHomeTextStyles.cardSubtitle,
+                    ),
+                  ],
+                ],
+              ),
+            ),
             Container(
               width: 26,
               height: 26,

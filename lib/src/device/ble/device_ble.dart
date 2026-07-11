@@ -105,13 +105,57 @@ class FrameBleClient {
 
   /// 扫描附近设备 timeout 时长，返回去重后按信号强度排序的结果。
   /// 不按服务 UUID 过滤（真机广播不一定带 FF00，过滤会漏设备），能否绑定由连接时是否存在 FF00 判定。
+  ///
+  /// [allowedNames]：广播名白名单（产品列表的 broadcastId，如 `EF6-370`/`EF6-589`）。非空时只保留
+  /// platformName 或广播名（大小写不敏感）包含其中之一的设备——只显示目标相框，滤掉周围其它蓝牙设备
+  /// （对齐小程序 `utils/bluetooth.js` 的 `isAllowedFrame` 白名单过滤）。为 null/空则不过滤（调试台 allowAll 用）。
+  /// [onUpdate]：每搜到一台**新**设备就回调一次「当前已搜到的（已过滤+按信号降序）列表」，供绑定页
+  /// 「搜出一个显示一个」增量渲染（对齐小程序 `discoverDevices` 的 onUpdate），不必等满 timeout。
   static Future<List<ScanResult>> scan({
     Duration timeout = const Duration(seconds: 8),
+    List<String>? allowedNames,
+    void Function(List<ScanResult> devices)? onUpdate,
   }) async {
+    // 白名单归一化（去空、大写）；为空表示放开过滤（allowAll）。
+    final allow = (allowedNames ?? const <String>[])
+        .map((s) => s.trim().toUpperCase())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    bool isAllowed(ScanResult r) {
+      if (allow.isEmpty) {
+        return true;
+      }
+      // name 与广播名都查：真机有时只在后续广播包里带上广播名。
+      final name =
+          '${r.device.platformName} ${r.advertisementData.advName}'
+              .toUpperCase();
+      return allow.any((a) => name.contains(a));
+    }
+
     final found = <DeviceIdentifier, ScanResult>{};
+    List<ScanResult> sorted() =>
+        found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
+
     final sub = FlutterBluePlus.scanResults.listen((list) {
+      var changed = false;
       for (final r in list) {
+        if (!isAllowed(r)) {
+          continue;
+        }
+        // 已收录的设备后续广播包继续刷新（RSSI/电量常在后续包才带全），但只有「新设备」才算变化，
+        // 避免纯 RSSI 抖动高频触发 onUpdate 刷屏（对齐小程序按展示签名判变化的意图）。
+        final existed = found.containsKey(r.device.remoteId);
         found[r.device.remoteId] = r;
+        if (!existed) {
+          changed = true;
+        }
+      }
+      if (changed && onUpdate != null) {
+        try {
+          onUpdate(sorted());
+        } catch (_) {
+          // 页面回调自身异常不能中断扫描
+        }
       }
     });
     try {
@@ -124,9 +168,7 @@ class FrameBleClient {
         await FlutterBluePlus.stopScan();
       } catch (_) {}
     }
-    final list = found.values.toList()
-      ..sort((a, b) => b.rssi.compareTo(a.rssi));
-    return list;
+    return sorted();
   }
 
   // ── 连接 ──────────────────────────────────────────────────

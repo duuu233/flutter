@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../native_device_api.dart';
+import '../network/boltfox_api.dart';
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
 import 'ble/image_codec.dart';
@@ -82,6 +83,50 @@ class BleController extends ChangeNotifier {
     return result.device.remoteId.str;
   }
 
+  /// 把蓝牙信号强度(RSSI，单位 dBm，越接近 0 越强)翻译成用户能看懂的档位文字，
+  /// 对齐小程序 `utils/bluetooth.js rssiToSignalText`：极强/强/正常/偏弱/弱。
+  /// RSSI 缺省(0)或非法(≥0)时返回空串，由页面兜底成「--」。
+  static String rssiToSignalText(int rssi) {
+    if (rssi == 0 || rssi >= 0) {
+      return '';
+    }
+    if (rssi >= -55) {
+      return '极强';
+    }
+    if (rssi >= -67) {
+      return '强';
+    }
+    if (rssi >= -78) {
+      return '正常';
+    }
+    if (rssi >= -88) {
+      return '偏弱';
+    }
+    return '弱';
+  }
+
+  /// 扫描结果广播里解析到的屏幕尺寸文字（如 `3.7寸`/`5.89寸`）；无广播厂商数据时返回空串。
+  static String screenLabelOf(ScanResult result) {
+    final ad = advertisingOf(result);
+    if (ad == null) {
+      return '';
+    }
+    return FrameProtocol.screenTypes[ad.screenType]?.label ?? '';
+  }
+
+  /// 扫描结果广播里解析到的电量（0-100）；无广播厂商数据时返回 null。
+  static int? batteryOf(ScanResult result) => advertisingOf(result)?.battery;
+
+  /// 扫描结果广播里解析到的产品型号（如 `EF6-370`）；无广播厂商数据时返回空串。
+  /// 供绑定时按机型匹配产品列表解析 productId（对齐小程序 `productScore` 的 model 维度）。
+  static String modelOf(ScanResult result) {
+    final ad = advertisingOf(result);
+    if (ad == null) {
+      return '';
+    }
+    return FrameProtocol.screenTypes[ad.screenType]?.model ?? '';
+  }
+
   /// 解析扫描结果广播里的厂商数据（Screen_Type + 4 字节 Device_ID + 电量）。
   /// flutter_blue_plus 把厂商数据按 Company_ID 拆成 map，这里还原成
   /// [CompanyID(2 小端), ...payload] 的原始字节序喂给协议层（小程序侧拿到的就是这个布局）。
@@ -145,9 +190,42 @@ class BleController extends ChangeNotifier {
     return status.bluetoothPermissionGranted && status.bluetoothEnabled;
   }
 
+  /// 内置广播名兜底白名单：拉产品列表失败/为空时用它，保证 3.7 寸 EF6-370 / 5.89 寸 EF6-589
+  /// 两款目标相框仍能被搜到（对齐小程序 `bluetooth.js FALLBACK_BROADCAST_IDS`）。
+  static const List<String> _fallbackBroadcastIds = ['EF6-370', 'EF6-589'];
+
+  /// 产品列表 broadcastId 白名单缓存：首次扫描拉取后整次会话复用；失败不缓存，便于下次重试
+  /// （对齐小程序 `bluetooth.js cachedBroadcastIds`）。
+  List<String>? _cachedBroadcastIds;
+
+  /// 取允许的 broadcastId 白名单：优先产品列表接口返回的（带缓存）；拉不到/为空退回内置兜底。
+  Future<List<String>> _loadAllowedBroadcastIds() async {
+    final cached = _cachedBroadcastIds;
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+    try {
+      final ids = await BoltFoxApi.getProductBroadcastIds();
+      if (ids.isNotEmpty) {
+        _cachedBroadcastIds = ids;
+        return ids;
+      }
+    } catch (_) {
+      // 拉产品列表失败（未登录/网络异常）：退回内置广播名，扫描照常进行。
+    }
+    return _fallbackBroadcastIds;
+  }
+
   /// 扫描附近设备（去重 + 按信号强度排序）。
+  ///
+  /// [allowAll]=false（默认）：按产品列表 broadcastId 白名单只保留目标相框（兜底 EF6-370/EF6-589
+  /// 两个尺寸），对齐小程序 `discoverDevices` 默认过滤——绑定/列表/详情/自动重连都只显示/匹配目标相框，
+  /// 而不是把周围所有蓝牙设备都列出来。[allowAll]=true 放开过滤（硬件调试台排查用）。
+  /// [onUpdate]：增量回调「当前已搜到的列表」，供绑定页「搜出一个显示一个」，不必等满 timeout。
   Future<List<ScanResult>> scan({
     Duration timeout = const Duration(seconds: 8),
+    bool allowAll = false,
+    void Function(List<ScanResult> devices)? onUpdate,
   }) async {
     if (scanning) {
       return results;
@@ -155,7 +233,18 @@ class BleController extends ChangeNotifier {
     scanning = true;
     notifyListeners();
     try {
-      results = await FrameBleClient.scan(timeout: timeout);
+      final allowedNames = allowAll ? null : await _loadAllowedBroadcastIds();
+      results = await FrameBleClient.scan(
+        timeout: timeout,
+        allowedNames: allowedNames,
+        onUpdate: (list) {
+          results = list;
+          notifyListeners();
+          if (onUpdate != null) {
+            onUpdate(list);
+          }
+        },
+      );
       return results;
     } finally {
       scanning = false;

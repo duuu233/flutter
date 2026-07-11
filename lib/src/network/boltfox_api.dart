@@ -95,6 +95,36 @@ class BoltFoxApi {
     return _http.getJson('/Client/Product/getProductList', query: params);
   }
 
+  /// 拉取产品列表里每个产品的 broadcastId（广播名），供蓝牙搜索按它过滤目标相框。
+  ///
+  /// 对齐小程序 `utils/api.js getProductBroadcastIds`：后端新增/调整支持的机型时前端无需改动，
+  /// 白名单跟着产品列表走。返回去重后的非空字符串数组；拉取失败由调用方兜底（不在此处吞错）。
+  static Future<List<String>> getProductBroadcastIds() async {
+    final data = await getProductList({'pageIndex': 1, 'pageSize': 100});
+    dynamic rows = data;
+    if (data is Map) {
+      rows =
+          data['list'] ??
+          data['rows'] ??
+          data['records'] ??
+          data['data'] ??
+          data['items'];
+    }
+    final ids = <String>[];
+    if (rows is List) {
+      for (final row in rows) {
+        if (row is! Map) {
+          continue;
+        }
+        final id = (row['broadcastId'] ?? '').toString().trim();
+        if (id.isNotEmpty && !ids.contains(id)) {
+          ids.add(id);
+        }
+      }
+    }
+    return ids;
+  }
+
   /// 常见问题列表。[params]：pageIndex、pageSize、keyword、startDate、endDate。
   static Future<dynamic> getProductFaqList([Map<String, dynamic>? params]) {
     return _http.getJson('/Client/Product/getProductFaqList', query: params);
@@ -249,7 +279,8 @@ class BoltFoxApi {
       body: {
         'productId': productId,
         'productName': productName,
-        'productSerialNo': productSerialNo,
+        // 硬件序列号：完全对齐已通过测试的小程序 `api.bindDevice` —— 用字段名 `deviceId` 提交（同一后端）。
+        'deviceId': productSerialNo,
       },
     );
   }
