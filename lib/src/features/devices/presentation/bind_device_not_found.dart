@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import 'bind_device_debug_entry.dart';
 import 'bind_device_scan_help.dart';
 
 /// 绑定设备-未发现设备页：搜索失败提示与重试，对应 UI 稿「绑定设备-未发现设备」。
@@ -18,6 +19,8 @@ class BindDeviceNotFound extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const BindDebugEntryCard(),
+          const SizedBox(height: 16),
           const Spacer(flex: 2),
           const Center(
             child: SizedBox(

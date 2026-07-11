@@ -66,5 +66,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>需要蓝牙来搜索、连接相框设备并向其投屏照片。</string>
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>需要蓝牙来连接相框设备并传输照片。</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>iOS 搜索附近的蓝牙相框设备需要定位权限。</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>需要访问相册以选择照片投屏到相框。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>需要使用相机拍照后投屏到相框。</string>
 </dict>
 </plist>

@@ -4,6 +4,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../device/serial_match.dart';
+import '../../../native_device_api.dart';
 import '../../../state.dart';
 import 'bind_device_found.dart';
 import 'bind_device_not_found.dart';
@@ -42,13 +43,42 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       _stage = _Stage.scanning;
       _results = const [];
     });
-    final ok = await _ble.ensurePermission();
+    // 蓝牙开启/权限校验（对齐小程序 utils/bluetooth.js openAdapter + describeAdapterError）：
+    // 区分「环境不支持/通道缺失」「权限没给」「蓝牙没开」，分别给明确引导，而不是把所有
+    // 失败都静默混成「未发现设备」。try/catch 兜住 iOS 未注册 device_api 通道时的
+    // MissingPluginException，避免整条链路卡在 searching。
+    DevicePermissionStatus status;
+    try {
+      status = await NativeDeviceApi.requestBluetoothPermissions();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _stage = _Stage.notFound);
+      _toast('当前设备暂不支持蓝牙或未授权：$error');
+      return;
+    }
     if (!mounted) {
       return;
     }
-    if (!ok) {
-      _toast('请先打开手机蓝牙并授予蓝牙权限');
+    if (!status.bluetoothPermissionGranted) {
       setState(() => _stage = _Stage.notFound);
+      await _showBluetoothGuide(
+        title: '需要蓝牙权限',
+        message: '搜索附近相框需要「蓝牙」与「附近设备」权限。请在系统设置中开启后，点「重新扫描」重试。',
+        actionLabel: '去设置',
+        onAction: NativeDeviceApi.openAppSettings,
+      );
+      return;
+    }
+    if (!status.bluetoothEnabled) {
+      setState(() => _stage = _Stage.notFound);
+      await _showBluetoothGuide(
+        title: '请先打开手机蓝牙开关',
+        message: '手机蓝牙未开启，无法搜索附近相框。打开蓝牙后，点「重新扫描」重试。',
+        actionLabel: '去打开蓝牙',
+        onAction: NativeDeviceApi.openBluetoothSettings,
+      );
       return;
     }
     List<ScanResult> list;
@@ -69,6 +99,44 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       _results = list;
       _stage = list.isEmpty ? _Stage.notFound : _Stage.found;
     });
+  }
+
+  /// 蓝牙未开启 / 权限未授予时的引导弹窗：给一个「去设置 / 去打开蓝牙」的直达按钮
+  /// （接 [NativeDeviceApi.openBluetoothSettings] / [NativeDeviceApi.openAppSettings]，
+  ///  二者在 Android 侧已实现）。对齐小程序 showPermissionGuide 的明确引导，而非模糊 toast。
+  Future<void> _showBluetoothGuide({
+    required String title,
+    required String message,
+    required String actionLabel,
+    required Future<void> Function() onAction,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              try {
+                await onAction();
+              } catch (_) {
+                // 打开系统设置失败不阻断（如 iOS 通道未实现），用户可手动去设置。
+              }
+            },
+            child: Text(actionLabel),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _bind(int index) async {

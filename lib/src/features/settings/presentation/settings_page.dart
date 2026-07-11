@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
@@ -17,6 +18,84 @@ class SettingsPage extends StatelessWidget {
 
   // 联系方式（与小程序 index.js 的 contact 一致）。
   static const String _contact = '99999@qq.com';
+
+  /// 检查 App 更新：查最新版本 → 有更新则弹窗 → 「立即更新」用 url_launcher 打开下载地址
+  /// （对齐小程序 app.js 里的 getLastVersion / getAndroidDownload TODO）。
+  Future<void> _checkUpdate(BuildContext context) async {
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(const SnackBar(content: Text('正在检查更新…')));
+    AppVersionInfo info;
+    try {
+      info = await state.checkAppVersion();
+    } catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+      messenger
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text('检查更新失败：$error')));
+      return;
+    }
+    if (!context.mounted) {
+      return;
+    }
+    messenger.hideCurrentSnackBar();
+    if (!info.hasUpdate) {
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('检查更新'),
+          content: Text('当前已是最新版本 v${info.currentVersion}。'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('我知道了'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text('发现新版本 v${info.latestVersion}'),
+        content: Text(
+          info.description.isEmpty ? '检测到新版本，是否立即更新？' : info.description,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('暂不更新'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('立即更新'),
+          ),
+        ],
+      ),
+    );
+    if (go != true) {
+      return;
+    }
+    final url = info.downloadUrl.trim();
+    if (url.isEmpty) {
+      if (context.mounted) {
+        messenger
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(content: Text('暂无下载地址，请前往官网或应用商店更新。')),
+          );
+      }
+      return;
+    }
+    final uri = Uri.tryParse(url);
+    if (uri != null) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,6 +147,13 @@ class SettingsPage extends StatelessWidget {
                   onTap: () => Navigator.of(
                     context,
                   ).pushNamed<void>(AppRoutes.figmaUserAgreement),
+                ),
+                const _SettingsDivider(),
+                _SettingsRow(
+                  iconAsset: 'assets/images/set-icon04.png',
+                  iconBg: const Color(0x1A287DFF),
+                  title: '检查更新',
+                  onTap: () => _checkUpdate(context),
                 ),
               ],
             ),

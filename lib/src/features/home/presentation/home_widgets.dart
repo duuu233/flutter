@@ -327,33 +327,56 @@ String _batteryIconAsset(int level) {
 // 「首页-已绑定设备」场景专用组件。
 // -----------------------------------------------------------------------------
 
-/// 顶部用户头像（小程序 `.avatar-btn`：72rpx=36 白底圆形，内嵌 `mine-header.png`）。
+/// 顶部用户头像（小程序 `.avatar-btn`：72rpx=36 白底圆形）。
+///
+/// 优先显示真实头像 [avatarUrl]（网络图，对齐小程序 `home.js loadUserAvatar`）；无地址 /
+/// 加载失败时回退本地 `mine-header.png`，再失败回退占位图标。[onTap] 非空时可点（换头像上传）。
 class _Avatar extends StatelessWidget {
-  const _Avatar();
+  const _Avatar({this.avatarUrl, this.onTap});
+
+  final String? avatarUrl;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 36,
-      height: 36,
-      clipBehavior: Clip.antiAlias,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
+    final url = avatarUrl?.trim() ?? '';
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 36,
+        height: 36,
+        clipBehavior: Clip.antiAlias,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+        ),
+        child: url.isEmpty
+            ? Image.asset(
+                'assets/images/mine-header.png',
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => _fallback(),
+              )
+            : Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Image.asset(
+                  'assets/images/mine-header.png',
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => _fallback(),
+                ),
+              ),
       ),
-      child: Image.asset(
-        'assets/images/mine-header.png',
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            color: const Color(0xFFEAF4FF),
-            child: const Icon(
-              Icons.person_rounded,
-              color: Color(0xFF8C9092),
-              size: 22,
-            ),
-          );
-        },
+    );
+  }
+
+  Widget _fallback() {
+    return Container(
+      color: const Color(0xFFEAF4FF),
+      child: const Icon(
+        Icons.person_rounded,
+        color: Color(0xFF8C9092),
+        size: 22,
       ),
     );
   }

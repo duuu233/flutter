@@ -126,7 +126,19 @@ class _BleDebugPageState extends State<BleDebugPage> {
       final list = await FrameBleClient.scan(timeout: const Duration(seconds: 8));
       if (!mounted) return;
       setState(() => _devices = list);
-      _log('act', '扫描完成，发现 ${list.length} 个设备');
+      _log('act', '扫描完成（未过滤，附近全部设备），发现 ${list.length} 个设备');
+      // 逐台打印名字 + 信号，便于和相框广播名（EF6-370 / EF6-589）对照，确认设备到底叫什么、
+      // 为什么没被正式入口收录——这是排查「搜索不到设备」的关键。
+      for (final r in list) {
+        final id = r.device.remoteId.str;
+        final name = r.device.platformName.isNotEmpty
+            ? r.device.platformName
+            : (r.advertisementData.advName.isNotEmpty
+                ? r.advertisementData.advName
+                : id);
+        final tail = id.length > 5 ? id.substring(id.length - 5) : id;
+        _log('act', '· $name（信号 ${r.rssi}，id 末段 $tail）');
+      }
     } catch (e) {
       _toast('扫描失败：$e');
     } finally {
@@ -170,6 +182,34 @@ class _BleDebugPageState extends State<BleDebugPage> {
       _info = null;
     });
     _log('act', '已断开连接');
+  }
+
+  /// 断开系统当前持有的全部 BLE 连接，释放被占用的设备（让它重新广播，能再次被搜索/连接）。
+  /// 对齐小程序调试台「断开全部并释放设备」：设备是单连接，上次流程没断开就会占着设备，
+  /// 导致再次搜索/连接搜不到或连不上。
+  Future<void> _disconnectAll() async {
+    final devices = FlutterBluePlus.connectedDevices;
+    if (devices.isEmpty) {
+      _toast('当前没有已连接的设备');
+      return;
+    }
+    var count = 0;
+    for (final d in devices) {
+      try {
+        await d.disconnect();
+        count++;
+      } catch (_) {
+        // 单台断开失败不影响其它设备的释放。
+      }
+    }
+    await _client.disconnect();
+    if (!mounted) return;
+    setState(() {
+      _connected = false;
+      _info = null;
+    });
+    _log('act', '已断开全部连接（$count 个），设备已释放，可重新搜索/连接');
+    _toast('已释放 $count 个连接');
   }
 
   Future<void> _refreshInfo() async {
@@ -508,6 +548,19 @@ class _BleDebugPageState extends State<BleDebugPage> {
           child: Text(_scanning ? '扫描中…' : '扫描设备'),
         ),
       ]),
+      const SizedBox(height: 8),
+      Align(
+        alignment: Alignment.centerLeft,
+        child: OutlinedButton.icon(
+          onPressed: _disconnectAll,
+          icon: const Icon(Icons.link_off_rounded, size: 18),
+          label: const Text('断开全部连接释放设备'),
+        ),
+      ),
+      const Text(
+        '设备被占用（上次连接没断开）会不再广播，导致搜不到 / 连不上。点上面按钮断开所有连接释放设备后重试。',
+        style: TextStyle(fontSize: 11, color: Colors.grey),
+      ),
     ]);
   }
 

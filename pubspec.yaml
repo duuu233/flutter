@@ -42,6 +42,10 @@ dependencies:
   crypto: ^3.0.6
   # 拍照/相册选图，返回真实本地文件路径（投屏原图需上传后端转码，content:// 无法直接上传）
   image_picker: ^1.1.2
+  # 版本更新：跳转浏览器/应用商店下载新版 APK
+  url_launcher: ^6.3.0
+  # 读取当前 App 版本号，供 getLastVersion 比对是否有新版本
+  package_info_plus: ^8.0.0
 
 dev_dependencies:
   flutter_test:

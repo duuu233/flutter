@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/home_figma_common.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import 'bind_device_debug_entry.dart';
 
 /// 绑定设备-发现设备页：展示搜索到的设备并发起绑定，对应 UI 稿「绑定设备-发现设备」。
 class BindDeviceFound extends StatefulWidget {
@@ -42,7 +43,8 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 8),
+          const BindDebugEntryCard(),
+          const SizedBox(height: 12),
           const Center(
             child: SizedBox(
               width: 240,

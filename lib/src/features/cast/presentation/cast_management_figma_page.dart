@@ -86,6 +86,27 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
   }
 
   Future<void> _delete(CastRecord record) async {
+    // 二次确认（对齐小程序 records.js:215-232 的 wx.showModal），避免误删不可恢复的记录。
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除投屏记录'),
+        content: const Text('确定删除这条投屏记录吗？删除后不可恢复。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) {
+      return;
+    }
     final feedback = await state.deleteCastRecord(record.id);
     if (!mounted) {
       return;

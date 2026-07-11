@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../routes/app_routes.dart';
 import '../../../state.dart';
 import '../../cast/presentation/casting_progress_page.dart';
 
@@ -244,25 +245,23 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  /// 开始扫描：进入 searching，1.2s 后按是否有附近设备切到 found / notFound。
+  /// 开始绑定设备：跳转到真·蓝牙扫描绑定流程页（[BindDeviceFlowPage]）。
+  ///
+  /// 早期首页内嵌的是 mock 假扫描（`Timer(1200ms)` + 取后端已绑定列表当「附近设备」），
+  /// 既不扫蓝牙也不校验蓝牙是否开启，这正是「搜索不到设备」的根因。现改为进入真链路：
+  /// 权限/蓝牙开启校验 → `FlutterBluePlus` 扫描 → 连接 → 绑定。返回后刷新设备列表，
+  /// 绑定成功的设备立即出现在首页。
+  ///
+  /// （首页内嵌的 mock 绑定视图 [_BindDeviceView] 仅保留给 [_debugScene] 调样式用，
+  ///  正常交互不再触发。）
   void _startScan() {
-    _scanTimer?.cancel();
-    setState(() {
-      _bindMode = _HomeBindMode.searching;
-      _showScanHelp = false;
-    });
-
-    _scanTimer = Timer(const Duration(milliseconds: 1200), () {
-      if (!mounted || _bindMode != _HomeBindMode.searching) {
-        return;
-      }
-      setState(() {
-        _bindMode = _nearbyDevices.isEmpty
-            ? _HomeBindMode.notFound
-            : _HomeBindMode.found;
-        _selectedFoundDeviceIndex = 0;
-      });
-    });
+    Navigator.of(context)
+        .pushNamed<void>(AppRoutes.figmaBindDeviceSearching)
+        .then((_) {
+          if (mounted) {
+            widget.state.refreshDevices();
+          }
+        });
   }
 
   /// 退出绑定流程，回到主视图。

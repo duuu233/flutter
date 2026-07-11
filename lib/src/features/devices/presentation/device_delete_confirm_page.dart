@@ -29,7 +29,7 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
               fallbackIcon: Icons.delete_outline_rounded,
               accent: const Color(0xFFFF3045),
               title: '删除设备',
-              message: '删除后将解除与该相框设备的绑定，后续使用需重新添加设备。',
+              message: '删除后将断开与该相框的连接并解除绑定，后续使用需重新添加设备。',
               onCancel: onCancel ?? () => Navigator.maybePop(context),
               onConfirm: () => _confirm(context),
             ),

@@ -95,7 +95,7 @@ class _HomeMainView extends StatelessWidget {
             height: 36,
             child: Row(
               children: [
-                const _Avatar(),
+                _Avatar(avatarUrl: state.currentUser.avatarUrl),
                 const Spacer(),
                 _RoundAddButton(onTap: onAddDevice),
               ],

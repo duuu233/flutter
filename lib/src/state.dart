@@ -6,6 +6,7 @@ import 'device/frame_device_protocol.dart';
 import 'network/api_exception.dart';
 import 'network/api_session.dart';
 import 'network/boltfox_api.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 enum AppLanguage { zh, en, ja }
 
@@ -32,6 +33,23 @@ class CastAttemptResult extends ActionFeedback {
   });
 
   final bool deviceFull;
+}
+
+/// App 版本检查结果（见 [PhotoFrameState.checkAppVersion]）。
+class AppVersionInfo {
+  const AppVersionInfo({
+    required this.hasUpdate,
+    required this.currentVersion,
+    required this.latestVersion,
+    required this.downloadUrl,
+    required this.description,
+  });
+
+  final bool hasUpdate;
+  final String currentVersion;
+  final String latestVersion;
+  final String downloadUrl;
+  final String description;
 }
 
 class UserProfile {
@@ -925,6 +943,132 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 检查 App 版本更新（对齐小程序 `app.js` 里的 TODO：`getLastVersion` + `getAndroidDownload`）。
+  ///
+  /// 读当前版本 → 调 `getLastVersion(appVersionNo: 当前)` → 解析是否有新版/下载地址/更新说明；
+  /// 地址缺失时回退 `getAndroidDownload()`。后端响应字段名未在小程序侧落地过，这里做**防御式**
+  /// 多字段兼容，真实字段需以后端为准（见字段候选列表）。
+  Future<AppVersionInfo> checkAppVersion() async {
+    final pkg = await PackageInfo.fromPlatform();
+    final current = pkg.version;
+    final data = await BoltFoxApi.getLastVersion(appVersionNo: current);
+
+    String latest = '';
+    String url = '';
+    String desc = '';
+    bool hasUpdate = false;
+    if (data is Map) {
+      final m = data.map((k, v) => MapEntry(k.toString(), v));
+      latest = '${m['versionNo'] ?? m['version'] ?? m['lastVersion'] ?? m['newVersionNo'] ?? ''}';
+      url = '${m['downloadUrl'] ?? m['url'] ?? m['downloadPath'] ?? m['androidUrl'] ?? ''}';
+      desc = '${m['content'] ?? m['desc'] ?? m['remark'] ?? m['updateContent'] ?? ''}';
+      final flag = m['isUpdate'] ?? m['needUpdate'] ?? m['forceUpdate'];
+      if (flag is bool) {
+        hasUpdate = flag;
+      } else if (flag is num) {
+        hasUpdate = flag != 0;
+      } else if (flag is String) {
+        hasUpdate = flag == '1' || flag.toLowerCase() == 'true';
+      } else {
+        hasUpdate = _versionGreater(latest, current);
+      }
+    } else if (data is String) {
+      latest = data.trim();
+      hasUpdate = _versionGreater(latest, current);
+    }
+
+    if (hasUpdate && url.isEmpty) {
+      try {
+        url = _extractUploadedUrl(await BoltFoxApi.getAndroidDownload());
+      } catch (_) {
+        // 下载地址兜底接口失败不阻断：仍提示有新版本，只是无法直达下载。
+      }
+    }
+
+    return AppVersionInfo(
+      hasUpdate: hasUpdate,
+      currentVersion: current,
+      latestVersion: latest.isEmpty ? current : latest,
+      downloadUrl: url,
+      description: desc,
+    );
+  }
+
+  /// 点分版本号比较：[a] 是否严格大于 [b]（如 1.2.0 > 1.1.9）。非数字段按 0 处理。
+  bool _versionGreater(String a, String b) {
+    List<int> parts(String v) => v
+        .split('.')
+        .map((s) => int.tryParse(s.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0)
+        .toList();
+    final pa = parts(a);
+    final pb = parts(b);
+    final n = pa.length > pb.length ? pa.length : pb.length;
+    for (var i = 0; i < n; i++) {
+      final x = i < pa.length ? pa[i] : 0;
+      final y = i < pb.length ? pb[i] : 0;
+      if (x != y) {
+        return x > y;
+      }
+    }
+    return false;
+  }
+
+  /// 更换头像（对齐小程序 `home.js onChooseAvatar` / `profile.js`）：选好的本地图片先
+  /// [BoltFoxApi.setFileUpload] 上传取地址，再 [BoltFoxApi.changeAvatar] 落库，成功后即时
+  /// 更新本地 `currentUser.avatarUrl` 并通知刷新（首页/我的/资料页头像同步）。
+  Future<ActionFeedback> updateAvatar(String filePath) async {
+    try {
+      final uploaded = await BoltFoxApi.setFileUpload([filePath]);
+      final url = _extractUploadedUrl(uploaded);
+      if (url.isEmpty) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '头像上传失败，请重试。',
+            en: 'Avatar upload failed, please retry.',
+            ja: 'アバターのアップロードに失敗しました。',
+          ),
+        );
+      }
+      await BoltFoxApi.changeAvatar(url);
+      _currentUser.avatarUrl = url;
+      notifyListeners();
+      return ActionFeedback(
+        success: true,
+        message: tr(
+          zh: '头像已更新。',
+          en: 'Avatar updated.',
+          ja: 'アバターを更新しました。',
+        ),
+      );
+    } catch (error) {
+      return _apiFailure(error);
+    }
+  }
+
+  /// 从 setFileUpload 的 retData 提取上传后的文件地址：兼容直接返回 URL 字符串、
+  /// 数组（取首个）、或对象（url / fileUrl / path 等常见字段）。
+  String _extractUploadedUrl(dynamic data) {
+    if (data is String) {
+      return data.trim();
+    }
+    if (data is List && data.isNotEmpty) {
+      return _extractUploadedUrl(data.first);
+    }
+    if (data is Map) {
+      final url = data['url'] ??
+          data['fileUrl'] ??
+          data['filePath'] ??
+          data['path'] ??
+          data['fileParam'] ??
+          data['src'];
+      if (url is String) {
+        return url.trim();
+      }
+    }
+    return '';
+  }
+
   /// 保存个人资料。昵称走 `/Client/User/changeNickName`（1-10 字）。
   Future<ActionFeedback> updateProfile({
     required String nickname,
@@ -1272,6 +1416,18 @@ class PhotoFrameState extends ChangeNotifier {
     // 1) 设备优先：已连接则先读设备信息(0x01)拿到已占槽位 + 当前屏显图，把选中照片解析成设备槽位，
     //    一条 0x12 批量删除；删到当前屏显图再刷屏(0x24)。设备删除失败即中止、不动后端。
     final client = BleController.instance.client;
+    // 未连接则中止（对齐小程序 list.js:334-349「删除需同步到设备」）：只删后端会造成
+    // 后端删了、相框还留着的两边不一致。要求先连接设备再删。
+    if (!client.connected) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '请先连接设备后再删除照片（删除会同步到相框）。',
+          en: 'Connect the device first before deleting; deletion syncs to the frame.',
+          ja: '端末に接続してから削除してください。削除は端末に同期されます。',
+        ),
+      );
+    }
     String refreshWarn = '';
     if (client.connected) {
       try {
@@ -1352,6 +1508,86 @@ class PhotoFrameState extends ChangeNotifier {
               ja: '選択した写真を削除しました。',
             ),
     );
+  }
+
+  /// 图库「刷新屏幕」：把选中的这张照片切到相框当前显示（对齐小程序 list.js:474-533 refreshScreen）。
+  /// 需已连接设备；读设备信息 → 解析该照片槽位 → 0x24 切图。
+  Future<ActionFeedback> refreshGalleryPhotoOnScreen(String photoId) async {
+    AlbumPhoto? photo;
+    try {
+      photo = _albumPhotos.firstWhere(
+        (p) =>
+            p.id == photoId &&
+            p.ownerUserId == _currentUser.id &&
+            p.isOnDevice,
+      );
+    } catch (_) {
+      photo = null;
+    }
+    if (photo == null) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '该照片不在设备上，无法刷新到屏幕。',
+          en: 'This photo is not on the device.',
+          ja: 'この写真は端末にありません。',
+        ),
+      );
+    }
+    final client = BleController.instance.client;
+    if (!client.connected) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '请先连接设备后再刷新屏幕。',
+          en: 'Connect the device first.',
+          ja: '端末に接続してください。',
+        ),
+      );
+    }
+    try {
+      final info = await client.readDeviceInfo();
+      final occupied = FrameProtocol.maskToIndexes(info.imgMask);
+      final slot = _resolveDeviceImageIndex(photo, occupied);
+      if (slot < 0) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '未能定位该照片在设备上的位置，请刷新图库后重试。',
+            en: 'Could not locate this photo on the device.',
+            ja: '端末上でこの写真の位置を特定できませんでした。',
+          ),
+        );
+      }
+      await client.refreshScreen(slot);
+      return ActionFeedback(
+        success: true,
+        message: tr(
+          zh: '已切换到该照片。',
+          en: 'Switched to this photo.',
+          ja: 'この写真に切り替えました。',
+        ),
+      );
+    } catch (e) {
+      if (FrameProtocol.isBusyMessage(e.toString())) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '当前设备繁忙，请稍后重试',
+            en: 'Device is busy, please try again later.',
+            ja: '端末が処理中です。しばらくしてから再試行してください。',
+          ),
+        );
+      }
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '刷新屏幕失败，请检查设备连接后重试。',
+          en: 'Failed to refresh the screen. Check the connection and retry.',
+          ja: '画面の更新に失敗しました。接続を確認して再試行してください。',
+        ),
+      );
+    }
   }
 
   /// 选中照片 → 设备固件图片槽位索引（对齐小程序 album/list.js resolveDeviceImageIndex）。
@@ -1598,8 +1834,21 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   /// 删除 / 解绑设备：`/Client/UserProduct/delUserProduct`，成功后清理本地设备与相关数据。
+  ///
+  /// 删除前先断开该设备占用的 BLE 会话（对齐小程序 detail.js/list.js「删除前 disconnect」）：
+  /// 否则删了记录但单连接还占着，设备不再广播，也无法被重新搜索/绑定。
   Future<ActionFeedback> deleteDevice(String deviceId) async {
     try {
+      DeviceItem? target;
+      try {
+        target = _findDevice(deviceId);
+      } catch (_) {
+        target = null;
+      }
+      if (target != null && (target.connected || _sessionMatches(target))) {
+        await BleController.instance.disconnect();
+        target.connected = false;
+      }
       await BoltFoxApi.delUserProduct(deviceId);
       _devices.removeWhere((device) => device.id == deviceId);
       _albumPhotos.removeWhere((photo) => photo.deviceId == deviceId);

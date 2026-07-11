@@ -209,6 +209,18 @@ class _GalleryPageState extends State<GalleryPage> {
     _showFeedback(feedback.message);
   }
 
+  /// 单选照片「刷新屏幕」：把该照片切到相框当前显示（0x24）。
+  Future<void> _refreshSelectedOnScreen() async {
+    if (_selectedIds.length != 1) {
+      return;
+    }
+    final feedback = await state.refreshGalleryPhotoOnScreen(_selectedIds.first);
+    if (!mounted) {
+      return;
+    }
+    _showFeedback(feedback.message);
+  }
+
   void _showFeedback(String message) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
@@ -292,6 +304,9 @@ class _GalleryPageState extends State<GalleryPage> {
                   _SelectionBar(
                     count: _selectedIds.length,
                     onDelete: _confirmDelete,
+                    onRefresh: _selectedIds.length == 1
+                        ? _refreshSelectedOnScreen
+                        : null,
                   ),
               ],
             ),
@@ -467,10 +482,14 @@ class _SelectionBar extends StatelessWidget {
   const _SelectionBar({
     required this.count,
     required this.onDelete,
+    this.onRefresh,
   });
 
   final int count;
   final VoidCallback onDelete;
+
+  /// 单选时可用：把这张照片刷到相框屏幕（0x24）。多选 / 未连接时为 null，按钮不显示。
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) {
@@ -522,6 +541,35 @@ class _SelectionBar extends StatelessWidget {
                 ),
               ),
             ),
+            if (onRefresh != null) ...[
+              const SizedBox(width: 14),
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onRefresh,
+                child: Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF7E96B8).withValues(alpha: 0.15),
+                        blurRadius: 13,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: const Center(
+                    child: Icon(
+                      Icons.cast_rounded,
+                      color: Color(0xFFFF5F1F),
+                      size: 22,
+                    ),
+                  ),
+                ),
+              ),
+            ],
             Expanded(
               child: Center(
                 child: Text.rich(
