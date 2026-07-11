@@ -22,10 +22,7 @@ class SettingsPage extends StatelessWidget {
   /// 检查 App 更新：查最新版本 → 有更新则弹窗 → 「立即更新」用 url_launcher 打开下载地址
   /// （对齐小程序 app.js 里的 getLastVersion / getAndroidDownload TODO）。
   Future<void> _checkUpdate(BuildContext context) async {
-    final messenger = ScaffoldMessenger.of(context);
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('正在检查更新…')));
+    AppToast.show(context, '正在检查更新…');
     AppVersionInfo info;
     try {
       info = await state.checkAppVersion();
@@ -33,15 +30,12 @@ class SettingsPage extends StatelessWidget {
       if (!context.mounted) {
         return;
       }
-      messenger
-        ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('检查更新失败：$error')));
+      AppToast.show(context, '检查更新失败：$error');
       return;
     }
     if (!context.mounted) {
       return;
     }
-    messenger.hideCurrentSnackBar();
     if (!info.hasUpdate) {
       await showDialog<void>(
         context: context,
@@ -83,11 +77,7 @@ class SettingsPage extends StatelessWidget {
     final url = info.downloadUrl.trim();
     if (url.isEmpty) {
       if (context.mounted) {
-        messenger
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            const SnackBar(content: Text('暂无下载地址，请前往官网或应用商店更新。')),
-          );
+        AppToast.show(context, '暂无下载地址，请前往官网或应用商店更新。');
       }
       return;
     }
@@ -207,9 +197,7 @@ class SettingsPage extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('已复制联系方式')));
+    AppToast.show(context, '已复制联系方式');
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
@@ -250,8 +238,13 @@ class SettingsPage extends StatelessWidget {
     if (step2 != true || !context.mounted) {
       return;
     }
-    await state.deleteAccount();
+    final result = await state.deleteAccount();
     if (!context.mounted) {
+      return;
+    }
+    // 对齐小程序：注销接口失败则留在原页并提示，不本地登出。
+    if (!result.success) {
+      AppToast.show(context, result.message);
       return;
     }
     Navigator.of(

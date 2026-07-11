@@ -6,6 +6,7 @@ import '../../../device/frame_device_protocol.dart';
 import '../../../device/serial_match.dart';
 import '../../../native_device_api.dart';
 import '../../../routes/app_routes.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import 'bind_device_found.dart';
 import 'bind_device_not_found.dart';
@@ -286,9 +287,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   }
 
   void _toast(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 
   @override

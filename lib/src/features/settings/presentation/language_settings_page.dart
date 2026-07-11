@@ -80,9 +80,7 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
 
   void _save() {
     widget.state.switchLanguage(_selected.language);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('语种设置已保存')));
+    AppToast.show(context, '语种设置已保存');
     Navigator.maybePop(context);
   }
 }

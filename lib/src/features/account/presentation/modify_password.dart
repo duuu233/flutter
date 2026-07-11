@@ -7,7 +7,7 @@ import '../../../state.dart';
 
 /// 修改密码页，对应 UI 稿「修改密码」。
 ///
-/// 已登录用户通过邮箱验证码重置密码：验证码走已登录通道 `sendEmailToken`，
+/// 已登录用户通过邮箱验证码重置密码：验证码统一走 `sendEmail`，
 /// 提交走 `resetPassword`（email/password/emailCode）。
 class ModifyPassword extends StatefulWidget {
   const ModifyPassword({super.key, required this.state, this.onConfirmed});
@@ -97,7 +97,7 @@ class _ModifyPasswordState extends State<ModifyPassword> {
     if (_countdown > 0) {
       return;
     }
-    // 已登录用户改密走 sendEmailToken，sendType:2。
+    // 已登录用户改密，验证码统一走 sendEmail，sendType:2。
     final feedback = await widget.state.sendEmailCode(
       email: _emailController.text,
       sendType: 2,
@@ -151,8 +151,6 @@ class _ModifyPasswordState extends State<ModifyPassword> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 }

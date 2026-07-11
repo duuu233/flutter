@@ -34,6 +34,11 @@ import '../features/devices/presentation/ota_upgrade_page.dart';
 import '../features/settings/presentation/user_agreement_page.dart';
 import '../state.dart';
 
+/// 全局路由观察者：供页面实现 [RouteAware] 感知「被覆盖的页 pop 回来」(didPopNext)，
+/// 从而在重入时回后端刷新（对齐小程序 onShow 每次重入都重拉）。在 MaterialApp.navigatorObservers 注册。
+final RouteObserver<PageRoute<dynamic>> appRouteObserver =
+    RouteObserver<PageRoute<dynamic>>();
+
 /// 统一维护 App 内部命名路由。
 ///
 /// 新增页面时只需要在这里补充 path 常量和 switch 分支，页面继续接收根组件传入的
@@ -179,13 +184,37 @@ class AppRoutes {
               context,
             ).pushNamed<void>(AppRoutes.figmaDeviceClearConfirm);
           },
-          onDeleteDevice: () {
+          onDeleteDevice: () async {
+            // 对齐小程序 detail.js：已连接时删除前先弹「需断开」确认，再进删除确认页。
+            if (state.selectedDevice.connected) {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (dialogContext) => AlertDialog(
+                  title: const Text('删除设备'),
+                  content: const Text('删除前需断开与当前设备的连接，是否继续？'),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(false),
+                      child: const Text('取消'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.of(dialogContext).pop(true),
+                      child: const Text('继续'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok != true || !context.mounted) {
+                return;
+              }
+            }
             Navigator.of(
               context,
             ).pushNamed<void>(AppRoutes.figmaDeviceDeleteConfirm);
           },
           onOtaUpgrade: () {
-            Navigator.of(context).pushNamed<void>(AppRoutes.figmaDeviceOta);
+            // 对齐小程序 goOtaUpgrade：未连接拦截/自动连 + 二次查版本 + 确认弹窗 + 确认后自动开始。
+            startOtaFlow(context, state);
           },
         );
         break;

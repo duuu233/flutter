@@ -7,8 +7,8 @@
 //     → 下载 .bin 帧数据 → 校验长度==宽×高÷2 → 选空闲槽位 → BLE 图传(0x20/0x21/0x22)
 //     → 设备成功才编辑投屏记录(editUserProductImgRecord 置 deviceUploadState=1) → 刷新显示。
 //
-// 与 App 已有的「本地六色量化 + 图传」(BleController.uploadRgba) 并列：那条是端上处理；
-// 本条是「后端转换」，两者最终都复用同一 BLE 图传协议(FrameBleClient.uploadImage)。
+// App 端不再自研调色：与小程序一致，投屏只此一条链路——原图传接口，后端转成六色 4bpp 帧(.raw/.bin)，
+// App 下载后字节直传设备。端上六色量化(旧 BleController.uploadRgba)已移除。
 
 import 'dart:async';
 import 'dart:typed_data';
@@ -112,17 +112,20 @@ class ServerImageProjectionService {
       // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。B2：走精简读取，不带 0x03 固件版本。
       emit(0, '正在读取设备信息…');
       final info = await client.readTransferInfo();
-      if (info.screenType == 0x03 || info.width == 0 || info.height == 0) {
+      // 机型/尺寸分开判（对齐小程序 result.js:367-375）：只有 0x03 才是「该型号暂不支持图传」；
+      // 读到 0 尺寸多半是刷屏后短暂断连，应提示「重新连接」而非误报机型不支持。
+      if (info.screenType == 0x03) {
         throw FrameBleException('该型号暂不支持图传');
+      }
+      if (info.width == 0 || info.height == 0) {
+        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏');
       }
       final expected4bpp = (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2（向上取整）
 
-      // 设备空间校验：剩余可存张数 = 容量 - 已存张数（掩码置位数）。
+      // 设备空间：不做整单预检（对齐小程序 result.js —— 逐张选空闲槽位，放满为止）。
+      // 只差 N 张空间时也把能放下的都投进去(部分成功)，而不是一张不投直接整单失败。
+      // 每张选槽位时若已无空位(firstFreeIndex<0)才抛「设备已存满」，配合下方「uploaded>=1 即成功页」。
       var usedIndexes = FrameProtocol.maskToIndexes(info.imgMask);
-      final free = info.capacity - usedIndexes.length;
-      if (free < total) {
-        throw FrameBleException('设备空间不足：剩余 ${free < 0 ? 0 : free} 张，待投 $total 张');
-      }
 
       // A3 预取流水线：设备帧的「后端转码 + 下载 + D1/D2 预处理」是纯网络/纯计算，与 BLE 图传互不占用
       // 资源。投第 i 张(走蓝牙)的同时并行预取第 i+1 张的设备帧；只预取下一张(最多 1 张在后台)，中断浪费
@@ -219,23 +222,31 @@ class ServerImageProjectionService {
         message: '投屏成功',
       );
     } on ProjectionAbortedException {
+      // 部分成功也判成功页（对齐小程序 finishProjection：uploaded>=1 → success）：已物理写入设备的
+      // 照片不该被显示成「投屏失败」，否则用户会重投造成重复上传（占用新槽位）。
       return ProjectionResult(
-        success: false,
+        success: uploaded >= 1,
         uploaded: uploaded,
         total: total,
-        message: '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。',
+        message: uploaded >= 1
+            ? '已投 $uploaded/$total 张，其余已中断'
+            : '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。',
       );
     } catch (error) {
       final raw = error is FrameBleException ? error.message : error.toString();
       // 图传内部中止（uploadImage 抛 'UPLOAD_ABORTED'）与外层一致，给友好文案。
       final aborted = (shouldAbort?.call() ?? false) || raw.contains('UPLOAD_ABORTED');
+      // 任一张失败即中断本单（对齐小程序「任意一张失败即中断」）；但只要已成功过至少 1 张就判成功页
+      //（部分成功），uploaded>=1 → success，与小程序 finishProjection 一致。
       return ProjectionResult(
-        success: false,
+        success: uploaded >= 1,
         uploaded: uploaded,
         total: total,
-        message: aborted
-            ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。'
-            : raw,
+        message: uploaded >= 1
+            ? '已投 $uploaded/$total 张（有 ${total - uploaded} 张未成功）'
+            : (aborted
+                ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。'
+                : raw),
       );
     }
   }
@@ -285,8 +296,12 @@ class ServerImageProjectionService {
     try {
       emit(0, '正在读取设备信息…');
       final info = await client.readTransferInfo(); // B2：精简读取，不带 0x03 固件版本
-      if (info.screenType == 0x03 || info.width == 0 || info.height == 0) {
+      // 机型/尺寸分开判（对齐小程序 result.js）：0x03 才是不支持；尺寸 0 多为短暂断连，提示重连。
+      if (info.screenType == 0x03) {
         throw FrameBleException('该型号暂不支持图传');
+      }
+      if (info.width == 0 || info.height == 0) {
+        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏');
       }
       final expected4bpp = (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2
 

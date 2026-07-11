@@ -48,9 +48,7 @@ class DeviceDetailsPage extends StatelessWidget {
   }
 
   void _snack(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 
   /// 摘要卡编辑图标：重命名当前设备（对齐小程序 detail.js `showRenameModal`）。
@@ -99,27 +97,90 @@ class DeviceDetailsPage extends StatelessWidget {
     }
   }
 
-  /// 顶部操作栏「投屏」：选图 → 真实投屏链路（对齐小程序 detail.js `startProjection`）。
+  /// 未连接则蒙层 loading 自动扫连（对齐小程序 detail.js startProjection→connectDevice）；
+  /// 连上返回 true，失败提示并返回 false。
+  Future<bool> _ensureConnected(BuildContext context, Object deviceId) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final feedback = await state.connectDevice(deviceId);
+    if (!context.mounted) {
+      return false;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+    if (!feedback.success) {
+      _snack(context, feedback.message);
+    }
+    return feedback.success;
+  }
+
+  /// 拍照 / 相册选择面板（对齐小程序 media 选择 sheet）。
+  Future<ImageSourceType?> _pickCastSource(BuildContext context) {
+    return showModalBottomSheet<ImageSourceType>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetContext) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo_camera_outlined),
+              title: const Text('拍照'),
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(ImageSourceType.camera),
+            ),
+            ListTile(
+              leading: const Icon(Icons.collections_outlined),
+              title: const Text('从相册选择'),
+              onTap: () =>
+                  Navigator.of(sheetContext).pop(ImageSourceType.album),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 顶部操作栏「投屏」：未连接自动扫连 → 拍照/相册 → 真实投屏（对齐小程序 detail.js `startProjection`）。
   Future<void> _startCast(BuildContext context) async {
     final device = state.selectedDevice;
     if (!device.connected) {
-      _snack(context, '请先连接设备后再投屏');
+      final connected = await _ensureConnected(context, device.id);
+      if (!connected || !context.mounted) {
+        return;
+      }
+    }
+    final source = await _pickCastSource(context);
+    if (source == null || !context.mounted) {
       return;
     }
     final picker = ImagePicker();
     List<String> imagePaths;
     try {
-      final files = await picker.pickMultiImage();
-      imagePaths = files.map((file) => file.path).toList();
+      if (source == ImageSourceType.camera) {
+        final file = await picker.pickImage(source: ImageSource.camera);
+        imagePaths = file == null ? const [] : [file.path];
+      } else {
+        // 单批投屏上限 5 张，对齐小程序 media.chooseFromAlbum(count:5)。
+        final files = await picker.pickMultiImage(limit: 5);
+        imagePaths = files.map((file) => file.path).toList();
+      }
     } catch (_) {
       if (context.mounted) {
-        _snack(context, '无法读取照片，请检查相册权限后重试。');
+        _snack(context, '无法读取照片，请检查相机/相册权限后重试。');
       }
       return;
     }
     if (!context.mounted || imagePaths.isEmpty) {
       return;
     }
+    // 投屏「无预览 / 无中心裁切」：选好图直接走真实投屏（原图交后端转码 .raw → BLE 直传设备）。
+    // App 端不做预览、不做端上裁切/旋转编辑（既定方针，与小程序最小可用链路一致）。
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => CastingProgressPage(
@@ -170,10 +231,12 @@ class DeviceDetailsBody extends StatelessWidget {
     if (!device.connected) {
       return '--';
     }
-    if (!device.carouselEnabled) {
-      return '已关闭';
+    // 对齐小程序 getPlaybackLabel：manual 或未启用 → 「未启用」。
+    if (device.playbackMode == FramePlaybackMode.manual ||
+        !device.carouselEnabled) {
+      return '未启用';
     }
-    return device.playbackMode == FramePlaybackMode.sequence ? '顺序轮播' : '随机轮播';
+    return device.playbackMode == FramePlaybackMode.random ? '随机轮播' : '顺序轮播';
   }
 
   static String _batteryAsset(int level) {

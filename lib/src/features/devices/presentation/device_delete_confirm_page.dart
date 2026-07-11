@@ -41,15 +41,12 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
 
   Future<void> _confirm(BuildContext context) async {
     final navigator = Navigator.of(context);
-    final messenger = ScaffoldMessenger.of(context);
     final deviceId = state.selectedDevice.id;
     final feedback = await state.deleteDevice(deviceId);
     if (!context.mounted) {
       return;
     }
-    messenger
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(feedback.message)));
+    AppToast.show(context, feedback.message);
     if (feedback.success) {
       // 关闭确认页与详情页，回到设备列表。
       navigator.pop();

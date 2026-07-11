@@ -7,7 +7,7 @@ import '../../../state.dart';
 
 /// 修改邮箱页：更换已绑定的邮箱地址，对应 UI 稿「修改邮箱」。
 ///
-/// 验证码发送到「新邮箱」（sendType:3，已登录走 sendEmailToken），
+/// 验证码发送到「新邮箱」（sendType:3，统一走 sendEmail），
 /// 提交走 `changeUserEmail`（email/emailCode）。
 class ModifyEmailPage extends StatefulWidget {
   const ModifyEmailPage({super.key, required this.state, this.onConfirmed});
@@ -106,7 +106,7 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
     if (_countdown > 0) {
       return;
     }
-    // 验证码发送到新邮箱，sendType:3；已登录走 sendEmailToken。
+    // 验证码发送到新邮箱，sendType:3；统一走 sendEmail。
     final feedback = await widget.state.sendEmailCode(
       email: _newEmailController.text,
       sendType: 3,
@@ -163,8 +163,6 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 }

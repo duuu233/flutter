@@ -8,7 +8,7 @@ import '../../../state.dart';
 /// 绑定邮箱页：为未绑定邮箱的账号设置「邮箱 + 登录密码」，对照小程序
 /// `subpackages/settings/bind-email`（邮箱/验证码/密码/确认密码 四行 + 提示）。
 ///
-/// 邮箱验证码 sendType:3（已登录走 sendEmailToken）；提交走 `changeUserEmail`
+/// 邮箱验证码 sendType:3（统一走 sendEmail）；提交走 `changeUserEmail`
 /// （携带 md5 密码，见 [PhotoFrameState.changeBoundEmail]）。密码两次一致才可提交。
 class BindEmailIncompletePage extends StatefulWidget {
   const BindEmailIncompletePage({super.key, required this.state, this.onBound});
@@ -97,7 +97,7 @@ class _BindEmailIncompletePageState extends State<BindEmailIncompletePage> {
     if (_countdown > 0) {
       return;
     }
-    // 验证码发送到待绑定邮箱，sendType:3；已登录走 sendEmailToken。
+    // 验证码发送到待绑定邮箱，sendType:3；统一走 sendEmail。
     final feedback = await widget.state.sendEmailCode(
       email: _emailController.text,
       sendType: 3,
@@ -153,8 +153,6 @@ class _BindEmailIncompletePageState extends State<BindEmailIncompletePage> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../routes/app_routes.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
@@ -16,7 +17,7 @@ class GalleryPage extends StatefulWidget {
   State<GalleryPage> createState() => _GalleryPageState();
 }
 
-class _GalleryPageState extends State<GalleryPage> {
+class _GalleryPageState extends State<GalleryPage> with RouteAware {
   final Set<String> _selectedIds = <String>{};
   String? _deviceFilter;
 
@@ -40,22 +41,88 @@ class _GalleryPageState extends State<GalleryPage> {
       if (!mounted) {
         return;
       }
+      _ensureDeviceFilter();
       setState(() {});
       // 进入图库即查一次一键清除状态：设备在别处被清空过则弹「请重新上传图片」提醒。
       _checkDeviceClearStatus();
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  /// 被覆盖的页 pop 回来（重入）：回后端刷新图库（对齐小程序 onShow loadPhotos）。
+  @override
+  void didPopNext() {
+    _reloadFromBackend();
+  }
+
+  Future<void> _reloadFromBackend() async {
+    await state.refreshDevices();
+    if (!mounted) {
+      return;
+    }
+    await state.refreshAlbum();
+    if (!mounted) {
+      return;
+    }
+    _ensureDeviceFilter();
+    setState(() {});
+    _checkDeviceClearStatus();
+  }
+
+  /// 默认选中单台设备（对齐小程序：无「全部相框」，进入即定位到一台设备的图库）。
+  /// 优先当前已连接设备（删除需连接该设备）；否则有照片的首台；再否则设备列表首台。
+  void _ensureDeviceFilter() {
+    if (_deviceFilter != null &&
+        state.devices.any((device) => device.id == _deviceFilter)) {
+      return; // 已选且设备仍存在
+    }
+    final devices = state.devices;
+    if (devices.isEmpty) {
+      _deviceFilter = null;
+      return;
+    }
+    final connected = devices.where((device) => device.connected);
+    final hasPhotos = state.myAlbum.map((photo) => photo.deviceId).toSet();
+    _deviceFilter =
+        (connected.isNotEmpty ? connected.first : null)?.id ??
+        devices
+            .firstWhere(
+              (device) => hasPhotos.contains(device.id),
+              orElse: () => devices.first,
+            )
+            .id;
+  }
+
   List<AlbumPhoto> get _photos {
     final all = state.myAlbum;
     if (_deviceFilter == null) {
-      return all;
+      return all; // 仅在无设备时命中（此时相册本就为空）
     }
     return all.where((photo) => photo.deviceId == _deviceFilter).toList();
   }
 
-  String get _filterLabel =>
-      _deviceFilter == null ? '全部相框' : state.deviceName(_deviceFilter!);
+  String get _filterLabel {
+    if (_deviceFilter != null) {
+      return state.deviceName(_deviceFilter!);
+    }
+    return state.devices.isNotEmpty
+        ? state.deviceName(state.devices.first.id)
+        : '相框';
+  }
 
   void _toggleAll() {
     setState(() {
@@ -90,13 +157,7 @@ class _GalleryPageState extends State<GalleryPage> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                title: const Text('全部相框'),
-                trailing: _deviceFilter == null
-                    ? const Icon(Icons.check_rounded, color: Color(0xFFFF6A24))
-                    : null,
-                onTap: () => Navigator.of(context).pop('__all__'),
-              ),
+              // 无「全部相框」：对齐小程序单设备图库模型（避免跨设备选中删错槽位）。
               for (final device in state.devices)
                 ListTile(
                   title: Text(device.name),
@@ -117,7 +178,7 @@ class _GalleryPageState extends State<GalleryPage> {
       return;
     }
     setState(() {
-      _deviceFilter = selected == '__all__' ? null : selected;
+      _deviceFilter = selected;
       _selectedIds.clear();
     });
     // 每次切换设备筛选都查一次该设备的一键清除状态（与进入图库同一汇合点）。
@@ -201,7 +262,13 @@ class _GalleryPageState extends State<GalleryPage> {
     if (confirmed != true || !mounted) {
       return;
     }
+    // 设备侧删除(0x12)可能耗时较久（最长约 180s），期间用蒙层 loading 阻断误操作
+    // （对齐小程序 wx.showLoading({title:'删除中', mask:true})）。
+    _showBlockingLoading('删除中');
     final feedback = await state.deleteAlbumPhotos(_selectedIds);
+    if (mounted) {
+      _dismissBlockingLoading();
+    }
     if (!mounted) {
       return;
     }
@@ -209,12 +276,32 @@ class _GalleryPageState extends State<GalleryPage> {
     _showFeedback(feedback.message);
   }
 
-  /// 单选照片「刷新屏幕」：把该照片切到相框当前显示（0x24）。
+  /// 蒙层阻断式 loading（不可返回/不可点透），配合耗时的设备 BLE 操作。
+  void _showBlockingLoading(String text) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withValues(alpha: 0.35),
+      builder: (_) => _BlockingLoading(text: text),
+    );
+  }
+
+  void _dismissBlockingLoading() {
+    Navigator.of(context, rootNavigator: true).pop();
+  }
+
+  /// 单选照片「刷新屏幕」：把该照片切到相框当前显示（0x24）。未连接会自动扫连，故加蒙层 loading。
   Future<void> _refreshSelectedOnScreen() async {
     if (_selectedIds.length != 1) {
+      // 对齐小程序：多选时刷屏给出提示而非静默无反应。
+      _showFeedback('刷新屏幕只能选中一张图片');
       return;
     }
+    _showBlockingLoading('刷新中');
     final feedback = await state.refreshGalleryPhotoOnScreen(_selectedIds.first);
+    if (mounted) {
+      _dismissBlockingLoading();
+    }
     if (!mounted) {
       return;
     }
@@ -222,9 +309,7 @@ class _GalleryPageState extends State<GalleryPage> {
   }
 
   void _showFeedback(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 
   @override
@@ -304,9 +389,9 @@ class _GalleryPageState extends State<GalleryPage> {
                   _SelectionBar(
                     count: _selectedIds.length,
                     onDelete: _confirmDelete,
-                    onRefresh: _selectedIds.length == 1
-                        ? _refreshSelectedOnScreen
-                        : null,
+                    // 刷屏常驻（对齐小程序）：多选时点它给出「只能选一张」提示。
+                    onRefresh: _refreshSelectedOnScreen,
+                    onCancel: () => setState(_selectedIds.clear),
                   ),
               ],
             ),
@@ -483,13 +568,17 @@ class _SelectionBar extends StatelessWidget {
     required this.count,
     required this.onDelete,
     this.onRefresh,
+    required this.onCancel,
   });
 
   final int count;
   final VoidCallback onDelete;
 
-  /// 单选时可用：把这张照片刷到相框屏幕（0x24）。多选 / 未连接时为 null，按钮不显示。
+  /// 刷屏（0x24）常驻：多选时点击由外部给出「只能选一张」提示（对齐小程序）。
   final VoidCallback? onRefresh;
+
+  /// 取消选择：清空已选（对齐小程序底栏「取消」）。
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
@@ -591,6 +680,20 @@ class _SelectionBar extends StatelessWidget {
                 ),
               ),
             ),
+            // 取消选择按钮（对齐小程序底栏「取消」）。
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onCancel,
+              child: Container(
+                height: 44,
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                alignment: Alignment.center,
+                child: const Text(
+                  '取消',
+                  style: TextStyle(color: Color(0xFF777E88), fontSize: 14),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -599,6 +702,47 @@ class _SelectionBar extends StatelessWidget {
 }
 
 /// 删除照片确认弹窗（小程序 `.confirm-dialog`）：图标盒 + 标题/说明 + 取消/确认。
+/// 蒙层阻断式 loading 卡片：居中黑底圆角 + 转圈 + 文案（对齐小程序 wx.showLoading mask）。
+class _BlockingLoading extends StatelessWidget {
+  const _BlockingLoading({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.82),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 30,
+                height: 30,
+                child: CircularProgressIndicator(
+                  strokeWidth: 3,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                text,
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DeleteDialog extends StatelessWidget {
   const _DeleteDialog({required this.count});
 

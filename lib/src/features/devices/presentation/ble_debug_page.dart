@@ -11,6 +11,7 @@ import '../../../device/ble/device_ble.dart';
 import '../../../device/ble/frame_protocol.dart';
 import '../../../device/ble/image_codec.dart';
 import '../../../native_device_api.dart';
+import '../../../shared/widgets/app_toast.dart';
 
 class BleDebugPage extends StatefulWidget {
   const BleDebugPage({super.key});
@@ -43,10 +44,6 @@ class _BleDebugPageState extends State<BleDebugPage> {
   double _uploadPercent = 0;
   String _uploadStatus = '';
 
-  // 六色量化调参（仅相册图生效，可在真机上实时 A/B，把上传图与原图差距调到最小）。
-  bool _dither = true;
-  double _contrast = 1.12;
-  double _saturation = 1.28;
 
   final List<_LogEntry> _logs = [];
   final TextEditingController _intervalCtrl = TextEditingController(text: '60');
@@ -96,9 +93,7 @@ class _BleDebugPageState extends State<BleDebugPage> {
 
   void _toast(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), duration: const Duration(seconds: 2)),
-    );
+    AppToast.show(context, msg);
   }
 
   // ── 扫描 / 连接 ─────────────────────────────────────────
@@ -364,59 +359,6 @@ class _BleDebugPageState extends State<BleDebugPage> {
     final i = _info!;
     final frame = FrameImageCodec.buildSolid(i.width, i.height, 0x1);
     _upload(frame, '上传纯白测试图(0x20~0x22)');
-  }
-
-  /// 选相册图片 → 原生解码裁剪到设备分辨率 → 六色量化 → 走图传上传。
-  Future<void> _uploadFromGallery() async {
-    if (!_ensureUploadReady()) return;
-    final i = _info!;
-    setState(() {
-      _uploading = true;
-      _uploadPercent = 0;
-      _uploadStatus = '选择相册图片…';
-    });
-    try {
-      final perm = await NativeDeviceApi.requestPhotoPermission();
-      if (!perm.photoPermissionGranted) {
-        _toast('请先授予相册权限');
-        setState(() => _uploadStatus = '未授予相册权限');
-        return;
-      }
-      final sel = await NativeDeviceApi.openGallery();
-      if (sel == null) {
-        setState(() => _uploadStatus = '已取消选择');
-        return;
-      }
-      setState(() => _uploadStatus = '解码并裁剪到 ${i.width}×${i.height}…');
-      final rgba = await NativeDeviceApi.decodeImageRgba(
-        uri: sel.uri,
-        width: i.width,
-        height: i.height,
-      );
-      if (rgba == null || rgba.length != i.width * i.height * 4) {
-        _toast('图片解码失败');
-        setState(() => _uploadStatus = '图片解码失败');
-        return;
-      }
-      _log('act',
-          '相册图「${sel.title}」已解码 ${i.width}×${i.height}，量化(抖动${_dither ? '开' : '关'}/对比度${_contrast.toStringAsFixed(2)}/饱和度${_saturation.toStringAsFixed(2)})…');
-      setState(() => _uploadStatus = '六色量化中…');
-      final frame = FrameImageCodec.fromRgba(
-        rgba,
-        i.width,
-        i.height,
-        dither: _dither,
-        contrast: _contrast,
-        saturation: _saturation,
-      );
-      // _upload 内部自管 _uploading/进度，成功后保留其完成提示。
-      await _upload(frame, '上传相册图片「${sel.title}」(0x20~0x22)');
-    } catch (e) {
-      _log('err', '相册上传失败：$e');
-      if (mounted) setState(() => _uploadStatus = '相册上传失败：$e');
-    } finally {
-      if (mounted) setState(() => _uploading = false);
-    }
   }
 
   /// 解析图传目标槽位：输入框留空=自动选第一个空位；填数字=指定槽位(0~capacity-1)。
@@ -718,68 +660,12 @@ class _BleDebugPageState extends State<BleDebugPage> {
           child: const Text('上传纯白测试图'),
         ),
       ]),
-      const SizedBox(height: 6),
-      FilledButton.icon(
-        onPressed: _uploading ? null : _uploadFromGallery,
-        icon: const Icon(Icons.photo_library_outlined, size: 18),
-        label: const Text('选择相册图片上传'),
-      ),
-      _quantizeTuner(),
       if (_uploading || _uploadStatus.isNotEmpty) ...[
         const SizedBox(height: 10),
         LinearProgressIndicator(value: _uploading ? _uploadPercent : null),
         const SizedBox(height: 6),
         Text(_uploadStatus, style: const TextStyle(fontSize: 12)),
       ],
-    ]);
-  }
-
-  /// 相册图的六色量化调参面板：抖动开关 + 量化前对比度/饱和度增强，可在真机上 A/B。
-  Widget _quantizeTuner() {
-    return ExpansionTile(
-      tilePadding: EdgeInsets.zero,
-      childrenPadding: EdgeInsets.zero,
-      title: const Text('六色量化调参（相册图）',
-          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-      subtitle: const Text('量化前增强 + 抖动，缓解六色硬量化的色块/发灰',
-          style: TextStyle(fontSize: 11, color: Colors.grey)),
-      children: [
-        SwitchListTile(
-          dense: true,
-          contentPadding: EdgeInsets.zero,
-          title: const Text('Floyd–Steinberg 抖动', style: TextStyle(fontSize: 13)),
-          subtitle: const Text('开=渐变自然但有颗粒；关=色块硬但干净',
-              style: TextStyle(fontSize: 11, color: Colors.grey)),
-          value: _dither,
-          onChanged: _uploading ? null : (v) => setState(() => _dither = v),
-        ),
-        _sliderRow('对比度', _contrast, 0.8, 1.8,
-            (v) => setState(() => _contrast = v)),
-        _sliderRow('饱和度', _saturation, 0.8, 2.0,
-            (v) => setState(() => _saturation = v)),
-      ],
-    );
-  }
-
-  Widget _sliderRow(String label, double value, double min, double max,
-      ValueChanged<double> onChanged) {
-    return Row(children: [
-      SizedBox(
-          width: 48, child: Text(label, style: const TextStyle(fontSize: 13))),
-      Expanded(
-        child: Slider(
-          value: value,
-          min: min,
-          max: max,
-          divisions: ((max - min) / 0.02).round(),
-          label: value.toStringAsFixed(2),
-          onChanged: _uploading ? null : onChanged,
-        ),
-      ),
-      SizedBox(
-          width: 40,
-          child: Text(value.toStringAsFixed(2),
-              style: const TextStyle(fontSize: 12))),
     ]);
   }
 

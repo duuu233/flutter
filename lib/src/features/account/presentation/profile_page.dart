@@ -24,6 +24,20 @@ class _ProfilePageState extends State<ProfilePage> {
     _nicknameController = TextEditingController(
       text: widget.state.currentUser.nickname,
     );
+    // 进入时回后端刷新用户信息（对齐小程序 profile.js onShow getUserProfile）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final before = widget.state.currentUser.nickname;
+      await widget.state.refreshCurrentUser();
+      if (!mounted) {
+        return;
+      }
+      final after = widget.state.currentUser.nickname;
+      // 用户尚未改动昵称框时，同步为后端最新昵称。
+      if (_nicknameController.text == before && after != before) {
+        _nicknameController.text = after;
+      }
+      setState(() {});
+    });
   }
 
   @override
@@ -112,26 +126,20 @@ class _ProfilePageState extends State<ProfilePage> {
       file = await picker.pickImage(source: ImageSource.gallery);
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('无法读取相册，请检查相册权限后重试。')));
+        AppToast.show(context, '无法读取相册，请检查相册权限后重试。');
       }
       return;
     }
     if (file == null || !mounted) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(const SnackBar(content: Text('头像上传中…')));
+    AppToast.show(context, '头像上传中…');
     final feedback = await widget.state.updateAvatar(file.path);
     if (!mounted) {
       return;
     }
     setState(() {});
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(feedback.message)));
+    AppToast.show(context, feedback.message);
   }
 
   bool _saving = false;
@@ -152,9 +160,7 @@ class _ProfilePageState extends State<ProfilePage> {
       return;
     }
     setState(() => _saving = false);
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(feedback.message)));
+    AppToast.show(context, feedback.message);
   }
 }
 

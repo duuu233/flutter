@@ -67,6 +67,8 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
               });
             },
           ),
+          // 全局路由观察者：让图库/投屏记录等页在被覆盖页 pop 回来时重入刷新。
+          navigatorObservers: [appRouteObserver],
           // 命名路由仍复用同一个 `_state`，避免页面之间出现两份业务数据。
           onGenerateRoute: (settings) =>
               AppRoutes.onGenerateRoute(settings: settings, state: _state),

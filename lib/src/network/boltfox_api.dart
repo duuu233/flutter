@@ -29,14 +29,6 @@ class BoltFoxApi {
     );
   }
 
-  /// 发送邮箱验证码（已登录，userToken 走 header）。
-  static Future<dynamic> sendEmailToken({String? userEmail, int? sendType}) {
-    return _http.postJson(
-      '/Client/Basic/sendEmailToken',
-      body: {'userEmail': ?userEmail, 'sendType': ?sendType},
-    );
-  }
-
   /// 获取基础数据（配置/字典等），具体字段以后端返回为准。
   static Future<dynamic> getBasicData([Map<String, dynamic>? params]) {
     return _http.getJson('/Client/Basic/getBasicData', query: params);
@@ -198,17 +190,6 @@ class BoltFoxApi {
       '/Client/User/chkUserEmailNotExist',
       body: {'email': email, 'emailCode': ?emailCode},
       auth: false,
-    );
-  }
-
-  /// 修改密码（已登录）。
-  static Future<dynamic> changePassword({
-    required String oldPassword,
-    required String newPassword,
-  }) {
-    return _http.postJson(
-      '/Client/User/changePassword',
-      body: {'oldPassword': md5Hex(oldPassword), 'newPassword': md5Hex(newPassword)},
     );
   }
 

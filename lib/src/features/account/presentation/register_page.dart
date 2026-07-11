@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../state.dart';
+import '../data/email_history.dart';
 
 /// 创建账户 / 注册页，对应 UI 稿「创建账户-未输入 / 已输入可注册 / 密码不一致」。
 ///
@@ -122,6 +123,9 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
     setState(() => _submitting = false);
+    if (feedback.success) {
+      await EmailHistory.add(_emailController.text); // 记住注册邮箱，登录页自动填充
+    }
     _showSnack(feedback.message);
     if (feedback.success) {
       widget.onRegistered?.call();
@@ -129,9 +133,7 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 
   @override

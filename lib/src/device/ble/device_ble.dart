@@ -281,11 +281,47 @@ class FrameBleClient {
 
   // ── 通知接收 / 解帧派发 ───────────────────────────────────
 
+  /// 接收缓冲上限：超过视为粘连/脏数据（坏 LEN 或失步），触发丢头重同步（对齐小程序 RX_BUFFER_MAX=2048）。
+  static const int _rxBufferMax = 2048;
+
+  /// 从 [from] 起在接收缓冲里找下一个 SOF(0xAA) 的下标；找不到返回 -1。
+  int _indexOfSof(int from) {
+    for (var i = from; i < _rxBuffer.length; i++) {
+      if ((_rxBuffer[i] & 0xFF) == FrameProtocol.sof) return i;
+    }
+    return -1;
+  }
+
   void _onNotify(List<int> value) {
     _rxBuffer.addAll(value);
     while (_rxBuffer.isNotEmpty) {
       final parsed = FrameProtocol.tryParseFrame(_rxBuffer);
-      if (parsed == null) break;
+      if (parsed == null) {
+        // 解不出完整帧：区分「头就不是 SOF(失步/脏字节)」与「是 SOF 但整帧未收齐(等更多字节)」。
+        // 失步时丢弃到下一个 SOF 重同步——否则一个坏头会永久卡死后续所有帧解析，该设备的每条指令
+        // 都会应答超时（对齐小程序 device-ble.js 的丢头重同步 + RX_BUFFER_MAX 上限）。
+        if ((_rxBuffer.first & 0xFF) != FrameProtocol.sof) {
+          final next = _indexOfSof(1);
+          if (next < 0) {
+            _rxBuffer.clear(); // 没有 SOF：整段都是脏数据，清空
+          } else {
+            _rxBuffer.removeRange(0, next); // 丢到下一个 SOF
+          }
+          continue;
+        }
+        // 头是 SOF 但整帧未收齐：正常等更多字节。但缓冲异常膨胀（坏 LEN 声称超大帧、字节永不到齐）时，
+        // 丢掉这个假 SOF 再找下一个 SOF 重同步，避免无上限堆积卡死。
+        if (_rxBuffer.length > _rxBufferMax) {
+          final next = _indexOfSof(1);
+          if (next < 0) {
+            _rxBuffer.clear();
+          } else {
+            _rxBuffer.removeRange(0, next);
+          }
+          continue;
+        }
+        break; // 头是 SOF、缓冲正常：等更多字节
+      }
       final raw = _rxBuffer.sublist(0, parsed.consumed);
       _rxBuffer.removeRange(0, parsed.consumed);
 

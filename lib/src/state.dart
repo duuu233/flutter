@@ -112,6 +112,15 @@ class DeviceItem {
   int carouselIntervalSeconds;
   bool carouselEnabled;
 
+  // ── 连接后由真机 0x01(readDeviceInfo) 回填的实时内存（对齐小程序 applyConnectedDevice
+  //    的 usedMemory/totalMemory）。真机容量最多 95 槽，超出 int 位掩码(最多 32)的表示范围，
+  //    故直接采用真机上报的计数/容量，而非从 [imageMask] 派生。断开后由页面按 connected 显示 --。
+  /// 真机上报的已用图片数（未连接/未同步为 null，回退 [imageMask] 派生）。
+  int? liveImageCount;
+
+  /// 真机上报的图片容量上限（未连接/未同步为 null，回退常量 [FrameProtocolConfig.maxImages]）。
+  int? liveCapacity;
+
   // ── OTA 固件更新信息（后端设备详情下发，见 getUserProductDetail）──────────
   /// 后端「可更新」标记：1=有可用更新。
   int isUpdate;
@@ -132,9 +141,10 @@ class DeviceItem {
       downloadPath.isNotEmpty &&
       RegExp(r'\.bin(?:[?#]|$)', caseSensitive: false).hasMatch(downloadPath);
 
-  int get capacity => FrameProtocolConfig.maxImages;
+  int get capacity => liveCapacity ?? FrameProtocolConfig.maxImages;
 
-  int get imageCount => FrameDeviceProtocol.countImages(imageMask);
+  int get imageCount =>
+      liveImageCount ?? FrameDeviceProtocol.countImages(imageMask);
 
   int get storageFreeBytes =>
       FrameDeviceProtocol.estimateStorageFreeBytes(imageMask, screenType);
@@ -635,10 +645,10 @@ class PhotoFrameState extends ChangeNotifier {
     for (final item in _devices) {
       item.connected = identical(item, device);
     }
-    final info = ble.info;
-    if (info != null && info.battery > 0) {
-      device.batteryLevel = info.battery;
-    }
+    // 连接后把真机 0x01(readDeviceInfo) 的全部字段回填到本地设备，对齐小程序
+    // detail.js/list.js 的 applyConnectedDevice（电量/内存/播放模式/间隔/固件/当前张）。
+    // 之前只同步电量，导致详情页内存恒显 0、播放模式/固件为默认、且 setPlayback 用错间隔。
+    _applyConnectedInfo(device, ble.info);
     notifyListeners();
     return ActionFeedback(
       success: true,
@@ -694,6 +704,65 @@ class PhotoFrameState extends ChangeNotifier {
     }
     if (changed) {
       notifyListeners();
+    }
+  }
+
+  /// 把真机 0x01 读到的 [FrameDeviceInfo] 合并进本地 [device]（对齐小程序 applyConnectedDevice）。
+  /// 调用方负责 notifyListeners()。[info] 为空（读取失败）时不改动，页面按 connected=false 显示 --。
+  void _applyConnectedInfo(DeviceItem device, FrameDeviceInfo? info) {
+    if (info == null) {
+      return;
+    }
+    if (info.battery > 0) {
+      device.batteryLevel = info.battery;
+    }
+    // 真机内存（真机容量最多 95 槽，超出 int 掩码范围，直接采用上报计数/容量）。
+    device.liveImageCount = info.imgCount;
+    if (info.capacity > 0) {
+      device.liveCapacity = info.capacity;
+    }
+    device.currentImageIndex = info.curImgIndex;
+    device.playbackMode = _playbackModeFromWire(info.playMode);
+    device.carouselEnabled = info.playMode != 'manual';
+    // 间隔以真机为准（供轮播设置 setPlayback 复用，避免用 24h 默认值覆盖设备现有间隔）。
+    if (info.intervalSeconds > 0) {
+      device.carouselIntervalSeconds = info.intervalSeconds;
+    }
+    if (info.firmwareVersion.isNotEmpty) {
+      device.firmwareVersion = info.firmwareVersion;
+    }
+  }
+
+  /// 按硬件序列号去重设备列表（对齐小程序 `list.js dedupeDevices`）：序列号归一化
+  /// （大写、去 `:`/`-`/空白）为 key，无序列号时退回 `id:`；冲突保留首个，但当前选中项优先。
+  List<DeviceItem> _dedupeDevicesBySerial(List<DeviceItem> devices) {
+    String norm(String s) =>
+        s.replaceAll(RegExp(r'[:\-\s]'), '').toUpperCase();
+    final map = <String, DeviceItem>{};
+    final order = <String>[];
+    for (final device in devices) {
+      final serial = norm(device.serialNumber);
+      final key = serial.isNotEmpty ? 'sn:$serial' : 'id:${device.id}';
+      if (!map.containsKey(key)) {
+        map[key] = device;
+        order.add(key);
+      } else if (_selectedDeviceId.isNotEmpty &&
+          device.id == _selectedDeviceId) {
+        map[key] = device;
+      }
+    }
+    return [for (final key in order) map[key]!];
+  }
+
+  /// 线协播放模式字符串(order/random/manual) → [FramePlaybackMode] 枚举。
+  FramePlaybackMode _playbackModeFromWire(String playMode) {
+    switch (playMode) {
+      case 'random':
+        return FramePlaybackMode.random;
+      case 'manual':
+        return FramePlaybackMode.manual;
+      default: // 'order'
+        return FramePlaybackMode.sequence;
     }
   }
 
@@ -754,7 +823,8 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   /// 发送邮箱验证码。[sendType]：1=注册、2=找回/改密、3=改邮箱。
-  /// [loggedIn] 为 true 时走已登录通道 `sendEmailToken`，否则走 `sendEmail`。
+  /// 统一走 `/Client/Basic/sendEmail`（对齐小程序，见账号#1）；[loggedIn] 仅用于放宽格式校验
+  /// （已登录改邮箱等场景由页面自行校验新邮箱）。
   Future<ActionFeedback> sendEmailCode({
     required String email,
     required int sendType,
@@ -772,14 +842,9 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     try {
-      if (loggedIn) {
-        await BoltFoxApi.sendEmailToken(
-          userEmail: target.isEmpty ? null : target,
-          sendType: sendType,
-        );
-      } else {
-        await BoltFoxApi.sendEmail(userEmail: target, sendType: sendType);
-      }
+      // 对齐小程序：绑定/换邮箱/改密的验证码也统一走 `/Client/Basic/sendEmail`
+      // （auth:false），小程序从不调用 sendEmailToken。见 app-vs-miniprogram-sync 账号#1。
+      await BoltFoxApi.sendEmail(userEmail: target, sendType: sendType);
       return ActionFeedback(
         success: true,
         message: tr(
@@ -1415,19 +1480,34 @@ class PhotoFrameState extends ChangeNotifier {
 
     // 1) 设备优先：已连接则先读设备信息(0x01)拿到已占槽位 + 当前屏显图，把选中照片解析成设备槽位，
     //    一条 0x12 批量删除；删到当前屏显图再刷屏(0x24)。设备删除失败即中止、不动后端。
-    final client = BleController.instance.client;
-    // 未连接则中止（对齐小程序 list.js:334-349「删除需同步到设备」）：只删后端会造成
-    // 后端删了、相框还留着的两边不一致。要求先连接设备再删。
-    if (!client.connected) {
+    // 目标设备 = 这些照片所属设备（单设备图库保证同一台）。跨设备批次会按同一掩码删错槽位(0x12)，防御拦截。
+    final targetId = photos.first.deviceId;
+    if (photos.any((photo) => photo.deviceId != targetId)) {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '请先连接设备后再删除照片（删除会同步到相框）。',
-          en: 'Connect the device first before deleting; deletion syncs to the frame.',
-          ja: '端末に接続してから削除してください。削除は端末に同期されます。',
+          zh: '只能删除同一台设备的照片。',
+          en: 'You can only delete photos from a single device.',
+          ja: '同じ端末の写真のみ削除できます。',
         ),
       );
     }
+    final targetMatches =
+        _devices.where((device) => device.id == targetId).toList();
+    if (targetMatches.isEmpty) {
+      return ActionFeedback(
+        success: false,
+        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+      );
+    }
+    // 未连接到「照片所属设备」则自动扫连（对齐小程序 ensureConnectedForAction），连不上中止、不动后端。
+    if (!_sessionMatches(targetMatches.first)) {
+      final connectFeedback = await connectDevice(targetId);
+      if (!connectFeedback.success) {
+        return connectFeedback;
+      }
+    }
+    final client = BleController.instance.client;
     String refreshWarn = '';
     if (client.connected) {
       try {
@@ -1498,6 +1578,8 @@ class PhotoFrameState extends ChangeNotifier {
       photo.isOnDevice = false;
     }
     notifyListeners();
+    // 4) 回后端对账列表/计数（对齐小程序删除后 loadPhotos）；失败则保留上面的本地软隐藏。
+    await refreshAlbum();
     return ActionFeedback(
       success: true,
       message: refreshWarn.isNotEmpty
@@ -1534,17 +1616,23 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    final client = BleController.instance.client;
-    if (!client.connected) {
+    // 未连接到照片所属设备则自动扫连（对齐小程序 ensureActiveDeviceConnection），连不上中止。
+    final targetDeviceId = photo.deviceId; // photo 已判空
+    final targetMatches =
+        _devices.where((device) => device.id == targetDeviceId).toList();
+    if (targetMatches.isEmpty) {
       return ActionFeedback(
         success: false,
-        message: tr(
-          zh: '请先连接设备后再刷新屏幕。',
-          en: 'Connect the device first.',
-          ja: '端末に接続してください。',
-        ),
+        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
       );
     }
+    if (!_sessionMatches(targetMatches.first)) {
+      final connectFeedback = await connectDevice(targetDeviceId);
+      if (!connectFeedback.success) {
+        return connectFeedback;
+      }
+    }
+    final client = BleController.instance.client;
     try {
       final info = await client.readDeviceInfo();
       final occupied = FrameProtocol.maskToIndexes(info.imgMask);
@@ -1643,12 +1731,18 @@ class PhotoFrameState extends ChangeNotifier {
   /// 投屏记录列表：`/Client/UserProduct/getUserProductImgRecordList`。
   ///
   /// 映射为 [CastRecord]，仅在后端返回非空时替换本地列表（失败保留当前数据）。
-  Future<ActionFeedback> refreshCastRecords({String? userProductId}) async {
+  /// [deviceUploadState] 传 1=只取成功 / 0=只取失败（对齐小程序 records.js 按 tab 传 filter，
+  /// 后端按状态过滤），缺省不传取全部。分状态拉取避免 >100 条时本地切片丢行。
+  Future<ActionFeedback> refreshCastRecords({
+    String? userProductId,
+    int? deviceUploadState,
+  }) async {
     try {
       final data = await BoltFoxApi.getUserProductImgRecordList({
         'pageIndex': 1,
         'pageSize': 100,
         'userProductId': ?userProductId,
+        'deviceUploadState': ?deviceUploadState,
       });
       final rows = _extractRows(data);
       // 后端为准：即使返回空也覆盖本地（无记录时应显示空态，不保留旧数据）。
@@ -1734,11 +1828,12 @@ class PhotoFrameState extends ChangeNotifier {
     try {
       final data = await BoltFoxApi.getUserProductList({
         'pageIndex': 1,
-        'pageSize': 50,
+        'pageSize': 100, // 对齐小程序 getDevices({pageSize:100})
       });
       final rows = _extractRows(data);
       // 后端为准：即使返回空也覆盖本地（删到 0 台时应显示空态，不保留旧数据）。
-      final mapped = rows.map(_deviceFromJson).toList();
+      // 同一实体相框被重复绑定时，按硬件序列号折叠成一行（对齐小程序 dedupeDevices）。
+      final mapped = _dedupeDevicesBySerial(rows.map(_deviceFromJson).toList());
       // 已连接回填：后端不存连接态/BLE 会话，若一律 connected:false 替换，
       // 正连着的设备会被错显示成「未连接」（改名后刷新列表时尤其明显）。
       // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
@@ -2188,12 +2283,15 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 用户注销：调用 `/Client/User/userOff` 并清除本地登录态与本地资产。
-  Future<void> deleteAccount() async {
+  /// 用户注销：调用 `/Client/User/userOff`，**成功后**才清除本地登录态与本地资产。
+  ///
+  /// 对齐小程序 `settings/index.js`：`userOff` 抛错则不 `clearSession`（账号仍有效、用户留在原页），
+  /// 由调用方据返回的 [ActionFeedback] 决定是否跳登录页；不再无条件本地登出。
+  Future<ActionFeedback> deleteAccount() async {
     try {
       await BoltFoxApi.userOff();
-    } catch (_) {
-      // 注销接口失败时仍清除本地态。
+    } catch (error) {
+      return _apiFailure(error);
     }
     ApiSession.instance.clear();
     _albumPhotos.removeWhere((photo) => photo.ownerUserId == _currentUser.id);
@@ -2211,6 +2309,10 @@ class PhotoFrameState extends ChangeNotifier {
       ),
     );
     notifyListeners();
+    return ActionFeedback(
+      success: true,
+      message: tr(zh: '账号已注销。', en: 'Account deleted.', ja: 'アカウントを削除しました。'),
+    );
   }
 
   List<GuideArticle> buildGuideArticles() {

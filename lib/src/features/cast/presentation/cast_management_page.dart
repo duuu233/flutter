@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 
 import '../../../shared/shared.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 
 /// 投屏管理页：查看与管理历史投屏记录。
@@ -61,8 +62,6 @@ class CastManagementPage extends StatelessWidget {
   }
 
   void _showFeedback(BuildContext context, String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 }

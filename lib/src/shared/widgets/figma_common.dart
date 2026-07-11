@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+// 居中吐司：从这里 re-export，凡 import 本文件的页面可直接用 AppToast，无需再单独 import。
+export 'app_toast.dart';
+
 /// 响应式页面脚手架（全屏背景 + 安全区 + 顶部导航 + 内容 +（可选）底部固定区）。
 ///
 /// 结构：全屏背景 + [SafeArea] + 顶部导航 + 可滚动内容 +（可选）底部固定区，

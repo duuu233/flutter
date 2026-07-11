@@ -53,9 +53,7 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
 
   void _onDownloadStatus(AnimationStatus status) {
     if (status == AnimationStatus.completed && mounted) {
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(const SnackBar(content: Text('已更新到最新版本')));
+      AppToast.show(context, '已更新到最新版本');
       Navigator.maybePop(context);
     }
   }

@@ -12,7 +12,7 @@ class MyDevicesPage extends StatefulWidget {
     this.devices,
     this.onAddDevice,
     this.onOpenDetail,
-    this.onCarouselSettings,
+    this.onCast,
     this.onConnect,
     this.onDisconnect,
     this.onRename,
@@ -21,7 +21,7 @@ class MyDevicesPage extends StatefulWidget {
   final List<MyDeviceOverview>? devices;
   final VoidCallback? onAddDevice;
   final ValueChanged<String>? onOpenDetail;
-  final ValueChanged<String>? onCarouselSettings;
+  final ValueChanged<String>? onCast;
   final ValueChanged<String>? onConnect;
   final ValueChanged<String>? onDisconnect;
 
@@ -82,8 +82,8 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
                 return _DeviceCard(
                   device: device,
                   onOpenDetail: () => widget.onOpenDetail?.call(device.id),
-                  onCarouselSettings: () =>
-                      widget.onCarouselSettings?.call(device.id),
+                  onCast: () =>
+                      widget.onCast?.call(device.id),
                   onRename: () => _rename(device),
                   onToggleConnection: () => _toggleConnection(device),
                 );
@@ -198,14 +198,14 @@ class _DeviceCard extends StatelessWidget {
   const _DeviceCard({
     required this.device,
     required this.onOpenDetail,
-    required this.onCarouselSettings,
+    required this.onCast,
     required this.onRename,
     required this.onToggleConnection,
   });
 
   final MyDeviceOverview device;
   final VoidCallback onOpenDetail;
-  final VoidCallback onCarouselSettings;
+  final VoidCallback onCast;
   final VoidCallback onRename;
   final VoidCallback onToggleConnection;
 
@@ -355,7 +355,7 @@ class _DeviceCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 17),
-            // 操作栏（轮播设置 | 连接/断开）。
+            // 操作栏（投屏 | 连接/断开）——对齐小程序设备列表项按钮。
             Container(
               height: 42,
               decoration: BoxDecoration(
@@ -374,13 +374,13 @@ class _DeviceCard extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _DeviceActionButton(
-                      iconAsset: 'assets/images/carousel-settings-icon01.png',
-                      fallbackIcon: Icons.tune_rounded,
+                      iconAsset: 'assets/images/screen-casting-icon01.png',
+                      fallbackIcon: Icons.cast_rounded,
                       iconWidth: 16,
                       iconHeight: 15,
-                      label: '轮播设置',
+                      label: '投屏',
                       color: const Color(0xFF777E88),
-                      onTap: onCarouselSettings,
+                      onTap: onCast,
                     ),
                   ),
                   Container(

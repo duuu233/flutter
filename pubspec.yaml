@@ -46,6 +46,8 @@ dependencies:
   url_launcher: ^6.3.0
   # 读取当前 App 版本号，供 getLastVersion 比对是否有新版本
   package_info_plus: ^8.0.0
+  # 本地持久化（登录邮箱历史缓存等轻量键值）
+  shared_preferences: ^2.3.2
 
 dev_dependencies:
   flutter_test:

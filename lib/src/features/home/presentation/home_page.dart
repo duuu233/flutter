@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import '../../cast/presentation/casting_progress_page.dart';
 
@@ -130,6 +131,13 @@ class _HomePageState extends State<HomePage> {
     if (widget.state.isOffline) {
       _scheduleOfflineNotice();
     }
+    // 进入首页即回后端刷新设备列表（对齐小程序 home.js onShow→loadHomeState）：
+    // 否则登录后直接落到首页、其它 tab 尚未刷新时，已绑定设备会误显示「未绑定」空态。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.state.refreshDevices();
+      }
+    });
   }
 
   @override
@@ -300,13 +308,11 @@ class _HomePageState extends State<HomePage> {
       return;
     }
     if (!activeDevice.connected) {
-      await _showDeviceNotice(
-        title: '设备连接失败',
-        message: '当前设备未连接，APP需先连接设备后再投屏',
-        buttonLabel: '重新连接',
-        onPressed: _startScan,
-      );
-      return;
+      // 未连接则自动扫连再投（对齐小程序 ensureActiveDeviceConnection）；连不上提示并中止。
+      final connected = await _ensureConnected(activeDevice.id);
+      if (!connected || !mounted) {
+        return;
+      }
     }
 
     // 拍照/相册选真实照片（image_picker 返回可上传的本地文件路径；content:// 无法直接上传）。
@@ -317,7 +323,8 @@ class _HomePageState extends State<HomePage> {
         final file = await picker.pickImage(source: ImageSource.camera);
         imagePaths = file == null ? const [] : [file.path];
       } else {
-        final files = await picker.pickMultiImage();
+        // 单批投屏上限 5 张，对齐小程序 media.chooseFromAlbum(count:5)。
+        final files = await picker.pickMultiImage(limit: 5);
         imagePaths = files.map((file) => file.path).toList();
       }
     } catch (_) {
@@ -336,8 +343,9 @@ class _HomePageState extends State<HomePage> {
       true,
     );
 
-    // 进入真实投屏链路：原图上传后端转码 → 下载设备帧 → BLE 图传 → 本页切成功/失败态
-    //（对齐小程序 拍照/相册 → 结果页 result.js 的真实投屏；不做客户端裁剪编辑器）。
+    // 投屏「无预览 / 无中心裁切」：选好图直接进入真实投屏。
+    // 与小程序一致的最小可用链路——原图交后端接口，后端按设备分辨率转码出 .raw 再 BLE 直传设备；
+    // App 端不做预览、不做端上裁切/旋转编辑（既定方针）。
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => CastingProgressPage(
@@ -353,6 +361,27 @@ class _HomePageState extends State<HomePage> {
     // 投屏返回后刷新相册 / 投屏记录（真实数据同步）。
     widget.state.refreshAlbum();
     widget.state.refreshCastRecords();
+  }
+
+  /// 「重新连接」按钮：用户**手动**发起的连接（非投屏入口的自动重连）。
+  /// 连接结果以吐司提示，连上后由用户再次点投屏——投屏本身不触发连接。
+  /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），
+  /// 连上返回 true；失败弹提示并返回 false。供投屏入口在未连接时自动重连。
+  Future<bool> _ensureConnected(Object deviceId) async {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final feedback = await widget.state.connectDevice(deviceId);
+    if (!mounted) {
+      return false;
+    }
+    Navigator.of(context, rootNavigator: true).pop(); // 关闭连接中 loading
+    if (!feedback.success) {
+      _showFeedback(feedback.message);
+    }
+    return feedback.success;
   }
 
   /// 通用提示弹层（立即绑定 / 重新连接 / 离线模式均复用）。
@@ -412,8 +441,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showFeedback(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 }

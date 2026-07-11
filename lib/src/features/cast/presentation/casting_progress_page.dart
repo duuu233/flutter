@@ -194,14 +194,13 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         final file = await picker.pickImage(source: ImageSource.camera);
         paths = file == null ? const [] : [file.path];
       } else {
-        final files = await picker.pickMultiImage();
+        // 单批投屏上限 5 张，对齐小程序 media.chooseFromAlbum(count:5)。
+        final files = await picker.pickMultiImage(limit: 5);
         paths = files.map((file) => file.path).toList();
       }
     } catch (_) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(const SnackBar(content: Text('无法读取照片，请检查相机/相册权限后重试。')));
+        AppToast.show(context, '无法读取照片，请检查相机/相册权限后重试。');
       }
       return;
     }

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../routes/app_routes.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'casting_progress_page.dart';
@@ -18,7 +19,8 @@ class CastManagementFigmaPage extends StatefulWidget {
       _CastManagementFigmaPageState();
 }
 
-class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
+class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
+    with RouteAware {
   CastStatus _tab = CastStatus.success;
 
   PhotoFrameState get state => widget.state;
@@ -26,19 +28,50 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
   @override
   void initState() {
     super.initState();
-    // 打开时刷新设备 + 投屏记录（失败保留本地数据）。
+    // 打开时刷新设备 + 当前 tab 的投屏记录（失败保留本地数据）。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await state.refreshDevices();
       if (!mounted) {
         return;
       }
-      await state.refreshCastRecords();
-      if (mounted) {
-        setState(() {});
-      }
+      await _loadTab();
     });
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  /// 被覆盖的页 pop 回来（重入）：刷新设备 + 当前 tab 记录（对齐小程序 onShow loadRecords）。
+  @override
+  void didPopNext() {
+    state.refreshDevices();
+    _loadTab();
+  }
+
+  /// 成功 tab→deviceUploadState:1 / 失败 tab→0（对齐小程序 records.js filterToUploadState）。
+  int _uploadStateOf(CastStatus tab) => tab == CastStatus.success ? 1 : 0;
+
+  /// 按当前 tab 状态回后端拉取记录（分状态拉取，避免 >100 条时本地切片丢行）。
+  Future<void> _loadTab() async {
+    await state.refreshCastRecords(deviceUploadState: _uploadStateOf(_tab));
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  // 后端已按状态过滤；仍按 tab 再筛一层作兜底（后端忽略过滤参数时也不串档）。
   List<CastRecord> get _records =>
       state.castRecords.where((record) => record.status == _tab).toList();
 
@@ -72,17 +105,12 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
     if (!mounted) {
       return;
     }
-    // 再次投屏会新增一条投屏记录：返回后刷新列表。
-    await state.refreshCastRecords();
-    if (mounted) {
-      setState(() {});
-    }
+    // 再次投屏会新增一条投屏记录：返回后按当前 tab 刷新列表。
+    await _loadTab();
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 
   Future<void> _delete(CastRecord record) async {
@@ -112,9 +140,7 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
       return;
     }
     setState(() {});
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(feedback.message)));
+    AppToast.show(context, feedback.message);
   }
 
   @override
@@ -132,7 +158,13 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage> {
           const SizedBox(height: 8),
           _SegmentedTabs(
             current: _tab,
-            onChanged: (value) => setState(() => _tab = value),
+            onChanged: (value) {
+              if (value == _tab) {
+                return;
+              }
+              setState(() => _tab = value);
+              _loadTab(); // 切 tab 时按状态回后端重新拉取（对齐小程序 switchFilter）
+            },
           ),
           const SizedBox(height: 18),
           Text(

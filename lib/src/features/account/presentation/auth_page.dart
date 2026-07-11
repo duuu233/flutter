@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
+import '../data/email_history.dart';
 
 /// 邮箱密码登录页（应用唯一登录页，路由 `/auth`）。
 ///
@@ -31,6 +33,16 @@ class _AuthPageState extends State<AuthPage> {
     _emailController = TextEditingController(
       text: widget.state.currentUser.email,
     );
+    // 未登录邮箱时，自动填充上次输入过的邮箱（本地缓存），回访用户免于重复输入。
+    if (_emailController.text.trim().isEmpty) {
+      EmailHistory.latest().then((email) {
+        if (mounted &&
+            email.isNotEmpty &&
+            _emailController.text.trim().isEmpty) {
+          _emailController.text = email;
+        }
+      });
+    }
   }
 
   @override
@@ -111,6 +123,9 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     setState(() => _submitting = false);
+    if (feedback.success) {
+      await EmailHistory.add(email); // 记住成功登录过的邮箱，下次自动填充
+    }
     _showFeedback(feedback.message);
     // 登录页通常以 pushNamedAndRemoveUntil 进入，成功后若可返回则回到主壳层。
     if (feedback.success && Navigator.of(context).canPop()) {
@@ -135,9 +150,7 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   void _showFeedback(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+    AppToast.show(context, message);
   }
 }
 

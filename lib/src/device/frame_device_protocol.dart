@@ -39,7 +39,9 @@ class FrameProtocolConfig {
   static const dataBytesPerPacket = 238;
   static const transferWindowSize = 5;
   static const ackTimeout = Duration(seconds: 1);
-  static const defaultCarouselIntervalSeconds = 24 * 60 * 60;
+  // 未从真机读到间隔时的兜底=2h，对齐小程序 slideshow.js/detail.js 的 intervalHours 默认(2h)。
+  // 正常路径连接后会用真机上报的 intervalSeconds 覆盖，兜底仅在从未读到时命中。
+  static const defaultCarouselIntervalSeconds = 2 * 60 * 60;
 }
 
 class FrameCommand {

@@ -5,7 +5,6 @@ import '../native_device_api.dart';
 import '../network/boltfox_api.dart';
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
-import 'ble/image_codec.dart';
 import 'ble/ota_ble.dart';
 import 'serial_match.dart';
 
@@ -354,65 +353,6 @@ class BleController extends ChangeNotifier {
       return true;
     } catch (_) {
       return false;
-    }
-  }
-
-  /// 把已解码裁剪到设备分辨率的 RGBA 像素六色量化后上传到指定槽位。
-  ///
-  /// [index] 为空时自动选第一个空位；满了抛 [FrameBleException]。
-  /// 成功返回设备回报的结束信息（现存张数 / 剩余空间）。
-  Future<FrameImgEnd> uploadRgba(
-    Uint8List rgba, {
-    int? index,
-    bool dither = true,
-    double contrast = 1.12,
-    double saturation = 1.28,
-  }) async {
-    final i = info;
-    if (i == null || i.width == 0) {
-      throw FrameBleException('设备信息未就绪，请重新连接设备');
-    }
-    if (rgba.length != i.width * i.height * 4) {
-      throw FrameBleException('图片尺寸与设备分辨率不一致');
-    }
-    final target = index ?? FrameProtocol.firstFreeIndex(i.imgMask, i.capacity);
-    if (target < 0) {
-      throw FrameBleException('设备已存满，请先删除照片或一键清空');
-    }
-    final frame = FrameImageCodec.fromRgba(
-      rgba,
-      i.width,
-      i.height,
-      dither: dither,
-      contrast: contrast,
-      saturation: saturation,
-    );
-    uploading = true;
-    uploadPercent = 0;
-    uploadStatus = '传输中…';
-    notifyListeners();
-    try {
-      final end = await _client.uploadImage(
-        screenType: i.screenType,
-        index: target,
-        width: i.width,
-        height: i.height,
-        data: frame.data,
-        onProgress: (done, total, phase, {stuckAt, retries}) {
-          uploadPercent = total == 0 ? 0 : done / total;
-          uploadStatus = phase == 'retry' ? '传输卡顿，正在重试…' : '传输中 $done/$total';
-          notifyListeners();
-        },
-      );
-      await _client.refreshScreen(target);
-      await refreshInfo();
-      uploadStatus = '图传完成';
-      uploadPercent = 1;
-      notifyListeners();
-      return end;
-    } finally {
-      uploading = false;
-      notifyListeners();
     }
   }
 

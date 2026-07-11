@@ -65,9 +65,7 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     if (!context.mounted) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(feedback.message)));
+    AppToast.show(context, feedback.message);
     // 清空完成后返回设备详情。
     Navigator.of(context).maybePop();
   }

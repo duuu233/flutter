@@ -13,12 +13,97 @@ import '../../../state.dart';
 ///
 /// 与「更新 BoltStar」(App 版本更新，`update_boltstar_page`) 是两件事：这里升级的是相框设备固件。
 class OtaUpgradePage extends StatefulWidget {
-  const OtaUpgradePage({super.key, required this.state});
+  const OtaUpgradePage({super.key, required this.state, this.autoStart = false});
 
   final PhotoFrameState state;
 
+  /// 由详情页 OTA 入口的确认弹窗（立刻更新）进入时为 true：包就绪且已连接则自动开始升级
+  /// （对齐小程序 goOtaUpgrade 确认后带 `auto=1` 自动开始）。
+  final bool autoStart;
+
   @override
   State<OtaUpgradePage> createState() => _OtaUpgradePageState();
+}
+
+/// 详情页「固件升级」入口流程（对齐小程序 detail.js `goOtaUpgrade`）：
+/// ① 未连接→自动扫连；② loading 下二次拉取版本(`getUserProductDetail`)；
+/// ③ 已最新/无有效包→提示后返回；④ 有新版→弹「检测到新版本 X，是否升级(稍后/立刻更新)」；
+/// ⑤ 确认「立刻更新」→进 OTA 页并 `autoStart` 自动开始。
+Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
+  final device = state.selectedDevice;
+  // ① 未连接自动扫连（升级需设备在线）。
+  if (!BleController.instance.connected) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    final feedback = await state.connectDevice(device.id);
+    if (!context.mounted) {
+      return;
+    }
+    Navigator.of(context, rootNavigator: true).pop();
+    if (!feedback.success) {
+      AppToast.show(context, feedback.message);
+      return;
+    }
+  }
+  // ② loading 下二次拉取最新版本信息。
+  showDialog<void>(
+    context: context,
+    barrierDismissible: false,
+    builder: (_) => const Center(child: CircularProgressIndicator()),
+  );
+  final updated = await state.fetchDeviceFirmwareInfo(device.id);
+  if (!context.mounted) {
+    return;
+  }
+  Navigator.of(context, rootNavigator: true).pop();
+  final target = updated ?? device;
+  // ③ 已是最新 / 无有效可升级包：提示后返回。
+  if (!target.hasFirmwareUpdate) {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('固件升级'),
+        content: const Text('当前固件已是最新版本'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('知道了'),
+          ),
+        ],
+      ),
+    );
+    return;
+  }
+  // ④ 有新版本：确认弹窗（稍后 / 立刻更新）。
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('固件升级'),
+      content: Text('检测到新版本：${target.newVersionNo}，是否升级？'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+          child: const Text('稍后'),
+        ),
+        TextButton(
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+          child: const Text('立刻更新'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) {
+    return;
+  }
+  // ⑤ 进 OTA 页并自动开始升级。
+  await Navigator.of(context).push<void>(
+    MaterialPageRoute(
+      builder: (_) => OtaUpgradePage(state: state, autoStart: true),
+    ),
+  );
 }
 
 /// 页面阶段（对齐 ota.js 的 state）。
@@ -165,6 +250,13 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         _releaseNotes = const [];
       }
     });
+    // 详情页确认「立刻更新」进入(auto=1)：包就绪且已连接则自动开始升级。
+    if (widget.autoStart &&
+        _stage == _OtaStage.available &&
+        _connected &&
+        mounted) {
+      _runUpgrade(dryRun: false);
+    }
   }
 
   OtaFirmwarePackage _buildPackage({required bool dryRun}) {
