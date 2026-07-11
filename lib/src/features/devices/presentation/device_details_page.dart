@@ -99,7 +99,7 @@ class DeviceDetailsPage extends StatelessWidget {
 
   /// 未连接则蒙层 loading 自动扫连（对齐小程序 detail.js startProjection→connectDevice）；
   /// 连上返回 true，失败提示并返回 false。
-  Future<bool> _ensureConnected(BuildContext context, Object deviceId) async {
+  Future<bool> _ensureConnected(BuildContext context, String deviceId) async {
     showDialog<void>(
       context: context,
       barrierDismissible: false,

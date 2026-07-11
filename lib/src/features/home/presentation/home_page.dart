@@ -367,7 +367,7 @@ class _HomePageState extends State<HomePage> {
   /// 连接结果以吐司提示，连上后由用户再次点投屏——投屏本身不触发连接。
   /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），
   /// 连上返回 true；失败弹提示并返回 false。供投屏入口在未连接时自动重连。
-  Future<bool> _ensureConnected(Object deviceId) async {
+  Future<bool> _ensureConnected(String deviceId) async {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
