@@ -120,7 +120,9 @@ class BoltFoxApi {
   }) {
     return _http.postJson(
       '/Client/User/userLogin',
-      body: {'email': email, 'password': md5Hex(password)},
+      // 后端登录接口的邮箱字段名为 userEmail（与 sendEmail / changeUserEmail 一致）；
+      // 若误传 email，服务端会认为邮箱为空并返回 “Please enter the correct email address”。
+      body: {'userEmail': email, 'password': md5Hex(password)},
       auth: false,
     );
   }
