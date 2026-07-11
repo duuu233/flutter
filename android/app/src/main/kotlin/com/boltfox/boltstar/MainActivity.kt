@@ -1,4 +1,4 @@
-package com.flutter.duu233
+package com.boltfox.boltstar
 
 import android.Manifest
 import android.app.Activity
@@ -20,7 +20,7 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
-    private val channelName = "com.flutter.duu233/device_api"
+    private val channelName = "com.boltfox.boltstar/device_api"
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingGalleryResult: MethodChannel.Result? = null
     private var permissionRequestCode = 4000
