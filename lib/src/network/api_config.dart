@@ -10,8 +10,17 @@ class ApiConfig {
   /// 后端基础地址。
   static const String baseUrl = 'https://api.boltfox.cn';
 
-  /// 请求 / 上传超时时间。
-  static const Duration timeout = Duration(seconds: 12);
+  /// 普通请求单次超时时间。网络失败会静默重试（见 [ApiClient]），用户端最长约 30s 才看到超时提示。
+  static const Duration timeout = Duration(seconds: 10);
+
+  /// 文件上传单次超时时间：上传体积大且服务端还要转码，给更长时间；上传不做自动重试（避免重复上传）。
+  static const Duration uploadTimeout = Duration(seconds: 20);
+
+  /// 网络层失败（超时/断网）静默重试次数：首次 + 最多 networkRetryMax 次（共 3 次尝试 ≈ 30s 才提示）。
+  static const int networkRetryMax = 2;
+
+  /// 每次重试前的等待间隔，给网络一点恢复时间，同时避免瞬间连打。
+  static const Duration networkRetryDelay = Duration(milliseconds: 500);
 
   /// 终端类型：iOS=1，Android=2（小程序=3、PC=4）。
   ///

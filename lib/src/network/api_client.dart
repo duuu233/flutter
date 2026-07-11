@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -66,17 +67,13 @@ class ApiClient {
   }) async {
     final uri = _uri(path, query);
     _logRequest('GET', uri, data: query);
-    try {
-      final response = await http
+    return _sendWithRetry(
+      'GET',
+      uri,
+      () => http
           .get(uri, headers: _headers(auth: auth))
-          .timeout(ApiConfig.timeout);
-      _logResponse('GET', uri, response);
-      return _parse(response);
-    } on ApiException {
-      rethrow;
-    } catch (_) {
-      throw ApiException('NETWORK_ERROR', '网络连接失败');
-    }
+          .timeout(ApiConfig.timeout),
+    );
   }
 
   Future<dynamic> postJson(
@@ -87,8 +84,10 @@ class ApiClient {
     final uri = _uri(path);
     final payload = body ?? <String, dynamic>{};
     _logRequest('POST', uri, data: payload);
-    try {
-      final response = await http
+    return _sendWithRetry(
+      'POST',
+      uri,
+      () => http
           .post(
             uri,
             headers: _headers(
@@ -97,13 +96,44 @@ class ApiClient {
             ),
             body: jsonEncode(payload),
           )
-          .timeout(ApiConfig.timeout);
-      _logResponse('POST', uri, response);
-      return _parse(response);
-    } on ApiException {
-      rethrow;
-    } catch (_) {
-      throw ApiException('NETWORK_ERROR', '网络连接失败');
+          .timeout(ApiConfig.timeout),
+    );
+  }
+
+  /// 发送并静默重试：仅网络层失败（超时/断网）才重试，最多 [ApiConfig.networkRetryMax] 次，
+  /// 每次间隔 [ApiConfig.networkRetryDelay]；业务/服务器错误（[_parse] 抛出的 [ApiException]）
+  /// 不重试（避免重复副作用）。重试耗尽后统一抛出友好提示：网络超时/连接失败，请稍后再试。
+  ///
+  /// 用户端表现：网络卡住时最长约 30s（3 次尝试 × 10s）才提示，
+  /// 对齐小程序 `utils/request.js` 的 requestWithRetry。
+  Future<dynamic> _sendWithRetry(
+    String method,
+    Uri uri,
+    Future<http.Response> Function() send,
+  ) async {
+    var attempt = 0;
+    while (true) {
+      try {
+        final response = await send();
+        _logResponse(method, uri, response);
+        return _parse(response);
+      } on ApiException {
+        rethrow; // 业务/服务器错误：不重试
+      } on TimeoutException {
+        if (attempt < ApiConfig.networkRetryMax) {
+          attempt++;
+          await Future<void>.delayed(ApiConfig.networkRetryDelay);
+          continue;
+        }
+        throw ApiException('NETWORK_ERROR', '网络超时，请稍后再试');
+      } catch (_) {
+        if (attempt < ApiConfig.networkRetryMax) {
+          attempt++;
+          await Future<void>.delayed(ApiConfig.networkRetryDelay);
+          continue;
+        }
+        throw ApiException('NETWORK_ERROR', '网络连接失败，请稍后再试');
+      }
     }
   }
 
@@ -136,14 +166,17 @@ class ApiClient {
           }
         });
         request.files.add(await http.MultipartFile.fromPath(field, filePath));
-        final streamed = await request.send().timeout(ApiConfig.timeout);
+        // 上传用更长的 uploadTimeout（不受普通请求 10s 影响），且不做自动重试（避免重复上传/重复投屏记录）
+        final streamed = await request.send().timeout(ApiConfig.uploadTimeout);
         final response = await http.Response.fromStream(streamed);
         _logResponse('POST multipart', uri, response);
         results.add(_parse(response));
       } on ApiException {
         rethrow;
+      } on TimeoutException {
+        throw ApiException('NETWORK_ERROR', '网络超时，请稍后再试');
       } catch (_) {
-        throw ApiException('NETWORK_ERROR', '网络连接失败');
+        throw ApiException('NETWORK_ERROR', '网络连接失败，请稍后再试');
       }
     }
     return results.length == 1 ? results.first : results;

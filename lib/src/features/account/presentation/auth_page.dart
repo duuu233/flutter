@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
@@ -186,7 +185,7 @@ class _AuthCanvas extends StatelessWidget {
             child: _PillTextField(
               controller: emailController,
               hintText: '请输入邮箱',
-              iconAsset: 'assets/images/email-icon.svg',
+              iconAsset: 'assets/images/email_icon.png',
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               showError: showErrors,
@@ -203,7 +202,7 @@ class _AuthCanvas extends StatelessWidget {
             child: _PillTextField(
               controller: passwordController,
               hintText: '请输入密码',
-              iconAsset: 'assets/images/password-icon.svg',
+              iconAsset: 'assets/images/password_icon.png',
               keyboardType: TextInputType.visiblePassword,
               textInputAction: TextInputAction.done,
               obscureText: !passwordVisible,
@@ -476,7 +475,7 @@ class _PillTextField extends StatelessWidget {
         padding: const EdgeInsets.only(left: 24, right: 25),
         child: Row(
           children: [
-            SvgPicture.asset(iconAsset, width: 24, height: 24),
+            Image.asset(iconAsset, width: 24, height: 24),
             const SizedBox(width: 14),
             Expanded(
               child: TextField(
