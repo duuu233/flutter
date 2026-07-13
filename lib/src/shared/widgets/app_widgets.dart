@@ -489,25 +489,126 @@ class PageLoading extends StatelessWidget {
   /// 加载文案，缺省「加载中…」。
   final String? label;
 
+  /// 品牌橙。**不要用 `Theme.of(context).colorScheme.primary`** —— 主题的 primary 是
+  /// 深青色 `#234E52`（见 app_theme.dart），而全 App 视觉上的主色其实是这个橙。
+  /// 之前 CircularProgressIndicator 不指定颜色，默认取到那个深青，看着就是个深色圆环。
+  static const _accent = Color(0xFFEB5F1B);
+
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // 对齐小程序 app.wxss 的 `.page-loading__spinner`：
+          // 64rpx(=32) 圆环、6rpx(=3) 描边、轨道 rgba(235,95,27,.18)、转动部分 #eb5f1b。
           const SizedBox(
-            width: 28,
-            height: 28,
-            child: CircularProgressIndicator(strokeWidth: 2.4),
+            width: 32,
+            height: 32,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: _accent,
+              backgroundColor: Color(0x2EEB5F1B), // #EB5F1B @ 18%
+            ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12), // .page-loading__text margin-top 24rpx
           Text(
             label ?? '加载中…',
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.75),
+            // .page-loading__text → 26rpx(=13) / #8b9098。
+            // 原来写的是**白色**文字 —— 而页面背景 bg01 是浅色的，等于隐形。
+            style: const TextStyle(
+              color: Color(0xFF8B9098),
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              decoration: TextDecoration.none,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 蒙层阻断式 loading（写操作专用：连接中 / 删除中 / 保存中 …），对齐小程序 `wx.showLoading({mask:true})`。
+///
+/// 读列表用页内的 [PageLoading] 骨架，**不要**用这个全屏遮罩；写操作才用它挡住误触。
+///
+/// ```dart
+/// AppLoadingDialog.show(context, '连接设备中');
+/// final result = await doSomething();
+/// if (context.mounted) AppLoadingDialog.hide(context);
+/// ```
+class AppLoadingDialog {
+  AppLoadingDialog._();
+
+  static void show(BuildContext context, [String text = '加载中…']) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      // 默认的 barrier 是 black54（54% 纯黑），整屏压成一片黑、把中间的转圈图标闷在里面。
+      // 改成很淡的一层：既能挡住误触，又不至于糊掉页面。
+      barrierColor: Colors.black.withValues(alpha: 0.18),
+      builder: (_) => _LoadingBox(text: text),
+    );
+  }
+
+  /// 关闭 loading。务必与 [show] 成对调用（用 rootNavigator 才能关掉对话框路由）。
+  static void hide(BuildContext context) {
+    Navigator.of(context, rootNavigator: true).pop();
+  }
+}
+
+class _LoadingBox extends StatelessWidget {
+  const _LoadingBox({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false, // 加载期间禁止返回键关掉遮罩
+      // ⚠️ 必须包 Material：showDialog 的 builder 结果**不会**被自动包进 Material
+      //（只有 Dialog/AlertDialog 才自带），而 Text 缺少 Material 祖先会被渲染成黄色双下划线。
+      // 与 AppToast 同一个坑，同一个解法。
+      child: Material(
+        type: MaterialType.transparency,
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
+            decoration: BoxDecoration(
+              // 与 AppToast 的气泡同色系，保持全 App 一致。
+              color: const Color(0xFF111111).withValues(alpha: 0.82),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 30,
+                  height: 30,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    // 深色盒子上用白圈；轨道给一层淡白，转起来更有质感。
+                    color: Colors.white,
+                    backgroundColor: Color(0x33FFFFFF),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.4,
+                    fontWeight: FontWeight.w400,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }

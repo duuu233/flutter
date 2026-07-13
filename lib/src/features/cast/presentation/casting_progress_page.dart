@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
+import '../../../state.dart';
 import '../cast_photo_picker.dart';
 import '../projection_service.dart';
+import 'cast_preview_page.dart';
 import 'cast_result_common.dart';
 
 /// 投屏页（进行中 / 成功 / 失败三态同页），1:1 复刻小程序
@@ -25,6 +27,7 @@ class CastingProgressPage extends StatefulWidget {
     this.progress = 10 / 12,
     this.progressLabel = '10/12',
     this.userProductId,
+    this.device,
     this.deviceName = '相框',
     this.imagePaths = const [],
     this.compressImage = true,
@@ -38,6 +41,11 @@ class CastingProgressPage extends StatefulWidget {
 
   /// 后端设备 id（写投屏记录用）。为空则为纯展示模式。
   final Object? userProductId;
+
+  /// 投屏目标设备。仅「继续投屏」需要——它要跳回投屏预览页，而预览页的裁剪比例取自设备屏幕分辨率。
+  /// 从投屏记录页「再次投屏」进来时没有设备对象（那条链路直传 imgBle、不重新选图），此时为 null，
+  /// 「继续投屏」退化为不经预览页直接投。
+  final DeviceItem? device;
 
   /// 投屏目标设备名，结果页信息卡「投屏设备」一行展示。
   final String deviceName;
@@ -266,27 +274,37 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
     if (paths.isEmpty || !mounted) {
       return;
     }
+    final device = widget.device;
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => CastingProgressPage(
-          userProductId: widget.userProductId,
-          deviceName: widget.deviceName,
-          imagePaths: paths,
-          compressImage: widget.compressImage,
-        ),
+        // 选完图先进预览页（对齐小程序 result.js chooseCamera/chooseAlbum → 跳 preview）。
+        // 没有设备对象（从投屏记录「再次投屏」进来的）时退化为直接投。
+        builder: (_) => device != null
+            ? CastPreviewPage(
+                device: device,
+                imagePaths: paths,
+                compressImage: widget.compressImage,
+              )
+            : CastingProgressPage(
+                userProductId: widget.userProductId,
+                deviceName: widget.deviceName,
+                imagePaths: paths,
+                compressImage: widget.compressImage,
+              ),
       ),
     );
   }
 
   /// 「重新投屏」：用同一批图（或同一条记录的设备帧）原样再跑一次。
   ///
-  /// 小程序这里是 `redirectTo` 回投屏预览页重选；App 没有预览页（既定方针：选图即投），
-  /// 故直接以相同入参替换本页重跑，语义等价「再来一次」。
+  /// 小程序这里是 `redirectTo` 回预览页重选；这里的图已经是预览页处理过（裁剪/旋转/中心裁切）
+  /// 的成品，直接以相同入参重跑即可，不必再走一遍预览。
   void _retry() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => CastingProgressPage(
           userProductId: widget.userProductId,
+          device: widget.device,
           deviceName: widget.deviceName,
           imagePaths: widget.imagePaths,
           compressImage: widget.compressImage,

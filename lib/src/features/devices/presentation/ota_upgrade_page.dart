@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/ble/ota_ble.dart';
@@ -33,11 +34,7 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   final device = state.selectedDevice;
   // ① 未连接自动扫连（升级需设备在线）。
   if (!BleController.instance.connected) {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    AppLoadingDialog.show(context, '连接设备中');
     final feedback = await state.connectDevice(device.id);
     if (!context.mounted) {
       return;
@@ -49,11 +46,7 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
     }
   }
   // ② loading 下二次拉取最新版本信息。
-  showDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (_) => const Center(child: CircularProgressIndicator()),
-  );
+  AppLoadingDialog.show(context, '检测版本中');
   final updated = await state.fetchDeviceFirmwareInfo(device.id);
   if (!context.mounted) {
     return;
