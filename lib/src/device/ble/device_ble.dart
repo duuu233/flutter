@@ -12,6 +12,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'frame_protocol.dart';
@@ -279,6 +280,99 @@ class FrameBleClient {
     } catch (_) {}
   }
 
+  // ── BLE 连接间隔（CMD 0x05 / 0x13）────────────────────────
+  //
+  // 为什么必须有这两条指令（这是 App 图传比小程序慢的主因）：
+  // BLE 的连接间隔由**中心(手机)**决定，外设只能发起「连接参数更新请求」让中心批准。
+  //   · Android 的 `requestConnectionPriority(HIGH)` 只能把间隔压到 **11.25~15ms**；
+  //   · iOS 干脆**没有**任何设置连接间隔的 API。
+  // 而 0x13 是让**设备固件**去发起参数更新请求，能要到 **7.5ms**（协议最小值）。
+  // 间隔直接决定吞吐（每个连接事件才能发一批包），7.5ms vs 15ms 就是约 2 倍的差距。
+  // 小程序一直在下发 0x13，App 之前完全没实现 → 一直跑在手机默认/HIGH 的慢间隔上。
+
+  /// 图传目标连接间隔：Android 7.5ms（协议最小值，安卓中心侧通常批准）；
+  /// iOS 15ms —— Apple 规范拒绝 <15ms 的参数更新请求，请求 7.5ms 会被直接忽略、
+  /// 链路反而停在系统自选的 30/45ms 上（小程序真机实测：请求 15ms 后吞吐 11.1→17.6KB/s）。
+  static double get transferConnIntervalMs => Platform.isAndroid ? 7.5 : 15.0;
+
+  /// 读取当前 BLE 连接间隔（CMD=0x05）。返回毫秒；读不到返回 0。
+  ///
+  /// 超时收紧到 2s（默认 6s）：0x05/0x13 是 v1.4 才有的指令，老固件可能**根本不回**。
+  /// 用默认超时的话，每批投屏都要在这里白等 6s——比不做这个优化还慢。
+  Future<double> getConnectionIntervalMs() async {
+    final ack = await request(
+      FrameProtocol.cmdGetConnInterval,
+      timeout: const Duration(seconds: 2),
+    );
+    if (!ack.ok) {
+      throw FrameBleException(FrameProtocol.resultText(ack.result));
+    }
+    final units = FrameProtocol.parseConnectionIntervalUnits(ack.data);
+    return FrameProtocol.connectionIntervalUnitsToMs(units);
+  }
+
+  /// 设置 BLE 连接间隔（CMD=0x13）。[ms] 会按 1.25ms 单位四舍五入并做范围校验。
+  Future<double> setConnectionIntervalMs(double ms) async {
+    final units = FrameProtocol.connectionIntervalMsToUnits(ms);
+    if (units < FrameProtocol.connIntervalMinUnits ||
+        units > FrameProtocol.connIntervalMaxUnits) {
+      throw FrameBleException(
+        '连接间隔需在 ${FrameProtocol.connIntervalMinUnits}~${FrameProtocol.connIntervalMaxUnits} units 之间',
+      );
+    }
+    final ack = await request(
+      FrameProtocol.cmdSetConnInterval,
+      payload: FrameProtocol.buildSetConnectionIntervalPayload(units),
+      // 同 0x05：老固件可能不认这条指令，超时收紧到 2s，别让整批白等 6s。
+      timeout: const Duration(seconds: 2),
+    );
+    if (!ack.ok) {
+      throw FrameBleException(FrameProtocol.resultText(ack.result));
+    }
+    return FrameProtocol.connectionIntervalUnitsToMs(units);
+  }
+
+  /// 图传前的连接参数优化：**无条件**下发 0x13 把连接间隔切到 [transferConnIntervalMs]，
+  /// 再回读 0x05 验证是否真的生效。失败不抛（旧固件可能不支持 0x05/0x13），图传照常继续。
+  ///
+  /// 为什么无条件下发（对齐小程序 2026-07-13 的修正）：0x05 读回的可能是固件保存的**配置值**，
+  /// 而不是链路的实时参数——新连接的链路参数由手机侧决定。若因「读到的值已等于目标」就跳过 0x13，
+  /// 整场图传会跑在手机默认间隔上，表现正是「传一段停一下、明显偏慢」。代价仅一条指令。
+  Future<void> optimizeConnectionIntervalForTransfer() async {
+    // Android 侧的系统级请求与设备侧的 0x13 不冲突，两个一起上效果最好。
+    await requestFastConnection();
+    try {
+      final target = transferConnIntervalMs;
+      await setConnectionIntervalMs(target);
+      // 参数更新要走几个连接事件才落定，立刻回读常拿到旧值。
+      await Future<void>.delayed(const Duration(milliseconds: 300));
+      final actual = await getConnectionIntervalMs();
+      if (kDebugMode) {
+        debugPrint(
+          '[BLE] 连接间隔：请求 ${target}ms，回读 ${actual}ms'
+          '${(actual - target).abs() < 0.01 ? '（已生效）' : '（未生效，链路仍跑在实际值上）'}',
+        );
+      }
+    } catch (error) {
+      // 旧固件不支持 0x05/0x13、或设备拒绝：不阻断图传，只是跑在较慢的间隔上。
+      if (kDebugMode) {
+        debugPrint('[BLE] 连接间隔优化失败（不影响图传）：$error');
+      }
+    }
+  }
+
+  /// 图传会话开始：整批投屏**只调一次**，不要每张图都调。
+  ///
+  /// 之前 `uploadImage` 每张都 requestFastConnection、传完又在 finally 里
+  /// requestPowerSaveConnection —— 批量投屏时每两张之间链路都会掉回 LOW_POWER
+  /// （安卓约 100~125ms 间隔），下一张开头还要在这个慢间隔上重新协商回高优先级，
+  /// 白白拖慢每一张的前半段。现在把「设快 / 恢复省电」提到整批的首尾各一次。
+  Future<void> beginTransferSession() =>
+      optimizeConnectionIntervalForTransfer();
+
+  /// 图传会话结束：恢复省电长间隔。
+  Future<void> endTransferSession() => requestPowerSaveConnection();
+
   // ── 通知接收 / 解帧派发 ───────────────────────────────────
 
   /// 接收缓冲上限：超过视为粘连/脏数据（坏 LEN 或失步），触发丢头重同步（对齐小程序 RX_BUFFER_MAX=2048）。
@@ -512,8 +606,16 @@ class FrameBleClient {
     required int width,
     required int height,
     required Uint8List data,
-    int pace = 10,
+    // 发送节奏上界（ms）。3ms 对齐小程序 PACKET_PACE_MS：固件已扩大收包缓冲(10 包)，
+    // 配合 7.5ms 连接间隔按最快速率喂数据。原来默认 10ms —— AIMD 每 6 个干净窗口才降 0.5ms，
+    // 从 10 探到 0 要 120 个窗口，整张图的前 1/6 都跑在明显偏慢的节奏上。
+    int pace = 3,
     int window = 10,
+    // 是否由本方法自己管理连接参数（设快 / 传完恢复省电）。
+    // 批量投屏请传 false，改由调用方在**整批**首尾各调一次
+    // [beginTransferSession] / [endTransferSession] —— 否则每张之间链路会掉回
+    // LOW_POWER 再重新协商，白白拖慢每张的前半段。调试台直调本方法时用默认 true。
+    bool manageConnection = true,
     PreparedTransfer? prepared,
     bool Function()? shouldAbort,
     void Function(int done, int total, String phase, {int? stuckAt, int? retries})?
@@ -526,9 +628,11 @@ class FrameBleClient {
         (prepared != null && prepared.dataSize == dataSize) ? prepared : null;
     final crc = pre != null ? pre.crc32 : FrameImageCodec.crc32(data);
 
-    // 图传前请求短连接间隔（吞吐翻几倍、往返延迟骤降，远离设备 1s 接收超时）。
-    // 【App 自有方案】用系统级 ConnectionPriority.high（Android），而非小程序的 0x13/0x05 设备指令。
-    await requestFastConnection();
+    // 图传前把连接间隔切到最快（吞吐翻倍、往返延迟骤降，远离设备 1s 接收超时）。
+    // 批量投屏时 manageConnection=false —— 由调用方在整批首尾各调一次，见 beginTransferSession。
+    if (manageConnection) {
+      await beginTransferSession();
+    }
     try {
       final startAck = await request(
         FrameProtocol.cmdImgStart,
@@ -644,8 +748,10 @@ class FrameBleClient {
       onProgress?.call(totalPackets, totalPackets, 'done');
       return FrameProtocol.parseImgEndResult(endAck.data);
     } finally {
-      // 无论成功失败，传完恢复省电长间隔。
-      await requestPowerSaveConnection();
+      // 无论成功失败，传完恢复省电长间隔（批量投屏由调用方在整批结束后统一恢复）。
+      if (manageConnection) {
+        await endTransferSession();
+      }
     }
   }
 

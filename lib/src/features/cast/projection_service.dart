@@ -142,6 +142,11 @@ class ServerImageProjectionService {
       ));
     }
 
+    // 整批只开一次图传会话：下发 0x13 把连接间隔切到 7.5ms(安卓)/15ms(iOS) + 请求高优先级。
+    // 这是 App 图传比小程序慢的主因——之前每张图各自设一次、传完又掉回省电长间隔，
+    // 批量投屏时每张的前半段都在慢间隔上重新协商（详见 device_ble.beginTransferSession）。
+    // 失败不阻断（旧固件可能不支持 0x13），只是跑得慢一点。
+    var sessionOpened = false;
     try {
       // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。B2：走精简读取，不带 0x03 固件版本。
       emit(0, '正在读取设备信息…');
@@ -179,6 +184,13 @@ class ServerImageProjectionService {
       }
 
       startPrefetch(0);
+
+      // 连接间隔优化放在首张预取**之后**：0x13 之后要等 300ms 才能回读到真实生效值，
+      // 这段等待正好被首张的「上传+后端转码+下载」网络耗时吸收，不额外拖慢链路
+      // （对齐小程序 result.js：先 startPrefetch(0)，再并行 optimizeConnectionIntervalForTransfer）。
+      // 必须在第一次 uploadImage 之前完成，否则整批就白设了。
+      await client.beginTransferSession();
+      sessionOpened = true;
 
       // 2) 逐张：预取的 .bin 帧 → 选空闲槽位 → 图传 → 设备成功才写记录 → 刷新显示。
       for (int i = 0; i < total; i++) {
@@ -229,6 +241,8 @@ class ServerImageProjectionService {
             height: info.height,
             data: frameData,
             prepared: acquired.prepared, // D1/D2：预取阶段算好的 CRC32 + 预组帧
+            // 连接参数由整批的 beginTransferSession 统一管，别每张来回切。
+            manageConnection: false,
             shouldAbort: shouldAbort,
             onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
               // 百分比 = 本张的分包进度（不是整单进度），对齐小程序 result.js:517。
@@ -311,6 +325,11 @@ class ServerImageProjectionService {
                 ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。'
                 : raw),
       );
+    } finally {
+      // 整批结束（成功/失败/中断都算）恢复省电长间隔。只在真的开过会话时才恢复。
+      if (sessionOpened) {
+        await client.endTransferSession();
+      }
     }
   }
 

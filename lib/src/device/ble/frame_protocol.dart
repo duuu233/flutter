@@ -165,9 +165,20 @@ class FrameProtocol {
   static const int cmdGetPlay = 0x02;
   static const int cmdGetSwVer = 0x03;
   static const int cmdGetBattery = 0x04;
+
+  /// 获取 BLE 连接间隔（v1.4）。ACK 的 DATA 为 CONN_INTERVAL(2, 小端)，单位 1.25ms。
+  static const int cmdGetConnInterval = 0x05;
   static const int cmdSetPlay = 0x10;
   static const int cmdSetTime = 0x11;
   static const int cmdDeleteImg = 0x12;
+
+  /// 设置 BLE 连接间隔（v1.4）。PAYLOAD 为 CONN_INTERVAL(2, 小端)，单位 1.25ms。
+  ///
+  /// 这条指令是让**设备固件**去向手机发起「连接参数更新请求」。这一点很关键：
+  /// BLE 的连接间隔由中心(手机)决定，外设只能「请求」。Android 的
+  /// `requestConnectionPriority(HIGH)` 只能拿到 11.25~15ms，而设备自己请求可以要到 7.5ms；
+  /// iOS 更是**完全没有**设置连接间隔的 API，只能靠设备端发起（且 Apple 拒绝 <15ms 的请求）。
+  static const int cmdSetConnInterval = 0x13;
   static const int cmdImgStart = 0x20;
   static const int cmdImgData = 0x21;
   static const int cmdImgEnd = 0x22;
@@ -422,6 +433,32 @@ class FrameProtocol {
     }
     return -1;
   }
+
+  // ── BLE 连接间隔（0x05 / 0x13）─────────────────────────────
+
+  /// 协议里连接间隔的单位：1 unit = 1.25ms。
+  static const double connIntervalUnitMs = 1.25;
+
+  /// 连接间隔合法区间（units）：6 = 7.5ms（蓝牙协议最小值）、3200 = 4000ms。
+  static const int connIntervalMinUnits = 6;
+  static const int connIntervalMaxUnits = 3200;
+
+  static double connectionIntervalUnitsToMs(int units) =>
+      units * connIntervalUnitMs;
+
+  static int connectionIntervalMsToUnits(double ms) =>
+      (ms / connIntervalUnitMs).round();
+
+  /// CMD=0x13 设置连接间隔的 PAYLOAD：CONN_INTERVAL(2, 小端)，单位 1.25ms。
+  static List<int> buildSetConnectionIntervalPayload(int units) {
+    final payload = <int>[];
+    _pushUint16LE(payload, units);
+    return payload;
+  }
+
+  /// 解析 CMD=0x05 的 ACK DATA：CONN_INTERVAL(2, 小端)。返回 units（0=没读到）。
+  static int parseConnectionIntervalUnits(List<int> data) =>
+      data.length >= 2 ? readUint16LE(data, 0) : 0;
 
   // ── 各命令 PAYLOAD 组装 ───────────────────────────────────
 
