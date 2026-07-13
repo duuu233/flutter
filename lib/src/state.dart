@@ -535,6 +535,15 @@ class PhotoFrameState extends ChangeNotifier {
 
   int get totalPhotoCount => myAlbum.length;
 
+  /// 「我的」页的照片数 / 设备数：优先后端统计（getUserInfo 的 `imgCount` / `productCount`），
+  /// 未下发（0）时回退本地列表长度——对齐小程序 mine.js
+  /// `photoCount: Number(userInfo.imgCount) || photos.length`。
+  int get minePhotoCount =>
+      _currentUser.imgCount > 0 ? _currentUser.imgCount : myAlbum.length;
+
+  int get mineDeviceCount =>
+      _currentUser.productCount > 0 ? _currentUser.productCount : _devices.length;
+
   int get successCount {
     return _castRecords
         .where((record) => record.status == CastStatus.success)
@@ -1923,12 +1932,26 @@ class PhotoFrameState extends ChangeNotifier {
   /// 拉取单台设备详情（含 OTA 固件字段）：`/Client/UserProduct/getUserProductDetail`。
   ///
   /// 对齐小程序 `ota.js` 的 `api.getDeviceDetail`：把后端下发的
-  /// `isUpdate/newVersionNo/downloadPath/firmwareSize` 合并到本地 [DeviceItem]，供 OTA 页判定是否可升级。
+  /// `isUpdate/newVersionNo/downloadPath` 合并到本地 [DeviceItem]，供 OTA 页判定是否可升级。
   /// 成功返回更新后的 [DeviceItem]（本地已存在则原地更新并 [notifyListeners]），失败返回 null。
+  ///
+  /// **必须带上设备当前固件版本号**：swagger 里 `productVersionNo`(设备当前版本号) 是入参，
+  /// 后端拿它跟最新版本比对，才能算出 `isUpdate` / `newVersionNo`。不传的话后端无从比较，
+  /// 「检查更新」永远得不到正确结果。版本号来自连接后 BLE 0x01 读到的固件版本（后端不存）。
   Future<DeviceItem?> fetchDeviceFirmwareInfo(String deviceId) async {
     try {
+      String? currentVersion;
+      try {
+        final local = _findDevice(deviceId);
+        if (local.firmwareVersion.isNotEmpty) {
+          currentVersion = local.firmwareVersion;
+        }
+      } catch (_) {
+        // 本地没这台设备（如刚绑定还没入列表）时不带版本号，由后端自行判断。
+      }
       final data = await BoltFoxApi.getUserProductDetail(
         userProductId: deviceId,
+        productVersionNo: currentVersion,
       );
       Map<String, dynamic>? row;
       if (data is Map) {
@@ -2527,6 +2550,10 @@ class PhotoFrameState extends ChangeNotifier {
   /// 未登录直接跳过；成功后 `notifyListeners` 让「我的」等页面同步真实昵称/头像。
   Future<void> refreshCurrentUser() async {
     if (!_isLoggedIn) {
+      // 未登录不拉接口，但首屏加载态照样要结束：否则 userLoaded 永远是 false，
+      // 页面若单独依赖它（不像现在这样跟 albumLoaded 或起来用）就会永久卡在占位/loading。
+      _userLoaded = true;
+      notifyListeners();
       return;
     }
     await _refreshUserInfo();

@@ -64,8 +64,10 @@ class BoltFoxApi {
     Object? deviceUploadState,
     int? targetWidth,
     int? targetHeight,
-    // 是否压缩图片：1=压缩(后端压到约300-400KB) / 0=不压缩传原图，缺省压缩。
-    // ⚠️ 字段名 isCompress 为约定假设，待后端确认（与小程序 api.js 同一处约定，确认后只改这一处）。
+    // ⚠️ isCompress 并不是后端真实参数：swagger 的 setUserProductUpload 入参里没有它
+    // （只有 targetWidth/targetHeight/useLab/dither/saturation… 这些图像处理参数）。
+    // 小程序也一直在传，后端直接忽略——即传不传都一样，压缩与否由后端自己决定。
+    // 保留仅为与小程序保持一致，**不要**依赖它来控制压缩。
     int isCompress = 1,
   }) {
     return _http.upload(

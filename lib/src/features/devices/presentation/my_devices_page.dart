@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 我的设备列表页面，对应 UI 稿「我的设备」。
@@ -10,6 +11,7 @@ class MyDevicesPage extends StatefulWidget {
   const MyDevicesPage({
     super.key,
     this.devices,
+    this.loading = false,
     this.onAddDevice,
     this.onOpenDetail,
     this.onCast,
@@ -19,6 +21,10 @@ class MyDevicesPage extends StatefulWidget {
   });
 
   final List<MyDeviceOverview>? devices;
+
+  /// 设备列表首屏是否仍在加载。true 时显示 loading，不显示「暂无设备」空态——
+  /// 否则接口返回前必然先闪一次空列表（对齐小程序 device/list 的 `loading:true` 门控）。
+  final bool loading;
   final VoidCallback? onAddDevice;
   final ValueChanged<String>? onOpenDetail;
   final ValueChanged<String>? onCast;
@@ -65,30 +71,40 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 顶部工具栏：右对齐添加按钮（小程序 .device-toolbar）。
+          // 顶部工具栏：右对齐添加按钮（小程序 .device-toolbar，加载中不显示）。
           const SizedBox(height: 20),
-          Align(
-            alignment: Alignment.centerRight,
-            child: _AddDeviceButton(onTap: widget.onAddDevice),
-          ),
+          if (!widget.loading)
+            Align(
+              alignment: Alignment.centerRight,
+              child: _AddDeviceButton(onTap: widget.onAddDevice),
+            ),
           const SizedBox(height: 12),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.only(bottom: 12),
-              itemCount: _devices.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 12),
-              itemBuilder: (context, index) {
-                final device = _devices[index];
-                return _DeviceCard(
-                  device: device,
-                  onOpenDetail: () => widget.onOpenDetail?.call(device.id),
-                  onCast: () =>
-                      widget.onCast?.call(device.id),
-                  onRename: () => _rename(device),
-                  onToggleConnection: () => _toggleConnection(device),
-                );
-              },
-            ),
+            // 三分支互斥链（loading 优先）：加载中 → 设备列表 → 空态。
+            // 原来只有列表一支，没设备时是一片空白（连「暂无设备」都没有）。
+            child: widget.loading
+                ? const PageLoading()
+                : _devices.isEmpty
+                ? const EmptyState(
+                    title: '暂无设备',
+                    message: '还没有绑定相框，点击上方「添加设备」开始绑定。',
+                  )
+                : ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    itemCount: _devices.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 12),
+                    itemBuilder: (context, index) {
+                      final device = _devices[index];
+                      return _DeviceCard(
+                        device: device,
+                        onOpenDetail: () =>
+                            widget.onOpenDetail?.call(device.id),
+                        onCast: () => widget.onCast?.call(device.id),
+                        onRename: () => _rename(device),
+                        onToggleConnection: () => _toggleConnection(device),
+                      );
+                    },
+                  ),
           ),
         ],
       ),

@@ -39,6 +39,8 @@ class _DevicesPageState extends State<DevicesPage> {
       animation: state,
       builder: (context, _) {
         return MyDevicesPage(
+          // 首屏未出结果前显示 loading，不先闪空列表。
+          loading: !state.devicesLoaded,
           devices: state.devices
               .map(
                 (device) => MyDeviceOverview(

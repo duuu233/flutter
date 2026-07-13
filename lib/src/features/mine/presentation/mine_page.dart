@@ -31,6 +31,14 @@ class _MinePageState extends State<MinePage> {
     }
   }
 
+  /// 统计数字的展示文案：接口没回来之前显示占位 `--`，不要先渲染一个 `0`
+  /// 再跳成真实值（小程序 profile 页同样用 `--` 占位）。
+  ///
+  /// 未登录（游客）时**不进占位逻辑**：initState 里根本不会去拉这些接口，
+  /// loaded 永远翻不了身，`--` 会一直挂在那儿。游客本来就是 0 张 0 台，直接显示真实值。
+  String _countText(bool loaded, int value, String unit) =>
+      (loaded || !widget.state.isLoggedIn) ? '$value$unit' : '--$unit';
+
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
@@ -101,7 +109,11 @@ class _MinePageState extends State<MinePage> {
                                   Icons.photo_size_select_actual_outlined,
                               fallbackColor: const Color(0xFFFF6A24),
                               title: '我的图库',
-                              subtitle: '${state.totalPhotoCount}张照片',
+                              subtitle: _countText(
+                                state.userLoaded || state.albumLoaded,
+                                state.minePhotoCount,
+                                '张照片',
+                              ),
                               onTap: () {
                                 Navigator.of(
                                   context,
@@ -113,7 +125,11 @@ class _MinePageState extends State<MinePage> {
                               fallbackIcon: Icons.devices_other_outlined,
                               fallbackColor: const Color(0xFF4A98FF),
                               title: '我的设备',
-                              subtitle: '${state.devices.length}个设备',
+                              subtitle: _countText(
+                                state.userLoaded || state.devicesLoaded,
+                                state.mineDeviceCount,
+                                '个设备',
+                              ),
                               onTap: () {
                                 Navigator.of(
                                   context,

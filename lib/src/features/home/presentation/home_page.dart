@@ -108,11 +108,6 @@ class _HomePageState extends State<HomePage> {
         : widget.state.devices;
   }
 
-  /// 是否存在已连接设备。
-  bool get _hasConnectedDevice {
-    return widget.state.devices.any((device) => device.connected);
-  }
-
   /// 首页当前展示的设备；为 null 即「未绑定」场景。
   ///
   /// 判定依据是**是否绑定过设备（设备列表非空）**，不是「蓝牙是否连着」——
