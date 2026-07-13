@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import 'api_rows.dart';
 import 'crypto_util.dart';
 
 /// BoltFox 业务接口（App 版），对齐小程序端 `utils/api.js`。
@@ -93,25 +94,14 @@ class BoltFoxApi {
   /// 白名单跟着产品列表走。返回去重后的非空字符串数组；拉取失败由调用方兜底（不在此处吞错）。
   static Future<List<String>> getProductBroadcastIds() async {
     final data = await getProductList({'pageIndex': 1, 'pageSize': 100});
-    dynamic rows = data;
-    if (data is Map) {
-      rows =
-          data['list'] ??
-          data['rows'] ??
-          data['records'] ??
-          data['data'] ??
-          data['items'];
-    }
+    // 必须走 extractApiRows：后端分页字段是 `retData.pageData`（swagger `BasePageOutput`），
+    // 这里原先手写的取行链只找 list/rows/records/data/items，唯独漏了 pageData，
+    // 于是白名单永远解析成空、蓝牙搜索一路回落到硬编码机型。
     final ids = <String>[];
-    if (rows is List) {
-      for (final row in rows) {
-        if (row is! Map) {
-          continue;
-        }
-        final id = (row['broadcastId'] ?? '').toString().trim();
-        if (id.isNotEmpty && !ids.contains(id)) {
-          ids.add(id);
-        }
+    for (final row in extractApiRows(data)) {
+      final id = (row['broadcastId'] ?? '').toString().trim();
+      if (id.isNotEmpty && !ids.contains(id)) {
+        ids.add(id);
       }
     }
     return ids;

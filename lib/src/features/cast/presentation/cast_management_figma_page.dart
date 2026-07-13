@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'casting_progress_page.dart';
 
@@ -28,13 +29,13 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   @override
   void initState() {
     super.initState();
-    // 打开时刷新设备 + 当前 tab 的投屏记录（失败保留本地数据）。
+    // 打开时刷新设备 + 当前 tab 的投屏记录，两者并发（原来串行 await，
+    // 记录页的 loading 要白等一个跟记录无关的设备接口往返）。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await state.refreshDevices();
-      if (!mounted) {
-        return;
-      }
-      await _loadTab();
+      final devices = state.refreshDevices();
+      final records = _loadTab();
+      await devices;
+      await records;
     });
   }
 
@@ -167,17 +168,23 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
             },
           ),
           const SizedBox(height: 18),
-          Text(
-            '共 ${records.length} 条记录',
-            style: const TextStyle(
-              color: Color(0xFF777E88),
-              fontSize: 12,
-              height: 1,
+          // 「共 N 条记录」也要等接口回来再显示，否则首帧会先闪一行「共 0 条记录」
+          // （小程序把它一并包在 loading 的 else 分支里，同理）。
+          if (state.castRecordsLoaded)
+            Text(
+              '共 ${records.length} 条记录',
+              style: const TextStyle(
+                color: Color(0xFF777E88),
+                fontSize: 12,
+                height: 1,
+              ),
             ),
-          ),
           const SizedBox(height: 12),
           Expanded(
-            child: records.isEmpty
+            // 三分支互斥链（loading 优先）：接口没回来之前不渲染「暂无记录」空态。
+            child: !state.castRecordsLoaded
+                ? const PageLoading()
+                : records.isEmpty
                 ? _EmptyRecords(success: success)
                 : ListView.separated(
                     padding: const EdgeInsets.only(bottom: 12),
@@ -187,7 +194,11 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
                     itemBuilder: (context, index) {
                       final record = records[index];
                       return _RecordCard(
-                        deviceName: state.deviceName(record.deviceId),
+                        // 设备名直接用记录自带的 productName（后端逐行下发）。
+                        // 原来按 deviceId 反查设备列表，设备列表没加载好就会显示成原始数字 id。
+                        deviceName: record.deviceName.isNotEmpty
+                            ? record.deviceName
+                            : state.deviceName(record.deviceId),
                         dateText: state.formatDateTime(record.createdAt),
                         record: record,
                         onRecast: () => _recast(record),

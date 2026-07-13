@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 我的图库，对照微信小程序 `photo-album/subpackages/album/list`。
@@ -31,13 +32,11 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   @override
   void initState() {
     super.initState();
-    // 打开时刷新设备 + 图库（失败保留本地数据），随后查一次当前设备的一键清除状态。
+    // 打开时刷新设备 + 图库，随后查一次当前设备的一键清除状态。
+    // 两个接口并发（原来是串行 await，空态/loading 要多等一个完整往返；它们之间没有依赖）。
+    // 首屏在 state.albumLoaded 之前显示 loading，不会先闪一下空态（对齐小程序 list.js loading:true）。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await state.refreshDevices();
-      if (!mounted) {
-        return;
-      }
-      await state.refreshAlbum();
+      await Future.wait([state.refreshDevices(), state.refreshAlbum()]);
       if (!mounted) {
         return;
       }
@@ -323,7 +322,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       bodyPadding: EdgeInsets.zero,
       // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
       background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
-      body: photos.isEmpty
+      // 三分支互斥链（loading 优先）：接口没回来之前只显示 loading，绝不先渲染空态。
+      body: !state.albumLoaded || !state.devicesLoaded
+          ? const PageLoading()
+          : photos.isEmpty
           ? _buildEmptyBody()
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

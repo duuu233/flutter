@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../state.dart';
 import '../../cast/presentation/casting_progress_page.dart';
 
@@ -112,16 +113,27 @@ class _HomePageState extends State<HomePage> {
     return widget.state.devices.any((device) => device.connected);
   }
 
-  /// 当前生效的已连接设备；为空即「未绑定」场景的判定依据。
+  /// 首页当前展示的设备；为 null 即「未绑定」场景。
+  ///
+  /// 判定依据是**是否绑定过设备（设备列表非空）**，不是「蓝牙是否连着」——
+  /// 对齐小程序 `home.js loadHomeState`：`hasRealDevice = normalizedList.length > 0`，
+  /// 据此 `setScene(BOUND / UNBOUND)`，连接状态只决定卡片里显示「已连接/未连接」。
+  /// 原来这里要求 `connected == true`，于是「已绑定但蓝牙没连」（冷启动的常态，
+  /// 因为后端根本不存连接态）会被误判成「未绑定」，首页一直显示绑定引导空态。
+  ///
+  /// 展示优先级同小程序：已连接的 → 上次选中的 → 第一台。
   DeviceItem? get _activeDevice {
-    if (!_hasConnectedDevice) {
+    final devices = widget.state.devices;
+    if (devices.isEmpty) {
       return null;
     }
-    final selected = widget.state.selectedDevice;
-    if (selected.connected) {
-      return selected;
+    final connected = devices.where((device) => device.connected);
+    if (connected.isNotEmpty) {
+      return connected.first;
     }
-    return widget.state.devices.firstWhere((device) => device.connected);
+    final selectedId = widget.state.selectedDeviceId;
+    final selected = devices.where((device) => device.id == selectedId);
+    return selected.isNotEmpty ? selected.first : devices.first;
   }
 
   @override
@@ -207,13 +219,21 @@ class _HomePageState extends State<HomePage> {
     // 全ページ共通背景 bg01（小程序は首页/绑定流程とも同一 mock-bg 背景）。
     const backgroundAsset = 'assets/images/bg01.png';
 
+    // 已登录但设备列表首屏还没回来时先显示 loading：否则首帧必然先渲染一次「未绑定」
+    // 绑定引导页，接口回来再跳成设备卡片（对齐小程序 home.js 的 pageLoading:true 门控）。
+    // 未登录（游客）不等接口，直接按未绑定展示，与小程序一致。
+    final waitingDevices =
+        widget.state.isLoggedIn && !widget.state.devicesLoaded;
+
     return Stack(
       fit: StackFit.expand,
       children: [
         _HomeBackground(asset: backgroundAsset),
         SafeArea(
           child: bindMode == _HomeBindMode.none
-              ? _HomeMainView(
+              ? (waitingDevices && _debugScene == null
+                    ? const PageLoading()
+                    : _HomeMainView(
                   state: widget.state,
                   activeDevice: activeDevice,
                   onBindDevice: _startScan,
@@ -222,7 +242,7 @@ class _HomePageState extends State<HomePage> {
                   onCamera: () => _startCast(ImageSourceType.camera),
                   onAlbum: () => _startCast(ImageSourceType.album),
                   onOpenMine: widget.onOpenMine,
-                )
+                ))
               : _BindDeviceView(
                   mode: bindMode,
                   devices: _nearbyDevices,

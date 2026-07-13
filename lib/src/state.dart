@@ -70,6 +70,11 @@ class UserProfile {
 
   /// 后端头像地址（登录后 getUserInfo 下发）；空则用本地默认头像。
   String avatarUrl = '';
+
+  /// 后端统计的图片数 / 设备数（`UserInfoApiOut.imgCount` / `productCount`）。
+  /// 「我的」页优先展示它们，未下发（0）时才回退本地列表长度，对齐小程序 mine.js。
+  int imgCount = 0;
+  int productCount = 0;
 }
 
 class DeviceItem {
@@ -208,6 +213,8 @@ class AlbumPhoto {
     required this.uploadedAt,
     this.isOnDevice = true,
     this.imageUrl,
+    this.deviceName = '',
+    this.imgBle,
   });
 
   final String id;
@@ -228,8 +235,15 @@ class AlbumPhoto {
   final DateTime uploadedAt;
   bool isOnDevice;
 
-  /// 后端图片地址（来自 `getUserProductImgList`）；为空时回退占位色块。
+  /// 后端图片地址（来自 `getUserProductImgList.img`）；为空时回退占位色块。
   final String? imageUrl;
+
+  /// 所属设备名（`getUserProductImgList.productName`）。后端逐行下发，
+  /// 不必反查设备列表——设备列表还没加载时也能正确显示。
+  final String deviceName;
+
+  /// 设备帧文件地址（`getUserProductImgList.imgBle`，.bin）；再次投屏可直传设备。
+  final String? imgBle;
 }
 
 class CastRecord {
@@ -252,6 +266,7 @@ class CastRecord {
     this.photoId,
     this.imageUrl,
     this.imgBle,
+    this.deviceName = '',
   });
 
   final String id;
@@ -277,6 +292,11 @@ class CastRecord {
   /// 后端转换好的设备帧文件地址(.bin，来自 `getUserProductImgRecordList` 的 imgBle)。
   /// 再次/重新投屏时直接下载它走 BLE 图传，不再走后端上传/转码；为空则该记录无法直接再次投屏。
   final String? imgBle;
+
+  /// 投屏目标设备名（`getUserProductImgRecordList.productName`）。后端逐行下发，
+  /// 记录页直接用它（对齐小程序 records.wxml 的 `item.deviceName`），
+  /// 不再按 deviceId 反查设备列表——设备列表未加载时会退化成显示原始 id。
+  final String deviceName;
 }
 
 class GuideArticle {
@@ -350,6 +370,31 @@ class PhotoFrameState extends ChangeNotifier {
   final List<FaqArticle> _faqArticles = _seedFaqArticles();
   String _selectedDeviceId;
 
+  // ── 首屏加载态（对齐小程序各页 `data.loading` 初值 true）────────────────────
+  // 空列表有两种含义：「还没拉」和「拉完了确实是空」。只用 `list.isEmpty` 判断，
+  // 首帧必然先渲染一次空态/缺省页，接口回来再跳变（这正是各页空态先闪的根因）。
+  // 这里为每个列表记一个「首屏是否已出结果」的标记：
+  //   - false → 页面显示 loading（骨架/转圈），不显示空态；
+  //   - true  → 才允许按 isEmpty 判定空态。
+  // 成功和失败都会置 true（失败落空态，与小程序 catch 里 `setData({loading:false})` 一致）。
+  // 二次进入不回退为 false：沿用旧列表静默刷新（stale-while-revalidate，同小程序）。
+  bool _devicesLoaded = false;
+  bool _albumLoaded = false;
+  bool _castRecordsLoaded = false;
+  bool _userLoaded = false;
+
+  /// 设备列表首屏是否已出结果（false=仍在首次加载，页面应显示 loading 而非「未绑定」空态）。
+  bool get devicesLoaded => _devicesLoaded;
+
+  /// 相册/图库首屏是否已出结果。
+  bool get albumLoaded => _albumLoaded;
+
+  /// 投屏记录首屏是否已出结果。
+  bool get castRecordsLoaded => _castRecordsLoaded;
+
+  /// 用户资料首屏是否已出结果（「我的」页据此决定显示真实统计还是占位 `--`）。
+  bool get userLoaded => _userLoaded;
+
   AppLanguage get language => _language;
 
   bool get isLoggedIn => _isLoggedIn;
@@ -364,11 +409,11 @@ class PhotoFrameState extends ChangeNotifier {
   List<DraftPhoto> get draftLibrary => List.unmodifiable(_draftLibrary);
 
   List<AlbumPhoto> get myAlbum {
-    final items = _albumPhotos
-        .where(
-          (photo) => photo.ownerUserId == _currentUser.id && photo.isOnDevice,
-        )
-        .toList();
+    // 不再按 ownerUserId 过滤：后端 getUserProductImgList 已按 userToken 只返回本人图片，
+    // 再过滤一次纯属自伤——照片映射时写入的 ownerUserId 取自当时的 _currentUser.id，
+    // 若 refreshAlbum 与 refreshCurrentUser 并发（「我的」页就是这么调的），用户 id 由 '' 变成真实值后
+    // 全部照片都会被这个条件筛掉，图库直接空白。小程序也不做这层过滤，直接渲染后端返回的数据。
+    final items = _albumPhotos.where((photo) => photo.isOnDevice).toList();
     items.sort((left, right) => right.uploadedAt.compareTo(left.uploadedAt));
     return items;
   }
@@ -380,6 +425,10 @@ class PhotoFrameState extends ChangeNotifier {
   Map<PermissionKind, bool> get permissions => Map.unmodifiable(_permissions);
 
   DeviceItem get selectedDevice => _findDevice(_selectedDeviceId);
+
+  /// 当前选中设备的 id（可能为空串 / 不在列表中；[selectedDevice] 找不到会抛异常，
+  /// 只想知道「选了哪台」时用这个，不要用 `selectedDevice.id`）。
+  String get selectedDeviceId => _selectedDeviceId;
 
   String tr({required String zh, String? en, String? ja}) {
     switch (_language) {
@@ -808,7 +857,11 @@ class PhotoFrameState extends ChangeNotifier {
       }
       _isLoggedIn = true;
       _currentUser.email = target;
-      await _refreshUserInfo();
+      // 登录响应就是完整的用户信息（swagger: `UserInfoDetailApiOut` = UserInfoApiOut + userToken，
+      // 含 userNo/nickName/avatar/userEmail/imgCount/productCount），直接用它回填，
+      // 不必再多打一次 getUserInfo；即便那个接口失败，昵称头像也已经就位。
+      _applyUserInfo(data);
+      _userLoaded = true;
       notifyListeners();
       return ActionFeedback(
         success: true,
@@ -1019,25 +1072,20 @@ class PhotoFrameState extends ChangeNotifier {
     final current = pkg.version;
     final data = await BoltFoxApi.getLastVersion(appVersionNo: current);
 
+    // 字段名以 swagger `AppVersionConApiOutput` 为准：
+    // `appVersionNo`(最新版本号) / `isUpdate`(1=有更新) / `downloadPath`(更新包地址) /
+    // `upgradeTips`(更新说明) / `compulsory`(1=强制升级 2=强提示 3=弱提示 4=不提示)。
+    // 原实现读的 versionNo / content / downloadUrl 等键后端都不存在——版本号和更新说明永远是空。
     String latest = '';
     String url = '';
     String desc = '';
     bool hasUpdate = false;
     if (data is Map) {
       final m = data.map((k, v) => MapEntry(k.toString(), v));
-      latest = '${m['versionNo'] ?? m['version'] ?? m['lastVersion'] ?? m['newVersionNo'] ?? ''}';
-      url = '${m['downloadUrl'] ?? m['url'] ?? m['downloadPath'] ?? m['androidUrl'] ?? ''}';
-      desc = '${m['content'] ?? m['desc'] ?? m['remark'] ?? m['updateContent'] ?? ''}';
-      final flag = m['isUpdate'] ?? m['needUpdate'] ?? m['forceUpdate'];
-      if (flag is bool) {
-        hasUpdate = flag;
-      } else if (flag is num) {
-        hasUpdate = flag != 0;
-      } else if (flag is String) {
-        hasUpdate = flag == '1' || flag.toLowerCase() == 'true';
-      } else {
-        hasUpdate = _versionGreater(latest, current);
-      }
+      latest = (m['appVersionNo'] ?? '').toString();
+      url = (m['downloadPath'] ?? '').toString();
+      desc = (m['upgradeTips'] ?? '').toString();
+      hasUpdate = _asInt(m['isUpdate']) == 1;
     } else if (data is String) {
       latest = data.trim();
       hasUpdate = _versionGreater(latest, current);
@@ -1400,12 +1448,18 @@ class PhotoFrameState extends ChangeNotifier {
       _albumPhotos
         ..clear()
         ..addAll(mapped);
+      // 数据与首屏加载态同帧提交：先置 loaded 再 notify，页面不会出现「loading 已结束但列表还没写入」的空态中间帧。
+      _albumLoaded = true;
       notifyListeners();
       return ActionFeedback(
         success: true,
         message: tr(zh: '相册已更新。', en: 'Album refreshed.', ja: 'アルバムを更新しました。'),
       );
     } catch (error) {
+      // 失败也结束首屏 loading，落到空态（对齐小程序 catch 里的 `setData({loading:false})`；
+      // 错误提示由调用方按返回的 ActionFeedback 弹，不在这里重复弹）。
+      _albumLoaded = true;
+      notifyListeners();
       return _apiFailure(error);
     }
   }
@@ -1462,10 +1516,9 @@ class PhotoFrameState extends ChangeNotifier {
     }
     final photos = _albumPhotos
         .where(
-          (photo) =>
-              photoIds.contains(photo.id) &&
-              photo.ownerUserId == _currentUser.id &&
-              photo.isOnDevice,
+          // 同 myAlbum：不按 ownerUserId 过滤（后端已按 userToken 隔离），
+          // 否则用户 id 到位的时机稍晚就会「选中了照片却提示没有可删除的照片」。
+          (photo) => photoIds.contains(photo.id) && photo.isOnDevice,
         )
         .toList();
     if (photos.isEmpty) {
@@ -1598,12 +1651,8 @@ class PhotoFrameState extends ChangeNotifier {
   Future<ActionFeedback> refreshGalleryPhotoOnScreen(String photoId) async {
     AlbumPhoto? photo;
     try {
-      photo = _albumPhotos.firstWhere(
-        (p) =>
-            p.id == photoId &&
-            p.ownerUserId == _currentUser.id &&
-            p.isOnDevice,
-      );
+      // 同 myAlbum：不按 ownerUserId 过滤（后端已按 userToken 隔离）。
+      photo = _albumPhotos.firstWhere((p) => p.id == photoId && p.isOnDevice);
     } catch (_) {
       photo = null;
     }
@@ -1754,6 +1803,7 @@ class PhotoFrameState extends ChangeNotifier {
       _castRecords
         ..clear()
         ..addAll(mapped);
+      _castRecordsLoaded = true;
       notifyListeners();
       return ActionFeedback(
         success: true,
@@ -1764,6 +1814,9 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     } catch (error) {
+      // 失败也结束首屏 loading，落到空态（同 refreshAlbum）。
+      _castRecordsLoaded = true;
+      notifyListeners();
       return _apiFailure(error);
     }
   }
@@ -1849,6 +1902,7 @@ class PhotoFrameState extends ChangeNotifier {
       } else if (!_devices.any((device) => device.id == _selectedDeviceId)) {
         _selectedDeviceId = _devices.first.id;
       }
+      _devicesLoaded = true;
       notifyListeners();
       return ActionFeedback(
         success: true,
@@ -1859,6 +1913,9 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     } catch (error) {
+      // 失败也结束首屏 loading，落到空态（同 refreshAlbum）。
+      _devicesLoaded = true;
+      notifyListeners();
       return _apiFailure(error);
     }
   }
@@ -2279,6 +2336,15 @@ class PhotoFrameState extends ChangeNotifier {
       // 退出登录接口失败时仍清除本地态。
     }
     ApiSession.instance.clear();
+    // 退出登录同样清空上个账号的列表与首屏加载态，避免换账号后先看到上一个人的数据/空态。
+    _devices.clear();
+    _albumPhotos.clear();
+    _castRecords.clear();
+    _selectedDeviceId = '';
+    _devicesLoaded = false;
+    _albumLoaded = false;
+    _castRecordsLoaded = false;
+    _userLoaded = false;
     _isLoggedIn = false;
     _currentUser.email = '';
     notifyListeners();
@@ -2295,8 +2361,16 @@ class PhotoFrameState extends ChangeNotifier {
       return _apiFailure(error);
     }
     ApiSession.instance.clear();
-    _albumPhotos.removeWhere((photo) => photo.ownerUserId == _currentUser.id);
-    _castRecords.removeWhere((record) => record.ownerUserId == _currentUser.id);
+    // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
+    // 并把首屏加载态复位，下个账号进来才会重新走一次 loading 而不是直接看到上个账号的空态。
+    _albumPhotos.clear();
+    _castRecords.clear();
+    _devices.clear();
+    _selectedDeviceId = '';
+    _devicesLoaded = false;
+    _albumLoaded = false;
+    _castRecordsLoaded = false;
+    _userLoaded = false;
     _isLoggedIn = false;
     _currentUser = UserProfile(
       id: 'USR-GUEST',
@@ -2466,74 +2540,68 @@ class PhotoFrameState extends ChangeNotifier {
       _applyUserInfo(data);
     } catch (_) {
       // 用户信息拉取失败时保留本地占位资料。
+    } finally {
+      // 成功/失败都结束首屏加载态：「我的」页据此从占位 `--` 切到真实统计。
+      _userLoaded = true;
     }
   }
 
   /// 用后端用户信息覆盖本地展示字段（id / 昵称 / 邮箱 / 头像）。
   /// 相册/记录的 ownerUserId 映射时同样取 `_currentUser.id`，故 id 前后一致、过滤不会错乱。
+  /// 字段名以后端 swagger `UserInfoApiOut` / `UserInfoDetailApiOut` 为准：
+  /// `userNo`(用户编号) / `nickName` / `avatar` / `userEmail` / `userMobile` /
+  /// `imgCount`(我的图片数) / `productCount`(我的设备数)。
+  /// 后端**不下发** `id` / `avatarUrl` / `email` —— 之前把这些排在首位纯属猜测，
+  /// 只是靠后面的兜底键侥幸命中；imgCount / productCount 更是完全没读，
+  /// 「我的」页的照片数/设备数只能退回本地列表长度。
   void _applyUserInfo(dynamic data) {
     if (data is! Map) {
       return;
     }
-    // 对齐小程序 profile：ID 取 id / userNo / userId。
-    final id = data['id'] ?? data['userNo'] ?? data['userId'];
+    final id = data['userNo'];
     if (id != null && '$id'.isNotEmpty) {
       _currentUser.id = '$id';
     }
-    final nick = data['nickName'] ?? data['nickname'];
+    final nick = data['nickName'];
     if (nick is String && nick.isNotEmpty) {
       _currentUser.nickname = nick;
     }
-    final email = data['email'] ?? data['userEmail'];
+    final email = data['userEmail'];
     if (email is String && email.isNotEmpty) {
       _currentUser.email = email;
     }
-    // 对齐小程序 home/mine：头像取 avatarUrl / avatar / headImg。
-    final avatar =
-        data['avatarUrl'] ?? data['avatar'] ?? data['headImg'] ?? data['headImgUrl'];
+    final avatar = data['avatar'];
     if (avatar is String) {
       _currentUser.avatarUrl = avatar;
     }
+    _currentUser.imgCount = _asInt(data['imgCount']);
+    _currentUser.productCount = _asInt(data['productCount']);
   }
 
   /// 把后端设备记录映射为 [DeviceItem]；蓝牙字段给安全默认值，连接后再由 BLE 更新。
+  ///
+  /// 字段名以后端 swagger 为准。
+  /// 列表 `ClientUserProductApiOut`：`userProductId` / `productName` / `productImg` /
+  /// `deviceId`(硬件序列号) / `width` / `height` / `shapeType`。
+  /// 详情 `ClientUserProductDetailApiOut` 另有：`carouselInterval`(轮播间隔，单位**小时**) /
+  /// `isUpdate` / `newVersionNo` / `downloadPath` / `compulsory` / `isClearImg` / `productId`。
+  /// 注意：两个接口都**不下发**固件版本号与固件包大小（`productVersionNo`/`firmwareSize` 不存在），
+  /// 固件版本只能连接后由 BLE 0x01 读取。
   DeviceItem _deviceFromJson(Map<String, dynamic> data) {
-    final id = (data['userProductId'] ?? data['id'] ?? _nextId('dev'))
-        .toString();
-    final name = (data['productName'] ?? data['name'] ?? '相框').toString();
-    // 序列号（用于与广播 4 字节 / 固件 6 字节 Device_ID 交叉匹配）：优先后端各序列号字段，
-    // 缺省时取 deviceId —— getUserProductList 现会返回 6 字节 Device_ID（如 E9:48:C2:1E:D4:28），
-    // 不取的话真机记录没有可比对的硬件号，连接复用 / 绑定判重都会失效。
-    final serial =
-        [
-              data['productSerialNo'],
-              data['serialNo'],
-              data['sn'],
-              data['deviceId'],
-            ]
-            .map((v) => (v ?? '').toString())
-            .firstWhere((s) => s.isNotEmpty, orElse: () => '');
-    final firmware = (data['productVersionNo'] ?? data['firmwareVersion'] ?? '')
-        .toString();
-    // OTA 固件字段（设备详情下发；列表接口一般不含，缺省即无更新）。
+    final id = (data['userProductId'] ?? _nextId('dev')).toString();
+    final name = (data['productName'] ?? '相框').toString();
+    // 序列号（用于与广播 4 字节 / 固件 6 字节 Device_ID 交叉匹配）：后端字段就叫 deviceId，
+    // 返回 6 字节 Device_ID（如 E9:48:C2:1E:D4:28）。取不到则连接复用 / 绑定判重都会失效。
+    final serial = (data['deviceId'] ?? '').toString();
     final isUpdate = _asInt(data['isUpdate']);
-    final newVersionNo =
-        (data['newVersionNo'] ??
-                data['latestVersion'] ??
-                data['versionNo'] ??
-                '')
-            .toString();
-    final downloadPath =
-        (data['downloadPath'] ??
-                data['packageUrl'] ??
-                data['firmwareUrl'] ??
-                data['url'] ??
-                '')
-            .toString();
+    final newVersionNo = (data['newVersionNo'] ?? '').toString();
+    final downloadPath = (data['downloadPath'] ?? '').toString();
+    // 轮播间隔：后端单位是小时，本地统一存秒。未下发（列表接口）时用默认值。
+    final carouselHours = _asInt(data['carouselInterval']);
     return DeviceItem(
       id: id,
       name: name,
-      kind: (data['productTypeName'] ?? data['kind'] ?? '').toString(),
+      kind: '',
       // 由后端下发的屏幕像素宽高推断真实屏型（原来一律写死 589，3.7寸也被当 589）。
       // 连接复用 / 扫描匹配时据此按型号一票否决，防跨型号串台；只影响记录与该防护，
       // 图传尺寸走的是连上后读到的 info.screenType，不受此处影响。
@@ -2543,18 +2611,21 @@ class PhotoFrameState extends ChangeNotifier {
       connected: false,
       role: DeviceRole.owner,
       serialNumber: serial,
-      hardwareVersion: (data['hardwareVersion'] ?? 'HW-1.0').toString(),
-      firmwareVersion: firmware,
+      hardwareVersion: 'HW-1.0',
+      // 后端不下发固件版本号，连接后由 BLE 0x01 readDeviceInfo 回填。
+      firmwareVersion: '',
       imageMask: 0,
       currentImageIndex: -1,
       playbackMode: FramePlaybackMode.sequence,
-      carouselIntervalSeconds:
-          FrameProtocolConfig.defaultCarouselIntervalSeconds,
+      carouselIntervalSeconds: carouselHours > 0
+          ? carouselHours * 3600
+          : FrameProtocolConfig.defaultCarouselIntervalSeconds,
       carouselEnabled: false,
       isUpdate: isUpdate,
       newVersionNo: newVersionNo,
       downloadPath: downloadPath,
-      firmwareSize: _asInt(data['firmwareSize'] ?? data['sizeBytes']),
+      // 后端不下发固件包大小，下载后按实际字节数确认。
+      firmwareSize: 0,
     );
   }
 
@@ -2642,8 +2713,8 @@ class PhotoFrameState extends ChangeNotifier {
       final data = await BoltFoxApi.getProductFaqDetail(id);
       String? answer;
       if (data is Map) {
-        answer = (data['content'] ?? data['answer'] ?? data['faqContent'])
-            ?.toString();
+        // swagger `ClientProductFaqDetailApiOut`：faqContent。
+        answer = data['faqContent']?.toString();
       } else if (data is String) {
         answer = data;
       }
@@ -2656,31 +2727,37 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 字段名以 swagger `ClientProductFaqApiOut` 为准：`faqId` / `faqTitle` / `faqContent`。
   FaqArticle _faqFromJson(Map<String, dynamic> data) {
     return FaqArticle(
-      id: (data['faqId'] ?? data['id'] ?? _nextId('faq')).toString(),
-      question: (data['title'] ?? data['question'] ?? data['faqTitle'] ?? '')
-          .toString(),
-      answer: (data['content'] ?? data['answer'] ?? data['faqContent'] ?? '')
-          .toString(),
+      id: (data['faqId'] ?? _nextId('faq')).toString(),
+      question: (data['faqTitle'] ?? '').toString(),
+      answer: (data['faqContent'] ?? '').toString(),
     );
   }
 
   /// 把后端相册图片记录映射为 [AlbumPhoto]；BLE 相关字段给默认值。
+  ///
+  /// 字段名以后端 swagger `ClientUserProductImgApiOut` 为准：
+  /// `uProductImgId` / `img`(图片地址) / `imgBle`(设备帧 .bin) / `productName`(设备名) /
+  /// `userProductId` / `deviceId`。该接口**不下发任何时间字段**，故 [AlbumPhoto.uploadedAt]
+  /// 只用于本地排序，不要在 UI 上当成真实上传时间展示。
+  /// 原实现读的 `imgName` / `createTime` 等键后端根本不存在——标题永远是「照片」、
+  /// imgBle 整个丢掉（图库照片没法再次投屏）。
   AlbumPhoto _albumPhotoFromJson(Map<String, dynamic> data, int index) {
-    final id = (data['uProductImgId'] ?? data['id'] ?? _nextId('photo'))
+    final id = (data['uProductImgId'] ?? data['uproductImgId'] ?? _nextId('photo'))
         .toString();
-    final deviceId = (data['userProductId'] ?? data['deviceId'] ?? '')
-        .toString();
-    final url =
-        (data['img'] ?? data['imgUrl'] ?? data['url'] ?? data['imageUrl'])
-            ?.toString();
+    final deviceId = (data['userProductId'] ?? '').toString();
+    final deviceName = (data['productName'] ?? '').toString();
+    final url = (data['img'] ?? '').toString();
+    final imgBle = (data['imgBle'] ?? '').toString();
     return AlbumPhoto(
       id: id,
-      title: (data['imgName'] ?? data['name'] ?? data['title'] ?? '照片')
-          .toString(),
+      // 小程序 normalizePhoto 的 title 取 productName，没有则「照片 N」。
+      title: deviceName.isNotEmpty ? deviceName : '照片 ${index + 1}',
       source: ImageSourceType.album,
       deviceId: deviceId,
+      deviceName: deviceName,
       ownerUserId: _currentUser.id,
       imageIndex: 0,
       imageMaskBit: 0,
@@ -2692,58 +2769,62 @@ class PhotoFrameState extends ChangeNotifier {
       crc32: 0,
       color: _paletteColor(index),
       note: '',
-      uploadedAt: _parseDate(
-        data['createTime'] ?? data['createdAt'] ?? data['uploadTime'],
-      ),
-      imageUrl: (url == null || url.isEmpty) ? null : url,
+      // 后端无时间字段：保持列表原序（后端已按时间倒序），故这里按下标构造递减时间戳，
+      // 避免 myAlbum 里按 uploadedAt 排序时全部相等而打乱后端顺序。
+      uploadedAt: DateTime.now().subtract(Duration(microseconds: index)),
+      imageUrl: url.isEmpty ? null : url,
+      imgBle: imgBle.isEmpty ? null : imgBle,
     );
   }
 
-  /// 把后端投屏记录映射为 [CastRecord]；成功/失败由后端状态字段判定（取值待确认）。
+  /// 把后端投屏记录映射为 [CastRecord]。
+  ///
+  /// 字段名以后端 swagger `UserProductImgRecordApiOut` 为准：
+  /// `upirId` / `img`(投屏图片) / `imgBle`(设备帧 .bin) / `productName`(设备名) /
+  /// `userProductId` / `deviceUploadState`(0=失败,1=成功) /
+  /// `deviceUploadStateMsg`(状态中文文案) / `upTime`(最近修改时间) / `joinTime`(添加时间)。
+  ///
+  /// 原实现读的 `createTime` / `remark` / `failReason` 等键后端根本不存在：
+  /// 时间永远回落 `DateTime.now()`（每条记录都显示「刚刚」），message 永远是空串。
   CastRecord _castRecordFromJson(Map<String, dynamic> data, int index) {
-    final id = (data['upirId'] ?? data['id'] ?? _nextId('record')).toString();
-    final deviceId = (data['userProductId'] ?? data['deviceId'] ?? '')
-        .toString();
-    final url =
-        (data['img'] ?? data['imgUrl'] ?? data['url'] ?? data['imageUrl'])
-            ?.toString();
+    final id = (data['upirId'] ?? _nextId('record')).toString();
+    final deviceId = (data['userProductId'] ?? '').toString();
+    final deviceName = (data['productName'] ?? '').toString();
+    final url = (data['img'] ?? '').toString();
     // 设备帧文件地址：再次投屏直传设备用（不走后端转码）。
-    final imgBle = (data['imgBle'] ?? data['imgBleUrl'])?.toString();
+    final imgBle = (data['imgBle'] ?? '').toString();
+    final status = _castStatusFromJson(data);
     return CastRecord(
       id: id,
-      title: (data['imgName'] ?? data['productName'] ?? data['title'] ?? '投屏记录')
-          .toString(),
+      title: deviceName.isNotEmpty ? deviceName : '投屏记录',
       deviceId: deviceId,
+      deviceName: deviceName,
       ownerUserId: _currentUser.id,
-      status: _castStatusFromJson(data),
+      status: status,
       source: ImageSourceType.album,
       color: _paletteColor(index),
       width: 0,
       height: 0,
-      message: (data['remark'] ?? data['message'] ?? data['failReason'] ?? '')
-          .toString(),
-      createdAt: _parseDate(
-        data['createTime'] ?? data['createdAt'] ?? data['projectionTime'],
-      ),
-      imageUrl: (url == null || url.isEmpty) ? null : url,
-      imgBle: (imgBle == null || imgBle.isEmpty) ? null : imgBle,
+      // 后端已把状态转成中文（deviceUploadStateMsg），直接用；缺省时按状态兜底。
+      message: (data['deviceUploadStateMsg'] ?? '').toString().isNotEmpty
+          ? data['deviceUploadStateMsg'].toString()
+          : (status == CastStatus.success ? '投屏成功' : '投屏失败'),
+      // upTime=最近修改时间，joinTime=添加时间（小程序 normalizeProjectionRecord 同序）。
+      createdAt: _parseDate(data['upTime'] ?? data['joinTime']),
+      imageUrl: url.isEmpty ? null : url,
+      imgBle: imgBle.isEmpty ? null : imgBle,
     );
   }
 
-  /// 由后端状态字段判定投屏成功/失败（字段与取值以后端为准，待联调确认）。
+  /// 由 `deviceUploadState` 判定投屏成功/失败（swagger: 0=失败, 1=成功）。
+  ///
+  /// 这是后端唯一的状态字段——原实现把 `uploadState`/`state`/`status`/`isSuccess`
+  /// 排在它前面，那几个键后端都不下发；且字段缺失时默认「成功」，会把失败记录显示成成功。
+  /// 现在缺失一律按失败处理（记录本就是「上传到设备」的结果，没有成功证据就不算成功）。
   CastStatus _castStatusFromJson(Map<String, dynamic> data) {
-    final raw =
-        data['uploadState'] ??
-        data['state'] ??
-        data['status'] ??
-        data['deviceUploadState'] ??
-        data['isSuccess'];
-    if (raw == null) {
-      return CastStatus.success;
-    }
-    final value = raw.toString().toLowerCase();
-    const failed = {'0', 'false', 'fail', 'failed', 'error', '-1'};
-    return failed.contains(value) ? CastStatus.failed : CastStatus.success;
+    return _asInt(data['deviceUploadState']) == 1
+        ? CastStatus.success
+        : CastStatus.failed;
   }
 
   /// 把接口异常映射为页面可展示的 [ActionFeedback]，优先透传后端 `retMsg`。

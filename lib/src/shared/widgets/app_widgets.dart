@@ -474,6 +474,45 @@ class RecordCard extends StatelessWidget {
 }
 
 /// 通用空状态组件，用于列表无数据或权限未准备好的兜底展示。
+/// 首屏加载态（对应小程序 app.wxss 的全局 `.page-loading`：转圈 + 「加载中…」）。
+///
+/// 用法是**三分支互斥链**，loading 分支必须排他优先、写在最前：
+/// ```dart
+/// if (!state.albumLoaded) const PageLoading()
+/// else if (photos.isEmpty) const EmptyState(...)
+/// else ...列表
+/// ```
+/// 不要写成「空态 if」和「loading 遮罩 if」两条独立分支——那样首帧会同时命中空态。
+class PageLoading extends StatelessWidget {
+  const PageLoading({super.key, this.label});
+
+  /// 加载文案，缺省「加载中…」。
+  final String? label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 28,
+            height: 28,
+            child: CircularProgressIndicator(strokeWidth: 2.4),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            label ?? '加载中…',
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Colors.white.withValues(alpha: 0.75),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class EmptyState extends StatelessWidget {
   const EmptyState({super.key, required this.title, required this.message});
 
