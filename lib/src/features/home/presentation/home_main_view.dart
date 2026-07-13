@@ -203,29 +203,40 @@ class _HomeMainView extends StatelessWidget {
       const SizedBox(height: 8),
       Padding(
         padding: _cardInset,
-        // 两张卡为 UI 设计图实际尺寸 158×154（DevTools 选中即为该尺寸，不缩放/不拉伸）；
-        // 左右留白固定（_cardInset），中间间距用 spaceBetween 取剩余宽度自适应分配。
-        // 卡片阴影由卡内 boxShadow 在卡外绘制（不计入尺寸），自然形成卡间与边缘的视觉间隙。
+        // 两张卡**等分剩余宽度**，不再写死 159×155。
+        //
+        // 小程序 `.projection-card` 是 318×310rpx —— 而 rpx 是**按屏宽等比**的单位
+        // （750rpx 恒等于屏幕宽度），并不是固定像素。「1rpx = 0.5px」这个换算只在
+        // 375pt 宽的机型（iPhone 6/7/8）上成立。把 318rpx 硬写成 159 逻辑像素后：
+        //   360dp 宽的机器 → 可用宽度 360-48=312 < 两张卡 159×2=318 → **溢出 6px**。
+        // 这就是真机上宽度溢出的原因（iPhone 8 上刚好不溢出，所以不是每台都能复现）。
+        //
+        // 用 Expanded 等分 + 卡内 AspectRatio 保持 318:310 的原始宽高比，
+        // 任何屏宽下都既不溢出、比例也与设计稿一致。中缝 18rpx≈9。
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _CastEntryCard(
-              title: '拍照',
-              subtitle: '拍摄照片并投屏',
-              artAsset: 'assets/images/camera_material.png',
-              arrowAsset: 'assets/images/home-icon05.png',
-              backgroundAsset: 'assets/images/home-camera-card-bg.png',
-              fallbackColor: const Color(0xFFFFF8F4),
-              onTap: onCamera,
+            Expanded(
+              child: _CastEntryCard(
+                title: '拍照',
+                subtitle: '拍摄照片并投屏',
+                artAsset: 'assets/images/camera_material.png',
+                arrowAsset: 'assets/images/home-icon05.png',
+                backgroundAsset: 'assets/images/home-camera-card-bg.png',
+                fallbackColor: const Color(0xFFFFF8F4),
+                onTap: onCamera,
+              ),
             ),
-            _CastEntryCard(
-              title: '相册',
-              subtitle: '选择照片并投屏',
-              artAsset: 'assets/images/album_material.png',
-              arrowAsset: 'assets/images/home-icon06.png',
-              backgroundAsset: 'assets/images/home-album-card-bg.png',
-              fallbackColor: const Color(0xFFEAF4FF),
-              onTap: onAlbum,
+            const SizedBox(width: 9),
+            Expanded(
+              child: _CastEntryCard(
+                title: '相册',
+                subtitle: '选择照片并投屏',
+                artAsset: 'assets/images/album_material.png',
+                arrowAsset: 'assets/images/home-icon06.png',
+                backgroundAsset: 'assets/images/home-album-card-bg.png',
+                fallbackColor: const Color(0xFFEAF4FF),
+                onTap: onAlbum,
+              ),
             ),
           ],
         ),

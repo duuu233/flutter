@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
-import 'package:image_picker/image_picker.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../state.dart';
+import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/casting_progress_page.dart';
 
 /// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
@@ -159,17 +159,13 @@ class DeviceDetailsPage extends StatelessWidget {
     if (source == null || !context.mounted) {
       return;
     }
-    final picker = ImagePicker();
     List<String> imagePaths;
     try {
-      if (source == ImageSourceType.camera) {
-        final file = await picker.pickImage(source: ImageSource.camera);
-        imagePaths = file == null ? const [] : [file.path];
-      } else {
-        // 单批投屏上限 5 张，对齐小程序 media.chooseFromAlbum(count:5)。
-        final files = await picker.pickMultiImage(limit: 5);
-        imagePaths = files.map((file) => file.path).toList();
-      }
+      // 统一走 CastPhotoPicker：选图时就用平台原生解码器把长边降到 1920，
+      // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
+      imagePaths = (source == ImageSourceType.camera)
+          ? await CastPhotoPicker.takePhoto()
+          : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (context.mounted) {
         _snack(context, '无法读取照片，请检查相机/相册权限后重试。');

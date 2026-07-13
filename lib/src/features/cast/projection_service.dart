@@ -212,6 +212,14 @@ class ServerImageProjectionService {
         // 开始图传本张：标题切「图片传输中」，百分比从 0 起（对齐小程序 result.js:483）。
         emit(0, '正在投第 ${i + 1}/$total 张…', title: CastStage.transferring);
 
+        // 进度上报节流：BLE 每收到一个 ACK 就会回调一次，一张图上千个包 → 上千次 setState。
+        // 高频重建会反过来抢占主 isolate、拖慢图传本身。这里限制页面最多约 8 次/秒更新：
+        // 百分比没变、或距上次上报不足 120ms 就跳过；100% 必发（保证进度条能走到头）。
+        // 对齐小程序 result.js:517-533 的同款节流。UI 侧有 250ms 补间动画，跳帧也不会显得卡。
+        var lastPercent = -1;
+        var lastEmitMs = 0;
+        final stopwatch = Stopwatch()..start();
+
         // 本张设备事务：只有 BLE 图传失败才回滚删掉刚传到设备的图，再向外抛出让整单判失败。
         try {
           await client.uploadImage(
@@ -225,6 +233,14 @@ class ServerImageProjectionService {
             onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
               // 百分比 = 本张的分包进度（不是整单进度），对齐小程序 result.js:517。
               final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
+              final percent = (frac * 100).floor().clamp(0, 100);
+              final nowMs = stopwatch.elapsedMilliseconds;
+              if (percent != 100 &&
+                  (percent == lastPercent || nowMs - lastEmitMs < 120)) {
+                return;
+              }
+              lastPercent = percent;
+              lastEmitMs = nowMs;
               emit(frac, '正在投第 ${i + 1}/$total 张…');
             },
           );
@@ -233,15 +249,19 @@ class ServerImageProjectionService {
           rethrow;
         }
 
-        // 设备图传成功 → 编辑投屏记录置成功(deviceUploadState=1)。尽力而为：记账失败只忽略，
-        // 不回滚设备、不把整单判失败（避免设备已传成功却被误判失败）。
-        try {
-          await BoltFoxApi.editUserProductImgRecord(
+        // 设备图传成功 → 编辑投屏记录置成功(deviceUploadState=1)。
+        //
+        // **不 await**（同下面的 0x24 刷屏）：这是纯记账，失败本来就只忽略——既不回滚设备、
+        // 也不把整单判失败。await 它等于在「本张传完」和「下一张开传」之间硬插一次完整的网络往返，
+        // 批量投屏时这笔开销要乘以张数。改成后台发出，图传立刻接着下一张。
+        // 用户走到投屏记录页时这几个请求早已落地（页面自己还会重新拉一次列表）。
+        unawaited(
+          BoltFoxApi.editUserProductImgRecord(
             upirId: acquired.upirId ?? '',
             taskId: acquired.taskId,
             deviceUploadState: 1,
-          );
-        } catch (_) {}
+          ).catchError((_) => null),
+        );
 
         // 把该槽位记为已用，供下一张选槽位。
         usedIndexes = [...usedIndexes, index];
@@ -386,6 +406,13 @@ class ServerImageProjectionService {
       }
 
       emit(0, '正在投屏…', title: CastStage.transferring, current: 1);
+
+      // 进度上报节流，同 castImages：BLE 每个 ACK 回调一次，不节流会有上千次 setState
+      // 抢占主 isolate、反过来拖慢图传。约 8 次/秒；100% 必发。
+      var lastPercent = -1;
+      var lastEmitMs = 0;
+      final stopwatch = Stopwatch()..start();
+
       try {
         await client.uploadImage(
           screenType: info.screenType,
@@ -397,6 +424,14 @@ class ServerImageProjectionService {
           shouldAbort: shouldAbort,
           onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
             final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
+            final percent = (frac * 100).floor().clamp(0, 100);
+            final nowMs = stopwatch.elapsedMilliseconds;
+            if (percent != 100 &&
+                (percent == lastPercent || nowMs - lastEmitMs < 120)) {
+              return;
+            }
+            lastPercent = percent;
+            lastEmitMs = nowMs;
             emit(
               frac,
               '正在投屏…',

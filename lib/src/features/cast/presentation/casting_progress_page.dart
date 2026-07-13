@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
+import '../cast_photo_picker.dart';
 import '../projection_service.dart';
 import 'cast_result_common.dart';
 
@@ -214,7 +214,6 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 「继续投屏」：不跳首页，在本页弹「拍照 / 相册」二选一，选完图替换本页进入新一轮投屏
   /// （对齐小程序 result.js continueProjection）。
   Future<void> _continueProjection() async {
-    final picker = ImagePicker();
     final choice = await showModalBottomSheet<String>(
       context: context,
       builder: (sheetContext) => SafeArea(
@@ -253,14 +252,11 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
     }
     List<String> paths;
     try {
-      if (choice == 'camera') {
-        final file = await picker.pickImage(source: ImageSource.camera);
-        paths = file == null ? const [] : [file.path];
-      } else {
-        // 单批投屏上限 5 张，对齐小程序 media.chooseFromAlbum(count:5)。
-        final files = await picker.pickMultiImage(limit: 5);
-        paths = files.map((file) => file.path).toList();
-      }
+      // 统一走 CastPhotoPicker：选图时就用平台原生解码器把长边降到 1920，
+      // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
+      paths = (choice == 'camera')
+          ? await CastPhotoPicker.takePhoto()
+          : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (mounted) {
         AppToast.show(context, '无法读取照片，请检查相机/相册权限后重试。');

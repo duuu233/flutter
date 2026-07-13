@@ -383,18 +383,50 @@ class ProjectionProgress extends StatelessWidget {
           child: ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: SizedBox(
+              // .progress-bar → 18rpx = 9
               height: 9,
               child: Stack(
                 children: [
+                  // 轨道底色 .progress-bar background #e6ebf2
                   const Positioned.fill(
                     child: ColoredBox(color: Color(0xFFE6EBF2)),
                   ),
-                  FractionallySizedBox(
-                    widthFactor: percent.clamp(0.0, 1.0),
-                    child: const DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [Color(0xFFFF8A45), Color(0xFFFF6421)],
+                  // 橙色填充。
+                  //
+                  // 原来「进度条完全没有橙色」的根因：`FractionallySizedBox` 只给了 widthFactor、
+                  // 没给 heightFactor，且它是 Stack 的**非定位子节点**，拿到的是松约束（高度 0~9）。
+                  // 它把 `minHeight:0, maxHeight:9` 原样传给里面的 `DecoratedBox`，而 DecoratedBox
+                  // 自己没有 child，在松约束下会收缩到 `constraints.smallest` → **高度 0**，
+                  // 于是橙条渲染出来是一条高度为 0 的线，肉眼完全看不见。
+                  //
+                  // 修法：`Positioned.fill` 给紧约束 + `heightFactor: 1` 撑满 9px 轨道高度。
+                  // 注意紧约束下 FractionallySizedBox 自身会占满整条轨道、而子节点只有
+                  // `宽度×widthFactor`，此时 alignment 就会生效（默认 center 会把橙条居中），
+                  // 所以必须显式锚定 `centerLeft`，才能从左往右填充。
+                  Positioned.fill(
+                    // 宽度做补间动画（对齐小程序 `.progress-fill` 的 transition: width .25s ease）：
+                    // percent 变化时橙条平滑推进，而不是一跳一跳。
+                    child: TweenAnimationBuilder<double>(
+                      // ⚠️ 不要写 `begin:` —— TweenAnimationBuilder 只有在 begin 为 null 时
+                      // 才会从「当前显示到的值」续接动画（内部 `newTween.begin ??= 现值`）。
+                      // 一旦显式给了 begin（哪怕是 0），每次 percent 变化都会把控制器重置回 begin
+                      // 重新跑一遍 250ms。而进度回调约 120ms 一次、动画要 250ms，
+                      // 结果就是动画永远跑不完就被打断，橙条不停往回弹再冲上去（锯齿闪烁）。
+                      tween: Tween<double>(end: percent.clamp(0.0, 1.0)),
+                      duration: const Duration(milliseconds: 250),
+                      curve: Curves.easeOut,
+                      builder: (context, value, child) => FractionallySizedBox(
+                        alignment: Alignment.centerLeft,
+                        widthFactor: value,
+                        heightFactor: 1,
+                        child: child,
+                      ),
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(
+                          // .progress-fill → linear-gradient(90deg, #ff8a45, #ff6421)
+                          gradient: LinearGradient(
+                            colors: [Color(0xFFFF8A45), Color(0xFFFF6421)],
+                          ),
                         ),
                       ),
                     ),

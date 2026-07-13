@@ -1,12 +1,12 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:image_picker/image_picker.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../state.dart';
+import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/casting_progress_page.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
@@ -329,18 +329,13 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // 拍照/相册选真实照片（image_picker 返回可上传的本地文件路径；content:// 无法直接上传）。
-    final picker = ImagePicker();
     List<String> imagePaths;
     try {
-      if (source == ImageSourceType.camera) {
-        final file = await picker.pickImage(source: ImageSource.camera);
-        imagePaths = file == null ? const [] : [file.path];
-      } else {
-        // 单批投屏上限 5 张，对齐小程序 media.chooseFromAlbum(count:5)。
-        final files = await picker.pickMultiImage(limit: 5);
-        imagePaths = files.map((file) => file.path).toList();
-      }
+      // 统一走 CastPhotoPicker：选图时就用平台原生解码器把长边降到 1920，
+      // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
+      imagePaths = (source == ImageSourceType.camera)
+          ? await CastPhotoPicker.takePhoto()
+          : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (mounted) {
         _showFeedback('无法读取照片，请检查相机/相册权限后重试。');

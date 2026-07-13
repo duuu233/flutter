@@ -227,16 +227,24 @@ class _DeviceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onOpenDetail,
-      child: FigmaGlassCard(
-        // 卡片圆角 40rpx=20；上半区图标 + 文字信息，下半区操作栏。
-        borderRadius: 20,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
+    // ⚠️ 「进详情」的点击区**只覆盖上半区（信息区）**，不再包整张卡片。
+    //
+    // 原来是整卡一个 GestureDetector(onTap: onOpenDetail)，底部「投屏 / 连接」按钮嵌在它里面。
+    // 虽然理论上内层 GestureDetector 会在手势竞技场里胜出，但实测点按钮却跳去了详情页——
+    // 与其去赌手势竞技场的解析顺序，不如**结构上让按钮栏根本不在详情点击区之下**：
+    // 详情手势只包住信息区，按钮栏是它的兄弟节点，物理上不可能被它抢走。
+    //
+    // 这也更贴近小程序：list.wxml 里卡片是 bindtap，两个按钮是 catchtap（显式阻止冒泡）。
+    return FigmaGlassCard(
+      // 卡片圆角 40rpx=20；上半区图标 + 文字信息（可点进详情），下半区操作栏。
+      borderRadius: 20,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onOpenDetail,
+            child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 24, 17, 0),
               child: Row(
                 children: [
@@ -370,9 +378,11 @@ class _DeviceCard extends StatelessWidget {
                 ],
               ),
             ),
-            const SizedBox(height: 17),
-            // 操作栏（投屏 | 连接/断开）——对齐小程序设备列表项按钮。
-            Container(
+          ),
+          const SizedBox(height: 17),
+          // 操作栏（投屏 | 连接/断开）：与上面的详情点击区是**兄弟节点**，
+          // 不在它的手势范围内，所以这两个按钮的点击不可能被「进详情」抢走。
+          Container(
               height: 42,
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -424,8 +434,7 @@ class _DeviceCard extends StatelessWidget {
                 ],
               ),
             ),
-          ],
-        ),
+        ],
       ),
     );
   }
