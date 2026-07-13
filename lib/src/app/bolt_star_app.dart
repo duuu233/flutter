@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../device/ble_controller.dart';
+import '../features/account/presentation/auth_page.dart';
 import '../features/shell/presentation/shell_page.dart';
 import '../routes/app_routes.dart';
 import '../state.dart';
@@ -58,15 +59,25 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
           debugShowCheckedModeBanner: false,
           title: 'BoltStar',
           theme: buildAppTheme(),
-          home: AppShell(
-            state: _state,
-            currentIndex: _currentIndex,
-            onIndexChanged: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
-          ),
+          // 强制登录：未登录时根页面就是登录页，登录成功前进不到任何业务页面。
+          // 这是 App 与小程序的**有意差异**——小程序有游客模式（未登录也能逛首页），
+          // App 不做游客态。登录态变化会经由外层 AnimatedBuilder 重建，自动在
+          // 登录页 / 主壳层之间切换，所以登录成功、退出登录都**不需要**手动导航。
+          //
+          // 注意：登出/注销时只能 `popUntil(isFirst)` 回到根，不要用
+          // `pushNamedAndRemoveUntil(auth, (route) => false)` —— 那会把根路由一起清掉，
+          // 栈里只剩一个 /auth，登录成功后根节点即便换成主壳层也已不在栈中，用户会卡在登录页。
+          home: _state.isLoggedIn
+              ? AppShell(
+                  state: _state,
+                  currentIndex: _currentIndex,
+                  onIndexChanged: (index) {
+                    setState(() {
+                      _currentIndex = index;
+                    });
+                  },
+                )
+              : AuthPage(state: _state),
           // 全局路由观察者：让图库/投屏记录等页在被覆盖页 pop 回来时重入刷新。
           navigatorObservers: [appRouteObserver],
           // 命名路由仍复用同一个 `_state`，避免页面之间出现两份业务数据。

@@ -97,6 +97,9 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
       MaterialPageRoute(
         builder: (_) => CastingProgressPage(
           userProductId: record.deviceId,
+          deviceName: record.deviceName.isNotEmpty
+              ? record.deviceName
+              : state.deviceName(record.deviceId),
           recastImgBle: imgBle,
           recastUpirId: record.id,
           recastImgUrl: record.imageUrl,

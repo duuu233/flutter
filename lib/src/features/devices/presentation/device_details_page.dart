@@ -185,6 +185,7 @@ class DeviceDetailsPage extends StatelessWidget {
       MaterialPageRoute(
         builder: (_) => CastingProgressPage(
           userProductId: device.id,
+          deviceName: device.name,
           imagePaths: imagePaths,
           compressImage: state.projectionCompress,
         ),

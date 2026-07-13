@@ -2857,6 +2857,12 @@ class PhotoFrameState extends ChangeNotifier {
   /// 把接口异常映射为页面可展示的 [ActionFeedback]，优先透传后端 `retMsg`。
   ActionFeedback _apiFailure(Object error) {
     if (error is ApiException) {
+      // 登录失效（后端 401/406）：ApiClient 已经清掉了 token，但本地 _isLoggedIn 还是 true，
+      // 用户会继续留在业务页面，每个接口都报错。这里同步清掉登录态，
+      // 根节点的强制登录门控会把人送回登录页（见 bolt_star_app.dart）。
+      if (error.isAuthError) {
+        _handleSessionExpired();
+      }
       return ActionFeedback(success: false, message: error.message);
     }
     return ActionFeedback(
@@ -2867,6 +2873,25 @@ class PhotoFrameState extends ChangeNotifier {
         ja: 'ネットワークエラーです。後でお試しください。',
       ),
     );
+  }
+
+  /// 登录态失效：清空本地登录态与上个账号的数据，并复位首屏加载态。
+  /// 幂等——多个并发接口同时收到 401 时只会真正处理一次。
+  void _handleSessionExpired() {
+    if (!_isLoggedIn) {
+      return;
+    }
+    ApiSession.instance.clear();
+    _devices.clear();
+    _albumPhotos.clear();
+    _castRecords.clear();
+    _selectedDeviceId = '';
+    _devicesLoaded = false;
+    _albumLoaded = false;
+    _castRecordsLoaded = false;
+    _userLoaded = false;
+    _isLoggedIn = false;
+    notifyListeners();
   }
 
   String _nextId(String prefix) {

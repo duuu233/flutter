@@ -365,6 +365,7 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(
         builder: (_) => CastingProgressPage(
           userProductId: activeDevice.id,
+          deviceName: activeDevice.name,
           imagePaths: imagePaths,
           compressImage: widget.state.projectionCompress,
         ),

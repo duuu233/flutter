@@ -135,6 +135,7 @@ class _DevicesPageState extends State<DevicesPage> {
       MaterialPageRoute(
         builder: (_) => CastingProgressPage(
           userProductId: deviceId,
+          deviceName: state.deviceName(deviceId),
           imagePaths: imagePaths,
           compressImage: state.projectionCompress,
         ),

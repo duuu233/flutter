@@ -20,19 +20,45 @@ import '../../device/ble/frame_protocol.dart';
 import '../../device/ble_controller.dart';
 import '../../network/boltfox_api.dart';
 
-/// 投屏进度回调载荷。
+/// 投屏进度回调载荷。语义完全对齐小程序 `result.js`（进度页三段式：转码→处理→传输）。
 class CastProgress {
   const CastProgress({
     required this.percent,
     required this.current,
     required this.total,
+    required this.title,
     required this.message,
   });
 
-  final double percent; // 0~1，整单总进度
-  final int current; // 已成功张数
-  final int total; // 总张数
+  /// **当前这一张**的传输进度（0~1），不是整单进度——对齐小程序 `progressPercent`：
+  /// 每张开始时归 0，随 BLE 分包 ACK 涨到 1。整单进度由 [current]/[total] 体现。
+  final double percent;
+
+  /// 当前正在处理第几张（1-based；尚未开始为 0）——对齐小程序 `progressCurrent`。
+  final int current;
+
+  /// 本次总张数——对齐小程序 `progressTotal`。
+  final int total;
+
+  /// 阶段标题：`图片转码中` → `图片处理中` → `图片传输中`（对齐小程序 STATUS_TEXT + 各阶段 setData）。
+  final String title;
+
+  /// 阶段描述，如「正在连接设备…」「正在投第 2/5 张…」。
   final String message;
+}
+
+/// 投屏进度页的阶段标题（对齐小程序 result.js）。
+class CastStage {
+  CastStage._();
+
+  /// 初始 / 连接 / 读设备信息 / 后端转码阶段。
+  static const transcoding = '图片转码中';
+
+  /// 取到设备帧、准备本张（选槽位等）。
+  static const processing = '图片处理中';
+
+  /// BLE 分包图传中（进度条真正在动的阶段）。
+  static const transferring = '图片传输中';
 }
 
 /// 投屏结果。
@@ -99,11 +125,19 @@ class ServerImageProjectionService {
     final total = images.length;
     int uploaded = 0;
 
-    void emit(double percent, String message) {
+    // 阶段标题与「第几张」是跨 emit 保持的（小程序里就是 data 上的 title / progressCurrent），
+    // 只有明确切阶段/切张时才更新，传输过程中的高频 emit 只带百分比。
+    var stageTitle = CastStage.transcoding;
+    var currentIndex = 0;
+
+    void emit(double percent, String message, {String? title, int? current}) {
+      if (title != null) stageTitle = title;
+      if (current != null) currentIndex = current;
       onProgress?.call(CastProgress(
         percent: percent.clamp(0.0, 1.0).toDouble(),
-        current: uploaded,
+        current: currentIndex,
         total: total,
+        title: stageTitle,
         message: message,
       ));
     }
@@ -150,7 +184,13 @@ class ServerImageProjectionService {
       for (int i = 0; i < total; i++) {
         if (shouldAbort?.call() ?? false) throw ProjectionAbortedException();
 
-        emit(i / total, '正在准备第 ${i + 1}/$total 张…');
+        // 新的一张：百分比归 0，张数计到 i+1，标题切「图片处理中」（对齐小程序 result.js:452-456）。
+        emit(
+          0,
+          '正在准备第 ${i + 1}/$total 张…',
+          title: CastStage.processing,
+          current: i + 1,
+        );
         final acquired = await prefetch[i]!;
         // 本张帧一到手，立刻启动下一张的预取，让它与本张 BLE 图传并行。
         startPrefetch(i + 1);
@@ -169,7 +209,8 @@ class ServerImageProjectionService {
             FrameProtocol.indexesToMask(usedIndexes), info.capacity);
         if (index < 0) throw FrameBleException('设备已存满');
 
-        emit(i / total, '正在投第 ${i + 1}/$total 张…');
+        // 开始图传本张：标题切「图片传输中」，百分比从 0 起（对齐小程序 result.js:483）。
+        emit(0, '正在投第 ${i + 1}/$total 张…', title: CastStage.transferring);
 
         // 本张设备事务：只有 BLE 图传失败才回滚删掉刚传到设备的图，再向外抛出让整单判失败。
         try {
@@ -182,8 +223,9 @@ class ServerImageProjectionService {
             prepared: acquired.prepared, // D1/D2：预取阶段算好的 CRC32 + 预组帧
             shouldAbort: shouldAbort,
             onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
+              // 百分比 = 本张的分包进度（不是整单进度），对齐小程序 result.js:517。
               final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
-              emit((i + frac) / total, '正在投第 ${i + 1}/$total 张…');
+              emit(frac, '正在投第 ${i + 1}/$total 张…');
             },
           );
         } catch (error) {
@@ -204,7 +246,8 @@ class ServerImageProjectionService {
         // 把该槽位记为已用，供下一张选槽位。
         usedIndexes = [...usedIndexes, index];
         uploaded++;
-        emit(uploaded / total, '已投 $uploaded/$total 张');
+        // 本张完成：百分比打满、张数计到已投成功数（对齐小程序 result.js:583）。
+        emit(1, '已投 $uploaded/$total 张', current: uploaded);
 
         // 只有最后一张传完后才刷新屏幕(0x24)：部分固件收到 0x24 会断开蓝牙，批量传输中途刷屏会导致
         // 后续图片传输失败。故中间张一律不刷屏，等全部传完只对最后一张执行一次 0x24。
@@ -267,11 +310,18 @@ class ServerImageProjectionService {
   }) async {
     final client = _ble.client;
 
-    void emit(double percent, String message) {
+    // 再次投屏是单张 imgBle 直传：不走后端转码，故没有「图片转码中」阶段之外的准备工作。
+    var stageTitle = CastStage.transcoding;
+    var currentIndex = 0;
+
+    void emit(double percent, String message, {String? title, int? current}) {
+      if (title != null) stageTitle = title;
+      if (current != null) currentIndex = current;
       onProgress?.call(CastProgress(
         percent: percent.clamp(0.0, 1.0).toDouble(),
-        current: 0,
+        current: currentIndex,
         total: 1,
+        title: stageTitle,
         message: message,
       ));
     }
@@ -312,7 +362,7 @@ class ServerImageProjectionService {
       }
 
       // 直接下载记录里后端转换好的设备帧(.bin)，不再调后端上传/转码。
-      emit(0, '正在传输…');
+      emit(0, '正在准备图片…', title: CastStage.processing, current: 1);
       final frameData = await _downloadFrameBin(imgBleUrl);
       if (frameData.length != expected4bpp) {
         final head = FrameProtocol.bytesToHex(
@@ -335,7 +385,7 @@ class ServerImageProjectionService {
         prepared = null;
       }
 
-      emit(0, '正在投屏…');
+      emit(0, '正在投屏…', title: CastStage.transferring, current: 1);
       try {
         await client.uploadImage(
           screenType: info.screenType,
@@ -347,7 +397,12 @@ class ServerImageProjectionService {
           shouldAbort: shouldAbort,
           onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
             final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
-            emit(frac, '正在投屏…');
+            emit(
+              frac,
+              '正在投屏…',
+              title: CastStage.transferring,
+              current: 1,
+            );
           },
         );
       } catch (error) {
@@ -366,7 +421,7 @@ class ServerImageProjectionService {
         imgBle: imgBleUrl,
         deviceUploadState: 1,
       );
-      emit(1, '投屏成功');
+      emit(1, '投屏成功', current: 1);
       return const ProjectionResult(
         success: true,
         uploaded: 1,

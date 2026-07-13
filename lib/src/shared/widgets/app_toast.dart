@@ -50,28 +50,44 @@ class _ToastBubble extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final maxWidth = MediaQuery.of(context).size.width * 0.72;
     return IgnorePointer(
       child: Center(
-        child: TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: 0, end: 1),
-          duration: const Duration(milliseconds: 160),
-          builder: (_, value, child) => Opacity(opacity: value, child: child),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.82),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 15,
-                  height: 1.4,
+        // ⚠️ 必须包一层 Material：OverlayEntry 挂在 Navigator 的 Overlay 上，
+        // 不在任何 Material 之下，而 Text 缺少 Material 祖先时会被 Flutter 渲染成
+        // **黄色双下划线**（调试用的 fallback 文本样式）。这正是 toast 出现下划线的原因。
+        // MaterialType.transparency = 只提供文本样式/排版上下文，不画任何背景。
+        // 下面再显式写死 `decoration: TextDecoration.none` 双保险。
+        child: Material(
+          type: MaterialType.transparency,
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: const Duration(milliseconds: 160),
+            builder: (_, value, child) => Opacity(opacity: value, child: child),
+            // 盒子尺寸对齐小程序 components/toast 的 `.gtoast__box`：
+            // max-width 560rpx(=280) / min-width 160rpx(=80) / padding 22×32rpx(=11×16)
+            // / 背景 rgba(17,17,17,.82) / 圆角 16rpx(=8)。
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 280, minWidth: 80),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 11,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111111).withValues(alpha: 0.82),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  // .gtoast__text → 28rpx(=14) / line-height 42rpx(=1.5)
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    height: 1.5,
+                    fontWeight: FontWeight.w400,
+                    decoration: TextDecoration.none,
+                  ),
                 ),
               ),
             ),

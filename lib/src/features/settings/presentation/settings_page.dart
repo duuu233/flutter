@@ -213,9 +213,10 @@ class SettingsPage extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(AppRoutes.auth, (route) => false);
+    // 退回根路由即可：根节点按 isLoggedIn 渲染，登出后它本身就是登录页
+    // （见 bolt_star_app.dart 的强制登录门控）。不能用 pushNamedAndRemoveUntil 清空整个栈，
+    // 那样根路由也没了，重新登录后会卡在登录页。
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 
   Future<void> _confirmDeleteAccount(BuildContext context) async {
@@ -247,9 +248,8 @@ class SettingsPage extends StatelessWidget {
       AppToast.show(context, result.message);
       return;
     }
-    Navigator.of(
-      context,
-    ).pushNamedAndRemoveUntil(AppRoutes.auth, (route) => false);
+    // 同退出登录：回根路由，根节点自己会变成登录页。
+    Navigator.of(context).popUntil((route) => route.isFirst);
   }
 }
 
