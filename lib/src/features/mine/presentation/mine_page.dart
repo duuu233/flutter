@@ -23,21 +23,18 @@ class _MinePageState extends State<MinePage> {
   @override
   void initState() {
     super.initState();
-    // 对齐小程序 mine.onShow：登录后刷新用户资料 + 设备/图库计数（真实数据；未登录则跳过）。
-    if (widget.state.isLoggedIn) {
-      widget.state.refreshCurrentUser();
-      widget.state.refreshDevices();
-      widget.state.refreshAlbum();
-    }
+    // 对齐小程序 mine.onShow：刷新用户资料 + 设备/图库计数。
+    // 不再判 isLoggedIn —— App 是强制登录的（见 bolt_star_app.dart），
+    // 本页挂载时必然已登录，加判断只会让下面的 loaded 标记有翻不了身的风险。
+    widget.state.refreshCurrentUser();
+    widget.state.refreshDevices();
+    widget.state.refreshAlbum();
   }
 
-  /// 统计数字的展示文案：接口没回来之前显示占位 `--`，不要先渲染一个 `0`
-  /// 再跳成真实值（小程序 profile 页同样用 `--` 占位）。
-  ///
-  /// 未登录（游客）时**不进占位逻辑**：initState 里根本不会去拉这些接口，
-  /// loaded 永远翻不了身，`--` 会一直挂在那儿。游客本来就是 0 张 0 台，直接显示真实值。
+  /// 统计数字的展示文案：接口没回来之前显示占位 `--`，不要先渲染一个 `0` 再跳成真实值
+  /// （小程序 profile 页同样用 `--` 占位）。
   String _countText(bool loaded, int value, String unit) =>
-      (loaded || !widget.state.isLoggedIn) ? '$value$unit' : '--$unit';
+      loaded ? '$value$unit' : '--$unit';
 
   @override
   Widget build(BuildContext context) {
@@ -70,20 +67,18 @@ class _MinePageState extends State<MinePage> {
                         Padding(
                           padding: _inset,
                           child: _ProfileCard(
+                            // 强制登录下不存在游客态，昵称为空只意味着 getUserInfo 还没回来，
+                            // 用 `--` 占位（同下面的统计数字），不要写「未登录」。
                             nickName: state.currentUser.nickname.isNotEmpty
                                 ? state.currentUser.nickname
-                                : '未登录',
+                                : '--',
                             userId: state.currentUser.id,
                             avatarUrl: state.currentUser.avatarUrl,
-                            onTap: () {
-                              // 未登录点资料卡进登录页（对齐小程序 requireLogin 游客态）；
-                              // 已登录进个人资料页。
-                              Navigator.of(context).pushNamed<void>(
-                                state.isLoggedIn
-                                    ? AppRoutes.profile
-                                    : AppRoutes.auth,
-                              );
-                            },
+                            // 点资料卡进个人资料页（原来还有个「未登录则进登录页」的分支，
+                            // 强制登录后已不可达）。
+                            onTap: () => Navigator.of(
+                              context,
+                            ).pushNamed<void>(AppRoutes.profile),
                           ),
                         ),
                         // 常用功能：margin-top 92rpx(=46)，标题底 24rpx(=12)。

@@ -127,10 +127,8 @@ class _AuthPageState extends State<AuthPage> {
       await EmailHistory.add(email); // 记住成功登录过的邮箱，下次自动填充
     }
     _showFeedback(feedback.message);
-    // 登录页通常以 pushNamedAndRemoveUntil 进入，成功后若可返回则回到主壳层。
-    if (feedback.success && Navigator.of(context).canPop()) {
-      Navigator.of(context).pop();
-    }
+    // 登录成功后**不需要**在这里导航：本页是强制登录门控下的根页面（见 bolt_star_app.dart），
+    // `loginWithPassword` 置好登录态并 notifyListeners 后，根节点会自动把自己换成主壳层。
   }
 
   void _forgotPassword() {

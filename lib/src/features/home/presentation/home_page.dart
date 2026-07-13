@@ -214,11 +214,10 @@ class _HomePageState extends State<HomePage> {
     // 全ページ共通背景 bg01（小程序は首页/绑定流程とも同一 mock-bg 背景）。
     const backgroundAsset = 'assets/images/bg01.png';
 
-    // 已登录但设备列表首屏还没回来时先显示 loading：否则首帧必然先渲染一次「未绑定」
-    // 绑定引导页，接口回来再跳成设备卡片（对齐小程序 home.js 的 pageLoading:true 门控）。
-    // 未登录（游客）不等接口，直接按未绑定展示，与小程序一致。
-    final waitingDevices =
-        widget.state.isLoggedIn && !widget.state.devicesLoaded;
+    // 设备列表首屏还没回来时先显示 loading：否则首帧必然先渲染一次「未绑定」绑定引导页，
+    // 接口回来再跳成设备卡片（对齐小程序 home.js 的 pageLoading:true 门控）。
+    // 不判 isLoggedIn —— App 强制登录（见 bolt_star_app.dart），能进到首页就一定已登录。
+    final waitingDevices = !widget.state.devicesLoaded;
 
     return Stack(
       fit: StackFit.expand,

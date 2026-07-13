@@ -22,17 +22,43 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   final PhotoFrameState _state = PhotoFrameState.seeded();
   int _currentIndex = 0;
 
+  /// 全局 Navigator：登录态失效时需要在没有 BuildContext 的情况下把栈弹回根路由。
+  final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
+
+  /// 上一帧的登录态，用来识别「已登录 → 未登录」这一跳变。
+  late bool _wasLoggedIn = _state.isLoggedIn;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _state.addListener(_handleAuthChanged);
   }
 
   @override
   void dispose() {
+    _state.removeListener(_handleAuthChanged);
     WidgetsBinding.instance.removeObserver(this);
     _state.dispose();
     super.dispose();
+  }
+
+  /// 掉登录态时把导航栈弹回根路由，让强制登录门控真正生效。
+  ///
+  /// 只换根路由是不够的：业务页大多是 push 在根路由**之上**的（设置、图库、设备详情、投屏…）。
+  /// 接口返回 401/406 时（见 `PhotoFrameState._handleSessionExpired`）如果用户正停在这些页面上，
+  /// 根路由虽然已经变成登录页，但它被压在栈底看不见——用户会卡在一个登录态已被清空的业务页上，
+  /// 之后每个接口都报错。这里统一 popUntil 回根，显式登出与会话失效两条路径就都收敛了。
+  void _handleAuthChanged() {
+    final loggedIn = _state.isLoggedIn;
+    if (_wasLoggedIn && !loggedIn) {
+      _currentIndex = 0; // 复位 Tab，下次登录从首页进
+      // 不在监听回调里同步操作 Navigator（此刻可能正在 build/notify 中），推迟到帧末。
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _navigatorKey.currentState?.popUntil((route) => route.isFirst);
+      });
+    }
+    _wasLoggedIn = loggedIn;
   }
 
   // 回前台做一次「连接体检」（对齐小程序 app.onShow → deviceBle.reconcileConnections）：
@@ -56,6 +82,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       animation: _state,
       builder: (context, _) {
         return MaterialApp(
+          navigatorKey: _navigatorKey,
           debugShowCheckedModeBanner: false,
           title: 'BoltStar',
           theme: buildAppTheme(),

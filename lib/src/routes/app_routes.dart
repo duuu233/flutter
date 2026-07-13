@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../features/account/presentation/auth_page.dart';
 import '../features/account/presentation/bind_email_incomplete_page.dart';
 import '../features/account/presentation/forgot_password.dart';
 import '../features/account/presentation/modify_email_page.dart';
@@ -46,7 +45,6 @@ final RouteObserver<PageRoute<dynamic>> appRouteObserver =
 class AppRoutes {
   const AppRoutes._();
 
-  static const auth = '/auth';
   static const profile = '/profile';
   static const devices = '/devices';
   static const castManagement = '/cast-management';
@@ -91,9 +89,6 @@ class AppRoutes {
 
     // 路由表只负责页面分发，不在这里处理业务判断；登录态、权限等逻辑放回页面或状态层。
     switch (settings.name) {
-      case AppRoutes.auth:
-        builder = (_) => AuthPage(state: state);
-        break;
       case AppRoutes.profile:
         builder = (_) => ProfilePage(state: state);
         break;
