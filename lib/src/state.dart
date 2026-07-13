@@ -4,6 +4,7 @@ import 'device/ble_controller.dart';
 import 'device/ble/frame_protocol.dart';
 import 'device/frame_device_protocol.dart';
 import 'network/api_exception.dart';
+import 'network/api_rows.dart';
 import 'network/api_session.dart';
 import 'network/boltfox_api.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -1390,7 +1391,7 @@ class PhotoFrameState extends ChangeNotifier {
         'pageSize': 100,
         'userProductId': ?userProductId,
       });
-      final rows = _extractRows(data);
+      final rows = extractApiRows(data);
       // 后端为准：即使返回空也要覆盖本地（清空后相册应显示空态，不保留旧数据）。
       final mapped = <AlbumPhoto>[];
       for (var i = 0; i < rows.length; i++) {
@@ -1744,7 +1745,7 @@ class PhotoFrameState extends ChangeNotifier {
         'userProductId': ?userProductId,
         'deviceUploadState': ?deviceUploadState,
       });
-      final rows = _extractRows(data);
+      final rows = extractApiRows(data);
       // 后端为准：即使返回空也覆盖本地（无记录时应显示空态，不保留旧数据）。
       final mapped = <CastRecord>[];
       for (var i = 0; i < rows.length; i++) {
@@ -1830,7 +1831,7 @@ class PhotoFrameState extends ChangeNotifier {
         'pageIndex': 1,
         'pageSize': 100, // 对齐小程序 getDevices({pageSize:100})
       });
-      final rows = _extractRows(data);
+      final rows = extractApiRows(data);
       // 后端为准：即使返回空也覆盖本地（删到 0 台时应显示空态，不保留旧数据）。
       // 同一实体相框被重复绑定时，按硬件序列号折叠成一行（对齐小程序 dedupeDevices）。
       final mapped = _dedupeDevicesBySerial(rows.map(_deviceFromJson).toList());
@@ -1876,7 +1877,7 @@ class PhotoFrameState extends ChangeNotifier {
       if (data is Map) {
         row = (data).map((k, v) => MapEntry(k.toString(), v));
       } else {
-        final rows = _extractRows(data);
+        final rows = extractApiRows(data);
         if (rows.isNotEmpty) row = rows.first;
       }
       if (row == null) return null;
@@ -1959,7 +1960,7 @@ class PhotoFrameState extends ChangeNotifier {
         'pageIndex': 1,
         'pageSize': 100,
       });
-      products = _extractRows(data);
+      products = extractApiRows(data);
     } catch (_) {
       return (
         productId: null,
@@ -2495,29 +2496,6 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 从分页接口 retData 中取出数据行，兼容直接返回数组或包裹在
-  /// `list/rows/records/data/items` 字段中的两种常见结构。
-  List<Map<String, dynamic>> _extractRows(dynamic data) {
-    dynamic rows = data;
-    if (data is Map) {
-      rows =
-          data['list'] ??
-          data['rows'] ??
-          data['records'] ??
-          data['data'] ??
-          data['items'];
-    }
-    if (rows is List) {
-      return rows
-          .whereType<Map>()
-          .map(
-            (row) => row.map((key, value) => MapEntry(key.toString(), value)),
-          )
-          .toList();
-    }
-    return const [];
-  }
-
   /// 把后端设备记录映射为 [DeviceItem]；蓝牙字段给安全默认值，连接后再由 BLE 更新。
   DeviceItem _deviceFromJson(Map<String, dynamic> data) {
     final id = (data['userProductId'] ?? data['id'] ?? _nextId('dev'))
@@ -2634,7 +2612,7 @@ class PhotoFrameState extends ChangeNotifier {
         'pageIndex': 1,
         'pageSize': 100,
       });
-      final rows = _extractRows(data);
+      final rows = extractApiRows(data);
       if (rows.isNotEmpty) {
         _faqArticles
           ..clear()
