@@ -9,7 +9,8 @@ import 'crypto_util.dart';
 /// 业务方法只传业务字段。返回值为后端 `retData`（动态类型，由调用方按接口解析）。
 ///
 /// App 与小程序差异：
-/// - App 走邮箱登录/注册体系，不接入 `setWechatAppLogin`（微信一键登录）。
+/// - App 同时支持邮箱密码登录和微信开放平台「移动应用微信登录」；后者只提交移动应用 SDK
+///   返回的一次性 code，不提交小程序手机号授权的 encryptedData / iv。
 /// - App 需要版本更新与安卓下载接口（小程序跳过）。
 class BoltFoxApi {
   BoltFoxApi._();
@@ -137,6 +138,19 @@ class BoltFoxApi {
       // 后端登录接口的邮箱字段名为 userEmail（与 sendEmail / changeUserEmail 一致）；
       // 若误传 email，服务端会认为邮箱为空并返回 “Please enter the correct email address”。
       body: {'userEmail': email, 'password': md5Hex(password)},
+      auth: false,
+    );
+  }
+
+  /// 微信开放平台「移动应用微信登录」。
+  ///
+  /// [code] 来自移动端微信 SDK 的 `snsapi_userinfo` 授权回调。AppSecret、code 换
+  /// access_token 以及用户身份合并都必须在服务端完成；客户端只接收业务 userToken。
+  /// 后端可根据公共 header 中的 terminal（iOS=1 / Android=2）与小程序（3）区分流程。
+  static Future<dynamic> weChatMobileLogin({required String code}) {
+    return _http.postJson(
+      '/Client/User/setWechatAppLogin',
+      body: {'code': code},
       auth: false,
     );
   }

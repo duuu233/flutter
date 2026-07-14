@@ -885,6 +885,55 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 微信开放平台「移动应用微信登录」入口。
+  ///
+  /// [code] 由移动端微信 SDK 返回，只能使用一次；服务端负责用 AppSecret 换取微信身份并返回
+  /// BoltStar 的 userToken。客户端绝不保存微信 access_token / refresh_token / AppSecret。
+  Future<ActionFeedback> loginWithWeChatCode(String code) async {
+    final authorizationCode = code.trim();
+    if (authorizationCode.isEmpty) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '微信授权凭证无效，请重新登录。',
+          en: 'Invalid WeChat authorization code. Please try again.',
+          ja: 'WeChat の認証コードが無効です。もう一度お試しください。',
+        ),
+      );
+    }
+
+    try {
+      final data = await BoltFoxApi.weChatMobileLogin(code: authorizationCode);
+      final token = _readToken(data);
+      if (token == null || token.isEmpty) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '微信登录响应缺少登录凭证，请稍后重试。',
+            en: 'The WeChat login response did not contain a session token.',
+            ja: 'WeChat ログイン応答にセッショントークンがありません。',
+          ),
+        );
+      }
+
+      ApiSession.instance.setToken(token);
+      _isLoggedIn = true;
+      _applyUserInfo(data);
+      _userLoaded = true;
+      notifyListeners();
+      return ActionFeedback(
+        success: true,
+        message: tr(
+          zh: '微信登录成功。',
+          en: 'Signed in with WeChat.',
+          ja: 'WeChat でログインしました。',
+        ),
+      );
+    } catch (error) {
+      return _apiFailure(error);
+    }
+  }
+
   /// 发送邮箱验证码。[sendType]：1=注册、2=找回/改密、3=改邮箱。
   /// 统一走 `/Client/Basic/sendEmail`（对齐小程序，见账号#1）；[loggedIn] 仅用于放宽格式校验
   /// （已登录改邮箱等场景由页面自行校验新邮箱）。

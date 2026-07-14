@@ -6,7 +6,7 @@
 > **维护约定**：每次同步某页 / 做一次优化，都在本文件对应行更新状态与「优化日志」。方便后续查看与继续开发。
 >
 > **两端已知差异（设计层面，非缺陷）**：
-> - 登录：小程序=微信一键登录；App=邮箱密码登录（App 独有）。
+> - 登录：小程序=微信小程序手机号一键登录；App=邮箱密码登录 + 微信开放平台移动应用登录。
 > - App 额外功能：邮箱登录/注册、版本升级、语种设置。
 > - 允许「App 特有更优实现」：在保证代码质量前提下，若某功能 App 端有更好用的插件 / 实现，
 >   且能**提升传给设备与接口的性能/速度**，就用 App 方式实现（并在此登记原因）。
@@ -27,7 +27,7 @@
 | 模块 | 小程序页面 | Flutter 页面 | 状态 | 备注 / 待办 |
 |---|---|---|---|---|
 | 首页 | `pages/home/home.js` | `features/home/presentation/home_page.dart` | ✅ | 设备轮播/连接/投屏入口已核；进入即 `refreshDevices`。tab 重入刷新见 §七G |
-| 登录 | `pages/login/login.js`(微信) | `features/account/presentation/auth_page.dart` | ➖🔶 | App=邮箱登录（独有）。待办：缓存输入过的邮箱 |
+| 登录 | `pages/login/login.js`(微信) | `features/account/presentation/auth_page.dart` | ➖🔶 | App=邮箱登录 + 移动应用微信授权；邮箱历史已缓存 |
 | 我的 | `pages/mine/mine.js` | `features/mine/presentation/mine_page.dart` | 🟡 | 头像/昵称/入口；待核对 |
 | 绑定设备 | `subpackages/device/bind/bind.js` | `features/devices/presentation/bind_device_flow.dart` 等 | ✅ | 搜索白名单(2尺寸)/判重/productId/deviceId 已对齐 |
 | 设备调试台 | `subpackages/device/debug/debug.js` | `features/devices/presentation/ble_debug_page.dart` | 🔶 | App 调试工具；去端上调色后保留硬件测试帧 |

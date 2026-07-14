@@ -48,6 +48,8 @@ dependencies:
   package_info_plus: ^8.0.0
   # 本地持久化（登录邮箱历史缓存等轻量键值）
   shared_preferences: ^2.3.2
+  # 微信开放平台移动应用授权；业务层通过适配器隔离，便于后续替换 SDK
+  fluwx: 5.7.7
 
 dev_dependencies:
   flutter_test:

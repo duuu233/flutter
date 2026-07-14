@@ -9,13 +9,13 @@
 ## 对接规则
 
 - 只对接用户前端模块：基础功能接口、产品接口、用户接口、设备接口。
-- 当前为 App，**走邮箱登录/注册体系**，`/Client/User/setWechatAppLogin`（微信小程序一键登录）不接入。
+- App 同时支持**邮箱登录/注册**与微信开放平台**移动应用微信登录**；后者复用 `/Client/User/setWechatAppLogin`，仅提交 SDK 返回的一次性 code。
 - App 需要版本更新与安卓下载：`/Client/Basic/getLastVersion`、`/Client/Basic/getAndroidDownload` 接入（与小程序相反）。
 - `/Client/User/userOffPC`（PC 注销）跳过。
 - 公共参数 `device` / `terminal` / `language` / `userToken` 通过 headers 传递；App `terminal`：iOS=1、Android=2（取值以后端约定为准，见 `lib/src/network/api_config.dart`）。
 - BoltFox 响应格式为 `retCode/retMsg/retData`，`retCode=200` 表示成功，由 `ApiClient` 统一解析。
 - 网络层位置：`lib/src/network/`（`api_config` / `api_session` / `api_exception` / `api_client` / `boltfox_api`）。
-- 新增依赖：`http`（见 `pubspec.yaml`）。**首次拉取后需执行 `flutter pub get`。**
+- 新增依赖：`http`、`fluwx`（见 `pubspec.yaml`）。**首次拉取后需执行 `flutter pub get`。**
 
 ## 模块进度
 
@@ -24,7 +24,7 @@
 | 网络层基础 | 已完成 | `lib/src/network/api_*.dart` | header 注入 + retCode 解析 + 异常/会话 |
 | 用户前端-基础功能接口 | 接口层已接入 | `lib/src/network/boltfox_api.dart` | 邮箱验证码、基础数据、版本更新、安卓下载、文件/设备上传 |
 | 用户前端-产品接口 | **FAQ 页面联调已接入** | `state.dart` + `features/guide` | 操作指南 FAQ 列表/详情已串通；产品列表待绑定设备流程 |
-| 用户前端-用户接口 | **页面联调已接入（账号模块）** | `state.dart` + `features/account` + `features/settings` | 登录/发码/注册/找回/改密/改邮箱/保存资料/退出/注销 已串通真实接口；微信一键登录、PC 注销跳过 |
+| 用户前端-用户接口 | **页面联调已接入（账号模块）** | `state.dart` + `features/account` + `features/settings` | 邮箱/微信移动应用登录、发码、注册、找回、改密、改邮箱、保存资料、退出、注销已串通；PC 注销跳过 |
 | 用户前端-设备接口 | **页面联调已接入（设备 + 相册图库 + 投屏记录）** | `state.dart` + `features/devices,album,gallery,cast` | 设备列表/详情/重命名/删除/清空；相册/图库列表+多选删除；投屏记录列表+删除，均已串通真实接口；绑定待 BLE 流程联调 |
 
 > 接入方式：先建立 `lib/src/network` 接口层（本阶段），页面/`PhotoFrameState` 联调时在各 action 方法内部替换为真实接口调用，避免页面直接拼接请求。
@@ -56,6 +56,7 @@
 | 方法 | 路径 | `BoltFoxApi` 方法 | 关键字段 / 说明 |
 | --- | --- | --- | --- |
 | POST | `/Client/User/userLogin` | `userLogin()` | `email`、`password`；返回登录 token，需 `ApiSession.setToken` |
+| POST | `/Client/User/setWechatAppLogin` | `weChatMobileLogin()` | 移动应用 SDK code；服务端换微信身份并返回业务 userToken |
 | POST | `/Client/User/userRegister` | `userRegister()` | `email`、`password`、`emailCode`、`nickName?` |
 | POST | `/Client/User/resetPassword` | `resetPassword()` | `email`、`password`、`emailCode`（sendType:2） |
 | POST | `/Client/User/chkUserEmailNotExist` | `chkUserEmailNotExist()` | 注册前置校验，邮箱已存在返回异常码 |
@@ -67,11 +68,10 @@
 | POST | `/Client/User/loginOut` | `loginOut()` | 成功后 `ApiSession.clear()` |
 | POST | `/Client/User/userOff` | `userOff()` | 成功后 `ApiSession.clear()` |
 
-### 用户接口-小程序跳过项（App 不接入）
+### 用户接口-App 跳过项
 
 | 方法 | 路径 | 跳过原因 |
 | --- | --- | --- |
-| POST | `/Client/User/setWechatAppLogin` | 微信小程序一键登录，App 走邮箱登录 |
 | POST | `/Client/User/userOffPC` | PC 版注销 |
 
 ## 已接入接口（模块3 设备接口 / UserProduct）
@@ -100,7 +100,7 @@
 
 | 页面 | 文件 | 触发动作 → `PhotoFrameState` 方法 → 接口 |
 | --- | --- | --- |
-| 登录 | `account/auth_page.dart` | 登录 → `loginWithPassword` → `userLogin`，成功写 `ApiSession.setToken` 并 `getUserInfo` |
+| 登录 | `account/auth_page.dart` | 邮箱 → `loginWithPassword` → `userLogin`；微信 → SDK code → `loginWithWeChatCode` → `setWechatAppLogin`；成功均写 `ApiSession` |
 | 注册 | `account/register_page.dart` | 获取验证码 → `sendEmailCode(sendType:1)` → `sendEmail`；注册 → `registerWithEmail` → `userRegister` |
 | 忘记密码 | `account/forgot_password.dart` | 获取验证码 → `sendEmailCode(sendType:2)` → `sendEmail`；确认 → `resetPasswordByEmail` → `resetPassword` |
 | 修改密码 | `account/modify_password.dart` | 获取验证码 → `sendEmailCode(sendType:2, loggedIn:true)` → `sendEmailToken`；确认 → `resetPasswordByEmail` → `resetPassword` |
