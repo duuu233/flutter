@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
-import '../../cast/presentation/casting_progress_page.dart';
+import '../../cast/presentation/cast_preview_page.dart';
 
 /// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
 ///
@@ -100,11 +101,7 @@ class DeviceDetailsPage extends StatelessWidget {
   /// 未连接则蒙层 loading 自动扫连（对齐小程序 detail.js startProjection→connectDevice）；
   /// 连上返回 true，失败提示并返回 false。
   Future<bool> _ensureConnected(BuildContext context, String deviceId) async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    AppLoadingDialog.show(context, '连接设备中');
     final feedback = await state.connectDevice(deviceId);
     if (!context.mounted) {
       return false;
@@ -179,9 +176,9 @@ class DeviceDetailsPage extends StatelessWidget {
     // App 端不做预览、不做端上裁切/旋转编辑（既定方针，与小程序最小可用链路一致）。
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => CastingProgressPage(
-          userProductId: device.id,
-          deviceName: device.name,
+        // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
+        builder: (_) => CastPreviewPage(
+          device: device,
           imagePaths: imagePaths,
           compressImage: state.projectionCompress,
         ),

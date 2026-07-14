@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../cast/cast_photo_picker.dart';
-import '../../cast/presentation/casting_progress_page.dart';
+import '../../cast/presentation/cast_preview_page.dart';
 import 'my_devices_page.dart';
 import '../../../state.dart';
 
@@ -129,9 +130,9 @@ class _DevicesPageState extends State<DevicesPage> {
     }
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => CastingProgressPage(
-          userProductId: deviceId,
-          deviceName: state.deviceName(deviceId),
+        // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
+        builder: (_) => CastPreviewPage(
+          device: device,
           imagePaths: imagePaths,
           compressImage: state.projectionCompress,
         ),
@@ -143,11 +144,7 @@ class _DevicesPageState extends State<DevicesPage> {
 
   /// 未连接则蒙层 loading 自动扫连（对齐小程序 ensureConnectedForAction）；连上 true，失败提示 false。
   Future<bool> _ensureConnected(BuildContext context, String deviceId) async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    AppLoadingDialog.show(context, '连接设备中');
     final feedback = await widget.state.connectDevice(deviceId);
     if (!context.mounted) {
       return false;

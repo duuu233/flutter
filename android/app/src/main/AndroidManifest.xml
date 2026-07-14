@@ -35,6 +35,12 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- 投屏预览页的原生裁剪器（image_cropper 插件，Android 侧用 Yalantis uCrop）。
+             必须在这里注册它的 Activity，否则点「裁剪」会直接崩（ActivityNotFoundException）。 -->
+        <activity
+            android:name="com.yalantis.ucrop.UCropActivity"
+            android:screenOrientation="portrait"
+            android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

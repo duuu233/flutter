@@ -276,18 +276,11 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   }
 
   /// 蒙层阻断式 loading（不可返回/不可点透），配合耗时的设备 BLE 操作。
-  void _showBlockingLoading(String text) {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      barrierColor: Colors.black.withValues(alpha: 0.35),
-      builder: (_) => _BlockingLoading(text: text),
-    );
-  }
+  /// 统一走公共的 [AppLoadingDialog]（原来这里有一份私有实现，遮罩偏黑、文字还会被
+  /// Flutter 渲染成黄色双下划线——dialog 路由下没有 Material 祖先）。
+  void _showBlockingLoading(String text) => AppLoadingDialog.show(context, text);
 
-  void _dismissBlockingLoading() {
-    Navigator.of(context, rootNavigator: true).pop();
-  }
+  void _dismissBlockingLoading() => AppLoadingDialog.hide(context);
 
   /// 单选照片「刷新屏幕」：把该照片切到相框当前显示（0x24）。未连接会自动扫连，故加蒙层 loading。
   Future<void> _refreshSelectedOnScreen() async {
@@ -705,46 +698,6 @@ class _SelectionBar extends StatelessWidget {
 
 /// 删除照片确认弹窗（小程序 `.confirm-dialog`）：图标盒 + 标题/说明 + 取消/确认。
 /// 蒙层阻断式 loading 卡片：居中黑底圆角 + 转圈 + 文案（对齐小程序 wx.showLoading mask）。
-class _BlockingLoading extends StatelessWidget {
-  const _BlockingLoading({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      child: Center(
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 26, vertical: 22),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.82),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 30,
-                height: 30,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3,
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                text,
-                style: const TextStyle(color: Colors.white, fontSize: 14),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _DeleteDialog extends StatelessWidget {
   const _DeleteDialog({required this.count});
 

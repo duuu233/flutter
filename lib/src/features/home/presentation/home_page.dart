@@ -7,7 +7,7 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
-import '../../cast/presentation/casting_progress_page.dart';
+import '../../cast/presentation/cast_preview_page.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
 part 'home_main_view.dart'; // 首页主视图（已绑定 / 未绑定）
@@ -357,9 +357,9 @@ class _HomePageState extends State<HomePage> {
     // App 端不做预览、不做端上裁切/旋转编辑（既定方针）。
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
-        builder: (_) => CastingProgressPage(
-          userProductId: activeDevice.id,
-          deviceName: activeDevice.name,
+        // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
+        builder: (_) => CastPreviewPage(
+          device: activeDevice,
           imagePaths: imagePaths,
           compressImage: widget.state.projectionCompress,
         ),
@@ -378,11 +378,7 @@ class _HomePageState extends State<HomePage> {
   /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），
   /// 连上返回 true；失败弹提示并返回 false。供投屏入口在未连接时自动重连。
   Future<bool> _ensureConnected(String deviceId) async {
-    showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(child: CircularProgressIndicator()),
-    );
+    AppLoadingDialog.show(context, '连接设备中');
     final feedback = await widget.state.connectDevice(deviceId);
     if (!mounted) {
       return false;
