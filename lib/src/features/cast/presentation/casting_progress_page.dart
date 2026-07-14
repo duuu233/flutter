@@ -30,7 +30,6 @@ class CastingProgressPage extends StatefulWidget {
     this.device,
     this.deviceName = '相框',
     this.imagePaths = const [],
-    this.compressImage = true,
     this.recastImgBle,
     this.recastUpirId,
     this.recastImgUrl,
@@ -52,9 +51,6 @@ class CastingProgressPage extends StatefulWidget {
 
   /// 待投屏原图的本地文件路径。非空则进入真实投屏链路。
   final List<String> imagePaths;
-
-  /// 是否压缩图片后再传后端转码（默认压缩）。
-  final bool compressImage;
 
   /// 再次/重新投屏：投屏记录里后端转换好的设备帧地址(imgBle)。非空则走「imgBle 直传」链路
   /// （直接下载 .bin 图传，不走后端转码），见 [ServerImageProjectionService.recastRecord]。
@@ -161,7 +157,6 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         : await service.castImages(
             userProductId: widget.userProductId!,
             filePaths: widget.imagePaths,
-            compressImage: widget.compressImage,
             shouldAbort: () => _aborted,
             onProgress: handleProgress,
           );
@@ -280,16 +275,11 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         // 选完图先进预览页（对齐小程序 result.js chooseCamera/chooseAlbum → 跳 preview）。
         // 没有设备对象（从投屏记录「再次投屏」进来的）时退化为直接投。
         builder: (_) => device != null
-            ? CastPreviewPage(
-                device: device,
-                imagePaths: paths,
-                compressImage: widget.compressImage,
-              )
+            ? CastPreviewPage(device: device, imagePaths: paths)
             : CastingProgressPage(
                 userProductId: widget.userProductId,
                 deviceName: widget.deviceName,
                 imagePaths: paths,
-                compressImage: widget.compressImage,
               ),
       ),
     );
@@ -307,7 +297,6 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
           device: widget.device,
           deviceName: widget.deviceName,
           imagePaths: widget.imagePaths,
-          compressImage: widget.compressImage,
           recastImgBle: widget.recastImgBle,
           recastUpirId: widget.recastUpirId,
           recastImgUrl: widget.recastImgUrl,
@@ -319,9 +308,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 「投屏明细」整行可点：进投屏记录（小程序 goRecords 是 redirectTo，这里同样替换本页，
   /// 避免记录页上面还压着一个已结束的投屏页）。
   void _goRecords() {
-    Navigator.of(
-      context,
-    ).pushReplacementNamed(AppRoutes.figmaCastManagement);
+    Navigator.of(context).pushReplacementNamed(AppRoutes.figmaCastManagement);
   }
 
   String get _art {

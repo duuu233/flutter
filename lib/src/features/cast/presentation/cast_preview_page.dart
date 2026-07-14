@@ -38,7 +38,6 @@ class CastPreviewPage extends StatefulWidget {
     super.key,
     required this.device,
     required this.imagePaths,
-    this.compressImage = true,
   });
 
   /// 投屏目标设备。裁剪比例取它的屏幕分辨率。
@@ -46,8 +45,6 @@ class CastPreviewPage extends StatefulWidget {
 
   /// 待投屏的本地原图路径（已由 CastPhotoPicker 降采样到长边 1920）。
   final List<String> imagePaths;
-
-  final bool compressImage;
 
   @override
   State<CastPreviewPage> createState() => _CastPreviewPageState();
@@ -375,7 +372,6 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
           device: widget.device,
           deviceName: widget.device.name,
           imagePaths: paths,
-          compressImage: widget.compressImage,
         ),
       ),
     );

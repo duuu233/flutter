@@ -6,6 +6,10 @@
 
 当前项目：BoltStar Flutter App（iOS / Android）
 
+> **2026-07-14 状态说明**：本文件保留早期按日期推进的历史记录，历史段落中的“待接/未实现/本机无 SDK”
+> 不代表当前状态。当前逐页结论和最新变更以 [`app-vs-miniprogram-sync.md`](app-vs-miniprogram-sync.md) 为准；
+> 本轮已执行 `dart analyze lib test`（**No issues found**）和 `flutter test`（**7 项全部通过**）。
+
 ## 对接规则
 
 - 只对接用户前端模块：基础功能接口、产品接口、用户接口、设备接口。
@@ -141,12 +145,11 @@
 - `refreshDevices` 把 `getUserProductList` 行映射为 `DeviceItem`（`_deviceFromJson`，兼容 `userProductId/productName/productSerialNo/productVersionNo` 等字段）；蓝牙字段（电量/IMG_MASK/连接态）给默认值，连接后由 BLE 更新。
 - `MyDevicesPage` 改为展示型组件（数据源 = `widget.devices`，编辑经回调到 `state`），不再各自维护本地副本。
 
-### 设备模块已知差异 / 依赖
+### 设备模块当前状态
 
-- **跨模块顺序依赖**：`refreshDevices` 成功时会用后端设备（新 id）替换本地列表；当前相册/图库/投屏记录仍引用种子设备 id（如 `dev-aurora`）。真后端返回设备后，需同步把**相册/投屏模块**也改为后端驱动，否则按种子 `deviceId` 反查设备可能不匹配。开发阶段无 token 时 `refreshDevices` 会失败并保留种子列表，故当前不受影响。
-- **空列表未处理**：首页 `selectedDevice` 假定至少有一个设备；`refreshDevices` 仅在后端返回非空时替换，删到 0 台时的空状态 UI 待补。
-- **轮播设置 / 连接断开**为蓝牙端能力（接口清单标 ➖），未接后端；`carousel_settings_page` 仍为本地状态。
-- 设备详情未单独调用 `getUserProductDetail`（直接用列表项渲染），如需 OTA/更多字段可后续接入。
+- `refreshDevices`、图库、投屏记录均已改为后端真实数据；设备删到 0 台时首页显示未绑定空态。
+- 轮播设置 / 连接断开是 BLE 能力：页面已接真实连接和 `setPlayback(0x10)`，不依赖后端模拟状态。
+- 设备详情及 OTA 入口会按需调用详情/版本接口并合并固件字段。
 
 ## 页面联调进度（模块C：相册图库 + 投屏记录）✅
 
@@ -213,13 +216,13 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 - **设备模型不统一**：实时 BLE 模型是 96 槽位 + 12 字节 IMG_MASK（`FrameDeviceInfo`），演示 state 是 32 位 mask（`DeviceItem`）。本轮**未合并**两套模型——绑定后设备列表仍走后端 `refreshDevices`，BLE 会话单独存活在 `BleController` 供投屏复用；列表里的「已连接」标记暂不反映真实 BLE 连接态。
 - 绑定后端失败（如 productId 不对/离线）时，蓝牙仍已连接、可投屏，流程照常退回列表并提示错误。
 
-## 剩余未接清单
+## 早期未接清单（现状修订于 2026-07-14）
 
 | 功能 | 接口 | 状态 / 阻塞 |
 | --- | --- | --- |
-| **投屏图传（cast 流程）** | `setUserProductUpload`（+ BLE 图传） | `BleController.uploadRgba` 已就绪（选图→解码→六色量化→图传），**待接 cast UI**：首页拍照/相册 → `photo_preview_adjust` → `casting_progress` → `cast_success/failed`，并把上传成功写回后端相册/投屏记录 |
-| App 版本更新 | `getLastVersion` / `getAndroidDownload` | 入口被注释隐藏；APK 下载安装需 `url_launcher`/安装插件 |
-| 头像上传 | `setFileUpload` + `changeAvatar` | 需 `image_picker` 选图；模型需补头像 URL 字段 |
+| **投屏图传（cast 流程）** | `setUserProductUpload`（+ BLE 图传） | ✅ 已接真实预览/裁剪/后端转六色帧/BLE 图传/记录回写；旧 `uploadRgba` 自研调色已删除 |
+| App 版本更新 | `getLastVersion` / `getAndroidDownload` | ✅ 已接版本检查与安卓下载跳转 |
+| 头像上传 | `setFileUpload` + `changeAvatar` | ✅ 首页即时更新；个人资料保存时与昵称一起提交 |
 | 基础数据 | `getBasicData` | 字典/配置，按需取用，暂无对应 UI |
 
 ## 从小程序移植的功能（2026-07-01）
@@ -336,12 +339,13 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 ### 未移植（评估后不适用）
 
 - **图库下拉「显示全部绑定设备」修复**（小程序 `list.js`：有照片时只按照片里的设备名生成筛选项、漏掉无照片设备）：Flutter `gallery_page.dart` 的设备下拉本就 `for (final device in state.devices)` 全量遍历后端设备 + 额外「全部相框」项，**已符合期望、无需改动**。
-- **照片预览未编辑时按 aspectFill 裁切上传**（小程序 `preview.js` `coverCropUnedited`）：Flutter `photo_preview_adjust_image_page.dart` 是占位页、无客户端裁剪/旋转实现，且裁剪到设备尺寸由**后端** `setUserProductUpload(targetWidth/targetHeight)` 完成，不存在「客户端预览裁切以做所见即所得」的对应面，**无可移植目标**。待 Flutter 实装真实客户端裁剪后再评估。
-- **首页 UI 微调**（本轮小程序侧 projection-card 阴影 / home-icon05-06 图标 / tabbar 背景图 / 卡片排版居中）：均为微信 rpx 像素级样式，Flutter 首页为独立 widget 布局、无 1:1 对应面，未移植。
+- **照片预览未编辑时按 aspectFill 裁切上传**：已由真实 `cast_preview_page.dart` +
+  `CastImageEditor.coverCropToRatio` 实现；App 使用原生裁剪器，输出比例和 JPEG 参数与小程序一致。
+- **首页 UI 微调**：已按当前小程序重新核对卡片比例、循环轮播、断连连接按钮、Logo、投屏卡和 Tab 样式。
 
 ### 注意
 
-- 本机无 Flutter SDK，本轮改动未跑 `dart analyze`，需开发机验证编译。
+- 2026-07-14 已运行 `dart analyze lib test`，结果为 **No issues found**；BLE 仍需真机回归。
 
 ## 从小程序移植的功能（2026-07-10）：图片传输性能优化
 

@@ -8,7 +8,11 @@ import 'device_details_page.dart';
 ///
 /// 确认后调用 `state.deleteDevice`（→ `delUserProduct`），成功后退回设备列表。
 class DeviceDeleteConfirmPage extends StatelessWidget {
-  const DeviceDeleteConfirmPage({super.key, required this.state, this.onCancel});
+  const DeviceDeleteConfirmPage({
+    super.key,
+    required this.state,
+    this.onCancel,
+  });
 
   final PhotoFrameState state;
   final VoidCallback? onCancel;
@@ -17,7 +21,10 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        FigmaScreen(title: '设备详情', body: DeviceDetailsBody(state: state)),
+        FigmaScreen(
+          title: '设备详情',
+          body: DeviceDetailsBody(state: state),
+        ),
         Positioned.fill(
           child: ColoredBox(color: Colors.black.withValues(alpha: 0.4)),
         ),
@@ -46,13 +53,12 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
     if (!context.mounted) {
       return;
     }
-    AppToast.show(context, feedback.message);
     if (feedback.success) {
       // 关闭确认页与详情页，回到设备列表。
       navigator.pop();
       navigator.pop();
     } else {
-      navigator.maybePop();
+      AppToast.warn(context, feedback.message);
     }
   }
 }

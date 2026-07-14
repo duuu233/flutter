@@ -330,11 +330,12 @@ String _batteryIconAsset(int level) {
 /// 顶部用户头像（小程序 `.avatar-btn`：72rpx=36 白底圆形）。
 ///
 /// 优先显示真实头像 [avatarUrl]（网络图，对齐小程序 `home.js loadUserAvatar`）；无地址 /
-/// 加载失败时回退本地 `mine-header.png`，再失败回退占位图标。[onTap] 非空时可点（换头像上传）。
+/// 加载失败时回退本地 `mine-header.jpg`，再失败回退占位图标。[onTap] 非空时可点（换头像上传）。
 class _Avatar extends StatelessWidget {
-  const _Avatar({this.avatarUrl, this.onTap});
+  const _Avatar({this.avatarUrl, this.localPath, this.onTap});
 
   final String? avatarUrl;
+  final String? localPath;
   final VoidCallback? onTap;
 
   @override
@@ -351,9 +352,15 @@ class _Avatar extends StatelessWidget {
           color: Colors.white,
           shape: BoxShape.circle,
         ),
-        child: url.isEmpty
+        child: localPath != null
+            ? Image.file(
+                File(localPath!),
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => _fallback(),
+              )
+            : url.isEmpty
             ? Image.asset(
-                'assets/images/mine-header.png',
+                'assets/images/mine-header.jpg',
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => _fallback(),
               )
@@ -361,7 +368,7 @@ class _Avatar extends StatelessWidget {
                 url,
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => Image.asset(
-                  'assets/images/mine-header.png',
+                  'assets/images/mine-header.jpg',
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) => _fallback(),
                 ),
@@ -426,127 +433,362 @@ class _GreetingTitle extends StatelessWidget {
       children: [
         Text('Hi', style: _HomeTextStyles.hi),
         SizedBox(height: 9),
-        Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(text: '欢迎使用 ', style: _HomeTextStyles.welcome),
-              TextSpan(text: 'BoltStar', style: _HomeTextStyles.brand),
-            ],
-          ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('欢迎使用', style: _HomeTextStyles.welcome),
+            SizedBox(width: 6),
+            Image(
+              image: AssetImage('assets/images/logo.png'),
+              width: 97,
+              height: 20,
+              fit: BoxFit.contain,
+              errorBuilder: _brandFallback,
+            ),
+          ],
         ),
       ],
     );
   }
+
+  static Widget _brandFallback(
+    BuildContext context,
+    Object error,
+    StackTrace? stackTrace,
+  ) => const Text('BoltStar', style: _HomeTextStyles.brand);
 }
 
 /// 已连接设备卡片（小程序 `.device-carousel`）：
 /// 卡片底图 `home-bg01.png`（702×420rpx）+ 左侧圆环 `home-icon02.png` +
 /// 右侧设备信息（名称 / 蓝牙连接状态 / 电量）。
-class _ConnectedDeviceCard extends StatelessWidget {
-  const _ConnectedDeviceCard({required this.device});
+class _DeviceCarousel extends StatefulWidget {
+  const _DeviceCarousel({
+    required this.devices,
+    required this.activeDeviceId,
+    required this.onChanged,
+    required this.onOpenDevices,
+    required this.onConnectDevice,
+  });
 
-  final DeviceItem device;
+  final List<DeviceItem> devices;
+  final String activeDeviceId;
+  final ValueChanged<DeviceItem> onChanged;
+  final VoidCallback onOpenDevices;
+  final ValueChanged<DeviceItem> onConnectDevice;
+
+  @override
+  State<_DeviceCarousel> createState() => _DeviceCarouselState();
+}
+
+class _DeviceCarouselState extends State<_DeviceCarousel> {
+  late int _index;
+  late int _page;
+  late final PageController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _index = _indexFor(widget.activeDeviceId);
+    _page = _initialPage(_index);
+    _controller = PageController(initialPage: _page);
+  }
+
+  int _initialPage(int index) {
+    if (widget.devices.length <= 1) {
+      return index;
+    }
+    return widget.devices.length * 1000 + index;
+  }
+
+  int _indexFor(String id) {
+    final index = widget.devices.indexWhere((device) => device.id == id);
+    return index < 0 ? 0 : index;
+  }
+
+  @override
+  void didUpdateWidget(covariant _DeviceCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.devices.isEmpty) {
+      _index = 0;
+      return;
+    }
+    final next = _indexFor(widget.activeDeviceId);
+    final deviceCountChanged =
+        oldWidget.devices.length != widget.devices.length;
+    if ((next != _index || deviceCountChanged) &&
+        next < widget.devices.length) {
+      _index = next;
+      _page = deviceCountChanged
+          ? _initialPage(next)
+          : _nearestPage(next, widget.devices.length);
+      if (_controller.hasClients) {
+        _controller.jumpToPage(_page);
+      }
+    }
+  }
+
+  int _nearestPage(int index, int count) {
+    var target = _page - (_page % count) + index;
+    if (target - _page > count / 2) {
+      target -= count;
+    } else if (_page - target > count / 2) {
+      target += count;
+    }
+    return target;
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      fit: StackFit.expand,
+    return Column(
       children: [
-        // 卡片背景图铺满（home-bg01.png 自带圆角与玻璃质感）。
-        Image.asset(
-          'assets/images/home-bg01.png',
-          fit: BoxFit.fill,
-          errorBuilder: (context, error, stackTrace) {
-            return DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.55),
-                borderRadius: BorderRadius.circular(30),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+        SizedBox(
+          height: 186,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: widget.devices.length == 1 ? 1 : null,
+            onPageChanged: (page) {
+              _page = page;
+              final index = page % widget.devices.length;
+              setState(() => _index = index);
+              widget.onChanged(widget.devices[index]);
+            },
+            itemBuilder: (context, page) => Center(
+              child: AspectRatio(
+                aspectRatio: 327 / 149,
+                child: _ConnectedDeviceCard(
+                  device: widget.devices[page % widget.devices.length],
+                  onOpenDevices: widget.onOpenDevices,
+                  onConnect: () => widget.onConnectDevice(
+                    widget.devices[page % widget.devices.length],
+                  ),
+                ),
               ),
-            );
-          },
+            ),
+          ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              // 左侧圆环图标（home-icon02.png，286rpx≈143）。
-              Image.asset(
-                'assets/images/home-icon02.png',
-                width: 143,
-                height: 143,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return const SizedBox(
-                    width: 136,
-                    height: 136,
-                    child: _DeviceOrbitMark(),
-                  );
-                },
+        const SizedBox(height: 20),
+        _CarouselDots(count: widget.devices.length, activeIndex: _index),
+      ],
+    );
+  }
+}
+
+class _ConnectedDeviceCard extends StatelessWidget {
+  const _ConnectedDeviceCard({
+    required this.device,
+    required this.onOpenDevices,
+    required this.onConnect,
+  });
+
+  final DeviceItem device;
+  final VoidCallback onOpenDevices;
+  final VoidCallback onConnect;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onOpenDevices,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x1F3C3510),
+              blurRadius: 16,
+              offset: Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 当前小程序同一张 OSS 卡片底图；加载期间/离线时回退本地资源。
+            ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Image.network(
+                'https://oss.boltfox.cn/prodFile/202607072104114724571.png',
+                fit: BoxFit.fill,
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : _cardBackgroundFallback(),
+                errorBuilder: (context, error, stackTrace) =>
+                    _cardBackgroundFallback(),
               ),
-              // 右侧设备信息。
-              Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
                 children: [
-                  Text(
-                    device.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _HomeTextStyles.deviceCardTitle,
+                  // 左侧圆环图标（home-icon02.png，166rpx≈83）。
+                  Image.asset(
+                    'assets/images/home-icon02.png',
+                    width: 83,
+                    height: 83,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const SizedBox(
+                        width: 78,
+                        height: 78,
+                        child: _DeviceOrbitMark(),
+                      );
+                    },
                   ),
-                  const SizedBox(height: 9),
-                  Row(
-                    children: [
-                      Image.asset(
-                        'assets/images/bluetooth-icon.png',
-                        width: 11,
-                        height: 14,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.bluetooth_rounded,
-                            color: Color(0xFF4A98FF),
-                            size: 14,
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        device.connected ? '已连接' : '未连接',
-                        style: _HomeTextStyles.deviceMeta,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 11),
-                  Row(
-                    children: [
-                      Image.asset(
-                        _batteryIconAsset(device.batteryLevel),
-                        width: 26,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const Icon(
-                            Icons.battery_2_bar_rounded,
-                            color: Color(0xFFFF6A24),
-                            size: 18,
-                          );
-                        },
-                      ),
-                      const SizedBox(width: 7),
-                      Text(
-                        '${device.batteryLevel}%',
-                        style: _HomeTextStyles.deviceMeta,
-                      ),
-                    ],
+                  // 右侧设备信息。
+                  SizedBox(
+                    width: 138,
+                    height: 110,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          device.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _HomeTextStyles.deviceCardTitle,
+                        ),
+                        const SizedBox(height: 9),
+                        Row(
+                          children: [
+                            Image.asset(
+                              device.connected
+                                  ? 'assets/images/bluetooth-icon.png'
+                                  : 'assets/images/bluetooth-icon-not.png',
+                              width: 11,
+                              height: 14,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.bluetooth_rounded,
+                                  color: device.connected
+                                      ? const Color(0xFF4A98FF)
+                                      : const Color(0xFF777E88),
+                                  size: 14,
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              device.connected ? '已连接' : '未连接',
+                              style: _HomeTextStyles.deviceMeta.copyWith(
+                                color: device.connected
+                                    ? const Color(0xFF287DFF)
+                                    : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (device.connected) ...[
+                          const SizedBox(height: 11),
+                          Row(
+                            children: [
+                              Image.asset(
+                                _batteryIconAsset(device.batteryLevel),
+                                width: 26,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(
+                                    Icons.battery_2_bar_rounded,
+                                    color: Color(0xFFFF6A24),
+                                    size: 18,
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 7),
+                              Text(
+                                '${device.batteryLevel}%',
+                                style: _HomeTextStyles.deviceMeta,
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 22),
+                          _HomeConnectButton(onTap: onConnect),
+                        ],
+                      ],
+                    ),
                   ),
                 ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
-      ],
+      ),
+    );
+  }
+
+  Widget _cardBackgroundFallback() {
+    return Image.asset(
+      'assets/images/home-bg01.png',
+      fit: BoxFit.fill,
+      errorBuilder: (context, error, stackTrace) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeConnectButton extends StatelessWidget {
+  const _HomeConnectButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 7),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(999),
+          gradient: const LinearGradient(
+            colors: [Color(0xFF2F95FF), Color(0xFF2079FC)],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF2079FC).withValues(alpha: 0.28),
+              blurRadius: 12,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/bluetooth-icon-white.png',
+              width: 12,
+              height: 12,
+              errorBuilder: (context, error, stackTrace) => const Icon(
+                Icons.bluetooth_rounded,
+                size: 12,
+                color: Colors.white,
+              ),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              '连接蓝牙',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

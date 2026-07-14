@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
 import '../../../state.dart';
@@ -17,6 +20,7 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   late final TextEditingController _nicknameController;
+  String? _pendingAvatarPath;
 
   @override
   void initState() {
@@ -63,7 +67,8 @@ class _ProfilePageState extends State<ProfilePage> {
                 _AvatarRow(
                   color: user.avatarColor,
                   avatarUrl: user.avatarUrl,
-                  onTap: _pickAndUploadAvatar,
+                  localPath: _pendingAvatarPath,
+                  onTap: _pickAvatar,
                 ),
                 const FigmaFormDivider(),
                 FigmaAccountField(
@@ -104,9 +109,9 @@ class _ProfilePageState extends State<ProfilePage> {
                   label: '修改密码',
                   value: '',
                   onTap: () {
-                    Navigator.of(context).pushNamed<void>(
-                      AppRoutes.figmaModifyPassword,
-                    );
+                    Navigator.of(
+                      context,
+                    ).pushNamed<void>(AppRoutes.figmaModifyPassword);
                   },
                 ),
               ],
@@ -118,28 +123,22 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  /// 点头像换头像：从相册选图 → 上传 → changeAvatar（对齐小程序 profile.js:48）。
-  Future<void> _pickAndUploadAvatar() async {
+  /// 点头像仅选择并本地回显；与小程序一致，头像和昵称在点「保存资料」时一起提交。
+  Future<void> _pickAvatar() async {
     final picker = ImagePicker();
     final XFile? file;
     try {
       file = await picker.pickImage(source: ImageSource.gallery);
     } catch (_) {
       if (mounted) {
-        AppToast.show(context, '无法读取相册，请检查相册权限后重试。');
+        AppToast.warn(context, '无法读取相册，请检查相册权限后重试。');
       }
       return;
     }
     if (file == null || !mounted) {
       return;
     }
-    AppToast.show(context, '头像上传中…');
-    final feedback = await widget.state.updateAvatar(file.path);
-    if (!mounted) {
-      return;
-    }
-    setState(() {});
-    AppToast.show(context, feedback.message);
+    setState(() => _pendingAvatarPath = file!.path);
   }
 
   bool _saving = false;
@@ -150,7 +149,8 @@ class _ProfilePageState extends State<ProfilePage> {
     }
     final user = widget.state.currentUser;
     setState(() => _saving = true);
-    final feedback = await widget.state.updateProfile(
+    AppLoadingDialog.show(context, '保存中');
+    final profileFeedback = await widget.state.updateProfile(
       nickname: _nicknameController.text,
       email: user.email,
       signature: user.signature,
@@ -159,17 +159,48 @@ class _ProfilePageState extends State<ProfilePage> {
     if (!mounted) {
       return;
     }
-    setState(() => _saving = false);
-    AppToast.show(context, feedback.message);
+    if (!profileFeedback.success) {
+      AppLoadingDialog.hide(context);
+      setState(() => _saving = false);
+      AppToast.warn(context, profileFeedback.message);
+      return;
+    }
+
+    final avatarPath = _pendingAvatarPath;
+    if (avatarPath != null) {
+      final avatarFeedback = await widget.state.updateAvatar(avatarPath);
+      if (!mounted) {
+        return;
+      }
+      if (!avatarFeedback.success) {
+        AppLoadingDialog.hide(context);
+        setState(() => _saving = false);
+        AppToast.warn(context, avatarFeedback.message);
+        return;
+      }
+    }
+
+    AppLoadingDialog.hide(context);
+    setState(() {
+      _saving = false;
+      _pendingAvatarPath = null;
+    });
+    // 保存成功后界面已刷新即为反馈，小程序同样不再弹成功提示。
   }
 }
 
-/// 头像行（小程序 `.avatar-row`）：头像 `mine-header.png`（64rpx≈32 圆形）+ 右侧箭头。
+/// 头像行（小程序 `.avatar-row`）：头像 `mine-header.jpg`（64rpx≈32 圆形）+ 右侧箭头。
 class _AvatarRow extends StatelessWidget {
-  const _AvatarRow({required this.color, this.avatarUrl = '', this.onTap});
+  const _AvatarRow({
+    required this.color,
+    this.avatarUrl = '',
+    this.localPath,
+    this.onTap,
+  });
 
   final Color color;
   final String avatarUrl;
+  final String? localPath;
   final VoidCallback? onTap;
 
   @override
@@ -192,9 +223,16 @@ class _AvatarRow extends StatelessWidget {
                 height: 32,
                 clipBehavior: Clip.antiAlias,
                 decoration: const BoxDecoration(shape: BoxShape.circle),
-                child: url.isEmpty
+                child: localPath != null
+                    ? Image.file(
+                        File(localPath!),
+                        fit: BoxFit.cover,
+                        errorBuilder: (context, error, stackTrace) =>
+                            _defaultAvatar(),
+                      )
+                    : url.isEmpty
                     ? Image.asset(
-                        'assets/images/mine-header.png',
+                        'assets/images/mine-header.jpg',
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
                             _fallback(),
@@ -204,11 +242,11 @@ class _AvatarRow extends StatelessWidget {
                         fit: BoxFit.cover,
                         errorBuilder: (context, error, stackTrace) =>
                             Image.asset(
-                          'assets/images/mine-header.png',
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) =>
-                              _fallback(),
-                        ),
+                              'assets/images/mine-header.jpg',
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  _fallback(),
+                            ),
                       ),
               ),
               const SizedBox(width: 9),
@@ -228,6 +266,14 @@ class _AvatarRow extends StatelessWidget {
     return Container(
       color: color,
       child: const Icon(Icons.person_rounded, color: Colors.white, size: 20),
+    );
+  }
+
+  Widget _defaultAvatar() {
+    return Image.asset(
+      'assets/images/mine-header.jpg',
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) => _fallback(),
     );
   }
 }

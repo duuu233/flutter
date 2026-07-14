@@ -41,6 +41,11 @@ class AppToast {
       }
     });
   }
+
+  /// 错误 / 警告类提示默认停留 3 秒，对齐小程序 `toast.warn` 的最新时长。
+  static void warn(BuildContext context, String message) {
+    show(context, message, duration: const Duration(milliseconds: 3000));
+  }
 }
 
 class _ToastBubble extends StatelessWidget {

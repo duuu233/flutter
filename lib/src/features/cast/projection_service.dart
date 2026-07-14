@@ -11,9 +11,12 @@
 // App 下载后字节直传设备。端上六色量化(旧 BleController.uploadRgba)已移除。
 
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show compute;
 import 'package:http/http.dart' as http;
+import 'package:image/image.dart' as img;
 
 import '../../device/ble/device_ble.dart';
 import '../../device/ble/frame_protocol.dart';
@@ -85,7 +88,7 @@ class ProjectionAbortedException implements Exception {
 /// 服务器转换 + BLE 图传投屏服务。复用 [BleController] 持有的已连接设备。
 class ServerImageProjectionService {
   ServerImageProjectionService({BleController? ble})
-      : _ble = ble ?? BleController.instance;
+    : _ble = ble ?? BleController.instance;
 
   final BleController _ble;
 
@@ -96,9 +99,6 @@ class ServerImageProjectionService {
   Future<ProjectionResult> castImages({
     required Object userProductId,
     required List<String> filePaths,
-    // 是否压缩图片后再传后端转码（后端压到约300-400KB）：默认压缩，关闭传原图。
-    // 对齐小程序预览页「压缩开关」→ setUserProductUpload 的 isCompress 字段。
-    bool compressImage = true,
     void Function(CastProgress)? onProgress,
     bool Function()? shouldAbort,
   }) async {
@@ -133,13 +133,15 @@ class ServerImageProjectionService {
     void emit(double percent, String message, {String? title, int? current}) {
       if (title != null) stageTitle = title;
       if (current != null) currentIndex = current;
-      onProgress?.call(CastProgress(
-        percent: percent.clamp(0.0, 1.0).toDouble(),
-        current: currentIndex,
-        total: total,
-        title: stageTitle,
-        message: message,
-      ));
+      onProgress?.call(
+        CastProgress(
+          percent: percent.clamp(0.0, 1.0).toDouble(),
+          current: currentIndex,
+          total: total,
+          title: stageTitle,
+          message: message,
+        ),
+      );
     }
 
     // 整批只开一次图传会话：下发 0x13 把连接间隔切到 7.5ms(安卓)/15ms(iOS) + 请求高优先级。
@@ -159,7 +161,8 @@ class ServerImageProjectionService {
       if (info.width == 0 || info.height == 0) {
         throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏');
       }
-      final expected4bpp = (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2（向上取整）
+      final expected4bpp =
+          (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2（向上取整）
 
       // 设备空间：不做整单预检（对齐小程序 result.js —— 逐张选空闲槽位，放满为止）。
       // 只差 N 张空间时也把能放下的都投进去(部分成功)，而不是一张不投直接整单失败。
@@ -179,7 +182,6 @@ class ServerImageProjectionService {
           userProductId: userProductId,
           width: info.width,
           height: info.height,
-          isCompress: compressImage ? 1 : 0,
         );
       }
 
@@ -210,7 +212,8 @@ class ServerImageProjectionService {
         final frameData = acquired.frameData;
         if (frameData.length != expected4bpp) {
           final head = FrameProtocol.bytesToHex(
-              frameData.sublist(0, frameData.length < 16 ? frameData.length : 16));
+            frameData.sublist(0, frameData.length < 16 ? frameData.length : 16),
+          );
           throw FrameBleException(
             '后端返回的不是设备要的六色4bpp帧：收到 ${frameData.length} 字节(头16=$head)，'
             '设备 ${info.width}×${info.height} 需要 $expected4bpp 字节',
@@ -218,7 +221,9 @@ class ServerImageProjectionService {
         }
 
         final index = FrameProtocol.firstFreeIndex(
-            FrameProtocol.indexesToMask(usedIndexes), info.capacity);
+          FrameProtocol.indexesToMask(usedIndexes),
+          info.capacity,
+        );
         if (index < 0) throw FrameBleException('设备已存满');
 
         // 开始图传本张：标题切「图片传输中」，百分比从 0 起（对齐小程序 result.js:483）。
@@ -312,7 +317,8 @@ class ServerImageProjectionService {
     } catch (error) {
       final raw = error is FrameBleException ? error.message : error.toString();
       // 图传内部中止（uploadImage 抛 'UPLOAD_ABORTED'）与外层一致，给友好文案。
-      final aborted = (shouldAbort?.call() ?? false) || raw.contains('UPLOAD_ABORTED');
+      final aborted =
+          (shouldAbort?.call() ?? false) || raw.contains('UPLOAD_ABORTED');
       // 任一张失败即中断本单（对齐小程序「任意一张失败即中断」）；但只要已成功过至少 1 张就判成功页
       //（部分成功），uploaded>=1 → success，与小程序 finishProjection 一致。
       return ProjectionResult(
@@ -321,9 +327,7 @@ class ServerImageProjectionService {
         total: total,
         message: uploaded >= 1
             ? '已投 $uploaded/$total 张（有 ${total - uploaded} 张未成功）'
-            : (aborted
-                ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。'
-                : raw),
+            : (aborted ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。' : raw),
       );
     } finally {
       // 整批结束（成功/失败/中断都算）恢复省电长间隔。只在真的开过会话时才恢复。
@@ -356,13 +360,15 @@ class ServerImageProjectionService {
     void emit(double percent, String message, {String? title, int? current}) {
       if (title != null) stageTitle = title;
       if (current != null) currentIndex = current;
-      onProgress?.call(CastProgress(
-        percent: percent.clamp(0.0, 1.0).toDouble(),
-        current: currentIndex,
-        total: 1,
-        title: stageTitle,
-        message: message,
-      ));
+      onProgress?.call(
+        CastProgress(
+          percent: percent.clamp(0.0, 1.0).toDouble(),
+          current: currentIndex,
+          total: 1,
+          title: stageTitle,
+          message: message,
+        ),
+      );
     }
 
     if (!client.connected) {
@@ -392,7 +398,8 @@ class ServerImageProjectionService {
       if (info.width == 0 || info.height == 0) {
         throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏');
       }
-      final expected4bpp = (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2
+      final expected4bpp =
+          (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2
 
       // 设备空间校验：至少要有 1 个空闲槽位。
       final usedIndexes = FrameProtocol.maskToIndexes(info.imgMask);
@@ -405,7 +412,8 @@ class ServerImageProjectionService {
       final frameData = await _downloadFrameBin(imgBleUrl);
       if (frameData.length != expected4bpp) {
         final head = FrameProtocol.bytesToHex(
-            frameData.sublist(0, frameData.length < 16 ? frameData.length : 16));
+          frameData.sublist(0, frameData.length < 16 ? frameData.length : 16),
+        );
         throw FrameBleException(
           '记录里的设备帧与当前设备不匹配：收到 ${frameData.length} 字节(头16=$head)，'
           '设备 ${info.width}×${info.height} 需要 $expected4bpp 字节',
@@ -413,7 +421,9 @@ class ServerImageProjectionService {
       }
 
       final index = FrameProtocol.firstFreeIndex(
-          FrameProtocol.indexesToMask(usedIndexes), info.capacity);
+        FrameProtocol.indexesToMask(usedIndexes),
+        info.capacity,
+      );
       if (index < 0) throw FrameBleException('设备已存满');
 
       // D1/D2 图传预处理（整图 CRC32 + 预组 0x21 帧），失败回退不阻断本张。
@@ -451,12 +461,7 @@ class ServerImageProjectionService {
             }
             lastPercent = percent;
             lastEmitMs = nowMs;
-            emit(
-              frac,
-              '正在投屏…',
-              title: CastStage.transferring,
-              current: 1,
-            );
+            emit(frac, '正在投屏…', title: CastStage.transferring, current: 1);
           },
         );
       } catch (error) {
@@ -513,9 +518,7 @@ class ServerImageProjectionService {
         success: false,
         uploaded: 0,
         total: 1,
-        message: aborted
-            ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。'
-            : raw,
+        message: aborted ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。' : raw,
       );
     }
   }
@@ -547,14 +550,12 @@ class ServerImageProjectionService {
     required Object userProductId,
     required int width,
     required int height,
-    required int isCompress,
   }) async {
     final converted = await _convertOnServer(
       filePath: filePath,
       userProductId: userProductId,
       width: width,
       height: height,
-      isCompress: isCompress,
     );
     final frameData = await _downloadFrameBin(converted.url);
     // D1/D2 图传预处理（整图 CRC32 + 按会话分包预组 0x21 帧），与上一张 BLE 传输/本张下载重叠。
@@ -579,16 +580,28 @@ class ServerImageProjectionService {
     required Object userProductId,
     required int width,
     required int height,
-    int isCompress = 1,
   }) async {
-    final res = await BoltFoxApi.setUserProductUpload(
-      filePaths: [filePath],
-      userProductId: userProductId,
+    final uploadPath = await _prepareUploadSource(
+      filePath: filePath,
       targetWidth: width,
       targetHeight: height,
-      deviceUploadState: 0,
-      isCompress: isCompress,
     );
+    Object? res;
+    try {
+      res = await BoltFoxApi.setUserProductUpload(
+        filePaths: [uploadPath],
+        userProductId: userProductId,
+        targetWidth: width,
+        targetHeight: height,
+        deviceUploadState: 0,
+      );
+    } finally {
+      if (uploadPath != filePath) {
+        try {
+          await File(uploadPath).delete();
+        } catch (_) {}
+      }
+    }
     // 单文件上传返回该对象；兼容数组返回。
     final item = res is List ? (res.isNotEmpty ? res.first : null) : res;
     final map = item is Map ? item : const {};
@@ -596,7 +609,47 @@ class ServerImageProjectionService {
     if (url.isEmpty) {
       throw FrameBleException('服务器未返回转换结果');
     }
-    return _ConvertResult(url: url, taskId: map['taskId'], upirId: map['upirId']);
+    return _ConvertResult(
+      url: url,
+      taskId: map['taskId'],
+      upirId: map['upirId'],
+    );
+  }
+
+  /// 上传前兜底压缩，对齐小程序 2026-07-13 的 `compressForUpload`：
+  /// 源文件大于 400KB 才处理，长边最多保留设备长边的 2 倍，JPEG 质量 80；
+  /// 压缩失败或结果反而更大时继续用原文件，绝不阻断投屏。
+  Future<String> _prepareUploadSource({
+    required String filePath,
+    required int targetWidth,
+    required int targetHeight,
+  }) async {
+    try {
+      final source = File(filePath);
+      final sourceBytes = await source.length();
+      if (sourceBytes <= _uploadCompressTriggerBytes) {
+        return filePath;
+      }
+      final encoded = await compute(
+        _compressUploadSource,
+        _UploadCompressRequest(
+          bytes: await source.readAsBytes(),
+          maxLongEdge:
+              (targetWidth > targetHeight ? targetWidth : targetHeight) *
+              _uploadLongEdgeScale,
+        ),
+      );
+      if (encoded == null || encoded.length >= sourceBytes) {
+        return filePath;
+      }
+      final output = File(
+        '${Directory.systemTemp.path}/cast_upload_${DateTime.now().microsecondsSinceEpoch}.jpg',
+      );
+      await output.writeAsBytes(encoded, flush: true);
+      return output.path;
+    } catch (_) {
+      return filePath;
+    }
   }
 
   /// 下载后端转换好的六色 4bpp 帧(.bin)，读成字节直接喂给 BLE 图传（弱网重试几次）。
@@ -636,6 +689,39 @@ class _ConvertResult {
   final String url;
   final Object? taskId;
   final Object? upirId;
+}
+
+const int _uploadCompressTriggerBytes = 400 * 1024;
+const int _uploadLongEdgeScale = 2;
+const int _uploadCompressQuality = 80;
+
+class _UploadCompressRequest {
+  const _UploadCompressRequest({
+    required this.bytes,
+    required this.maxLongEdge,
+  });
+
+  final Uint8List bytes;
+  final int maxLongEdge;
+}
+
+Uint8List? _compressUploadSource(_UploadCompressRequest request) {
+  var image = img.decodeImage(request.bytes);
+  if (image == null) {
+    return null;
+  }
+  final longEdge = image.width > image.height ? image.width : image.height;
+  if (longEdge > request.maxLongEdge) {
+    final ratio = request.maxLongEdge / longEdge;
+    image = img.copyResize(
+      image,
+      width: (image.width * ratio).round().clamp(1, request.maxLongEdge),
+      height: (image.height * ratio).round().clamp(1, request.maxLongEdge),
+    );
+  }
+  return Uint8List.fromList(
+    img.encodeJpg(image, quality: _uploadCompressQuality),
+  );
 }
 
 /// 预取流水线的一张成品：可直接图传的设备帧 + 记账 id + D1/D2 预处理结果。

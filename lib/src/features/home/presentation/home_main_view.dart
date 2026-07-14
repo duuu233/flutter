@@ -17,8 +17,14 @@ class _HomeMainView extends StatelessWidget {
   const _HomeMainView({
     required this.state,
     required this.activeDevice,
+    required this.devices,
     required this.onBindDevice,
     required this.onAddDevice,
+    required this.pendingAvatarPath,
+    required this.onChangeAvatar,
+    required this.onDeviceChanged,
+    required this.onOpenDevices,
+    required this.onConnectDevice,
     required this.onShowCastSheet,
     required this.onCamera,
     required this.onAlbum,
@@ -29,12 +35,22 @@ class _HomeMainView extends StatelessWidget {
 
   /// 当前已连接设备；为空表示未绑定场景。
   final DeviceItem? activeDevice;
+  final List<DeviceItem> devices;
 
   /// 未绑定场景点击「绑定设备」。
   final VoidCallback onBindDevice;
 
   /// 已绑定场景点击右上角「+」添加设备。
   final VoidCallback onAddDevice;
+
+  /// 首页头像支持即时更换；选择中先显示本地临时图。
+  final String? pendingAvatarPath;
+  final VoidCallback onChangeAvatar;
+
+  /// 首页设备轮播切换、点卡片进设备列表、未连接时点卡内按钮连接。
+  final ValueChanged<DeviceItem> onDeviceChanged;
+  final VoidCallback onOpenDevices;
+  final ValueChanged<DeviceItem> onConnectDevice;
 
   /// 点击「选择投屏方式」标题，弹出投屏方式选择层。
   final VoidCallback onShowCastSheet;
@@ -79,12 +95,6 @@ class _HomeMainView extends StatelessWidget {
 
   /// 「首页-已绑定设备」布局。
   Widget _buildBound(BuildContext context) {
-    // 设备轮播指示点：点数=已连接设备数，高亮当前设备。
-    final connected = state.devices
-        .where((device) => device.connected)
-        .toList();
-    final activeIndex = connected.indexWhere((d) => d.id == activeDevice!.id);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -95,7 +105,11 @@ class _HomeMainView extends StatelessWidget {
             height: 36,
             child: Row(
               children: [
-                _Avatar(avatarUrl: state.currentUser.avatarUrl),
+                _Avatar(
+                  avatarUrl: state.currentUser.avatarUrl,
+                  localPath: pendingAvatarPath,
+                  onTap: onChangeAvatar,
+                ),
                 const Spacer(),
                 _RoundAddButton(onTap: onAddDevice),
               ],
@@ -104,20 +118,16 @@ class _HomeMainView extends StatelessWidget {
         ),
         const SizedBox(height: 35),
         const Padding(padding: _textInset, child: _GreetingTitle()),
-        const SizedBox(height: 23),
-        // 设备卡：702×420rpx，横向 24rpx 留白，保持 351:210 比例。
+        const SizedBox(height: 20),
+        // 当前小程序：swiper 372rpx 高，内部卡片 654×298rpx，横向 48rpx 留白。
         Padding(
           padding: _cardInset,
-          child: AspectRatio(
-            aspectRatio: 351 / 210,
-            child: _ConnectedDeviceCard(device: activeDevice!),
-          ),
-        ),
-        const SizedBox(height: 18),
-        Center(
-          child: _CarouselDots(
-            count: connected.length,
-            activeIndex: activeIndex < 0 ? 0 : activeIndex,
+          child: _DeviceCarousel(
+            devices: devices,
+            activeDeviceId: activeDevice!.id,
+            onChanged: onDeviceChanged,
+            onOpenDevices: onOpenDevices,
+            onConnectDevice: onConnectDevice,
           ),
         ),
         const Spacer(),

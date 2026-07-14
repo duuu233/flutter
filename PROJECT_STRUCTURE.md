@@ -125,6 +125,7 @@ lib/
 | --- | --- | --- |
 | `cast_management_page.dart` | `CastManagementPage` | 投屏管理（接入真实数据版） |
 | `cast_management_figma_page.dart` | `CastManagementFigmaPage` | 投屏管理（图库样式 Figma 版，当前 `/我的` 入口使用） |
+| `cast_preview_page.dart` | `CastPreviewPage` | 真实投屏预览：多图、裁剪、旋转、原图还原、设备比例中心裁切 |
 | `photo_preview_adjust_image_page.dart` | `PhotoPreviewAdjustImagePage` | 照片预览-裁剪调整 |
 | `photo_preview_saved_page.dart` | `PhotoPreviewSavedPage` | 照片预览-已保存 |
 | `casting_progress_page.dart` | `CastingProgressPage` | 投屏进行中 |
@@ -196,8 +197,8 @@ lib/
   `Rectangle 10457.png`、`Group 19452x.png`、`Frame.png` 等），运行时全部走 `errorBuilder`
   手绘兜底，与设计稿偏差大。现已全部改用与小程序一致的真实资源。
 - **资源对齐**：
-  - 头像 `mine-header.png`（36，白底圆形）、右上「+」`home-add-icon.png`；
-  - 已绑定设备卡底图 `home-bg01.png`（702×420rpx）+ 圆环 `home-icon02.png` +
+  - 头像 `mine-header.jpg`（36，白底圆形）、右上「+」`home-add-icon.png`；
+  - 已绑定设备卡底图 `home-bg01.png`（当前卡片 654×298rpx）+ 圆环 `home-icon02.png`（166rpx）+
     蓝牙图标 `bluetooth-icon.png` + 电量图标 `BatteryLevel/battery-{档}.png`（就近取整，
     逻辑同小程序 `utils/battery.js`）；
   - 投屏卡底图 `home-camera-card-bg.png` / `home-album-card-bg.png`（366×358rpx），
@@ -205,10 +206,9 @@ lib/
     `home-camera-card-right-icon.png` / `home-album-card-right-icon.png`（118rpx）；
   - 选择投屏方式弹层素材改 `home-media-mini01/02.png` + 圆形箭头；
   - 底部 Tab 改用 `tabbar-home02.svg` / `tabbar-mine01.svg`（白色半透明胶囊 + 柔和投影）。
-- **样式对齐**：新增顶部居中「首页」标题栏；问候语「BoltStar」改为橙色加粗文字
-  （#ff7a2e/22/w800，非图片）；字号颜色按小程序 wxss 重设（见 `home_text_styles.dart`）；
-  轮播指示点按已连接设备数渲染（17×4、间距 12、选中 #ff6922）；横向留白分区设置
-  （文字区 24、卡片区 12）。
+- **样式/交互对齐**：新增顶部居中「首页」标题栏；问候语使用 `logo.png`；字号颜色按小程序
+  wxss 重设（见 `home_text_styles.dart`）。设备区按全部已绑定设备循环轮播（17×4 指示点、间距 12、
+  选中 #ff6922），断连卡隐藏电量并显示蓝色「连接蓝牙」按钮；点卡片进入设备列表，点头像可即时更新。
 - **配置**：`pubspec.yaml` 补充声明 `assets/images/BatteryLevel/`（Flutter 资源目录不递归）。
 - **涉及文件**：`home_main_view.dart`、`home_widgets.dart`、`home_text_styles.dart`、
   `home_sheets.dart`、`home_page.dart`（引入 `flutter_svg`）、`pubspec.yaml`。
@@ -219,8 +219,8 @@ lib/
   头像用 `logo.png`），全部走手绘兜底；现改用与小程序一致的真实资源。
 - **资源对齐**：
   - 背景改 `bg01.png`（小程序 mine 用 bg01，非 bg02）；
-  - 资料卡底图 `mine-header-bg01.png` + 头像 `mine-header.png`（112rpx≈56 圆形）；
-  - 常用功能卡底图 `mine-bg02.png` + 图标 `mine-icon01/02/03.png`（112rpx≈56）；
+  - 资料卡底图 `mine-header-bg01.png` + 头像 `mine-header.jpg`（112rpx≈56 圆形）；
+  - 常用功能卡底图 `mine-bg02.png` + 112rpx 圆形底托 + `mine-icon06/07/08.png`（68rpx≈34）；
   - 服务行图标 `mine-icon05.png`（操作指南）/ `mine-icon04.png`（设置）（52rpx≈26）；
   - 底部 Tab 改 `tabbar-home01.svg` / `tabbar-mine02.svg`（与首页同款胶囊）。
 - **样式对齐**：资料卡高 89、圆角 18；昵称改「江江江」(20/w700)、ID(12/#808690)；
@@ -237,7 +237,7 @@ lib/
   - `FigmaPrimaryButton` 改胶囊（圆角全圆）+ 渐变 #ff8b3d→#ff641f + 文案 17/w700（`.settings-primary`）；
   - `FigmaGlassCard` 改圆角 14、白 0.55 + 柔和投影（`.glass-panel`）；
   - `FigmaAccountField` 新增可选 `trailing`（供昵称行放编辑图标）。
-- **profile 专属**：头像行用 `mine-header.png`（64rpx≈32 圆形）；昵称行加 `edit-icon01.png`
+- **profile 专属**：头像行用 `mine-header.jpg`（64rpx≈32 圆形）；昵称行加 `edit-icon01.png`
   编辑图标；右侧箭头色 #777e88。结构（头像/昵称/ID/邮箱 + 保存资料）本就对齐，未改路由逻辑。
 - **涉及文件**：`figma_common.dart`、`profile_page.dart`。
 - **校验**：`flutter analyze lib` 通过（仅 2 条与本次无关的既有 info）。
@@ -307,16 +307,18 @@ lib/
   注：原手绘 `FigmaCastResultIcon` / `FigmaProgressBar` 已不再被这些页引用。
 - **校验**：`flutter analyze lib/src/features/cast` → No issues。
 
-### 投屏预览 `projection/preview`（对照 `photo-album/subpackages/projection/preview`）— ✅ 已完成（2026-06-02）
-- **对应**：`cast/photo_preview_saved_page.dart`（照片预览基础态）。
+### 投屏预览 `projection/preview`（对照 `photo-album/subpackages/projection/preview`）— ✅ 已完成（2026-07-14 复核）
+- **真实链路**：`cast/presentation/cast_preview_page.dart`。`photo_preview_saved_page.dart` 和
+  `photo_preview_adjust_image_page.dart` 仅为历史 Figma 演示页，不参与真实投屏。
 - **资源对齐**：工具栏图标改 `preview-icon01/02/03.png`（裁剪/旋转/原图，22），替换 Material 图标。
 - **样式对齐**：计数改图片上方浅灰胶囊（rgba(42,43,43,0.08) 底 / 文字 0.8 / 15 w600，原为图上黑色浮层）；
   图片区圆角 20、底色 #e6ecf4、占位「图片占位」#9aa1ab；工具栏玻璃面板圆角 20、文案 #777e88；
   「开始投屏」沿用胶囊主按钮。
-- **涉及文件**：`photo_preview_saved_page.dart`。
+- **功能对齐**：多图滑动、设备比例预览、裁剪、90° 旋转、还原原图、未编辑图片中心裁切、
+  JPEG 92% 导出均已实现。App 用原生 `image_cropper`；上传源超过 400KB 时在 isolate 中按设备长边
+  2 倍、JPEG 80 兜底压缩，接口固定 `isCompress=1`。
+- **涉及文件**：`cast_preview_page.dart`、`cast_image_editor.dart`、`projection_service.dart`。
 - **校验**：`flutter analyze lib/src/features/cast` → No issues。
-- **说明**：`photo_preview_adjust_image_page.dart`（裁剪调整态，对应预览页 crop 工具激活 + 四角裁剪框）
-  暂保持现状，可后续作为 preview 的 crop 变体单独核对。
 
 ### 投屏记录 `projection/records`（对照 `photo-album/subpackages/projection/records`）— ✅ 已完成（2026-06-02）
 - **对应**：`cast/cast_management_figma_page.dart`（`/我的 → 投屏管理` 入口）。
@@ -402,9 +404,9 @@ lib/
 > 至此「设置 + 账户」两大待还原模块均已完成；微信小程序 `photo-album` 各业务子包（home/mine/device/
 > projection/album/settings/account）已逐页对照还原。
 
-### 后续待还原模块（按优先级，便于接续）
-- 投屏预览的裁剪态 `photo_preview_adjust_image_page.dart` 仍可作为 preview 的 crop 变体后续核对
-- 「待办 / 可继续优化」中列出的孤儿页与「真实数据版 vs Figma 版」并存项可评估收敛
+### 后续低优先级清理
+- `photo_preview_adjust_image_page.dart` 等 Figma 演示页与真实投屏页并存，可后续做死代码/演示路由收敛。
+- 「真实数据版 vs Figma 版」并存但只有单一路径在使用的页面可评估合并。
 > 注：登录页两端差异较大（App 邮箱密码/移动应用微信授权 vs 小程序微信快捷登录），不做样式对照还原。
 > 注：`figma_common.dart` 的共享脚手架（背景/主次按钮/玻璃卡/导航标题/表单行/分隔线/验证码按钮/返回键）
 > 已全面对齐小程序，后续无需重复改这些公共件。

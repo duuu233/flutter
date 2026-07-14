@@ -531,8 +531,9 @@ class FrameOtaClient {
     Duration timeout,
     String timeoutMessage,
   ) async {
-    if (_disconnected)
+    if (_disconnected) {
       throw OtaException(_abortReason.isEmpty ? 'OTA 连接已断开' : _abortReason);
+    }
 
     final bufferedIndex = _ackInbox.indexWhere((a) => a.opcode == opcode);
     if (bufferedIndex >= 0) {

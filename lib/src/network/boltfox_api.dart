@@ -65,11 +65,6 @@ class BoltFoxApi {
     Object? deviceUploadState,
     int? targetWidth,
     int? targetHeight,
-    // ⚠️ isCompress 并不是后端真实参数：swagger 的 setUserProductUpload 入参里没有它
-    // （只有 targetWidth/targetHeight/useLab/dither/saturation… 这些图像处理参数）。
-    // 小程序也一直在传，后端直接忽略——即传不传都一样，压缩与否由后端自己决定。
-    // 保留仅为与小程序保持一致，**不要**依赖它来控制压缩。
-    int isCompress = 1,
   }) {
     return _http.upload(
       '/Client/Basic/setUserProductUpload',
@@ -79,7 +74,8 @@ class BoltFoxApi {
         'deviceUploadState': ?deviceUploadState,
         'targetWidth': ?targetWidth,
         'targetHeight': ?targetHeight,
-        'isCompress': isCompress == 0 ? 0 : 1,
+        // 对齐小程序 2026-07-13：产品已取消压缩开关，后端压缩恒开。
+        'isCompress': 1,
       },
     );
   }
@@ -182,7 +178,11 @@ class BoltFoxApi {
   }) {
     return _http.postJson(
       '/Client/User/resetPassword',
-      body: {'email': email, 'password': md5Hex(password), 'emailCode': emailCode},
+      body: {
+        'email': email,
+        'password': md5Hex(password),
+        'emailCode': emailCode,
+      },
       auth: false,
     );
   }
@@ -209,8 +209,9 @@ class BoltFoxApi {
     required String emailCode,
     String? password,
   }) {
-    final md5Password =
-        (password == null || password.isEmpty) ? '' : md5Hex(password);
+    final md5Password = (password == null || password.isEmpty)
+        ? ''
+        : md5Hex(password);
     return _http.postJson(
       '/Client/User/changeUserEmail',
       body: {

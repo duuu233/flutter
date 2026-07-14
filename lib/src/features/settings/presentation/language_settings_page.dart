@@ -80,8 +80,7 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
 
   void _save() {
     widget.state.switchLanguage(_selected.language);
-    AppToast.show(context, '语种设置已保存');
-    Navigator.maybePop(context);
+    AppToast.show(context, '已保存');
   }
 }
 

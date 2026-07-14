@@ -69,7 +69,6 @@ class _Pending {
 class FrameBleClient {
   BluetoothDevice? _device;
   BluetoothCharacteristic? _writeChar;
-  BluetoothCharacteristic? _notifyChar;
   StreamSubscription<List<int>>? _notifySub;
   StreamSubscription<BluetoothConnectionState>? _connSub;
 
@@ -127,9 +126,8 @@ class FrameBleClient {
         return true;
       }
       // name 与广播名都查：真机有时只在后续广播包里带上广播名。
-      final name =
-          '${r.device.platformName} ${r.advertisementData.advName}'
-              .toUpperCase();
+      final name = '${r.device.platformName} ${r.advertisementData.advName}'
+          .toUpperCase();
       return allow.any((a) => name.contains(a));
     }
 
@@ -226,9 +224,9 @@ class FrameBleClient {
       throw FrameBleException('未找到读写特征(FF01/FF02)');
     }
     _writeChar = wc;
-    _notifyChar = nc;
     // FF01 多为「无应答写」；若不支持无应答写则退回有应答。
-    _writeWithoutResponse = wc.properties.writeWithoutResponse || !wc.properties.write;
+    _writeWithoutResponse =
+        wc.properties.writeWithoutResponse || !wc.properties.write;
 
     await nc.setNotifyValue(true);
     _notifySub = nc.onValueReceived.listen(_onNotify);
@@ -245,7 +243,6 @@ class FrameBleClient {
       await _device?.disconnect();
     } catch (_) {}
     _writeChar = null;
-    _notifyChar = null;
   }
 
   void _failAllPending(String reason) {
@@ -445,8 +442,9 @@ class FrameBleClient {
           // 设备忙（v1.5 §6.6.1，RESULT=0x0B）：设备在处理其它指令时对新指令回 0x0B。
           // 所有走 ACK 的设备交互（读信息/电量/播放配置、设置播放/校时/删除/刷新、图传起止）都在此汇合，
           // 集中拦截，无论读写一律以「当前设备繁忙，请稍后重试」抛出。
-          pending.completer
-              .completeError(FrameBleException(FrameProtocol.busyMessage));
+          pending.completer.completeError(
+            FrameBleException(FrameProtocol.busyMessage),
+          );
         } else {
           pending.completer.complete(ack);
         }
@@ -455,13 +453,15 @@ class FrameBleClient {
   }
 
   void _report(String dir, int cmd, List<int> bytes, {String note = ''}) {
-    onMonitor?.call(BleMonitorRecord(
-      dir: dir,
-      cmd: cmd,
-      hex: FrameProtocol.bytesToHex(bytes),
-      note: note,
-      time: DateTime.now(),
-    ));
+    onMonitor?.call(
+      BleMonitorRecord(
+        dir: dir,
+        cmd: cmd,
+        hex: FrameProtocol.bytesToHex(bytes),
+        note: note,
+        time: DateTime.now(),
+      ),
+    );
   }
 
   // ── 请求-应答 ─────────────────────────────────────────────
@@ -481,7 +481,8 @@ class FrameBleClient {
       _pending.remove(cmd);
       if (!completer.isCompleted) {
         completer.completeError(
-            FrameBleException('指令 0x${cmd.toRadixString(16)} 应答超时'));
+          FrameBleException('指令 0x${cmd.toRadixString(16)} 应答超时'),
+        );
       }
     });
     _pending[cmd] = _Pending(completer, timer);
@@ -511,7 +512,9 @@ class FrameBleClient {
     var info = await readTransferInfo();
     try {
       final swAck = await request(FrameProtocol.cmdGetSwVer);
-      info = info.copyWith(firmwareVersion: FrameProtocol.parseSwVer(swAck.data));
+      info = info.copyWith(
+        firmwareVersion: FrameProtocol.parseSwVer(swAck.data),
+      );
     } catch (_) {}
     return info;
   }
@@ -533,14 +536,18 @@ class FrameBleClient {
 
   /// 返回更新后的 12 字节 IMG_MASK。
   Future<List<int>> setPlayback(String mode, int intervalSeconds) async {
-    final ack = await request(FrameProtocol.cmdSetPlay,
-        payload: FrameProtocol.buildSetPlaybackPayload(mode, intervalSeconds));
+    final ack = await request(
+      FrameProtocol.cmdSetPlay,
+      payload: FrameProtocol.buildSetPlaybackPayload(mode, intervalSeconds),
+    );
     return FrameProtocol.parseMaskResult(ack.data);
   }
 
   Future<void> setTime(DateTime date) async {
-    await request(FrameProtocol.cmdSetTime,
-        payload: FrameProtocol.buildSetTimePayload(date));
+    await request(
+      FrameProtocol.cmdSetTime,
+      payload: FrameProtocol.buildSetTimePayload(date),
+    );
   }
 
   /// 删除图片（0x12）：传图片索引数组，内部转 12 字节掩码；设备返回删除后的 IMG_MASK。
@@ -562,8 +569,10 @@ class FrameBleClient {
 
   /// 切换/刷新当前显示，返回 CUR_IMG_INDEX。
   Future<int> refreshScreen(int? index) async {
-    final ack = await request(FrameProtocol.cmdSetCurImg,
-        payload: FrameProtocol.buildRefreshPayload(index));
+    final ack = await request(
+      FrameProtocol.cmdSetCurImg,
+      payload: FrameProtocol.buildRefreshPayload(index),
+    );
     return FrameProtocol.parseRefreshResult(ack.data);
   }
 
@@ -579,7 +588,11 @@ class FrameBleClient {
     final crc = FrameImageCodec.crc32(data);
     if (!connected) {
       return PreparedTransfer(
-          crc32: crc, dataSize: data.length, chunkSize: 0, frames: null);
+        crc32: crc,
+        dataSize: data.length,
+        chunkSize: 0,
+        frames: null,
+      );
     }
     final chunk = dataChunk;
     final total = data.isEmpty ? 0 : (data.length + chunk - 1) ~/ chunk;
@@ -591,7 +604,11 @@ class FrameBleClient {
       }
     }
     return PreparedTransfer(
-        crc32: crc, dataSize: data.length, chunkSize: chunk, frames: frames);
+      crc32: crc,
+      dataSize: data.length,
+      chunkSize: chunk,
+      frames: frames,
+    );
   }
 
   /// 上传一张图片（含连接间隔提速）。onProgress(done, total, phase)；phase=retry 时带 stuckAt/retries。
@@ -618,8 +635,14 @@ class FrameBleClient {
     bool manageConnection = true,
     PreparedTransfer? prepared,
     bool Function()? shouldAbort,
-    void Function(int done, int total, String phase, {int? stuckAt, int? retries})?
-        onProgress,
+    void Function(
+      int done,
+      int total,
+      String phase, {
+      int? stuckAt,
+      int? retries,
+    })?
+    onProgress,
   }) async {
     final dataSize = data.length;
     // D2：只认 dataSize 对得上的预处理结果（防止把别张图的 prepared 传错进来——CRC32/帧都会错，
@@ -647,16 +670,21 @@ class FrameBleClient {
         timeout: const Duration(seconds: 10),
       );
       if (!startAck.ok) {
-        throw FrameBleException('帧头被拒绝(0x20)：${FrameProtocol.resultText(startAck.result)}');
+        throw FrameBleException(
+          '帧头被拒绝(0x20)：${FrameProtocol.resultText(startAck.result)}',
+        );
       }
 
       final chunk = dataChunk;
-      final win = window < 1 ? 1 : (window > 10 ? 10 : window); // 固件收包缓冲 10 包，夹到 [1,10]
+      final win = window < 1
+          ? 1
+          : (window > 10 ? 10 : window); // 固件收包缓冲 10 包，夹到 [1,10]
       final totalPackets = (dataSize + chunk - 1) ~/ chunk;
 
       // D1：预取阶段按会话分包大小预组好的全部 0x21 帧，分包/帧数对得上才用（会话重建后 MTU 可能变化）；
       // 没有或对不上（调试页直调、首张早于连接预取）则发送时逐包现组——buildImgDataFrame 也走查表，仍很快。
-      final List<Uint8List>? prebuilt = (pre != null &&
+      final List<Uint8List>? prebuilt =
+          (pre != null &&
               pre.chunkSize == chunk &&
               pre.frames != null &&
               pre.frames!.length == totalPackets)
@@ -678,19 +706,23 @@ class FrameBleClient {
           throw FrameBleException('UPLOAD_ABORTED');
         }
         // 卡住重试时收敛：窗口逐步缩到 1 包、每包间隔逐步拉大，专门救「设备只收按序包、忙时丢包」。
-        final curWindow = retries == 0 ? win : (win - retries < 1 ? 1 : win - retries);
+        final curWindow = retries == 0
+            ? win
+            : (win - retries < 1 ? 1 : win - retries);
         final sendPace = retries == 0
             ? curPace
             : (curPace + 30 * retries > 150 ? 150.0 : curPace + 30 * retries);
 
         // 填窗：保持在途未确认包 < curWindow，每次 0x23 推进后回到这里补满。
-        while (nextSeq < totalPackets && nextSeq - _lastImgAck - 1 < curWindow) {
+        while (nextSeq < totalPackets &&
+            nextSeq - _lastImgAck - 1 < curWindow) {
           if (shouldAbort?.call() ?? false) {
             throw FrameBleException('UPLOAD_ABORTED');
           }
           final seq = nextSeq;
-          final frame =
-              prebuilt != null ? prebuilt[seq] : FrameProtocol.buildImgDataFrame(data, seq, chunk);
+          final frame = prebuilt != null
+              ? prebuilt[seq]
+              : FrameProtocol.buildImgDataFrame(data, seq, chunk);
           await _writePacket(frame);
           nextSeq++;
           final moreThisRound =
@@ -705,8 +737,10 @@ class FrameBleClient {
 
         final before = _lastImgAck;
         // 等设备 0x23 把「已连续接收包号」推过 before；超时 600ms（< 设备 1s 红线，PRD 6.4.1）。
-        final advanced =
-            await _waitAckAdvance(before, const Duration(milliseconds: 600));
+        final advanced = await _waitAckAdvance(
+          before,
+          const Duration(milliseconds: 600),
+        );
         if (!advanced) {
           // 超时回调和通知可能同时发生；重发前再复查一次，已推进就直接继续填窗。
           if (_lastImgAck > before) {
@@ -716,14 +750,24 @@ class FrameBleClient {
           }
           if (++retries > 15) {
             throw FrameBleException(
-                '图传中断：设备停在已接收第 $_lastImgAck 包不再前进。可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunk 字节');
+              '图传中断：设备停在已接收第 $_lastImgAck 包不再前进。可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunk 字节',
+            );
           }
-          onProgress?.call(_confirmed(totalPackets), totalPackets, 'retry',
-              stuckAt: _lastImgAck, retries: retries);
+          onProgress?.call(
+            _confirmed(totalPackets),
+            totalPackets,
+            'retry',
+            stuckAt: _lastImgAck,
+            retries: retries,
+          );
           nextSeq = _lastImgAck + 1;
-          curPace = curPace + paceStep > pace ? pace.toDouble() : curPace + paceStep;
+          curPace = curPace + paceStep > pace
+              ? pace.toDouble()
+              : curPace + paceStep;
           cleanRun = 0;
-          final backoff = (50 * retries) > 150 ? 150 : 50 * retries; // 极短退避(≤150ms)
+          final backoff = (50 * retries) > 150
+              ? 150
+              : 50 * retries; // 极短退避(≤150ms)
           await Future<void>.delayed(Duration(milliseconds: backoff));
           continue;
         }
@@ -732,7 +776,9 @@ class FrameBleClient {
         if (retries != 0) {
           cleanRun = 0;
         } else if (curPace > paceFloor && ++cleanRun >= paceProbeAfter) {
-          curPace = curPace - paceStep < paceFloor ? paceFloor : curPace - paceStep;
+          curPace = curPace - paceStep < paceFloor
+              ? paceFloor
+              : curPace - paceStep;
           cleanRun = 0;
         }
         retries = 0;
@@ -740,10 +786,14 @@ class FrameBleClient {
       }
 
       // 0x22 结束：设备核对整图 CRC32 并落盘，给足 20s。
-      final endAck =
-          await request(FrameProtocol.cmdImgEnd, timeout: const Duration(seconds: 20));
+      final endAck = await request(
+        FrameProtocol.cmdImgEnd,
+        timeout: const Duration(seconds: 20),
+      );
       if (!endAck.ok) {
-        throw FrameBleException('结束校验失败(0x22)：${FrameProtocol.resultText(endAck.result)}');
+        throw FrameBleException(
+          '结束校验失败(0x22)：${FrameProtocol.resultText(endAck.result)}',
+        );
       }
       onProgress?.call(totalPackets, totalPackets, 'done');
       return FrameProtocol.parseImgEndResult(endAck.data);
