@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'device/ble_controller.dart';
 import 'device/ble/frame_protocol.dart';
+import 'device/device_interaction_trace.dart';
 import 'device/frame_device_protocol.dart';
 import 'network/api_exception.dart';
 import 'network/api_rows.dart';
@@ -781,13 +782,21 @@ class PhotoFrameState extends ChangeNotifier {
     if (!_sessionMatches(device)) {
       return;
     }
+    final trace = DeviceInteractionTrace('refresh-device-core-info');
     try {
-      final info = await BleController.instance.client.readDeviceInfo();
+      // 内存/索引刷新只需要 0x01；固件版本 0x03 在连接/OTA 场景读取。
+      // 避免旧固件不支持 0x03 时，每次页面重入都额外等满 6 秒。
+      final info = await trace.measure(
+        'read-core-info-0x01',
+        BleController.instance.client.readTransferInfo,
+      );
       _applyConnectedInfo(device, info);
       device.connected = true;
       notifyListeners();
+      trace.finish(success: true);
     } catch (_) {
       // 读失败静默（与小程序 loadDetail 的 catch 一致），保持旧值。
+      trace.finish(success: false);
     }
   }
 
@@ -2182,6 +2191,7 @@ class PhotoFrameState extends ChangeNotifier {
   /// 删除前先断开该设备占用的 BLE 会话（对齐小程序 detail.js/list.js「删除前 disconnect」）：
   /// 否则删了记录但单连接还占着，设备不再广播，也无法被重新搜索/绑定。
   Future<ActionFeedback> deleteDevice(String deviceId) async {
+    final trace = DeviceInteractionTrace('delete-device');
     try {
       DeviceItem? target;
       try {
@@ -2189,11 +2199,22 @@ class PhotoFrameState extends ChangeNotifier {
       } catch (_) {
         target = null;
       }
+      final tasks = <Future<void>>[];
       if (target != null && (target.connected || _sessionMatches(target))) {
-        await BleController.instance.disconnect();
-        target.connected = false;
+        // BLE 释放与后端解绑互不依赖，并行执行，避免两段耗时串行叠加。
+        tasks.add(
+          trace.measure('ble-disconnect', () async {
+            await BleController.instance.disconnect();
+            target!.connected = false;
+          }),
+        );
       }
-      await BoltFoxApi.delUserProduct(deviceId);
+      tasks.add(
+        trace.measure('backend-delete', () async {
+          await BoltFoxApi.delUserProduct(deviceId);
+        }),
+      );
+      await Future.wait(tasks);
       _devices.removeWhere((device) => device.id == deviceId);
       _albumPhotos.removeWhere((photo) => photo.deviceId == deviceId);
       _castRecords.removeWhere((record) => record.deviceId == deviceId);
@@ -2201,11 +2222,14 @@ class PhotoFrameState extends ChangeNotifier {
         _selectedDeviceId = _devices.first.id;
       }
       notifyListeners();
+      trace.mark('local-state-sync');
+      trace.finish(success: true);
       return ActionFeedback(
         success: true,
         message: tr(zh: '设备已删除。', en: 'Device deleted.', ja: '端末を削除しました。'),
       );
     } catch (error) {
+      trace.finish(success: false);
       return _apiFailure(error);
     }
   }
@@ -2297,11 +2321,13 @@ class PhotoFrameState extends ChangeNotifier {
   /// - 清空中途设备断联 / 连不上 / 应答超时 / 设备没删干净等蓝牙链路问题，统一提示「设备暂时无法连接」，
   ///   不把底层设备错误码抛给用户；后端接口类错误仍如实提示（避免误报成设备连不上）。
   Future<ActionFeedback> clearDeviceMemory(String deviceId) async {
+    final trace = DeviceInteractionTrace('clear-device');
     final device = _findDevice(deviceId);
     final client = BleController.instance.client;
 
     // 清空需与固件交互：未连接不自动重连，直接提示先连接（对齐小程序 clearCopies 前置拦截）。
     if (!client.connected) {
+      trace.finish(success: false, stage: 'not-connected');
       return ActionFeedback(
         success: false,
         message: tr(
@@ -2318,15 +2344,23 @@ class PhotoFrameState extends ChangeNotifier {
     var deviceCleared = false;
     Object? clearError;
     try {
-      final info = await client.readDeviceInfo();
+      // 清空只依赖 0x01 的 IMG_MASK；不要附带读取固件版本 0x03。
+      final info = await trace.measure(
+        'read-core-info-0x01',
+        client.readTransferInfo,
+      );
       final indexes = FrameProtocol.maskToIndexes(info.imgMask);
       if (indexes.isEmpty) {
         deviceCleared = true;
+        trace.mark('delete-images-0x12-skipped');
       } else {
         try {
           // deleteImage 应答等待已按张数放宽（每张 2s、下限 6s、上限 180s，见 device_ble.deleteImage），
           // 一次删几十张也不会一超 6s 就误判超时。返回删除后最新 IMG_MASK：仍有占用=没删干净。
-          final newMask = await client.deleteImage(indexes);
+          final newMask = await trace.measure(
+            'delete-images-0x12',
+            () => client.deleteImage(indexes),
+          );
           deviceCleared = FrameProtocol.maskToIndexes(newMask).isEmpty;
         } catch (deleteError) {
           // 0x12 应答超时/断连——但不少固件其实已把图删干净了，只是应答异常/迟到
@@ -2341,7 +2375,10 @@ class PhotoFrameState extends ChangeNotifier {
                 await Future<void>.delayed(const Duration(seconds: 4));
               }
               try {
-                after = await client.readDeviceInfo();
+                after = await trace.measure(
+                  'verify-core-info-0x01-attempt-$attempt',
+                  client.readTransferInfo,
+                );
               } catch (_) {
                 after = null;
               }

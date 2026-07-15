@@ -6,6 +6,7 @@ import '../network/boltfox_api.dart';
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
 import 'ble/ota_ble.dart';
+import 'device_interaction_trace.dart';
 import 'serial_match.dart';
 
 /// 全局 BLE 会话控制器（单例）。
@@ -225,7 +226,7 @@ class BleController extends ChangeNotifier {
     Duration timeout = const Duration(seconds: 8),
     bool allowAll = false,
     void Function(List<ScanResult> devices)? onUpdate,
-    bool Function(List<ScanResult> devices)? stopWhen,
+    bool Function(List<ScanResult> devices)? until,
   }) async {
     if (scanning) {
       return results;
@@ -244,7 +245,7 @@ class BleController extends ChangeNotifier {
             onUpdate(list);
           }
         },
-        stopWhen: stopWhen,
+        until: until,
       );
       return results;
     } finally {
@@ -311,28 +312,34 @@ class BleController extends ChangeNotifier {
     String name = '',
     int screenCode = 0,
   }) async {
+    final trace = DeviceInteractionTrace('connect-bound-device');
     if (sessionMatchesSerial(serial, screenCode: screenCode)) {
+      trace.mark('reuse-active-session');
+      trace.finish(success: true);
       return null;
     }
-    if (!await ensurePermission()) {
+    final permitted = await trace.measure('permission', ensurePermission);
+    if (!permitted) {
+      trace.finish(success: false, stage: 'permission-denied');
       return '蓝牙不可用：请开启蓝牙并授予“附近的设备”权限';
     }
     // 单连接模型：正连着别的设备时先断开，避免底层双连接互相干扰。
     if (connected) {
-      await disconnect();
+      await trace.measure('disconnect-previous-session', disconnect);
     }
-    // 扫到目标(matchScannedDevice 命中)就立刻停扫，不苦等满 6s——正式连接不再比调试台直连慢一截
-    // （对齐小程序 active-device.ensureDeviceConnected 的 until）。未命中仍等满 6s 给设备现身留足时间。
-    final found = await scan(
-      timeout: const Duration(seconds: 6),
-      stopWhen: (list) =>
-          matchScannedDevice(
-            list,
-            serial: serial,
-            name: name,
-            screenCode: screenCode,
-          ) !=
-          null,
+    final found = await trace.measure(
+      'scan',
+      () => scan(
+        timeout: const Duration(seconds: 6),
+        until: (list) =>
+            matchScannedDevice(
+              list,
+              serial: serial,
+              name: name,
+              screenCode: screenCode,
+            ) !=
+            null,
+      ),
     );
     final target = matchScannedDevice(
       found,
@@ -341,9 +348,12 @@ class BleController extends ChangeNotifier {
       screenCode: screenCode,
     );
     if (target == null) {
+      trace.finish(success: false, stage: 'target-not-found');
       return '未搜索到该设备，请确认设备已开机并在附近';
     }
-    return connect(target);
+    final error = await trace.measure('connect-and-read-info', () => connect(target));
+    trace.finish(success: error == null, stage: error == null ? 'complete' : 'connect-failed');
+    return error;
   }
 
   /// 回前台「连接体检」（移植小程序 device-ble.reconcileConnections）：

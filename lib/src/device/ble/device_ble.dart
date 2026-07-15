@@ -119,7 +119,7 @@ class FrameBleClient {
     Duration timeout = const Duration(seconds: 8),
     List<String>? allowedNames,
     void Function(List<ScanResult> devices)? onUpdate,
-    bool Function(List<ScanResult> devices)? stopWhen,
+    bool Function(List<ScanResult> devices)? until,
   }) async {
     // 白名单归一化（去空、大写）；为空表示放开过滤（allowAll）。
     final allow = (allowedNames ?? const <String>[])
@@ -140,15 +140,23 @@ class FrameBleClient {
     List<ScanResult> sorted() =>
         found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
 
-    // 命中目标即提前收网：stopWhen 返回真时 complete，与「扫描自然到点」二选一先到者为准。
-    final earlyStop = Completer<void>();
+    var stopRequested = false;
+    Future<void> stopWhenMatched() async {
+      try {
+        await FlutterBluePlus.stopScan();
+      } catch (_) {
+        // 到点自然停扫或系统已停止时无需额外处理。
+      }
+    }
 
     final sub = FlutterBluePlus.scanResults.listen((list) {
       var changed = false;
+      var sawAllowedDevice = false;
       for (final r in list) {
         if (!isAllowed(r)) {
           continue;
         }
+        sawAllowedDevice = true;
         // 已收录的设备后续广播包继续刷新（RSSI/电量常在后续包才带全），但只有「新设备」才算变化，
         // 避免纯 RSSI 抖动高频触发 onUpdate 刷屏（对齐小程序按展示签名判变化的意图）。
         final existed = found.containsKey(r.device.remoteId);
@@ -157,11 +165,26 @@ class FrameBleClient {
           changed = true;
         }
       }
-      if (changed && onUpdate != null) {
-        try {
-          onUpdate(sorted());
-        } catch (_) {
-          // 页面回调自身异常不能中断扫描
+      if (sawAllowedDevice) {
+        final current = sorted();
+        if (changed && onUpdate != null) {
+          try {
+            onUpdate(current);
+          } catch (_) {
+            // 页面回调自身异常不能中断扫描
+          }
+        }
+        if (!stopRequested && until != null) {
+          try {
+            if (until(current)) {
+              stopRequested = true;
+              // 与小程序 discoverDevices(until) 一致：目标一出现就停扫，
+              // 不再等待完整 timeout。停止失败仍会由原 timeout 兜底。
+              unawaited(stopWhenMatched());
+            }
+          } catch (_) {
+            // 匹配器异常不能中断扫描，继续等待自然超时。
+          }
         }
       }
       // 目标已扫到就提前收网、不等满 timeout（对齐小程序 discoverDevices 的 until）。放在 onUpdate 之后，
