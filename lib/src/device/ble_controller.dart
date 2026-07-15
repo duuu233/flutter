@@ -225,6 +225,7 @@ class BleController extends ChangeNotifier {
     Duration timeout = const Duration(seconds: 8),
     bool allowAll = false,
     void Function(List<ScanResult> devices)? onUpdate,
+    bool Function(List<ScanResult> devices)? stopWhen,
   }) async {
     if (scanning) {
       return results;
@@ -243,6 +244,7 @@ class BleController extends ChangeNotifier {
             onUpdate(list);
           }
         },
+        stopWhen: stopWhen,
       );
       return results;
     } finally {
@@ -319,7 +321,19 @@ class BleController extends ChangeNotifier {
     if (connected) {
       await disconnect();
     }
-    final found = await scan(timeout: const Duration(seconds: 6));
+    // 扫到目标(matchScannedDevice 命中)就立刻停扫，不苦等满 6s——正式连接不再比调试台直连慢一截
+    // （对齐小程序 active-device.ensureDeviceConnected 的 until）。未命中仍等满 6s 给设备现身留足时间。
+    final found = await scan(
+      timeout: const Duration(seconds: 6),
+      stopWhen: (list) =>
+          matchScannedDevice(
+            list,
+            serial: serial,
+            name: name,
+            screenCode: screenCode,
+          ) !=
+          null,
+    );
     final target = matchScannedDevice(
       found,
       serial: serial,

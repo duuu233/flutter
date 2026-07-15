@@ -111,10 +111,15 @@ class FrameBleClient {
   /// （对齐小程序 `utils/bluetooth.js` 的 `isAllowedFrame` 白名单过滤）。为 null/空则不过滤（调试台 allowAll 用）。
   /// [onUpdate]：每搜到一台**新**设备就回调一次「当前已搜到的（已过滤+按信号降序）列表」，供绑定页
   /// 「搜出一个显示一个」增量渲染（对齐小程序 `discoverDevices` 的 onUpdate），不必等满 timeout。
+  /// [stopWhen]：命中即停。每次列表更新时用「当前已搜到的列表」判断是否已达成目标（如已扫到要连的那台），
+  /// 返回真即**立刻停扫并返回**，不再苦等满 timeout——把「连接前扫描」从雷打不动 timeout 压到扫到即走
+  /// （通常 <1s），对齐小程序 `bluetooth.discoverDevices` 的 `until`。未命中仍等满 timeout，给设备现身留足
+  /// 时间；不传则行为完全不变（绑定/调试整窗扫描照旧）。自身异常按「未命中」处理。
   static Future<List<ScanResult>> scan({
     Duration timeout = const Duration(seconds: 8),
     List<String>? allowedNames,
     void Function(List<ScanResult> devices)? onUpdate,
+    bool Function(List<ScanResult> devices)? stopWhen,
   }) async {
     // 白名单归一化（去空、大写）；为空表示放开过滤（allowAll）。
     final allow = (allowedNames ?? const <String>[])
@@ -134,6 +139,9 @@ class FrameBleClient {
     final found = <DeviceIdentifier, ScanResult>{};
     List<ScanResult> sorted() =>
         found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
+
+    // 命中目标即提前收网：stopWhen 返回真时 complete，与「扫描自然到点」二选一先到者为准。
+    final earlyStop = Completer<void>();
 
     final sub = FlutterBluePlus.scanResults.listen((list) {
       var changed = false;
@@ -156,11 +164,27 @@ class FrameBleClient {
           // 页面回调自身异常不能中断扫描
         }
       }
+      // 目标已扫到就提前收网、不等满 timeout（对齐小程序 discoverDevices 的 until）。放在 onUpdate 之后，
+      // 页面最后一次增量渲染照常；stopWhen 自身异常按「未命中」处理，退回等满 timeout。
+      if (stopWhen != null && !earlyStop.isCompleted) {
+        var done = false;
+        try {
+          done = stopWhen(sorted());
+        } catch (_) {
+          done = false;
+        }
+        if (done && !earlyStop.isCompleted) {
+          earlyStop.complete();
+        }
+      }
     });
     try {
       await FlutterBluePlus.startScan(timeout: timeout);
-      // 等扫描自然结束（startScan 到点会把 isScanning 置 false）
-      await FlutterBluePlus.isScanning.where((s) => s == false).first;
+      // 扫描自然到点(isScanning 置 false) 或 目标命中(earlyStop) 先到者为准。
+      await Future.any([
+        FlutterBluePlus.isScanning.where((s) => s == false).first,
+        earlyStop.future,
+      ]);
     } finally {
       await sub.cancel();
       try {

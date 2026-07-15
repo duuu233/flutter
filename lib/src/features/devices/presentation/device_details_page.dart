@@ -653,9 +653,43 @@ class _DeviceActionButton extends StatelessWidget {
   }
 }
 
+/// [DeviceConfirmDialog] 以浮层弹窗形式弹出（对齐小程序 `.confirm-dialog`：半透明遮罩 + 居中卡片，
+/// 点遮罩关闭）。用户点「确认」返回 true，点「取消」/点遮罩返回 null。删除/断开等二次确认统一走这里，
+/// 不再用系统 [AlertDialog] 或整页确认（那会出现「两种确认样式」的割裂）。
+Future<bool?> showDeviceConfirmDialog(
+  BuildContext context, {
+  required String iconAsset,
+  required IconData fallbackIcon,
+  required Color accent,
+  required String title,
+  required String message,
+  String? confirmLabel,
+}) {
+  return showDialog<bool>(
+    context: context,
+    barrierColor: Colors.black.withValues(alpha: 0.4),
+    builder: (dialogContext) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Center(
+        child: DeviceConfirmDialog(
+          iconAsset: iconAsset,
+          fallbackIcon: fallbackIcon,
+          accent: accent,
+          title: title,
+          message: message,
+          confirmLabel: confirmLabel,
+          onCancel: () => Navigator.of(dialogContext).pop(),
+          onConfirm: () => Navigator.of(dialogContext).pop(true),
+        ),
+      ),
+    ),
+  );
+}
+
 /// 设备「删除 / 清空」二次确认弹窗（小程序 `.confirm-dialog`）。
 ///
 /// 左侧彩色图标盒 + 右侧标题/说明，底部「取消 / 确认」胶囊按钮。
+/// [confirmLabel] 可覆盖右侧确认按钮文案（如删除前置弹窗用「断开」）；为空则用默认「确认」。
 class DeviceConfirmDialog extends StatelessWidget {
   const DeviceConfirmDialog({
     super.key,
@@ -666,6 +700,7 @@ class DeviceConfirmDialog extends StatelessWidget {
     required this.message,
     required this.onCancel,
     required this.onConfirm,
+    this.confirmLabel,
   });
 
   final String iconAsset;
@@ -675,6 +710,7 @@ class DeviceConfirmDialog extends StatelessWidget {
   final String message;
   final VoidCallback onCancel;
   final VoidCallback? onConfirm;
+  final String? confirmLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -752,7 +788,7 @@ class DeviceConfirmDialog extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: _DialogButton(
-                      label: AppL10n.of(context).devConfirm,
+                      label: confirmLabel ?? AppL10n.of(context).devConfirm,
                       textColor: Colors.white,
                       gradient: const LinearGradient(
                         begin: Alignment.topCenter,

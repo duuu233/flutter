@@ -20,7 +20,6 @@ import '../features/devices/presentation/bind_device_scan_help.dart';
 import '../features/devices/presentation/ble_debug_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
 import '../features/devices/presentation/device_clear_confirm_page.dart';
-import '../features/devices/presentation/device_delete_confirm_page.dart';
 import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
@@ -74,7 +73,6 @@ class AppRoutes {
   static const figmaMyDevices = '/figma/devices/my-devices';
   static const figmaDeviceDetails = '/figma/devices/detail';
   static const figmaDeviceOta = '/figma/devices/ota';
-  static const figmaDeviceDeleteConfirm = '/figma/devices/delete-confirm';
   static const figmaDeviceClearConfirm = '/figma/devices/clear-confirm';
   static const figmaCarouselSettings = '/figma/devices/carousel-settings';
   static const figmaLanguageSettings = '/figma/settings/language';
@@ -186,29 +184,28 @@ class AppRoutes {
             ).pushNamed<void>(AppRoutes.figmaDeviceClearConfirm);
           },
           onDeleteDevice: () async {
-            // 对齐小程序 detail.js：已连接时删除前先弹「需断开」确认，再进删除确认页。
+            // 对齐小程序 detail.js showDeleteConfirm：删除全程走浮层「二次确认弹窗」，不再用系统弹框/整页。
+            //   · 连接中：先弹「需先断开」前置确认弹窗 → 断开 → 再弹删除确认弹窗；
+            //   · 未连接：直接弹删除确认弹窗。
+            const deleteIcon = 'assets/images/device-detail-icon06.png';
+            const deleteAccent = Color(0xFFFF3045);
             if (state.selectedDevice.connected) {
-              final ok = await showDialog<bool>(
-                context: context,
-                builder: (dialogContext) => AlertDialog(
-                  title: const Text('删除设备'),
-                  content: const Text('删除前需断开与当前设备的连接，是否继续？'),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(false),
-                      child: const Text('取消'),
-                    ),
-                    TextButton(
-                      onPressed: () => Navigator.of(dialogContext).pop(true),
-                      child: const Text('继续'),
-                    ),
-                  ],
-                ),
+              final proceed = await showDeviceConfirmDialog(
+                context,
+                iconAsset: deleteIcon,
+                fallbackIcon: Icons.delete_outline_rounded,
+                accent: deleteAccent,
+                title: AppL10n.of(context).devDeleteDevice,
+                message: AppL10n.of(context).devDeleteNeedDisconnect,
+                confirmLabel: AppL10n.of(context).devDisconnectShort,
               );
-              if (ok != true || !context.mounted) {
+              if (proceed != true || !context.mounted) {
                 return;
               }
-              AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
+              AppLoadingDialog.show(
+                context,
+                AppL10n.of(context).devDisconnecting,
+              );
               final feedback = await state.disconnectDevice(
                 state.selectedDevice.id,
               );
@@ -221,9 +218,31 @@ class AppRoutes {
                 return;
               }
             }
-            Navigator.of(
+            if (!context.mounted) {
+              return;
+            }
+            final confirmed = await showDeviceConfirmDialog(
               context,
-            ).pushNamed<void>(AppRoutes.figmaDeviceDeleteConfirm);
+              iconAsset: deleteIcon,
+              fallbackIcon: Icons.delete_outline_rounded,
+              accent: deleteAccent,
+              title: AppL10n.of(context).devDeleteDevice,
+              message: AppL10n.of(context).devDeleteDeviceMessage,
+            );
+            if (confirmed != true || !context.mounted) {
+              return;
+            }
+            final navigator = Navigator.of(context);
+            final feedback = await state.deleteDevice(state.selectedDevice.id);
+            if (!context.mounted) {
+              return;
+            }
+            if (feedback.success) {
+              // 删除成功：详情页出栈回到设备列表（列表刷新即为反馈，不再弹提示，对齐小程序）。
+              navigator.pop();
+            } else {
+              AppToast.warn(context, feedback.message);
+            }
           },
           onOtaUpgrade: () {
             // 对齐小程序 goOtaUpgrade：未连接拦截/自动连 + 二次查版本 + 确认弹窗 + 确认后自动开始。
@@ -233,9 +252,6 @@ class AppRoutes {
         break;
       case AppRoutes.figmaDeviceOta:
         builder = (_) => OtaUpgradePage(state: state);
-        break;
-      case AppRoutes.figmaDeviceDeleteConfirm:
-        builder = (_) => DeviceDeleteConfirmPage(state: state);
         break;
       case AppRoutes.figmaDeviceClearConfirm:
         builder = (_) => DeviceClearConfirmPage(state: state);

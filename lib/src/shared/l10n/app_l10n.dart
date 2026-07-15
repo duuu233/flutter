@@ -547,6 +547,7 @@ class AppL10n {
   String get devNameHint => _pick('请输入设备名称', 'Enter a device name', 'デバイス名を入力してください');
   String get devConfirm => _pick('确认', 'Confirm', '確認');
   String get devConnecting => _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
+  String get devDisconnecting => _pick('断开中', 'Disconnecting…', '切断中…');
   String get devPhotoReadFailed => _pick(
     '无法读取照片，请检查相机/相册权限后重试。',
     'Unable to read photos. Please check camera/album permissions and try again.',
@@ -601,9 +602,16 @@ class AppL10n {
     'この操作の結果を理解した上で、デバイスとギャラリー内のすべての写真を消去することを確認します。',
   );
   String get devDeleteDeviceMessage => _pick(
-    '删除后将断开与该相框的连接并解除绑定，后续使用需重新添加设备。',
-    'Deleting disconnects and unbinds this frame; you will need to add the device again to use it later.',
-    '削除するとこのフォトフレームとの接続を切断してバインドを解除します。再度使用するにはデバイスを追加し直す必要があります。',
+    '删除设备后，设备上的照片将保留，如不再使用此设备，建议先清空所有照片',
+    'Photos on the device are kept after deletion. If you no longer use this device, we recommend clearing all photos first.',
+    'デバイスを削除しても本体内の写真は残ります。この端末を今後使わない場合は、先にすべての写真を消去することをおすすめします。',
+  );
+
+  /// 删除前置确认（设备连接中需先断开）弹窗说明——对齐小程序 detail.js showDisconnectConfirm。
+  String get devDeleteNeedDisconnect => _pick(
+    '删除设备需要先断开此设备',
+    'You need to disconnect this device before deleting it.',
+    'デバイスを削除するには、先に接続を切断する必要があります。',
   );
 
   // ── OTA 升级 ──
