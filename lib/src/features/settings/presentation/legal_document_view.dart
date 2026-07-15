@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 
 /// 法律文本页面的正文区块（标题 + 内容）。
 class LegalSection {
@@ -43,8 +44,14 @@ class LegalDocumentView extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('更新日期：$updatedAt', style: _DocStyles.meta),
-                Text('生效日期：$effectiveAt', style: _DocStyles.meta),
+                Text(
+                  AppL10n.of(context).setUpdatedDate(updatedAt),
+                  style: _DocStyles.meta,
+                ),
+                Text(
+                  AppL10n.of(context).setEffectiveDate(effectiveAt),
+                  style: _DocStyles.meta,
+                ),
               ],
             ),
             const SizedBox(height: 16),

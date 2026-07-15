@@ -8,6 +8,7 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble/frame_protocol.dart';
 // `screenType.code` 是 FrameScreenTypeDetails 扩展方法：扩展必须导入其定义库才能用。
 import '../../../device/frame_device_protocol.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../cast_image_editor.dart';
 import 'casting_progress_page.dart';
@@ -194,13 +195,16 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
         compressQuality: CastImageEditor.exportQuality,
         uiSettings: [
           AndroidUiSettings(
-            toolbarTitle: '裁剪',
+            toolbarTitle: AppL10n.of(context).castCrop,
             toolbarColor: const Color(0xFF111111),
             toolbarWidgetColor: Colors.white,
             activeControlsWidgetColor: const Color(0xFFFF5F1F),
             lockAspectRatio: true,
           ),
-          IOSUiSettings(title: '裁剪', aspectRatioLockEnabled: true),
+          IOSUiSettings(
+            title: AppL10n.of(context).castCrop,
+            aspectRatioLockEnabled: true,
+          ),
         ],
       );
     } catch (_) {
@@ -225,7 +229,7 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
       _editing = false;
       _rotation = 0;
     });
-    AppToast.show(context, '已保存');
+    AppToast.show(context, AppL10n.of(context).castSaved);
   }
 
   /// 读图片像素尺寸。用 Flutter 自带的解码器（原生、快），不必为这点事再动 image 包。
@@ -253,7 +257,7 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
       _tool = _Tool.none;
       _editing = false;
     });
-    AppToast.show(context, '已保存');
+    AppToast.show(context, AppL10n.of(context).castSaved);
   }
 
   /// 把当前预览态旋转角真正绘制进图片并导出（rotation=0 时是空操作，直接算成功）。
@@ -266,7 +270,7 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
     if (angle == 0) {
       return true;
     }
-    AppLoadingDialog.show(context, '处理中');
+    AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
     CastEditResult? result;
     try {
       result = await CastImageEditor.rotate(path: _active.path, degrees: angle);
@@ -278,7 +282,7 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
     }
     AppLoadingDialog.hide(context);
     if (result == null) {
-      AppToast.show(context, '旋转失败，请重试');
+      AppToast.show(context, AppL10n.of(context).castRotateFailed);
       return false;
     }
     final edit = result;
@@ -291,22 +295,23 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
 
   /// 「原图」：二次确认后还原到最初的图片。对齐小程序 restoreOrigin。
   Future<void> _restoreOrigin() async {
+    final l10n = AppL10n.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('还原原图'),
-        content: const Text('确定要还原到最原始的图片吗？当前的编辑将不会保存。'),
+        title: Text(l10n.castRestoreTitle),
+        content: Text(l10n.castRestoreConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(
               foregroundColor: const Color(0xFFFF5F1F),
             ),
-            child: const Text('还原'),
+            child: Text(l10n.castRestore),
           ),
         ],
       ),
@@ -337,11 +342,11 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
       return; // 编辑态按钮置灰
     }
     if (_photos.isEmpty) {
-      AppToast.show(context, '请至少保留一张照片');
+      AppToast.show(context, AppL10n.of(context).castKeepOnePhoto);
       return;
     }
 
-    AppLoadingDialog.show(context, '处理中');
+    AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
     final paths = <String>[];
     final ratio = _deviceRatio;
     for (final photo in _photos) {
@@ -385,8 +390,9 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '照片预览',
+      title: l10n.castPreviewTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
       background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
@@ -398,7 +404,7 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28),
             child: FigmaPrimaryButton(
-              label: '开始投屏',
+              label: l10n.castStartCasting,
               onPressed: _editing ? null : _startCast,
             ),
           ),
@@ -427,11 +433,11 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _save,
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
                 child: Text(
-                  '保存',
-                  style: TextStyle(
+                  AppL10n.of(context).castSave,
+                  style: const TextStyle(
                     color: Color(0xFFFF5F1F),
                     fontSize: 14,
                     fontWeight: FontWeight.w600,
@@ -478,19 +484,18 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
                     key: ValueKey(photo.path),
                     File(photo.path),
                     fit: BoxFit.cover, // aspectFill
-                    errorBuilder: (context, error, stackTrace) =>
-                        const ColoredBox(
-                          color: Color(0x11000000),
-                          child: Center(
-                            child: Text(
-                              '图片加载失败',
-                              style: TextStyle(
-                                color: Color(0xFF828A95),
-                                fontSize: 13,
-                              ),
-                            ),
+                    errorBuilder: (context, error, stackTrace) => ColoredBox(
+                      color: const Color(0x11000000),
+                      child: Center(
+                        child: Text(
+                          AppL10n.of(context).castImageLoadFailed,
+                          style: const TextStyle(
+                            color: Color(0xFF828A95),
+                            fontSize: 13,
                           ),
                         ),
+                      ),
+                    ),
                   ),
                 ),
               ),
@@ -503,25 +508,26 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
 
   /// 底部工具栏：裁剪 / 旋转 / 原图（对齐小程序 .tool-bar）。
   Widget _buildToolBar() {
+    final l10n = AppL10n.of(context);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 23, vertical: 16),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
           _ToolButton(
-            label: '裁剪',
+            label: l10n.castCrop,
             icon: Icons.crop_rounded,
             active: _tool == _Tool.crop,
             onTap: () => _selectTool(_Tool.crop),
           ),
           _ToolButton(
-            label: '旋转',
+            label: l10n.castRotate,
             icon: Icons.rotate_right_rounded,
             active: _tool == _Tool.rotate,
             onTap: () => _selectTool(_Tool.rotate),
           ),
           _ToolButton(
-            label: '原图',
+            label: l10n.castOriginal,
             icon: Icons.image_outlined,
             active: _tool == _Tool.origin,
             onTap: () => _selectTool(_Tool.origin),

@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
 /// 账户资料页：查看与编辑个人信息（头像、昵称、邮箱等）。
@@ -48,11 +49,12 @@ class _ProfilePageState extends State<ProfilePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     final user = widget.state.currentUser;
-    final emailText = user.email.isEmpty ? '暂未绑定' : user.email;
+    final emailText = user.email.isEmpty ? l10n.accNotBound : user.email;
 
     return FigmaScreen(
-      title: '个人信息',
+      title: l10n.accProfileTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -67,9 +69,9 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
                 const FigmaFormDivider(),
                 FigmaAccountField(
-                  label: '昵称',
+                  label: l10n.accNickname,
                   controller: _nicknameController,
-                  hintText: '请输入昵称',
+                  hintText: l10n.accNicknameHint,
                   trailing: Image.asset(
                     'assets/images/edit-icon01.png',
                     width: 14,
@@ -88,7 +90,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 FigmaInfoRow(label: 'ID', value: user.id),
                 const FigmaFormDivider(),
                 FigmaInfoRow(
-                  label: '邮箱',
+                  label: l10n.accEmail,
                   value: emailText,
                   onTap: () {
                     Navigator.of(context).pushNamed<void>(
@@ -101,7 +103,7 @@ class _ProfilePageState extends State<ProfilePage> {
                 const FigmaFormDivider(),
                 // 修改密码：原为已注册路由但无入口的孤儿页，这里接上入口。
                 FigmaInfoRow(
-                  label: '修改密码',
+                  label: l10n.accModifyPasswordTitle,
                   value: '',
                   onTap: () {
                     Navigator.of(context).pushNamed<void>(
@@ -114,7 +116,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: '保存资料', onPressed: _saveProfile),
+      bottom: FigmaPrimaryButton(label: l10n.accSaveProfile, onPressed: _saveProfile),
     );
   }
 
@@ -126,14 +128,14 @@ class _ProfilePageState extends State<ProfilePage> {
       file = await picker.pickImage(source: ImageSource.gallery);
     } catch (_) {
       if (mounted) {
-        AppToast.show(context, '无法读取相册，请检查相册权限后重试。');
+        AppToast.show(context, AppL10n.of(context).accAlbumReadFailed);
       }
       return;
     }
     if (file == null || !mounted) {
       return;
     }
-    AppToast.show(context, '头像上传中…');
+    AppToast.show(context, AppL10n.of(context).accAvatarUploading);
     final feedback = await widget.state.updateAvatar(file.path);
     if (!mounted) {
       return;
@@ -184,8 +186,11 @@ class _AvatarRow extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           child: Row(
             children: [
-              const Expanded(
-                child: Text('头像', style: FigmaTextStyles.formLabel),
+              Expanded(
+                child: Text(
+                  AppL10n.of(context).accAvatar,
+                  style: FigmaTextStyles.formLabel,
+                ),
               ),
               Container(
                 width: 32,

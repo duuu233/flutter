@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../cast_photo_picker.dart';
 import '../projection_service.dart';
@@ -78,28 +79,13 @@ class CastingProgressPage extends StatefulWidget {
 
 enum _CastStatus { progress, success, fail }
 
-/// 进行中的 4 条注意事项（原文照搬小程序 result.wxml `.progress-tips`）。
-const _progressTips = <String>[
-  '投屏过程请保持手机亮屏，不要远离设备',
-  '批量投屏如果意外中断，请前往图库主动刷新屏幕',
-  '图片在投屏记录中可继续操作',
-  '投屏完成后设备会自动刷新，刷新期间设备繁忙无法投屏，请等待刷新结束',
-];
-
-/// 失败页的 4 条排查提示（原文照搬小程序 result.wxml `.fail-tips`）。
-const _failTips = <String>[
-  '请确认设备蓝牙正常连接中，手机蓝牙正常使用',
-  '如屏幕正在刷新中，请稍后再试',
-  '如遇系统网络故障，请稍后再试',
-  '投屏失败的图片可以前往投屏记录重新上传',
-];
-
 class _CastingProgressPageState extends State<CastingProgressPage> {
   _CastStatus _status = _CastStatus.progress;
 
   // 进行中态（对齐小程序 data：title / desc / progressPercent / progressCurrent / progressTotal）。
   String _stageTitle = CastStage.transcoding;
-  String _desc = '投屏过程中请不要关闭手机';
+  // 空串占位；进行中默认描述在 build 里按语言取（无 context 的字段初始化处无法本地化）。
+  String _desc = '';
   double _percent = 0;
   int _current = 0;
   int _total = 0;
@@ -166,6 +152,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             onProgress: handleProgress,
           );
     if (!mounted) return;
+    final l10n = AppL10n.of(context);
     setState(() {
       _successCount = result.uploaded;
       _selectedTotal = result.total;
@@ -174,15 +161,15 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       if (result.success) {
         // 文案原文对齐小程序 STATUS_TEXT.success。
         _status = _CastStatus.success;
-        _resultTitle = '投屏完成';
-        _desc = '照片已成功投屏到设备，可前往相册查看';
+        _resultTitle = l10n.castResultSuccessTitle;
+        _desc = l10n.castResultSuccessDesc;
         _percent = 1;
       } else {
         _status = _CastStatus.fail;
-        _resultTitle = '投屏失败';
+        _resultTitle = l10n.castFailed;
         // 有具体原因就用具体原因，否则用小程序 STATUS_TEXT.fail 的默认文案。
         final reason = _friendlyFailure(result.message);
-        _desc = reason.isEmpty ? '设备连接中断，请检查设备状态后重试' : reason;
+        _desc = reason.isEmpty ? l10n.castResultFailDefaultDesc : reason;
       }
     });
   }
@@ -190,31 +177,32 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 失败原因归类为友好话术（对齐小程序 result.js classifyFailureMessage）：
   /// 设备忙(0x0B) / 内存满 / 断连 / 超时 / 取消 分别给可操作的提示，其余原样透出。
   String _friendlyFailure(String raw) {
+    final l10n = AppL10n.of(context);
     final lower = raw.toLowerCase();
     if (raw.contains('繁忙') ||
         raw.contains('忙') ||
         lower.contains('busy') ||
         lower.contains('0x0b')) {
-      return '当前设备繁忙，请稍后重试';
+      return l10n.castFailureBusy;
     }
     if (raw.contains('空间') ||
         raw.contains('已满') ||
         raw.contains('内存') ||
         lower.contains('storage') ||
         lower.contains('full')) {
-      return '设备内存已满，请清理后继续。';
+      return l10n.castFailureStorageFull;
     }
     if (raw.contains('断') ||
         raw.contains('未连接') ||
         raw.contains('该型号暂不支持图传') ||
         lower.contains('disconnect')) {
-      return '设备未连接，请检查手机或设备连接后继续';
+      return l10n.castFailureDisconnected;
     }
     if (raw.contains('超时') || lower.contains('timeout')) {
-      return '传输超时，请将手机靠近设备后重试';
+      return l10n.castFailureTimeout;
     }
     if (raw.contains('中止') || raw.contains('取消') || lower.contains('abort')) {
-      return '投屏已取消';
+      return l10n.castFailureCanceled;
     }
     return raw;
   }
@@ -222,52 +210,21 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 「继续投屏」：不跳首页，在本页弹「拍照 / 相册」二选一，选完图替换本页进入新一轮投屏
   /// （对齐小程序 result.js continueProjection）。
   Future<void> _continueProjection() async {
-    final choice = await showModalBottomSheet<String>(
-      context: context,
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 14),
-              child: Text(
-                '选择投屏方式',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF2A2D32),
-                ),
-              ),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt_outlined),
-              title: const Text('拍照'),
-              subtitle: const Text('调用手机相机拍照'),
-              onTap: () => Navigator.of(sheetContext).pop('camera'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('相册'),
-              subtitle: const Text('从手机相册选择照片'),
-              onTap: () => Navigator.of(sheetContext).pop('album'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (choice == null || !mounted) {
+    // 走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款），取代原手搓 ListTile 版。
+    final source = await CastPhotoPicker.chooseSource(context);
+    if (source == null || !mounted) {
       return;
     }
     List<String> paths;
     try {
       // 统一走 CastPhotoPicker：选图时就用平台原生解码器把长边降到 1920，
       // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
-      paths = (choice == 'camera')
+      paths = (source == ImageSourceType.camera)
           ? await CastPhotoPicker.takePhoto()
           : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (mounted) {
-        AppToast.show(context, '无法读取照片，请检查相机/相册权限后重试。');
+        AppToast.show(context, AppL10n.of(context).castCannotReadPhoto);
       }
       return;
     }
@@ -341,6 +298,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     final inProgress = _status == _CastStatus.progress;
     return FigmaScreen(
       title: _title,
@@ -366,7 +324,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
           ),
           const SizedBox(height: 11),
           Text(
-            _desc,
+            _desc.isEmpty ? l10n.castProgressDefaultDesc : _desc,
             textAlign: TextAlign.center,
             style: projectionResultDescStyle,
           ),
@@ -378,7 +336,14 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             const SizedBox(height: 14), // .progress-wrap margin-top 28rpx
             ProjectionProgress(percent: _percent, label: '$_current/$_total'),
             const SizedBox(height: 22), // .progress-tips margin-top 44rpx
-            const ProjectionTips(tips: _progressTips),
+            ProjectionTips(
+              tips: [
+                l10n.castProgressTip1,
+                l10n.castProgressTip2,
+                l10n.castProgressTip3,
+                l10n.castProgressTip4,
+              ],
+            ),
           ],
 
           // ── 结束：信息卡（投屏设备 / 投屏明细）──────────────────────────
@@ -396,7 +361,14 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
           // ── 失败：固定排查提示 ────────────────────────────────────────
           if (_status == _CastStatus.fail) ...[
             const SizedBox(height: 16), // .fail-tips margin-top 32rpx
-            const ProjectionTips(tips: _failTips),
+            ProjectionTips(
+              tips: [
+                l10n.castFailTip1,
+                l10n.castFailTip2,
+                l10n.castFailTip3,
+                l10n.castFailTip4,
+              ],
+            ),
           ],
 
           // ── 结束：底部操作 ───────────────────────────────────────────
@@ -404,30 +376,21 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             const SizedBox(height: 30),
             FigmaPrimaryButton(
               // 成功 → 继续投屏（再选图）；失败 → 重新投屏（同一批图重跑）。
-              label: _status == _CastStatus.success ? '继续投屏' : '重新投屏',
+              label: _status == _CastStatus.success
+                  ? l10n.castContinue
+                  : l10n.castRecast,
               onPressed: widget.userProductId == null
                   ? null
                   : (_status == _CastStatus.success
                         ? _continueProjection
                         : _retry),
             ),
-            const SizedBox(height: 12),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () =>
+            const SizedBox(height: 12), // .result-actions gap 24rpx
+            // 返回首页：白 0.86 药丸按钮（对齐小程序 .result-secondary），不是灰色文字链接。
+            FigmaSecondaryButton(
+              label: l10n.castBackHome,
+              onPressed: () =>
                   Navigator.of(context).popUntil((route) => route.isFirst),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  '返回首页',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Color(0xFF777E88),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w400,
-                  ),
-                ),
-              ),
             ),
           ],
           const SizedBox(height: 24),

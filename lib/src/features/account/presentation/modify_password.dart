@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
 /// 修改密码页，对应 UI 稿「修改密码」。
@@ -51,8 +52,9 @@ class _ModifyPasswordState extends State<ModifyPassword> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '修改密码',
+      title: l10n.accModifyPasswordTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -60,36 +62,36 @@ class _ModifyPasswordState extends State<ModifyPassword> {
           FigmaAccountFormCard(
             children: [
               FigmaAccountField(
-                label: '邮箱',
+                label: l10n.accEmail,
                 controller: _emailController,
-                hintText: '请输入邮箱',
+                hintText: l10n.accEmailHint,
                 keyboardType: TextInputType.emailAddress,
               ),
               const FigmaFormDivider(),
               FigmaVerificationField(
                 controller: _codeController,
                 onGetCode: _getCode,
-                countdownLabel: _countdown > 0 ? '$_countdown秒后重新获取' : null,
+                countdownLabel: _countdown > 0 ? l10n.accResendIn(_countdown) : null,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '新密码',
+                label: l10n.accNewPassword,
                 controller: _newPasswordController,
-                hintText: '请输入密码',
+                hintText: l10n.accPasswordHint,
                 obscureText: true,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '确认密码',
+                label: l10n.accConfirmPassword,
                 controller: _confirmPasswordController,
-                hintText: '请确认密码',
+                hintText: l10n.accConfirmPasswordHint,
                 obscureText: true,
               ),
             ],
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: '确认', onPressed: _confirm),
+      bottom: FigmaPrimaryButton(label: l10n.accConfirmButton, onPressed: _confirm),
     );
   }
 
@@ -130,7 +132,7 @@ class _ModifyPasswordState extends State<ModifyPassword> {
       return;
     }
     if (_newPasswordController.text != _confirmPasswordController.text) {
-      _showSnack('两次输入的密码不一致');
+      _showSnack(AppL10n.of(context).accPasswordMismatchTwice);
       return;
     }
     setState(() => _submitting = true);

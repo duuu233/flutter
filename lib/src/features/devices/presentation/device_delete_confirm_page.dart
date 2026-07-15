@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../state.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'device_details_page.dart';
 
 /// 删除设备确认页：二次确认解绑 / 删除设备，对应 UI 稿「删除设备确认」。
@@ -17,7 +18,10 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Stack(
       children: [
-        FigmaScreen(title: '设备详情', body: DeviceDetailsBody(state: state)),
+        FigmaScreen(
+          title: AppL10n.of(context).devDetailTitle,
+          body: DeviceDetailsBody(state: state),
+        ),
         Positioned.fill(
           child: ColoredBox(color: Colors.black.withValues(alpha: 0.4)),
         ),
@@ -28,8 +32,8 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
               iconAsset: 'assets/images/device-detail-icon06.png',
               fallbackIcon: Icons.delete_outline_rounded,
               accent: const Color(0xFFFF3045),
-              title: '删除设备',
-              message: '删除后将断开与该相框的连接并解除绑定，后续使用需重新添加设备。',
+              title: AppL10n.of(context).devDeleteDevice,
+              message: AppL10n.of(context).devDeleteDeviceMessage,
               onCancel: onCancel ?? () => Navigator.maybePop(context),
               onConfirm: () => _confirm(context),
             ),

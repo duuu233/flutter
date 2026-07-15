@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
@@ -88,6 +89,7 @@ class _AuthPageState extends State<AuthPage> {
                 onUserAgreement: _openUserAgreement,
                 onPrivacyPolicy: _openPrivacyPolicy,
                 onLogin: _login,
+                onWechatLogin: _wechatLogin,
               ),
             ),
           ],
@@ -113,7 +115,7 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     if (!_agreed) {
-      _showFeedback('请先阅读并同意用户协议和隐私政策');
+      _showFeedback(AppL10n.of(context).accAgreementRequired);
       return;
     }
 
@@ -129,6 +131,16 @@ class _AuthPageState extends State<AuthPage> {
     _showFeedback(feedback.message);
     // 登录成功后**不需要**在这里导航：本页是强制登录门控下的根页面（见 bolt_star_app.dart），
     // `loginWithPassword` 置好登录态并 notifyListeners 后，根节点会自动把自己换成主壳层。
+  }
+
+  void _wechatLogin() {
+    // App 主登录为邮箱密码，未接入微信一键登录 SDK（见 boltfox_api.dart）。
+    // 底部圆形入口先占位，点按明确提示暂未开放，避免伪装成可用的微信登录。
+    if (!_agreed) {
+      _showFeedback(AppL10n.of(context).accAgreementRequired);
+      return;
+    }
+    _showFeedback(AppL10n.of(context).accWechatUnavailable);
   }
 
   void _forgotPassword() {
@@ -166,6 +178,7 @@ class _AuthCanvas extends StatelessWidget {
     required this.onUserAgreement,
     required this.onPrivacyPolicy,
     required this.onLogin,
+    required this.onWechatLogin,
   });
 
   final TextEditingController emailController;
@@ -180,6 +193,7 @@ class _AuthCanvas extends StatelessWidget {
   final VoidCallback onUserAgreement;
   final VoidCallback onPrivacyPolicy;
   final VoidCallback onLogin;
+  final VoidCallback onWechatLogin;
 
   @override
   Widget build(BuildContext context) {
@@ -195,7 +209,7 @@ class _AuthCanvas extends StatelessWidget {
             height: 56,
             child: _PillTextField(
               controller: emailController,
-              hintText: '请输入邮箱',
+              hintText: AppL10n.of(context).accEmailHint,
               iconAsset: 'assets/images/email_icon.png',
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
@@ -203,16 +217,16 @@ class _AuthCanvas extends StatelessWidget {
             ),
           ),
           if (showErrors)
-            const Padding(
-              padding: EdgeInsets.only(top: 8, left: 23),
-              child: _ErrorText(text: '请输入正确的邮箱地址'),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 23),
+              child: _ErrorText(text: AppL10n.of(context).accEmailInvalid),
             ),
           const SizedBox(height: 16),
           SizedBox(
             height: 56,
             child: _PillTextField(
               controller: passwordController,
-              hintText: '请输入密码',
+              hintText: AppL10n.of(context).accPasswordHint,
               iconAsset: 'assets/images/password_icon.png',
               keyboardType: TextInputType.visiblePassword,
               textInputAction: TextInputAction.done,
@@ -237,9 +251,9 @@ class _AuthCanvas extends StatelessWidget {
             ),
           ),
           if (showErrors)
-            const Padding(
-              padding: EdgeInsets.only(top: 8, left: 23),
-              child: _ErrorText(text: '密码不能为空'),
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 23),
+              child: _ErrorText(text: AppL10n.of(context).accPasswordEmpty),
             ),
           const SizedBox(height: 12),
           Align(
@@ -247,7 +261,10 @@ class _AuthCanvas extends StatelessWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onForgotPassword,
-              child: const Text('忘记密码?', style: _AuthTextStyles.linkMuted),
+              child: Text(
+                AppL10n.of(context).accForgotPasswordLink,
+                style: _AuthTextStyles.linkMuted,
+              ),
             ),
           ),
           const SizedBox(height: 24),
@@ -255,6 +272,9 @@ class _AuthCanvas extends StatelessWidget {
           const SizedBox(height: 24),
           _RegisterPrompt(onRegister: onRegister),
           const Spacer(flex: 4),
+          // 微信授权登录：底部圆形图标入口（邮箱密码为主登录，微信为次要入口）。
+          Center(child: _WechatLoginButton(onTap: onWechatLogin)),
+          const SizedBox(height: 20),
           Center(
             child: _AgreementRow(
               agreed: agreed,
@@ -381,18 +401,21 @@ class _TitleGroup extends StatelessWidget {
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: const [
+      children: [
         Row(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text('欢迎使用', style: _AuthTextStyles.title),
-            SizedBox(width: 6),
-            _PositionedBoltStarWordmark(),
+            Text(AppL10n.of(context).accWelcome, style: _AuthTextStyles.title),
+            const SizedBox(width: 6),
+            const _PositionedBoltStarWordmark(),
           ],
         ),
-        SizedBox(height: 12),
-        Text('使用邮箱密码登录或注册', style: _AuthTextStyles.subtitle),
+        const SizedBox(height: 12),
+        Text(
+          AppL10n.of(context).accLoginSubtitle,
+          style: _AuthTextStyles.subtitle,
+        ),
       ],
     );
   }
@@ -574,8 +597,44 @@ class _PrimaryButton extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(71),
           onTap: onPressed,
-          child: const Center(
-            child: Text('登 录', style: _AuthTextStyles.button),
+          child: Center(
+            child: Text(
+              AppL10n.of(context).accLoginButton,
+              style: _AuthTextStyles.button,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 微信授权登录圆形入口：`login-wx-icon.png` 是白色微信图标，需垫在品牌绿圆底上才可见。
+class _WechatLoginButton extends StatelessWidget {
+  const _WechatLoginButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: const BoxDecoration(
+          shape: BoxShape.circle,
+          color: Color(0xFF07C160), // 微信品牌绿
+        ),
+        child: Center(
+          child: Image.asset(
+            'assets/images/login-wx-icon.png',
+            width: 30,
+            height: 30,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                const Icon(Icons.wechat, color: Colors.white, size: 30),
           ),
         ),
       ),
@@ -595,12 +654,12 @@ class _RegisterPrompt extends StatelessWidget {
         behavior: HitTestBehavior.opaque,
         onTap: onRegister,
         child: Text.rich(
-          const TextSpan(
+          TextSpan(
             children: [
-              TextSpan(text: '没有账户？'),
+              TextSpan(text: AppL10n.of(context).accNoAccount),
               TextSpan(
-                text: ' 去注册',
-                style: TextStyle(color: Color(0xFFFF5B1F)),
+                text: AppL10n.of(context).accGoRegister,
+                style: const TextStyle(color: Color(0xFFFF5B1F)),
               ),
             ],
           ),
@@ -653,18 +712,27 @@ class _AgreementRow extends StatelessWidget {
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onChanged,
-          child: const Text('我已阅读并同意', style: _AuthTextStyles.agreement),
+          child: Text(
+            AppL10n.of(context).accAgreementPrefix,
+            style: _AuthTextStyles.agreement,
+          ),
         ),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onUserAgreement,
-          child: const Text('《用户协议》', style: _AuthTextStyles.agreementLink),
+          child: Text(
+            AppL10n.of(context).accUserAgreementLink,
+            style: _AuthTextStyles.agreementLink,
+          ),
         ),
-        const Text('和', style: _AuthTextStyles.agreement),
+        Text(AppL10n.of(context).accAnd, style: _AuthTextStyles.agreement),
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onPrivacyPolicy,
-          child: const Text('《隐私政策》', style: _AuthTextStyles.agreementLink),
+          child: Text(
+            AppL10n.of(context).accPrivacyPolicyLink,
+            style: _AuthTextStyles.agreementLink,
+          ),
         ),
       ],
     );

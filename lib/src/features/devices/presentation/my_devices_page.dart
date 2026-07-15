@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 
 /// 我的设备列表页面，对应 UI 稿「我的设备」。
 ///
@@ -66,14 +67,15 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
   @override
   Widget build(BuildContext context) {
     return FigmaScreen(
-      title: '我的设备',
+      title: AppL10n.of(context).devMyDevicesTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 顶部工具栏：右对齐添加按钮（小程序 .device-toolbar，加载中不显示）。
+          // 顶部工具栏：右对齐添加按钮（小程序 .device-toolbar，加载中/空态不显示——
+          // 空态卡片自带「添加设备」CTA）。
           const SizedBox(height: 20),
-          if (!widget.loading)
+          if (!widget.loading && _devices.isNotEmpty)
             Align(
               alignment: Alignment.centerRight,
               child: _AddDeviceButton(onTap: widget.onAddDevice),
@@ -85,10 +87,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
             child: widget.loading
                 ? const PageLoading()
                 : _devices.isEmpty
-                ? const EmptyState(
-                    title: '暂无设备',
-                    message: '还没有绑定相框，点击上方「添加设备」开始绑定。',
-                  )
+                ? _EmptyDevices(onAddDevice: widget.onAddDevice)
                 : ListView.separated(
                     padding: const EdgeInsets.only(bottom: 12),
                     itemCount: _devices.length,
@@ -125,22 +124,22 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('设备名称'),
+        title: Text(AppL10n.of(context).devDeviceNameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLength: 20,
           cursorColor: const Color(0xFFEB5F1B),
-          decoration: const InputDecoration(hintText: '请输入设备名称'),
+          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('取消'),
+            child: Text(AppL10n.of(context).cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(controller.text),
-            child: const Text('确定'),
+            child: Text(AppL10n.of(context).confirm),
           ),
         ],
       ),
@@ -190,6 +189,100 @@ class _AddDeviceButton extends StatelessWidget {
               child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+/// 空态卡片（小程序 `.empty-device`）：桃色圆角图标盒 + 标题 + 说明 + 渐变「添加设备」CTA。
+class _EmptyDevices extends StatelessWidget {
+  const _EmptyDevices({this.onAddDevice});
+
+  final VoidCallback? onAddDevice;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: FigmaGlassCard(
+        borderRadius: 14,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // 桃色圆角图标盒（.empty-device__art，56×56，bg rgba(255,106,32,0.1)，radius 15）。
+              Container(
+                width: 56,
+                height: 56,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6A20).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(15),
+                ),
+                child: Image.asset(
+                  'assets/images/device-list-icon04.png',
+                  width: 34,
+                  height: 34,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.photo_library_outlined,
+                    color: Color(0xFFFF6A20),
+                    size: 30,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 13),
+              Text(
+                AppL10n.of(context).devEmptyTitle,
+                style: const TextStyle(
+                  color: Color(0xFF2A2D32),
+                  fontSize: 17,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                AppL10n.of(context).devEmptySubtitle,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF7E858F),
+                  fontSize: 13,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 17),
+              // 渐变 CTA「添加设备」（.empty-device__btn，110×36，#ff9140→#ff6a20，radius 999）。
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onAddDevice,
+                child: Container(
+                  width: 110,
+                  height: 36,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
+                    ),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    AppL10n.of(context).devAddDevice,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -248,21 +341,21 @@ class _DeviceCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 24, 17, 0),
               child: Row(
                 children: [
-                  // 设备 Logo（连接态 device-list-icon04 / 离线 icon05，92rpx≈46）。
-                  Container(
-                    padding: const EdgeInsets.all(10),
+                  // 设备 Logo（连接态 device-list-icon04 / 离线 icon05，120rpx≈60）。
+                  // 对齐小程序：连接态底色 rgba(255,175,139,0.1)，离线无底色，图标不缩小。
+                  DecoratedBox(
                     decoration: BoxDecoration(
                       color: device.connected
                           ? const Color(0xFFFFAF8B).withValues(alpha: 0.1)
-                          : const Color(0xFF2A2B2B).withValues(alpha: 0.04),
+                          : Colors.transparent,
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Image.asset(
                       device.connected
                           ? 'assets/images/device-list-icon04.png'
                           : 'assets/images/device-list-icon05.png',
-                      width: 46,
-                      height: 46,
+                      width: 60,
+                      height: 60,
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) {
                         return Icon(
@@ -270,7 +363,7 @@ class _DeviceCard extends StatelessWidget {
                           color: device.connected
                               ? const Color(0xFFEB5F1B)
                               : const Color(0x992A2B2B),
-                          size: 30,
+                          size: 34,
                         );
                       },
                     ),
@@ -332,7 +425,9 @@ class _DeviceCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 5),
                             Text(
-                              device.connected ? '已连接' : '未连接',
+                              device.connected
+                                  ? AppL10n.of(context).devConnected
+                                  : AppL10n.of(context).devDisconnected,
                               style: TextStyle(
                                 color: device.connected
                                     ? const Color(0xFF287DFF)
@@ -384,17 +479,18 @@ class _DeviceCard extends StatelessWidget {
           // 不在它的手势范围内，所以这两个按钮的点击不可能被「进详情」抢走。
           Container(
               height: 42,
+              // 对齐小程序 .device-actions：白 0.4 平底 + 轻投影（原来是左右白渐变、无阴影）。
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.centerLeft,
-                  end: Alignment.centerRight,
-                  colors: [
-                    Colors.white.withValues(alpha: 0.38),
-                    Colors.white.withValues(alpha: 0.55),
-                  ],
-                ),
+                color: Colors.white.withValues(alpha: 0.4),
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: Colors.white.withValues(alpha: 0.31)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color.fromRGBO(44, 63, 97, 0.03),
+                    offset: Offset(0, 4),
+                    blurRadius: 12.1,
+                  ),
+                ],
               ),
               child: Row(
                 children: [
@@ -402,10 +498,11 @@ class _DeviceCard extends StatelessWidget {
                     child: _DeviceActionButton(
                       iconAsset: 'assets/images/screen-casting-icon01.png',
                       fallbackIcon: Icons.cast_rounded,
-                      iconWidth: 16,
-                      iconHeight: 15,
-                      label: '投屏',
-                      color: const Color(0xFF777E88),
+                      iconWidth: 20,
+                      iconHeight: 20,
+                      label: AppL10n.of(context).devCast,
+                      // 投屏文案/图标为橙色（对齐小程序 .projection-action #eb5f1b）。
+                      color: const Color(0xFFEB5F1B),
                       onTap: onCast,
                     ),
                   ),
@@ -422,9 +519,11 @@ class _DeviceCard extends StatelessWidget {
                       fallbackIcon: device.connected
                           ? Icons.link_off_rounded
                           : Icons.bluetooth_rounded,
-                      iconWidth: 14,
-                      iconHeight: 14,
-                      label: device.connected ? '断开' : '连接',
+                      iconWidth: 20,
+                      iconHeight: 20,
+                      label: device.connected
+                          ? AppL10n.of(context).devDisconnectShort
+                          : AppL10n.of(context).devConnectShort,
                       color: device.connected
                           ? const Color(0xFFEB5F1B)
                           : const Color(0xFF2079FC),
@@ -481,7 +580,7 @@ class _DeviceActionButton extends StatelessWidget {
             label,
             style: TextStyle(
               color: color,
-              fontSize: 12,
+              fontSize: 14,
               fontWeight: FontWeight.w500,
               height: 1,
             ),

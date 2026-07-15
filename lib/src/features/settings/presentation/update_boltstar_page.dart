@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 
 /// 更新 BoltStar 页面的三种状态，分别对应 UI 稿
 /// 「更新BoltStar」(已是最新)、「立即更新」(有新版本)、「正在更新」(下载中)。
@@ -10,7 +11,6 @@ enum BoltStarUpdateStage { upToDate, updateAvailable, downloading }
 
 const String _currentVersion = '1.0.0';
 const String _latestVersion = '1.2.0';
-const String _appIntro = 'BoltStar是一款帮助你轻松管理和分享照片的应用，连接设备，珍藏生活每一刻。';
 
 /// 更新 BoltStar 页面。
 ///
@@ -53,7 +53,7 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
 
   void _onDownloadStatus(AnimationStatus status) {
     if (status == AnimationStatus.completed && mounted) {
-      AppToast.show(context, '已更新到最新版本');
+      AppToast.show(context, AppL10n.of(context).setUpdatedToLatest);
       Navigator.maybePop(context);
     }
   }
@@ -66,7 +66,7 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
   @override
   Widget build(BuildContext context) {
     return FigmaScreen(
-      title: '更新BoltStar',
+      title: AppL10n.of(context).setUpdateBoltStar,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -87,12 +87,12 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
               ),
             )
           else
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 28),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Text(
-                _appIntro,
+                AppL10n.of(context).setAppIntro,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Color(0xFF2A2D32),
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
@@ -103,7 +103,10 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
         ],
       ),
       bottom: _stage == BoltStarUpdateStage.updateAvailable
-          ? FigmaPrimaryButton(label: '立即更新', onPressed: _startDownload)
+          ? FigmaPrimaryButton(
+              label: AppL10n.of(context).setUpdateNow,
+              onPressed: _startDownload,
+            )
           : null,
     );
   }
@@ -111,14 +114,17 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
   Widget _versionLabel() {
     switch (_stage) {
       case BoltStarUpdateStage.upToDate:
-        return const Text('版本$_currentVersion', style: _versionStyle);
+        return Text(
+          AppL10n.of(context).setVersionLabel(_currentVersion),
+          style: _versionStyle,
+        );
       case BoltStarUpdateStage.updateAvailable:
-        return const Text(
-          '当前版本$_currentVersion · 最新版本$_latestVersion',
+        return Text(
+          AppL10n.of(context).setVersionCompare(_currentVersion, _latestVersion),
           style: _versionStyle,
         );
       case BoltStarUpdateStage.downloading:
-        return const Text('正在更新...', style: _versionStyle);
+        return Text(AppL10n.of(context).setUpdating, style: _versionStyle);
     }
   }
 }
@@ -188,9 +194,9 @@ class _DownloadProgressRing extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
-              const Text(
-                '正在下载更新中',
-                style: TextStyle(
+              Text(
+                AppL10n.of(context).setDownloading,
+                style: const TextStyle(
                   color: Color(0xFF808690),
                   fontSize: 12,
                   fontWeight: FontWeight.w400,

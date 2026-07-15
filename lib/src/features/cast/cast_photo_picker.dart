@@ -1,4 +1,8 @@
+import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
+import '../../shared/l10n/app_l10n.dart';
+import '../../state.dart';
 
 /// 投屏选图的统一入口：**在选图阶段就把原图降采样**，再交给投屏链路上传。
 ///
@@ -61,5 +65,193 @@ class CastPhotoPicker {
       imageQuality: _quality,
     );
     return files.map((file) => file.path).toList();
+  }
+
+  /// 「选择投屏方式」底部弹层（拍照 / 相册），返回用户选择的来源（取消返回 null）。
+  ///
+  /// 卡片式设计，与首页「选择投屏方式」弹层、小程序 `.media-sheet` 同款。
+  /// 设备列表 / 设备详情 / 投屏结果页「继续投屏」三处共用同一弹层，
+  /// 取代各自手搓的 `ListTile` 版（那版与设计稿不一致）。
+  static Future<ImageSourceType?> chooseSource(BuildContext context) {
+    return showModalBottomSheet<ImageSourceType>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (sheetContext) => const _CastMethodSheet(),
+    );
+  }
+}
+
+/// 「选择投屏方式」弹层（拍照 / 相册 + 取消），点选后以 [ImageSourceType] 弹栈返回。
+class _CastMethodSheet extends StatelessWidget {
+  const _CastMethodSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                l10n.cresMethodTitle,
+                style: const TextStyle(
+                  color: Color(0xFF2A2B2B),
+                  fontSize: 20,
+                  fontWeight: FontWeight.w500,
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 25),
+              _CastSheetRow(
+                title: '拍照',
+                subtitle: l10n.cresMethodCameraDesc,
+                artAsset: 'assets/images/home-media-mini01.png',
+                arrowAsset: 'assets/images/home-camera-card-right-icon.png',
+                onTap: () => Navigator.of(context).pop(ImageSourceType.camera),
+              ),
+              // 小程序 .media-option margin-bottom: 20rpx = 10。
+              const SizedBox(height: 10),
+              _CastSheetRow(
+                title: '相册',
+                subtitle: l10n.cresMethodAlbumDesc,
+                artAsset: 'assets/images/home-media-mini02.png',
+                arrowAsset: 'assets/images/home-album-card-right-icon.png',
+                onTap: () => Navigator.of(context).pop(ImageSourceType.album),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 56,
+                child: Material(
+                  color: const Color(0xFFEDEDED),
+                  borderRadius: BorderRadius.circular(28),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(28),
+                    onTap: () => Navigator.maybePop(context),
+                    child: Center(
+                      child: Text(
+                        l10n.cancel,
+                        style: const TextStyle(
+                          color: Color(0xFF2A2D32),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w500,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 「选择投屏方式」弹层里的单行（拍照 / 相册）。卡片：白灰底 #f8f9fb / 圆角 14 / 高 64。
+class _CastSheetRow extends StatelessWidget {
+  const _CastSheetRow({
+    required this.title,
+    required this.subtitle,
+    required this.artAsset,
+    required this.arrowAsset,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final String artAsset;
+  final String arrowAsset;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final isCamera = title == '拍照';
+    final l10n = AppL10n.of(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 64,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8F9FB),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Image.asset(
+              artAsset,
+              width: 49,
+              height: 48,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => Icon(
+                isCamera
+                    ? Icons.photo_camera_rounded
+                    : Icons.photo_library_rounded,
+                color: isCamera
+                    ? const Color(0xFFFF6A24)
+                    : const Color(0xFF287BFF),
+                size: 34,
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isCamera ? l10n.cresMethodCamera : l10n.cresMethodAlbum,
+                    style: const TextStyle(
+                      color: Color(0xFF2A2D32),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      color: Color(0xFF858B96),
+                      fontSize: 11,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Image.asset(
+              arrowAsset,
+              width: 59,
+              height: 59,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => Icon(
+                Icons.arrow_forward_rounded,
+                color: isCamera
+                    ? const Color(0xFFFF6A24)
+                    : const Color(0xFF287BFF),
+                size: 24,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }

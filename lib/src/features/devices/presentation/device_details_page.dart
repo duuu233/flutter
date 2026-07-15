@@ -6,6 +6,7 @@ import '../../../device/frame_device_protocol.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
+import '../../../shared/l10n/app_l10n.dart';
 
 /// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
 ///
@@ -31,7 +32,7 @@ class DeviceDetailsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FigmaScreen(
-      title: '设备详情',
+      title: AppL10n.of(context).devDetailTitle,
       body: AnimatedBuilder(
         animation: state,
         builder: (context, _) => DeviceDetailsBody(
@@ -59,21 +60,21 @@ class DeviceDetailsPage extends StatelessWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('重命名设备'),
+        title: Text(AppL10n.of(context).devRenameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLength: 20,
-          decoration: const InputDecoration(hintText: '请输入设备名称'),
+          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(AppL10n.of(context).cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: const Text('确认'),
+            child: Text(AppL10n.of(context).devConfirm),
           ),
         ],
       ),
@@ -101,7 +102,7 @@ class DeviceDetailsPage extends StatelessWidget {
   /// 未连接则蒙层 loading 自动扫连（对齐小程序 detail.js startProjection→connectDevice）；
   /// 连上返回 true，失败提示并返回 false。
   Future<bool> _ensureConnected(BuildContext context, String deviceId) async {
-    AppLoadingDialog.show(context, '连接设备中');
+    AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
     final feedback = await state.connectDevice(deviceId);
     if (!context.mounted) {
       return false;
@@ -113,34 +114,9 @@ class DeviceDetailsPage extends StatelessWidget {
     return feedback.success;
   }
 
-  /// 拍照 / 相册选择面板（对齐小程序 media 选择 sheet）。
+  /// 拍照 / 相册选择面板：走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款）。
   Future<ImageSourceType?> _pickCastSource(BuildContext context) {
-    return showModalBottomSheet<ImageSourceType>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('拍照'),
-              onTap: () =>
-                  Navigator.of(sheetContext).pop(ImageSourceType.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.collections_outlined),
-              title: const Text('从相册选择'),
-              onTap: () =>
-                  Navigator.of(sheetContext).pop(ImageSourceType.album),
-            ),
-          ],
-        ),
-      ),
-    );
+    return CastPhotoPicker.chooseSource(context);
   }
 
   /// 顶部操作栏「投屏」：未连接自动扫连 → 拍照/相册 → 真实投屏（对齐小程序 detail.js `startProjection`）。
@@ -165,7 +141,7 @@ class DeviceDetailsPage extends StatelessWidget {
           : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (context.mounted) {
-        _snack(context, '无法读取照片，请检查相机/相册权限后重试。');
+        _snack(context, AppL10n.of(context).devPhotoReadFailed);
       }
       return;
     }
@@ -219,8 +195,9 @@ class DeviceDetailsBody extends StatelessWidget {
   final VoidCallback? onDeleteDevice;
   final VoidCallback? onOtaUpgrade;
 
-  String get _carouselLabel {
+  String _carouselLabel(BuildContext context) {
     final device = state.selectedDevice;
+    final l10n = AppL10n.of(context);
     // 轮播设置是「连接才可信」的实时数据：未连接（含断开设备后）一律 -- 占位，与小程序详情页一致。
     if (!device.connected) {
       return '--';
@@ -228,9 +205,11 @@ class DeviceDetailsBody extends StatelessWidget {
     // 对齐小程序 getPlaybackLabel：manual 或未启用 → 「未启用」。
     if (device.playbackMode == FramePlaybackMode.manual ||
         !device.carouselEnabled) {
-      return '未启用';
+      return l10n.devCarouselDisabled;
     }
-    return device.playbackMode == FramePlaybackMode.random ? '随机轮播' : '顺序轮播';
+    return device.playbackMode == FramePlaybackMode.random
+        ? l10n.devCarouselRandom
+        : l10n.devCarouselSequential;
   }
 
   static String _batteryAsset(int level) {
@@ -329,7 +308,9 @@ class DeviceDetailsBody extends StatelessWidget {
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          device.connected ? '已连接' : '未连接',
+                          device.connected
+                              ? AppL10n.of(context).devConnected
+                              : AppL10n.of(context).devDisconnected,
                           style: TextStyle(
                             color: device.connected
                                 ? const Color(0xFF287DFF)
@@ -377,7 +358,7 @@ class DeviceDetailsBody extends StatelessWidget {
               if (onCast != null)
                 Expanded(
                   child: _DeviceActionButton(
-                    label: '投屏',
+                    label: AppL10n.of(context).devCast,
                     primary: true,
                     onTap: onCast,
                   ),
@@ -387,7 +368,9 @@ class DeviceDetailsBody extends StatelessWidget {
               if (onConnectToggle != null)
                 Expanded(
                   child: _DeviceActionButton(
-                    label: device.connected ? '断开连接' : '连接蓝牙',
+                    label: device.connected
+                        ? AppL10n.of(context).devDisconnect
+                        : AppL10n.of(context).devConnectBluetooth,
                     primary: false,
                     onTap: onConnectToggle,
                   ),
@@ -404,8 +387,8 @@ class DeviceDetailsBody extends StatelessWidget {
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon01.png',
                 fallbackIcon: Icons.tune_rounded,
-                label: '轮播设置',
-                value: _carouselLabel,
+                label: AppL10n.of(context).devCarouselSetting,
+                value: _carouselLabel(context),
                 showChevron: true,
                 onTap: onCarouselSettings,
               ),
@@ -413,7 +396,7 @@ class DeviceDetailsBody extends StatelessWidget {
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon02.png',
                 fallbackIcon: Icons.tag_rounded,
-                label: '设备ID',
+                label: AppL10n.of(context).devDeviceId,
                 value: device.serialNumber.isEmpty
                     ? device.id
                     : device.serialNumber,
@@ -422,7 +405,7 @@ class DeviceDetailsBody extends StatelessWidget {
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon03.png',
                 fallbackIcon: Icons.sd_storage_outlined,
-                label: '设备内存',
+                label: AppL10n.of(context).devDeviceMemory,
                 // 内存占用是连接才读得到的实时数据（0x01 的 IMG_MASK）：未连接（含断开设备后）一律 --，
                 // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
                 value: device.connected
@@ -433,9 +416,11 @@ class DeviceDetailsBody extends StatelessWidget {
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon04.png',
                 fallbackIcon: Icons.system_update_alt_rounded,
-                label: 'OTA升级',
+                label: AppL10n.of(context).devOtaUpgrade,
                 value: device.hasFirmwareUpdate
-                    ? '发现新版本 ${device.newVersionNo}'
+                    ? AppL10n.of(context).devFirmwareNewVersion(
+                        device.newVersionNo,
+                      )
                     : (device.firmwareVersion.isEmpty
                         ? '-'
                         : device.firmwareVersion),
@@ -454,10 +439,10 @@ class DeviceDetailsBody extends StatelessWidget {
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon05.png',
                 fallbackIcon: Icons.cleaning_services_outlined,
-                label: '一键清空',
+                label: AppL10n.of(context).devClearAll,
                 labelColor: const Color(0xFFFF6A20),
                 labelWeight: FontWeight.w500,
-                value: '清空设备本地所有照片',
+                value: AppL10n.of(context).devClearAllValue,
                 showChevron: true,
                 onTap: onClearDevice,
               ),
@@ -465,10 +450,10 @@ class DeviceDetailsBody extends StatelessWidget {
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon06.png',
                 fallbackIcon: Icons.delete_outline_rounded,
-                label: '删除设备',
+                label: AppL10n.of(context).devDeleteDevice,
                 labelColor: const Color(0xFFFF3045),
                 labelWeight: FontWeight.w500,
-                value: '删除后将无法恢复',
+                value: AppL10n.of(context).devDeleteDeviceValue,
                 showChevron: true,
                 onTap: onDeleteDevice,
               ),
@@ -520,17 +505,24 @@ class _DetailRow extends StatelessWidget {
                   Icon(fallbackIcon, size: 20, color: labelColor),
             ),
             const SizedBox(width: 15),
-            Text(
-              label,
-              style: TextStyle(
-                color: labelColor,
-                fontSize: 14,
-                fontWeight: labelWeight,
-                height: 1.2,
+            // 左侧标题占弹性宽度、超长才省略（对齐小程序 .row-left flex:1）。
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: labelColor,
+                  fontSize: 14,
+                  fontWeight: labelWeight,
+                  height: 1.2,
+                ),
               ),
             ),
-            const Spacer(),
-            Flexible(
+            const SizedBox(width: 11),
+            // 右侧取值：不收缩、最多 ~193（对齐小程序 .row-right flex-shrink:0 / max-width:386rpx）。
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 193),
               child: Text(
                 value,
                 maxLines: 1,
@@ -707,7 +699,7 @@ class DeviceConfirmDialog extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _DialogButton(
-                      label: '取消',
+                      label: AppL10n.of(context).cancel,
                       textColor: const Color(0xFF32363C),
                       background: const Color(0xFFEEEEEE),
                       onTap: onCancel,
@@ -716,7 +708,7 @@ class DeviceConfirmDialog extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: _DialogButton(
-                      label: '确认',
+                      label: AppL10n.of(context).devConfirm,
                       textColor: Colors.white,
                       gradient: const LinearGradient(
                         begin: Alignment.topCenter,

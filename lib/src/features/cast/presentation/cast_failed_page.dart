@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'cast_result_common.dart';
 
 /// 投屏失败页：提示失败原因并提供重试 / 返回首页，对应 UI 稿「投屏失败」。
@@ -18,8 +19,9 @@ class CastFailedPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '投屏失败',
+      title: l10n.cresFailedTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -31,14 +33,14 @@ class CastFailedPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
-            '投屏失败',
+          Text(
+            l10n.cresFailedTitle,
             textAlign: TextAlign.center,
             style: projectionResultTitleStyle,
           ),
           const SizedBox(height: 11),
-          const Text(
-            '设备连接中断，请检查设备状态后重试',
+          Text(
+            l10n.cresFailedDesc,
             textAlign: TextAlign.center,
             style: projectionResultDescStyle,
           ),
@@ -53,10 +55,10 @@ class CastFailedPage extends StatelessWidget {
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FigmaPrimaryButton(label: '重新投屏', onPressed: onRetry),
+          FigmaPrimaryButton(label: l10n.cresRecast, onPressed: onRetry),
           const SizedBox(height: 12),
           FigmaSecondaryButton(
-            label: '返回首页',
+            label: l10n.cresBackHome,
             onPressed: onBackHome ?? () => Navigator.maybePop(context),
           ),
         ],

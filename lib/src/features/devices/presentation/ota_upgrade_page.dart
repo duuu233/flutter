@@ -4,6 +4,7 @@ import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/ble/ota_ble.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
 /// 设备固件 OTA 升级页 —— 由微信小程序版 `subpackages/device/ota/ota`（ota.js + ota.wxml）移植。
@@ -34,7 +35,7 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   final device = state.selectedDevice;
   // ① 未连接自动扫连（升级需设备在线）。
   if (!BleController.instance.connected) {
-    AppLoadingDialog.show(context, '连接设备中');
+    AppLoadingDialog.show(context, AppL10n.of(context).otaConnecting);
     final feedback = await state.connectDevice(device.id);
     if (!context.mounted) {
       return;
@@ -46,7 +47,7 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
     }
   }
   // ② loading 下二次拉取最新版本信息。
-  AppLoadingDialog.show(context, '检测版本中');
+  AppLoadingDialog.show(context, AppL10n.of(context).otaCheckingVersion);
   final updated = await state.fetchDeviceFirmwareInfo(device.id);
   if (!context.mounted) {
     return;
@@ -58,12 +59,12 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('固件升级'),
-        content: const Text('当前固件已是最新版本'),
+        title: Text(AppL10n.of(dialogContext).otaFirmwareUpgrade),
+        content: Text(AppL10n.of(dialogContext).otaAlreadyLatestContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('知道了'),
+            child: Text(AppL10n.of(dialogContext).otaKnow),
           ),
         ],
       ),
@@ -74,16 +75,18 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('固件升级'),
-      content: Text('检测到新版本：${target.newVersionNo}，是否升级？'),
+      title: Text(AppL10n.of(dialogContext).otaFirmwareUpgrade),
+      content: Text(
+        AppL10n.of(dialogContext).otaNewVersionConfirm(target.newVersionNo),
+      ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('稍后'),
+          child: Text(AppL10n.of(dialogContext).otaLater),
         ),
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('立刻更新'),
+          child: Text(AppL10n.of(dialogContext).otaUpdateNow),
         ),
       ],
     ),
@@ -186,14 +189,17 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
 
     // 拉设备详情合并固件字段（失败回退到本地设备项，仍可走干跑测试）。
     final updated = await widget.state.fetchDeviceFirmwareInfo(id);
+    if (!mounted) return;
+    final l10n = AppL10n.of(context);
     DeviceItem device;
     try {
       device = updated ?? widget.state.selectedDevice;
     } catch (_) {
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = '设备不存在';
-        _errorMessage = '缺少设备信息，无法检查固件版本。';
+        _deviceName = l10n.otaDefaultDeviceName;
+        _statusText = l10n.otaDeviceNotFound;
+        _errorMessage = l10n.otaMissingDeviceInfo;
       });
       return;
     }
@@ -209,36 +215,38 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     String invalidReason = '';
     if (hasUpdateFlag && !device.hasFirmwareUpdate) {
       if (latestVersion.isEmpty || device.downloadPath.isEmpty) {
-        invalidReason = '检测到可更新状态，但缺少新版本号或固件下载地址，请稍后重试。';
+        invalidReason = l10n.otaInvalidMissingInfo;
       } else {
-        invalidReason = '固件下载地址不是有效的 .bin 文件，请稍后重试。';
+        invalidReason = l10n.otaInvalidBinUrl;
       }
     }
 
     setState(() {
-      _deviceName = device.name.isEmpty ? '智能相框' : device.name;
+      _deviceName = device.name.isEmpty ? l10n.otaDefaultDeviceName : device.name;
       _currentVersion = currentVersion.isEmpty ? '--' : currentVersion;
       _latestVersion = latestVersion.isEmpty ? '--' : latestVersion;
       _hasPackage = hasPackage;
       _downloadPath = device.downloadPath;
       _sizeBytes = device.firmwareSize;
       _packageSizeText = hasPackage
-          ? (device.firmwareSize > 0 ? _formatSize(device.firmwareSize) : '下载后确认')
+          ? (device.firmwareSize > 0
+              ? _formatSize(device.firmwareSize)
+              : l10n.otaConfirmAfterDownload)
           : '--';
 
       if (hasUpdateFlag && !hasPackage) {
         _stage = _OtaStage.invalid;
-        _statusText = '无法升级';
+        _statusText = l10n.otaCannotUpgrade;
         _errorMessage = invalidReason;
         _releaseNotes = const [];
       } else if (hasPackage) {
         _stage = _OtaStage.available;
-        _statusText = _connected ? '发现新版本' : '设备未连接';
-        _errorMessage = _connected ? '' : '请先在详情页连接设备，并在升级过程中保持设备在线。';
-        _releaseNotes = ['发现新版本：$latestVersion'];
+        _statusText = _connected ? l10n.otaNewVersionFound : l10n.otaDeviceNotConnected;
+        _errorMessage = _connected ? '' : l10n.otaConnectFirstHint;
+        _releaseNotes = [l10n.otaNewVersionNote(latestVersion)];
       } else {
         _stage = _OtaStage.latest;
-        _statusText = '已是最新';
+        _statusText = l10n.otaUpToDate;
         _errorMessage = '';
         _releaseNotes = const [];
       }
@@ -274,12 +282,13 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
 
   Future<void> _runUpgrade({required bool dryRun}) async {
     if (_stage == _OtaStage.upgrading) return;
+    final l10n = AppL10n.of(context);
     // 真实升级要求已连接；干跑不需要。
     if (!dryRun && !_connected) {
       setState(() {
         _stage = _OtaStage.available;
-        _statusText = '设备未连接';
-        _errorMessage = '未获取到设备蓝牙连接，请先在详情页连接设备后再升级。';
+        _statusText = l10n.otaDeviceNotConnected;
+        _errorMessage = l10n.otaNoBleConnection;
       });
       return;
     }
@@ -287,10 +296,10 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     _aborted = false;
     setState(() {
       _stage = _OtaStage.upgrading;
-      _statusText = dryRun ? '干跑中' : '升级中';
+      _statusText = dryRun ? l10n.otaDryRunning : l10n.otaUpgrading;
       _errorMessage = '';
       _progress = 0;
-      _progressText = dryRun ? '准备干跑' : '准备升级';
+      _progressText = dryRun ? l10n.otaPreparingDryRun : l10n.otaPreparingUpgrade;
     });
 
     // 逐帧联调日志（移植小程序 detail.js「OTA测试」）：设备→APP 的应答全部打印
@@ -336,16 +345,19 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
             '0x${result.crc32.toRadixString(16).toUpperCase().padLeft(8, '0')}';
         setState(() {
           _stage = _OtaStage.success;
-          _statusText = '干跑通过';
+          _statusText = l10n.otaDryRunPassed;
           _progress = 1;
-          _progressText =
-              '干跑通过：${result.size} 字节 / ${result.totalPackets} 包 / 每包 ${result.chunkSize} 字节';
+          _progressText = l10n.otaDryRunPassedDetail(
+            result.size,
+            result.totalPackets,
+            result.chunkSize,
+          );
           _releaseNotes = [
-            '固件大小：${result.size} 字节',
-            '本地 CRC32：$crcHex',
-            '分包：${result.totalPackets} 包 × ${result.chunkSize} 字节，PRN=${result.prn}',
-            'START 帧：${result.startFrameHex}',
-            '首个 DATA 帧：${_ellipsis(result.firstDataFrameHex, 47)} …',
+            l10n.otaFirmwareSizeNote(result.size),
+            l10n.otaLocalCrc32Note(crcHex),
+            l10n.otaChunkingNote(result.totalPackets, result.chunkSize, result.prn),
+            l10n.otaStartFrameNote(result.startFrameHex),
+            l10n.otaFirstDataFrameNote(_ellipsis(result.firstDataFrameHex, 47)),
           ];
         });
         return;
@@ -355,13 +367,14 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       // 兜底死路——真拿不到 0xF3 时 FrameOtaClient 会抛错走 catch，不再返回「软成功」。万一仍走到这里，
       // 说明确实没收到 0xF3 → 升级未确认，如实提示重试，绝不谎报「升级完成」。
       final unconfirmed = !result.confirmed;
-      final doneText = unconfirmed ? '未确认(请重试)' : '升级完成';
+      final doneText =
+          unconfirmed ? l10n.otaUnconfirmedRetry : l10n.otaUpgradeComplete;
       setState(() {
         _stage = _OtaStage.success;
-        _statusText = unconfirmed ? '未确认(请重试)' : '升级完成';
+        _statusText = doneText;
         _progress = 1;
         _progressText =
-            '$doneText（${result.size} 字节 / ${result.totalPackets} 包）';
+            l10n.otaDoneDetail(doneText, result.size, result.totalPackets);
         if (!unconfirmed) {
           // 已确认升级成功：把本地当前版本置为新版本，隐藏可升级包。
           _currentVersion = _latestVersion;
@@ -378,18 +391,16 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       if (!mounted) return;
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = dryRun ? '干跑失败' : '升级失败';
-        _errorMessage = '升级已中断：升级过程中手机切到后台或页面离开。请保持屏幕常亮后重试。';
+        _statusText = dryRun ? l10n.otaDryRunFailed : l10n.otaUpgradeFailed;
+        _errorMessage = l10n.otaInterrupted;
       });
     } catch (error) {
       if (!mounted) return;
       final aborted = _aborted;
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = dryRun ? '干跑失败' : '升级失败';
-        _errorMessage = aborted
-            ? '升级已中断：升级过程中手机切到后台或页面离开。请保持屏幕常亮后重试。'
-            : error.toString();
+        _statusText = dryRun ? l10n.otaDryRunFailed : l10n.otaUpgradeFailed;
+        _errorMessage = aborted ? l10n.otaInterrupted : error.toString();
       });
     }
   }
@@ -403,21 +414,22 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   bool get _canDryRun => _stage != _OtaStage.upgrading;
 
   String get _actionText {
+    final l10n = AppL10n.of(context);
     switch (_stage) {
       case _OtaStage.upgrading:
-        return '升级中';
+        return l10n.otaUpgrading;
       case _OtaStage.available:
-        return _connected ? '立即升级' : '设备未连接';
+        return _connected ? l10n.otaUpgradeNowAction : l10n.otaDeviceNotConnected;
       case _OtaStage.invalid:
-        return '无法升级';
+        return l10n.otaCannotUpgrade;
       case _OtaStage.failed:
-        return '重新检查';
+        return l10n.otaRecheck;
       case _OtaStage.success:
-        return '已完成';
+        return l10n.otaDone;
       case _OtaStage.latest:
-        return '已是最新';
+        return l10n.otaUpToDate;
       case _OtaStage.checking:
-        return '检查中';
+        return l10n.otaChecking;
     }
   }
 
@@ -447,14 +459,15 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     if (_stage == _OtaStage.checking) {
-      return const FigmaScreen(
-        title: 'OTA升级',
+      return FigmaScreen(
+        title: l10n.otaTitle,
         body: Padding(
-          padding: EdgeInsets.only(top: 120),
+          padding: const EdgeInsets.only(top: 120),
           child: Center(
-            child: Text('正在检查固件版本...',
-                style: TextStyle(color: Color(0xFF808690))),
+            child: Text(l10n.otaCheckingFirmware,
+                style: const TextStyle(color: Color(0xFF808690))),
           ),
         ),
       );
@@ -464,7 +477,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     final showDryRun = _canDryRun && (!_hasPackage || !_connected);
 
     return FigmaScreen(
-      title: 'OTA升级',
+      title: l10n.otaTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -479,14 +492,15 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
             _errorCard(),
           ],
           const SizedBox(height: 16),
-          const Text(
-            '升级过程中请保持设备供电、手机屏幕常亮，并避免切换到后台。',
-            style: TextStyle(color: Color(0xFF808690), fontSize: 12, height: 1.5),
+          Text(
+            l10n.otaKeepPoweredHint,
+            style: const TextStyle(
+                color: Color(0xFF808690), fontSize: 12, height: 1.5),
           ),
           const SizedBox(height: 16),
           if (showDryRun)
             FigmaSecondaryButton(
-              label: '干跑测试（mock 固件）',
+              label: l10n.otaDryRunTest,
               onPressed: _canDryRun ? () => _runUpgrade(dryRun: true) : null,
             ),
         ],
@@ -500,6 +514,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   }
 
   Widget _versionCard() {
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Row(
@@ -523,7 +538,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
                     style: const TextStyle(
                         color: Color(0xFF2A2D32), fontSize: 15, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
-                Text('当前版本 $_currentVersion',
+                Text(l10n.otaCurrentVersion(_currentVersion),
                     style: const TextStyle(color: Color(0xFF808690), fontSize: 12)),
               ],
             ),
@@ -536,22 +551,23 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   }
 
   Widget _upgradeCard() {
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('固件版本 $_latestVersion',
+          Text(l10n.otaFirmwareVersion(_latestVersion),
               style: const TextStyle(
                   color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          Text('升级包 $_packageSizeText',
+          Text(l10n.otaPackageSize(_packageSizeText),
               style: const TextStyle(color: Color(0xFF808690), fontSize: 12)),
           const SizedBox(height: 14),
           FigmaProgressBar(
             progress: _progress,
             label:
-                '${_progressText.isNotEmpty ? _progressText : (_stage == _OtaStage.available ? '可开始升级' : '无需升级')}  ·  ${(_progress * 100).round()}%',
+                '${_progressText.isNotEmpty ? _progressText : (_stage == _OtaStage.available ? l10n.otaReadyToUpgrade : l10n.otaNoUpgradeNeeded)}  ·  ${(_progress * 100).round()}%',
           ),
         ],
       ),
@@ -559,18 +575,19 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   }
 
   Widget _notesCard() {
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('升级内容',
-              style: TextStyle(
+          Text(l10n.otaUpgradeContent,
+              style: const TextStyle(
                   color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600)),
           const SizedBox(height: 10),
           if (_releaseNotes.isEmpty)
-            const Text('暂无升级说明',
-                style: TextStyle(color: Color(0xFF808690), fontSize: 12))
+            Text(l10n.otaNoReleaseNotes,
+                style: const TextStyle(color: Color(0xFF808690), fontSize: 12))
           else
             ..._releaseNotes.map(
               (note) => Padding(

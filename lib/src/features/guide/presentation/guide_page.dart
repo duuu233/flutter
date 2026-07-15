@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
@@ -64,7 +65,7 @@ class _GuidePageState extends State<GuidePage> {
     ];
 
     return FigmaScreen(
-      title: '操作指南',
+      title: AppL10n.of(context).guideTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -129,11 +130,11 @@ class _SearchField extends StatelessWidget {
                 fontSize: 14,
                 height: 1.2,
               ),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 isCollapsed: true,
                 border: InputBorder.none,
-                hintText: '搜索帮助文档',
-                hintStyle: TextStyle(
+                hintText: AppL10n.of(context).guideSearchHint,
+                hintStyle: const TextStyle(
                   color: Color(0xFF9AA1AB),
                   fontSize: 14,
                   height: 1.2,

@@ -1,0 +1,938 @@
+import 'package:flutter/widgets.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../../state.dart';
+
+/// 语言作用域：由 [MaterialApp.builder] 注入到 Navigator **之上**，成为所有路由（含 push 出来的
+/// 业务页）的祖先。切换语言时其 [language] 变化，凡是通过 [AppL10n.of] 读取文案的页面（都注册了
+/// 对本 InheritedWidget 的依赖）都会重建——这正是 Flutter 自带 `Localizations` 的机制，只是这里用
+/// 一个轻量自定义实现，避免为整改引入 `flutter_localizations` 依赖 / 生成 .arb。
+///
+/// 用法：页面里 `AppL10n.of(context).xxx` 取文案；新增文案在 [AppL10n] 里加一个 `_pick` 条目即可。
+class AppLocalizationsScope extends InheritedWidget {
+  const AppLocalizationsScope({
+    super.key,
+    required this.language,
+    required super.child,
+  });
+
+  final AppLanguage language;
+
+  static AppLanguage languageOf(BuildContext context) {
+    final scope = context
+        .dependOnInheritedWidgetOfExactType<AppLocalizationsScope>();
+    return scope?.language ?? AppLanguage.zh;
+  }
+
+  @override
+  bool updateShouldNotify(AppLocalizationsScope oldWidget) =>
+      language != oldWidget.language;
+}
+
+/// 应用文案目录。`AppL10n.of(context)` 会订阅 [AppLocalizationsScope]，语言变即整页重译。
+///
+/// 目前已接入：设置页、语种设置页、以及少量通用文案。其余页面仍是硬编码中文，逐页迁移到此处即可
+/// （把 `Text('中文')` 换成 `Text(AppL10n.of(context).key)`，并在这里补 en/ja 译文）。
+class AppL10n {
+  const AppL10n(this.language);
+
+  final AppLanguage language;
+
+  /// 订阅语言作用域并返回当前语言的文案目录（依赖注册在此，语言变化会触发调用方重建）。
+  static AppL10n of(BuildContext context) =>
+      AppL10n(AppLocalizationsScope.languageOf(context));
+
+  String _pick(String zh, String en, String ja) {
+    switch (language) {
+      case AppLanguage.zh:
+        return zh;
+      case AppLanguage.en:
+        return en;
+      case AppLanguage.ja:
+        return ja;
+    }
+  }
+
+  // ── 通用 ────────────────────────────────────────────────────────────────
+  String get cancel => _pick('取消', 'Cancel', 'キャンセル');
+  String get confirm => _pick('确定', 'OK', '確定');
+  String get gotIt => _pick('我知道了', 'Got it', '了解しました');
+
+  // ── 底部导航 ────────────────────────────────────────────────────────────
+  String get tabHome => _pick('首页', 'Home', 'ホーム');
+  String get tabMine => _pick('我的', 'Mine', 'マイ');
+
+  // ── 设置页 ──────────────────────────────────────────────────────────────
+  String get settingsTitle => _pick('设置', 'Settings', '設定');
+  String get languageSetting => _pick('语种设置', 'Language', '言語設定');
+  String get contactUs => _pick('联系方式', 'Contact', '連絡先');
+  String get privacyPolicy => _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');
+  String get userAgreement => _pick('用户协议', 'User Agreement', '利用規約');
+  String get checkUpdate => _pick('检查更新', 'Check for Updates', 'アップデート確認');
+  String get logout => _pick('退出登录', 'Log Out', 'ログアウト');
+  String get deleteAccount => _pick('用户注销', 'Delete Account', 'アカウント削除');
+
+  /// 设置页「语种设置」行右侧的当前语言短标签。
+  String get currentLanguageLabel => _pick('简中', 'English', '日本語');
+
+  String get checkingUpdate => _pick('正在检查更新…', 'Checking for updates…', '更新を確認中…');
+  String checkUpdateFailed(Object error) => _pick(
+    '检查更新失败：$error',
+    'Update check failed: $error',
+    '更新の確認に失敗しました：$error',
+  );
+  String alreadyLatest(String version) => _pick(
+    '当前已是最新版本 v$version。',
+    "You're on the latest version v$version.",
+    '最新バージョン v$version です。',
+  );
+  String newVersionFound(String version) => _pick(
+    '发现新版本 v$version',
+    'New version v$version found',
+    '新しいバージョン v$version',
+  );
+  String get newVersionPrompt => _pick(
+    '检测到新版本，是否立即更新？',
+    'A new version is available. Update now?',
+    '新しいバージョンがあります。今すぐ更新しますか？',
+  );
+  String get updateLater => _pick('暂不更新', 'Not Now', '後で');
+  String get updateNow => _pick('立即更新', 'Update Now', '今すぐ更新');
+  String get noDownloadUrl => _pick(
+    '暂无下载地址，请前往官网或应用商店更新。',
+    'No download link. Please update via the website or app store.',
+    'ダウンロードリンクがありません。公式サイトまたはストアから更新してください。',
+  );
+  String get contactCopied => _pick('已复制联系方式', 'Contact copied', '連絡先をコピーしました');
+
+  String get logoutConfirmMessage => _pick(
+    '退出后将返回登录页，是否继续?',
+    "You'll return to the login page. Continue?",
+    'ログイン画面に戻ります。続行しますか？',
+  );
+  String get deleteAccountWarn1 => _pick(
+    '注销将永久删除您的所有账号数据，请确认设备照片已自行清空，否则注销后将无法删除设备照片。',
+    'Deleting your account permanently erases all account data. Please clear your device photos first, or they cannot be removed after deletion.',
+    'アカウントを削除するとすべてのデータが完全に削除されます。先に端末の写真を消去してください。削除後は端末の写真を消せなくなります。',
+  );
+  String get deleteAccountConfirmTitle => _pick('确认注销', 'Confirm Deletion', '削除の確認');
+  String get deleteAccountWarn2 => _pick(
+    '我已了解设备照片需自行处理的说明，并确认继续注销。',
+    'I understand I must handle device photos myself and confirm the deletion.',
+    '端末の写真は自分で処理する必要があることを理解し、削除を続行します。',
+  );
+
+  // ── 语种设置页 ──────────────────────────────────────────────────────────
+  String get langSimplifiedChinese => _pick('简体中文', 'Simplified Chinese', '簡体字中国語');
+  String get langTraditionalChinese => _pick('繁体中文', 'Traditional Chinese', '繁体字中国語');
+  String get langEnglish => 'English';
+  String get langJapanese => _pick('日本语', 'Japanese', '日本語');
+  String get saveSettings => _pick('保存设置', 'Save', '保存');
+  String get languageSaved => _pick('语种设置已保存', 'Language settings saved', '言語設定を保存しました');
+
+  // ── 账号 ──
+  String get accAgreementRequired => _pick(
+    '请先阅读并同意用户协议和隐私政策',
+    'Please read and agree to the User Agreement and Privacy Policy first',
+    '先に利用規約とプライバシーポリシーをお読みの上、同意してください',
+  );
+  String get accWechatUnavailable => _pick(
+    '微信登录暂未开放',
+    'WeChat login is not available yet',
+    'WeChatログインはまだご利用いただけません',
+  );
+  String get accEmailHint => _pick('请输入邮箱', 'Enter your email', 'メールアドレスを入力してください');
+  String get accEmailInvalid => _pick(
+    '请输入正确的邮箱地址',
+    'Please enter a valid email address',
+    '正しいメールアドレスを入力してください',
+  );
+  String get accPasswordHint => _pick('请输入密码', 'Enter your password', 'パスワードを入力してください');
+  String get accPasswordEmpty => _pick('密码不能为空', 'Password cannot be empty', 'パスワードは空にできません');
+  String get accForgotPasswordLink => _pick('忘记密码?', 'Forgot password?', 'パスワードをお忘れですか？');
+  String get accWelcome => _pick('欢迎使用', 'Welcome to', 'ようこそ');
+  String get accLoginSubtitle => _pick(
+    '使用邮箱密码登录或注册',
+    'Sign in or sign up with your email and password',
+    'メールアドレスとパスワードでログインまたは登録',
+  );
+  String get accLoginButton => _pick('登 录', 'Log In', 'ログイン');
+  String get accNoAccount => _pick('没有账户？', "Don't have an account?", 'アカウントをお持ちでないですか？');
+  String get accGoRegister => _pick(' 去注册', ' Sign up', ' 登録する');
+  String get accAgreementPrefix => _pick('我已阅读并同意', 'I have read and agree to', '以下に同意します');
+  String get accUserAgreementLink => _pick('《用户协议》', 'User Agreement', '利用規約');
+  String get accAnd => _pick('和', 'and', 'および');
+  String get accPrivacyPolicyLink => _pick('《隐私政策》', 'Privacy Policy', 'プライバシーポリシー');
+  String get accPasswordMismatch => _pick('密码不一致', 'Passwords do not match', 'パスワードが一致しません');
+  String get accCreateAccount => _pick('创建账户', 'Create Account', 'アカウント作成');
+  String get accEmail => _pick('邮箱', 'Email', 'メールアドレス');
+  String get accEmailAddressHint => _pick(
+    '请输入邮箱地址',
+    'Enter your email address',
+    'メールアドレスを入力してください',
+  );
+  String get accPassword => _pick('密码', 'Password', 'パスワード');
+  String get accConfirmPassword => _pick('确认密码', 'Confirm Password', 'パスワード確認');
+  String get accConfirmPasswordHint => _pick(
+    '请确认密码',
+    'Confirm your password',
+    'パスワードを再入力してください',
+  );
+  String get accPasswordMismatchReconfirm => _pick(
+    '密码不一致，请重新确认密码',
+    'Passwords do not match. Please re-enter the confirmation.',
+    'パスワードが一致しません。確認用パスワードを再入力してください',
+  );
+  String get accRegisterButton => _pick('注 册', 'Sign Up', '登録');
+  String get accHaveAccount => _pick('已有账户？', 'Already have an account?', 'すでにアカウントをお持ちですか？');
+  String get accGoLogin => _pick(' 去登录', ' Log in', ' ログイン');
+  String get accForgotPasswordTitle => _pick('忘记密码', 'Forgot Password', 'パスワードを忘れた');
+  String get accConfirmButton => _pick('确认', 'Confirm', '確認');
+  String get accPasswordMismatchTwice => _pick(
+    '两次输入的密码不一致',
+    'The two passwords do not match',
+    '入力した2つのパスワードが一致しません',
+  );
+  String get accModifyEmailTitle => _pick('修改邮箱', 'Change Email', 'メールアドレス変更');
+  String get accCurrentEmail => _pick('当前邮箱', 'Current Email', '現在のメールアドレス');
+  String get accNewEmail => _pick('新邮箱', 'New Email', '新しいメールアドレス');
+  String get accNewEmailHint => _pick(
+    '请输入新的邮箱地址',
+    'Enter your new email address',
+    '新しいメールアドレスを入力してください',
+  );
+  String get accConfirmModify => _pick('确认修改', 'Confirm Change', '変更を確定');
+  String get accPasswordMismatchRetry => _pick(
+    '两次输入的密码不一致，请重新输入。',
+    'The two passwords do not match. Please try again.',
+    '入力した2つのパスワードが一致しません。もう一度入力してください。',
+  );
+  String get accModifyPasswordTitle => _pick('修改密码', 'Change Password', 'パスワード変更');
+  String get accNewPassword => _pick('新密码', 'New Password', '新しいパスワード');
+  String get accProfileTitle => _pick('个人信息', 'Profile', '個人情報');
+  String get accNickname => _pick('昵称', 'Nickname', 'ニックネーム');
+  String get accNicknameHint => _pick('请输入昵称', 'Enter your nickname', 'ニックネームを入力してください');
+  String get accSaveProfile => _pick('保存资料', 'Save Profile', 'プロフィールを保存');
+  String get accNotBound => _pick('暂未绑定', 'Not bound', '未連携');
+  String get accAvatar => _pick('头像', 'Avatar', 'アバター');
+  String get accAvatarUploading => _pick('头像上传中…', 'Uploading avatar…', 'アバターをアップロード中…');
+  String get accAlbumReadFailed => _pick(
+    '无法读取相册，请检查相册权限后重试。',
+    'Cannot access the album. Please check album permissions and try again.',
+    'アルバムを読み込めません。アルバムの権限を確認してから再試行してください。',
+  );
+  String get accBindEmailTitle => _pick('绑定邮箱', 'Bind Email', 'メールアドレス連携');
+  String get accBindEmailTip => _pick(
+    '绑定邮箱可以用于app登录',
+    'A bound email can be used to log in to the app',
+    '連携したメールアドレスはアプリのログインに使用できます',
+  );
+  String get accConfirmBind => _pick('确认绑定', 'Confirm Binding', '連携を確定');
+  String get accSetLoginPassword => _pick(
+    '请设置用于 app 登录的密码。',
+    'Please set a password for app login.',
+    'アプリログイン用のパスワードを設定してください。',
+  );
+  String accResendIn(int seconds) =>
+      _pick('$seconds秒后重新获取', 'Resend in ${seconds}s', '$seconds秒後に再取得');
+
+  // ── 投屏 ──
+  String get castResultSuccessTitle => _pick('投屏完成', 'Cast Complete', 'キャスト完了');
+  String get castResultSuccessDesc => _pick(
+    '照片已成功投屏到设备，可前往相册查看',
+    'Photos were cast to the device. You can view them in the album.',
+    '写真をデバイスにキャストしました。アルバムでご確認いただけます。',
+  );
+  String get castResultFailDefaultDesc => _pick(
+    '设备连接中断，请检查设备状态后重试',
+    'Device connection lost. Check the device and try again.',
+    'デバイスの接続が切れました。デバイスの状態を確認して再試行してください。',
+  );
+  String get castProgressDefaultDesc => _pick(
+    '投屏过程中请不要关闭手机',
+    "Don't close the app while casting.",
+    'キャスト中はアプリを閉じないでください。',
+  );
+  String get castFailureBusy => _pick(
+    '当前设备繁忙，请稍后重试',
+    'The device is busy. Please try again later.',
+    'デバイスが混雑しています。しばらくしてから再試行してください。',
+  );
+  String get castFailureStorageFull => _pick(
+    '设备内存已满，请清理后继续。',
+    'Device storage is full. Free up space and continue.',
+    'デバイスの容量がいっぱいです。空き容量を確保してから続行してください。',
+  );
+  String get castFailureDisconnected => _pick(
+    '设备未连接，请检查手机或设备连接后继续',
+    'Device not connected. Check the phone or device connection and continue.',
+    'デバイスが接続されていません。スマートフォンまたはデバイスの接続を確認して続行してください。',
+  );
+  String get castFailureTimeout => _pick(
+    '传输超时，请将手机靠近设备后重试',
+    'Transfer timed out. Move the phone closer to the device and try again.',
+    '転送がタイムアウトしました。スマートフォンをデバイスに近づけて再試行してください。',
+  );
+  String get castFailureCanceled =>
+      _pick('投屏已取消', 'Casting canceled.', 'キャストをキャンセルしました。');
+  String get castCannotReadPhoto => _pick(
+    '无法读取照片，请检查相机/相册权限后重试。',
+    'Cannot read photos. Check camera/album permissions and try again.',
+    '写真を読み込めません。カメラ/アルバムの権限を確認して再試行してください。',
+  );
+  String get castProgressTip1 => _pick(
+    '投屏过程请保持手机亮屏，不要远离设备',
+    'Keep the screen on and stay near the device while casting.',
+    'キャスト中は画面を点灯したまま、デバイスから離れないでください。',
+  );
+  String get castProgressTip2 => _pick(
+    '批量投屏如果意外中断，请前往图库主动刷新屏幕',
+    'If a batch cast is interrupted, refresh the screen from the gallery.',
+    '一括キャストが中断された場合は、ギャラリーから画面を更新してください。',
+  );
+  String get castProgressTip3 => _pick(
+    '图片在投屏记录中可继续操作',
+    'You can keep working with photos in the cast history.',
+    'キャスト履歴で写真の操作を続けられます。',
+  );
+  String get castProgressTip4 => _pick(
+    '投屏完成后设备会自动刷新，刷新期间设备繁忙无法投屏，请等待刷新结束',
+    'After casting, the device refreshes automatically. It stays busy and cannot cast during the refresh, so please wait until it finishes.',
+    'キャスト完了後、デバイスは自動的に更新されます。更新中はビジー状態でキャストできませんので、完了までお待ちください。',
+  );
+  String get castFailTip1 => _pick(
+    '请确认设备蓝牙正常连接中，手机蓝牙正常使用',
+    'Make sure the device Bluetooth is connected and the phone Bluetooth is working.',
+    'デバイスのBluetoothが接続され、スマートフォンのBluetoothが正常に動作していることを確認してください。',
+  );
+  String get castFailTip2 => _pick(
+    '如屏幕正在刷新中，请稍后再试',
+    'If the screen is refreshing, please try again later.',
+    '画面が更新中の場合は、しばらくしてから再試行してください。',
+  );
+  String get castFailTip3 => _pick(
+    '如遇系统网络故障，请稍后再试',
+    'If there is a network problem, please try again later.',
+    'ネットワーク障害が発生した場合は、しばらくしてから再試行してください。',
+  );
+  String get castFailTip4 => _pick(
+    '投屏失败的图片可以前往投屏记录重新上传',
+    'Failed photos can be re-uploaded from the cast history.',
+    'キャストに失敗した写真は、キャスト履歴から再アップロードできます。',
+  );
+  String get castContinue => _pick('继续投屏', 'Continue Casting', 'キャストを続ける');
+  String get castRecast => _pick('重新投屏', 'Cast Again', 'もう一度キャスト');
+  String get castBackHome => _pick('返回首页', 'Back to Home', 'ホームに戻る');
+  String get castManagementTitle => _pick('投屏管理', 'Cast Management', 'キャスト管理');
+  String castTotalRecords(int count) =>
+      _pick('共 $count 条记录', '$count records', '全 $count 件');
+  String get castSucceeded => _pick('投屏成功', 'Cast Succeeded', 'キャスト成功');
+  String get castFailed => _pick('投屏失败', 'Cast Failed', 'キャスト失敗');
+  String get castCastAgain => _pick('再次投屏', 'Cast Again', '再度キャスト');
+  String get castDelete => _pick('删除', 'Delete', '削除');
+  String get castDeleteRecordTitle => _pick('删除投屏记录', 'Delete Record', '記録を削除');
+  String get castDeleteRecordConfirm => _pick(
+    '确定删除这条投屏记录吗？删除后不可恢复。',
+    'Delete this cast record? This cannot be undone.',
+    'このキャスト記録を削除しますか？削除すると元に戻せません。',
+  );
+  String get castRecordMissingFrame => _pick(
+    '该记录缺少设备帧文件，无法再次投屏',
+    'This record has no device frame file and cannot be cast again.',
+    'この記録にはデバイスフレームファイルがなく、再度キャストできません。',
+  );
+  String get castConnectingDevice =>
+      _pick('正在连接设备…', 'Connecting to device…', 'デバイスに接続中…');
+  String get castEmptySuccessTitle =>
+      _pick('暂无成功记录', 'No successful casts yet', '成功した記録はありません');
+  String get castEmptyFailedTitle =>
+      _pick('暂无失败记录', 'No failed casts yet', '失敗した記録はありません');
+  String get castEmptySuccessDesc => _pick(
+    '完成一次照片投屏后会显示在这里。',
+    'Completed photo casts will appear here.',
+    '写真のキャストが完了するとここに表示されます。',
+  );
+  String get castEmptyFailedDesc => _pick(
+    '投屏失败时会保留原因，方便排查。',
+    'Failure reasons are kept here to help you troubleshoot.',
+    '失敗した理由を記録し、トラブルシューティングに役立てます。',
+  );
+  String get castPreviewTitle => _pick('照片预览', 'Preview', 'プレビュー');
+  String get castStartCasting => _pick('开始投屏', 'Start Casting', 'キャスト開始');
+  String get castCrop => _pick('裁剪', 'Crop', '切り抜き');
+  String get castRotate => _pick('旋转', 'Rotate', '回転');
+  String get castOriginal => _pick('原图', 'Original', '元の写真');
+  String get castSave => _pick('保存', 'Save', '保存');
+  String get castSaved => _pick('已保存', 'Saved', '保存しました');
+  String get castProcessing => _pick('处理中', 'Processing', '処理中');
+  String get castRotateFailed => _pick(
+    '旋转失败，请重试',
+    'Rotation failed. Please try again.',
+    '回転に失敗しました。再試行してください。',
+  );
+  String get castRestore => _pick('还原', 'Restore', '戻す');
+  String get castRestoreTitle => _pick('还原原图', 'Restore Original', '元の写真に戻す');
+  String get castRestoreConfirm => _pick(
+    '确定要还原到最原始的图片吗？当前的编辑将不会保存。',
+    'Restore the original photo? Your current edits will not be saved.',
+    '元の写真に戻しますか？現在の編集は保存されません。',
+  );
+  String get castKeepOnePhoto => _pick(
+    '请至少保留一张照片',
+    'Please keep at least one photo.',
+    '少なくとも1枚の写真を残してください。',
+  );
+  String get castImageLoadFailed =>
+      _pick('图片加载失败', 'Failed to load image', '画像の読み込みに失敗しました');
+
+  // ── 投屏结果/预览 ──
+  String get cresMethodTitle => _pick('选择投屏方式', 'Select Casting Method', 'キャスト方法を選択');
+  String get cresMethodCamera => _pick('拍照', 'Take Photo', '撮影');
+  String get cresMethodAlbum => _pick('相册', 'Album', 'アルバム');
+  String get cresMethodCameraDesc => _pick('调用手机相机拍照', 'Take a photo with your camera', 'スマホのカメラで撮影');
+  String get cresMethodAlbumDesc => _pick('从手机相册选择照片', 'Choose a photo from your album', 'アルバムから写真を選択');
+  String get cresFailedTitle => _pick('投屏失败', 'Casting Failed', 'キャスト失敗');
+  String get cresFailedDesc => _pick(
+    '设备连接中断，请检查设备状态后重试',
+    'The device connection was lost. Check the device and try again.',
+    'デバイスとの接続が切れました。状態を確認して再試行してください。',
+  );
+  String get cresRecast => _pick('重新投屏', 'Cast Again', '再キャスト');
+  String get cresBackHome => _pick('返回首页', 'Back to Home', 'ホームに戻る');
+  String get cresSuccessTitle => _pick('投屏成功', 'Casting Succeeded', 'キャスト成功');
+  String get cresSuccessDesc => _pick(
+    '照片已成功投屏到设备，可前往相册查看',
+    'The photo was cast to the device. You can view it in the album.',
+    '写真をデバイスにキャストしました。アルバムで確認できます。',
+  );
+  String get cresContinueCast => _pick('继续投屏', 'Continue Casting', 'キャストを続ける');
+  String get cresDeviceLabel => _pick('投屏设备', 'Casting Device', 'キャスト先デバイス');
+  String get cresManageLabel => _pick('投屏管理', 'Casting Management', 'キャスト管理');
+  String get cresDetailLabel => _pick('投屏明细', 'Casting Details', 'キャスト明細');
+  String get cresPreviewTitle => _pick('照片预览', 'Photo Preview', '写真プレビュー');
+  String get cresSave => _pick('保存', 'Save', '保存');
+  String get cresStartCast => _pick('开始投屏', 'Start Casting', 'キャスト開始');
+  String get cresCompressLabel => _pick(
+    '压缩图片（关闭后传原图，耗时更久）',
+    'Compress image (off = send original, slower)',
+    '画像を圧縮（オフで原本を送信、時間がかかります）',
+  );
+  String get cresCrop => _pick('裁剪', 'Crop', 'トリミング');
+  String get cresRotate => _pick('旋转', 'Rotate', '回転');
+  String get cresOriginal => _pick('原图', 'Original', '原本');
+  String get cresImagePlaceholder => _pick('图片占位', 'Image Placeholder', '画像プレースホルダー');
+
+  // ── 绑定设备 ──
+  String get bindDeviceTitle => _pick('绑定设备', 'Bind Device', 'デバイスの追加');
+  String get bindNearbyDevices => _pick('附近设备', 'Nearby Devices', '近くのデバイス');
+  String get bindBindNow => _pick('立即绑定', 'Bind Now', '今すぐ追加');
+  String get bindNotFoundTitle =>
+      _pick('未发现设备', 'No Device Found', 'デバイスが見つかりません');
+  String get bindNotFoundHint => _pick(
+    '设备连接中断，请检查设备状态后重试',
+    'Connection interrupted. Please check the device and try again.',
+    'デバイスの接続が切断されました。デバイスの状態を確認して再試行してください。',
+  );
+  String get bindRescan => _pick('重新扫描', 'Rescan', '再スキャン');
+  String get bindScanHelpLink =>
+      _pick('扫描不到怎么办？', "Can't find your device?", 'スキャンできない場合は？');
+  String get bindSearchingTitle => _pick(
+    '正在搜索附近设备',
+    'Searching for nearby devices',
+    '近くのデバイスを検索中',
+  );
+  String get bindSearchingHint => _pick(
+    '请尽量将手机靠近需要添加的设备...',
+    'Please keep your phone close to the device you want to add...',
+    '追加したいデバイスにできるだけスマートフォンを近づけてください...',
+  );
+  String get bindCancelScan => _pick('取消扫描', 'Cancel Scan', 'スキャンを中止');
+  String get bindPleaseCheck => _pick('请检查：', 'Please check:', '確認してください：');
+  String get bindCheckList => _pick(
+    '1.设备是否有电?\n'
+        '2.当前设备是否被占用?\n'
+        '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
+        '4.设备是否与手机距离过远，隔离或有其他遮挡物',
+    '1. Is the device powered on?\n'
+        '2. Is the device already in use?\n'
+        "3. Is the device's Bluetooth working and your phone's Bluetooth on?\n"
+        '4. Is the device too far away or blocked by obstacles?',
+    '1. デバイスの電源は入っていますか？\n'
+        '2. デバイスが他で使用されていませんか？\n'
+        '3. デバイスのBluetoothは正常に動作し、スマートフォンのBluetoothはオンですか？\n'
+        '4. デバイスが遠すぎたり、遮蔽物がありませんか？',
+  );
+  String get bindBtPermissionTitle => _pick(
+    '需要蓝牙权限',
+    'Bluetooth Permission Required',
+    'Bluetoothの権限が必要です',
+  );
+  String get bindBtPermissionMessage => _pick(
+    '搜索附近相框需要「蓝牙」与「附近设备」权限。请在系统设置中开启后，点「重新扫描」重试。',
+    'Searching for nearby frames requires "Bluetooth" and "Nearby devices" permissions. Please enable them in Settings, then tap "Rescan" to try again.',
+    '近くのフォトフレームを検索するには「Bluetooth」と「付近のデバイス」の権限が必要です。設定で有効にしてから「再スキャン」をタップして再試行してください。',
+  );
+  String get bindGoSettings => _pick('去设置', 'Open Settings', '設定を開く');
+  String get bindBtOffTitle => _pick(
+    '请先打开手机蓝牙开关',
+    'Please Turn On Bluetooth',
+    'スマートフォンのBluetoothをオンにしてください',
+  );
+  String get bindBtOffMessage => _pick(
+    '手机蓝牙未开启，无法搜索附近相框。打开蓝牙后，点「重新扫描」重试。',
+    'Bluetooth is off, so nearby frames cannot be found. Turn on Bluetooth, then tap "Rescan" to try again.',
+    'Bluetoothがオフのため、近くのフォトフレームを検索できません。Bluetoothをオンにしてから「再スキャン」をタップして再試行してください。',
+  );
+  String get bindGoOpenBt =>
+      _pick('去打开蓝牙', 'Turn On Bluetooth', 'Bluetoothをオンにする');
+  String get bindConnecting =>
+      _pick('连接设备中', 'Connecting to device', 'デバイスに接続中');
+  String get bindConnectSuccess => _pick('连接成功', 'Connected', '接続しました');
+  String get bindAlreadyBoundConnected => _pick(
+    '该设备已绑定，已为你连接',
+    'This device is already bound. Connected for you.',
+    'このデバイスは既に追加済みです。接続しました。',
+  );
+  String get bindSuccess => _pick('绑定成功', 'Bound successfully', '追加しました');
+  String bindBtUnsupported(Object error) => _pick(
+    '当前设备暂不支持蓝牙或未授权：$error',
+    'This device does not support Bluetooth or is not authorized: $error',
+    'この端末はBluetoothに対応していないか、許可されていません：$error',
+  );
+  String bindScanFailed(Object error) => _pick(
+    '扫描失败：$error',
+    'Scan failed: $error',
+    'スキャンに失敗しました：$error',
+  );
+  String bindConnectFailed(Object error) => _pick(
+    '设备连接失败：$error',
+    'Device connection failed: $error',
+    'デバイスの接続に失敗しました：$error',
+  );
+  String bindBatteryLabel(int battery) =>
+      _pick('电量$battery%', 'Battery $battery%', 'バッテリー$battery%');
+  String bindSignalLabel(String signal) =>
+      _pick('信号 $signal', 'Signal $signal', '信号 $signal');
+  String get carouselTitle =>
+      _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
+  String get carouselEnable =>
+      _pick('开启轮播', 'Enable Slideshow', 'スライドショーを有効にする');
+  String get carouselTip => _pick(
+    '轮播以开启时间起算24小时后轮播下一张',
+    'The slideshow advances to the next photo 24 hours after it is turned on.',
+    'スライドショーを有効にしてから24時間後に次の写真へ切り替わります。',
+  );
+  String get carouselMode =>
+      _pick('轮播方式', 'Slideshow Mode', 'スライドショー方式');
+  String get carouselSequence => _pick('顺序轮播', 'Sequential', '順番に再生');
+  String get carouselRandom => _pick('随机轮播', 'Random', 'ランダム再生');
+  String get devicesConnecting => _pick('连接设备中…', 'Connecting…', '接続中…');
+  String get devicesReadPhotoFailed => _pick(
+    '无法读取照片，请检查相机/相册权限后重试。',
+    'Unable to read the photo. Please check camera/album permissions and try again.',
+    '写真を読み込めません。カメラ／アルバムの権限を確認して再試行してください。',
+  );
+
+  // ── 设备详情/列表 ──
+  String get devDetailTitle => _pick('设备详情', 'Device Details', 'デバイス詳細');
+  String get devMyDevicesTitle => _pick('我的设备', 'My Devices', 'マイデバイス');
+  String get devRenameTitle => _pick('重命名设备', 'Rename Device', 'デバイス名を変更');
+  String get devDeviceNameTitle => _pick('设备名称', 'Device Name', 'デバイス名');
+  String get devNameHint => _pick('请输入设备名称', 'Enter a device name', 'デバイス名を入力してください');
+  String get devConfirm => _pick('确认', 'Confirm', '確認');
+  String get devConnecting => _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
+  String get devPhotoReadFailed => _pick(
+    '无法读取照片，请检查相机/相册权限后重试。',
+    'Unable to read photos. Please check camera/album permissions and try again.',
+    '写真を読み込めません。カメラ／アルバムの権限を確認して再試行してください。',
+  );
+  String get devConnected => _pick('已连接', 'Connected', '接続済み');
+  String get devDisconnected => _pick('未连接', 'Not Connected', '未接続');
+  String get devCast => _pick('投屏', 'Cast', 'キャスト');
+  String get devDisconnect => _pick('断开连接', 'Disconnect', '接続を切断');
+  String get devConnectBluetooth => _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetoothに接続');
+  String get devDisconnectShort => _pick('断开', 'Disconnect', '切断');
+  String get devConnectShort => _pick('连接', 'Connect', '接続');
+  String get devCarouselSetting => _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
+  String get devCarouselDisabled => _pick('未启用', 'Off', '無効');
+  String get devCarouselRandom => _pick('随机轮播', 'Shuffle', 'ランダム再生');
+  String get devCarouselSequential => _pick('顺序轮播', 'In Order', '順番再生');
+  String get devDeviceId => _pick('设备ID', 'Device ID', 'デバイスID');
+  String get devDeviceMemory => _pick('设备内存', 'Storage', 'ストレージ');
+  String get devOtaUpgrade => _pick('OTA升级', 'Firmware Update', 'OTAアップデート');
+  String devFirmwareNewVersion(String version) => _pick(
+    '发现新版本 $version',
+    'New version $version available',
+    '新しいバージョン $version',
+  );
+  String get devClearAll => _pick('一键清空', 'Clear All', '一括消去');
+  String get devClearAllValue => _pick(
+    '清空设备本地所有照片',
+    'Erase all photos stored on the device',
+    'デバイス内のすべての写真を消去',
+  );
+  String get devDeleteDevice => _pick('删除设备', 'Delete Device', 'デバイスを削除');
+  String get devDeleteDeviceValue => _pick(
+    '删除后将无法恢复',
+    'Cannot be undone once deleted',
+    '削除すると元に戻せません',
+  );
+  String get devEmptyTitle => _pick('暂无设备', 'No Devices', 'デバイスがありません');
+  String get devEmptySubtitle => _pick(
+    '请先搜索并绑定附近的智能相框。',
+    'Search for and pair a nearby smart photo frame first.',
+    'まず近くのスマートフォトフレームを検索してペアリングしてください。',
+  );
+  String get devAddDevice => _pick('添加设备', 'Add Device', 'デバイスを追加');
+  String get devClearStep1Message => _pick(
+    '将清空设备内所有照片，同时清空图库，请谨慎选择是否继续？',
+    'This will erase all photos on the device and clear the gallery. Are you sure you want to continue?',
+    'デバイス内のすべての写真とギャラリーを消去します。続行してもよろしいですか？',
+  );
+  String get devClearStep2Message => _pick(
+    '我已阅读并了解此操作的结果，确认清空设备与图库内的全部照片。',
+    'I have read and understood the consequences and confirm erasing all photos on the device and in the gallery.',
+    'この操作の結果を理解した上で、デバイスとギャラリー内のすべての写真を消去することを確認します。',
+  );
+  String get devDeleteDeviceMessage => _pick(
+    '删除后将断开与该相框的连接并解除绑定，后续使用需重新添加设备。',
+    'Deleting disconnects and unbinds this frame; you will need to add the device again to use it later.',
+    '削除するとこのフォトフレームとの接続を切断してバインドを解除します。再度使用するにはデバイスを追加し直す必要があります。',
+  );
+
+  // ── OTA 升级 ──
+  String get otaTitle => _pick('OTA升级', 'OTA Update', 'OTAアップデート');
+  String get otaFirmwareUpgrade => _pick('固件升级', 'Firmware Update', 'ファームウェア更新');
+  String get otaAlreadyLatestContent => _pick(
+    '当前固件已是最新版本',
+    'Your firmware is already up to date.',
+    'ファームウェアはすでに最新です。',
+  );
+  String get otaKnow => _pick('知道了', 'Got it', '了解');
+  String get otaLater => _pick('稍后', 'Later', '後で');
+  String get otaUpdateNow => _pick('立刻更新', 'Update Now', '今すぐ更新');
+  String get otaConnecting => _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
+  String get otaCheckingVersion => _pick('检测版本中', 'Checking version…', 'バージョンを確認中…');
+  String get otaDeviceNotFound => _pick('设备不存在', 'Device not found', 'デバイスが見つかりません');
+  String get otaMissingDeviceInfo => _pick(
+    '缺少设备信息，无法检查固件版本。',
+    'Device info is missing; cannot check the firmware version.',
+    'デバイス情報がなく、ファームウェアバージョンを確認できません。',
+  );
+  String get otaInvalidMissingInfo => _pick(
+    '检测到可更新状态，但缺少新版本号或固件下载地址，请稍后重试。',
+    'An update is available, but the new version number or firmware download URL is missing. Please try again later.',
+    '更新可能ですが、新しいバージョン番号またはファームウェアのダウンロードURLがありません。後でもう一度お試しください。',
+  );
+  String get otaInvalidBinUrl => _pick(
+    '固件下载地址不是有效的 .bin 文件，请稍后重试。',
+    'The firmware download URL is not a valid .bin file. Please try again later.',
+    'ファームウェアのダウンロードURLが有効な .bin ファイルではありません。後でもう一度お試しください。',
+  );
+  String get otaDefaultDeviceName => _pick('智能相框', 'Smart Frame', 'スマートフォトフレーム');
+  String get otaConfirmAfterDownload => _pick('下载后确认', 'Confirm after download', 'ダウンロード後に確認');
+  String get otaCannotUpgrade => _pick('无法升级', 'Cannot upgrade', 'アップグレードできません');
+  String get otaNewVersionFound => _pick('发现新版本', 'New version available', '新しいバージョンあり');
+  String get otaDeviceNotConnected => _pick('设备未连接', 'Device not connected', 'デバイス未接続');
+  String get otaConnectFirstHint => _pick(
+    '请先在详情页连接设备，并在升级过程中保持设备在线。',
+    'Please connect the device on the details page first, and keep it online during the upgrade.',
+    '先に詳細ページでデバイスを接続し、アップグレード中はオンラインを保ってください。',
+  );
+  String get otaUpToDate => _pick('已是最新', 'Up to date', '最新です');
+  String get otaNoBleConnection => _pick(
+    '未获取到设备蓝牙连接，请先在详情页连接设备后再升级。',
+    'No Bluetooth connection to the device. Please connect it on the details page before upgrading.',
+    'デバイスのBluetooth接続がありません。詳細ページで接続してからアップグレードしてください。',
+  );
+  String get otaDryRunning => _pick('干跑中', 'Dry run…', 'ドライラン中…');
+  String get otaUpgrading => _pick('升级中', 'Upgrading…', 'アップグレード中…');
+  String get otaPreparingDryRun => _pick('准备干跑', 'Preparing dry run…', 'ドライランを準備中…');
+  String get otaPreparingUpgrade => _pick('准备升级', 'Preparing upgrade…', 'アップグレードを準備中…');
+  String get otaDryRunPassed => _pick('干跑通过', 'Dry run passed', 'ドライラン成功');
+  String get otaUnconfirmedRetry => _pick('未确认(请重试)', 'Unconfirmed (retry)', '未確認（再試行）');
+  String get otaUpgradeComplete => _pick('升级完成', 'Upgrade complete', 'アップグレード完了');
+  String get otaDryRunFailed => _pick('干跑失败', 'Dry run failed', 'ドライラン失敗');
+  String get otaUpgradeFailed => _pick('升级失败', 'Upgrade failed', 'アップグレード失敗');
+  String get otaInterrupted => _pick(
+    '升级已中断：升级过程中手机切到后台或页面离开。请保持屏幕常亮后重试。',
+    'The upgrade was interrupted: the phone went to the background or left the page during the upgrade. Please keep the screen on and try again.',
+    'アップグレードが中断されました：アップグレード中にスマホがバックグラウンドに移行するかページを離れました。画面を常時点灯にして再試行してください。',
+  );
+  String get otaUpgradeNowAction => _pick('立即升级', 'Upgrade Now', '今すぐアップグレード');
+  String get otaRecheck => _pick('重新检查', 'Check Again', '再確認');
+  String get otaDone => _pick('已完成', 'Done', '完了');
+  String get otaChecking => _pick('检查中', 'Checking…', '確認中…');
+  String get otaCheckingFirmware => _pick(
+    '正在检查固件版本...',
+    'Checking firmware version…',
+    'ファームウェアバージョンを確認中…',
+  );
+  String get otaKeepPoweredHint => _pick(
+    '升级过程中请保持设备供电、手机屏幕常亮，并避免切换到后台。',
+    'During the upgrade, keep the device powered, keep your phone screen on, and avoid switching to the background.',
+    'アップグレード中はデバイスの電源を入れたまま、スマホの画面を常時点灯にし、バックグラウンドへの切り替えを避けてください。',
+  );
+  String get otaDryRunTest => _pick(
+    '干跑测试（mock 固件）',
+    'Dry Run Test (mock firmware)',
+    'ドライランテスト（モックファームウェア）',
+  );
+  String get otaReadyToUpgrade => _pick('可开始升级', 'Ready to upgrade', 'アップグレード可能');
+  String get otaNoUpgradeNeeded => _pick('无需升级', 'No upgrade needed', 'アップグレード不要');
+  String get otaUpgradeContent => _pick('升级内容', 'Update Details', '更新内容');
+  String get otaNoReleaseNotes => _pick('暂无升级说明', 'No release notes', '更新説明はありません');
+  String otaNewVersionConfirm(String version) => _pick(
+    '检测到新版本：$version，是否升级？',
+    'New version $version found. Update now?',
+    '新しいバージョン $version が見つかりました。更新しますか？',
+  );
+  String otaNewVersionNote(String version) => _pick(
+    '发现新版本：$version',
+    'New version: $version',
+    '新しいバージョン：$version',
+  );
+  String otaCurrentVersion(String version) => _pick(
+    '当前版本 $version',
+    'Current version $version',
+    '現在のバージョン $version',
+  );
+  String otaFirmwareVersion(String version) => _pick(
+    '固件版本 $version',
+    'Firmware version $version',
+    'ファームウェアバージョン $version',
+  );
+  String otaPackageSize(String size) => _pick(
+    '升级包 $size',
+    'Package $size',
+    'パッケージ $size',
+  );
+  String otaDryRunPassedDetail(int size, int packets, int chunk) => _pick(
+    '干跑通过：$size 字节 / $packets 包 / 每包 $chunk 字节',
+    'Dry run passed: $size bytes / $packets packets / $chunk bytes each',
+    'ドライラン成功：$size バイト / $packets パケット / 各パケット $chunk バイト',
+  );
+  String otaFirmwareSizeNote(int size) => _pick(
+    '固件大小：$size 字节',
+    'Firmware size: $size bytes',
+    'ファームウェアサイズ：$size バイト',
+  );
+  String otaLocalCrc32Note(String crc) => _pick(
+    '本地 CRC32：$crc',
+    'Local CRC32: $crc',
+    'ローカル CRC32：$crc',
+  );
+  String otaChunkingNote(int packets, int chunk, int prn) => _pick(
+    '分包：$packets 包 × $chunk 字节，PRN=$prn',
+    'Chunks: $packets packets × $chunk bytes, PRN=$prn',
+    '分割：$packets パケット × $chunk バイト、PRN=$prn',
+  );
+  String otaStartFrameNote(String hex) => _pick(
+    'START 帧：$hex',
+    'START frame: $hex',
+    'START フレーム：$hex',
+  );
+  String otaFirstDataFrameNote(String hex) => _pick(
+    '首个 DATA 帧：$hex …',
+    'First DATA frame: $hex …',
+    '最初の DATA フレーム：$hex …',
+  );
+  String otaDoneDetail(String done, int size, int packets) => _pick(
+    '$done（$size 字节 / $packets 包）',
+    '$done ($size bytes / $packets packets)',
+    '$done（$size バイト / $packets パケット）',
+  );
+
+  // ── 首页 ──
+  String get homeNoDeviceTitle => _pick('暂未绑定设备', 'No Device Bound', '端末が未登録です');
+  String get homeNoDeviceMessage => _pick(
+    '当前暂无可投屏设备，请先绑定相框设备',
+    'No device to cast to. Please bind a photo frame first.',
+    '投影できる端末がありません。先にフォトフレームを登録してください。',
+  );
+  String get homeBindNow => _pick('立即绑定', 'Bind Now', '今すぐ登録');
+  String get homeReadPhotoFailed => _pick(
+    '无法读取照片，请检查相机/相册权限后重试。',
+    'Unable to read photo. Please check camera/album permissions and try again.',
+    '写真を読み込めません。カメラ／アルバムの権限を確認して再試行してください。',
+  );
+  String get homeConnectingDevice => _pick('连接设备中', 'Connecting…', '接続中…');
+  String get homeOfflineTitle => _pick('离线模式', 'Offline Mode', 'オフラインモード');
+  String get homeOfflineMessage => _pick(
+    '当前网络异常，app进入离线模式无法同步投屏记录与图库',
+    'Network error. The app is offline and cannot sync cast records or the gallery.',
+    'ネットワークエラーです。アプリはオフラインになり、投影履歴とギャラリーを同期できません。',
+  );
+  String get homeUnboundHint => _pick(
+    '请先绑定相框设备后再投屏照片',
+    'Bind a photo frame before casting photos.',
+    '写真を投影する前にフォトフレームを登録してください。',
+  );
+  String get homeBindDevice => _pick('绑定设备', 'Bind Device', '端末を登録');
+  String get homeCastSheetTitle => _pick('选择投屏方式', 'Choose Cast Method', '投影方法を選択');
+  String get homeCastCameraTitle => _pick('拍照', 'Camera', '撮影');
+  String get homeCastAlbumTitle => _pick('相册', 'Album', 'アルバム');
+  String get homeCastCameraCardSubtitle => _pick('拍摄照片并投屏', 'Take a photo and cast it', '写真を撮って投影');
+  String get homeCastAlbumCardSubtitle => _pick('选择照片并投屏', 'Pick a photo and cast it', '写真を選んで投影');
+  String get homeBindSearchingTitle => _pick('正在搜索附近设备', 'Searching for nearby devices', '近くの端末を検索中');
+  String get homeBindSearchingSubtitle => _pick(
+    '请尽量将手机靠近需要添加的设备...',
+    'Keep your phone close to the device you want to add...',
+    '追加したい端末にスマホをできるだけ近づけてください...',
+  );
+  String get homeBindCancelScan => _pick('取消扫描', 'Cancel Scan', 'スキャンを中止');
+  String get homeBindNotFoundTitle => _pick('未发现设备', 'No Device Found', '端末が見つかりません');
+  String get homeBindNotFoundSubtitle => _pick(
+    '设备连接中断，请检查设备状态后重试',
+    'The connection was interrupted. Check the device and try again.',
+    '接続が中断されました。端末の状態を確認して再試行してください。',
+  );
+  String get homeRescan => _pick('重新扫描', 'Scan Again', '再スキャン');
+  String get homeScanHelpTitle => _pick('扫描不到怎么办?', "Can't find your device?", 'スキャンできない場合は？');
+  String get homeNearbyDevices => _pick('附近设备', 'Nearby Devices', '近くの端末');
+  String get homeScanHelpChecklistTitle => _pick('请检查：', 'Please check:', '確認してください：');
+  String get homeScanHelpBody => _pick(
+    '1.设备是否有电?\n'
+    '2.当前设备是否被占用?\n'
+    '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
+    '4.设备是否与手机距离过远，隔离或有其他遮挡物',
+    '1. Is the device powered on?\n'
+    '2. Is the device already in use?\n'
+    "3. Is the device's Bluetooth working, and is your phone's Bluetooth on?\n"
+    '4. Is the device too far, isolated, or otherwise obstructed?',
+    '1. 端末の電源は入っていますか？\n'
+    '2. 端末が他で使用中ではありませんか？\n'
+    '3. 端末のBluetoothは正常で、スマホのBluetoothはオンですか？\n'
+    '4. 端末がスマホから離れすぎたり、遮蔽物はありませんか？',
+  );
+  String get homeCastCameraSheetSubtitle => _pick('调用手机相机拍照', 'Use your phone camera to take a photo', 'スマホのカメラで撮影');
+  String get homeCastAlbumSheetSubtitle => _pick('从手机相册选择照片', 'Choose a photo from your phone album', 'スマホのアルバムから選択');
+  String get homeGreetingWelcome => _pick('欢迎使用 ', 'Welcome to ', 'ようこそ ');
+  String get homeConnected => _pick('已连接', 'Connected', '接続済み');
+  String get homeDisconnected => _pick('未连接', 'Not Connected', '未接続');
+
+  // ── 图库 ──
+  String get galTitle => _pick('我的图库', 'My Gallery', 'マイギャラリー');
+  String get galFrame => _pick('相框', 'Photo Frame', 'フォトフレーム');
+  String get galTip => _pick('提示', 'Notice', 'お知らせ');
+  String get galDeviceClearedNotice => _pick(
+    '当前设备已被执行清空操作，请重新上传图片',
+    'This device has been cleared. Please upload photos again.',
+    'このデバイスはクリアされました。写真を再度アップロードしてください。',
+  );
+  String get galConfirm => _pick('确认', 'Confirm', '確認');
+  String get galDeleting => _pick('删除中', 'Deleting…', '削除中…');
+  String get galRefreshing => _pick('刷新中', 'Refreshing…', '更新中…');
+  String get galRefreshSingleOnly => _pick(
+    '刷新屏幕只能选中一张图片',
+    'You can only refresh the screen with one photo selected.',
+    '画面の更新は写真を1枚だけ選択してください。',
+  );
+  String get galSelectAll => _pick('全选', 'Select All', 'すべて選択');
+  String galTotalCount(int count) =>
+      _pick('共 $count 张', '$count total', '合計$count枚');
+  String get galDeletePhotos => _pick('删除照片', 'Delete Photos', '写真を削除');
+  String galDeleteConfirm(int count) => _pick(
+    '确认删除已选的$count张照片吗？删除后将从当前设备图库中移除，且无法恢复',
+    'Delete the $count selected photo(s)? They will be removed from this device gallery and cannot be recovered.',
+    '選択した$count枚の写真を削除しますか？現在のデバイスのギャラリーから削除され、復元できません。',
+  );
+  String get galEmptyTitle => _pick(
+    '当前没有可查看的设备照片',
+    'No device photos to view',
+    '表示できるデバイスの写真がありません',
+  );
+  String get galEmptySubtitle => _pick(
+    '你可以重新投屏照片到设备',
+    'You can cast photos to the device again',
+    '写真をデバイスに再度キャストできます',
+  );
+  String get galCastAgain => _pick('重新投屏', 'Cast Again', '再度キャスト');
+
+  // ── 引导 ──
+  String get guideTitle => _pick('操作指南', 'User Guide', '操作ガイド');
+  String get guideSearchHint =>
+      _pick('搜索帮助文档', 'Search help docs', 'ヘルプを検索');
+
+  // ── 我的 ──
+  String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
+  String get mineServiceHelp =>
+      _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
+  String get mineMyGallery => _pick('我的图库', 'My Gallery', 'マイギャラリー');
+  String get mineMyDevices => _pick('我的设备', 'My Devices', 'マイデバイス');
+  String get mineCastManagement =>
+      _pick('投屏管理', 'Cast Management', 'キャスト管理');
+  String get mineGuide => _pick('操作指南', 'User Guide', '操作ガイド');
+  String get mineSettings => _pick('设置', 'Settings', '設定');
+  String mineUserId(String id) => _pick('ID：$id', 'ID: $id', 'ID：$id');
+  String minePhotoCountText(bool loaded, int value) => _pick(
+    loaded ? '$value张照片' : '--张照片',
+    loaded ? '$value photos' : '-- photos',
+    loaded ? '$value枚' : '--枚',
+  );
+  String mineDeviceCountText(bool loaded, int value) => _pick(
+    loaded ? '$value个设备' : '--个设备',
+    loaded ? '$value devices' : '-- devices',
+    loaded ? '$value台' : '--台',
+  );
+
+  // ── 设置 ──
+  String get setPrivacyTitle =>
+      _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');
+  String get setAgreementTitle => _pick('用户协议', 'User Agreement', '利用規約');
+  String get setUpdateBoltStar =>
+      _pick('更新BoltStar', 'Update BoltStar', 'BoltStarを更新');
+  String get setUpdateNow => _pick('立即更新', 'Update Now', '今すぐ更新');
+  String get setUpdatedToLatest => _pick(
+    '已更新到最新版本',
+    'Updated to the latest version',
+    '最新バージョンに更新しました',
+  );
+  String get setAppIntro => _pick(
+    'BoltStar是一款帮助你轻松管理和分享照片的应用，连接设备，珍藏生活每一刻。',
+    'BoltStar helps you easily manage and share photos, connect your devices, and treasure every moment of life.',
+    'BoltStarは写真を簡単に管理・共有し、デバイスに接続して、生活の一瞬一瞬を大切に残せるアプリです。',
+  );
+  String setVersionLabel(String version) =>
+      _pick('版本$version', 'Version $version', 'バージョン$version');
+  String setVersionCompare(String current, String latest) => _pick(
+    '当前版本$current · 最新版本$latest',
+    'Current $current · Latest $latest',
+    '現在 $current · 最新 $latest',
+  );
+  String get setUpdating => _pick('正在更新...', 'Updating…', '更新中…');
+  String get setDownloading =>
+      _pick('正在下载更新中', 'Downloading update…', '更新をダウンロード中…');
+  String setUpdatedDate(String date) =>
+      _pick('更新日期：$date', 'Updated: $date', '更新日：$date');
+  String setEffectiveDate(String date) =>
+      _pick('生效日期：$date', 'Effective: $date', '施行日：$date');
+}
+
+/// 语言选择的本地持久化（对齐 [EmailHistory] 的轻量键值做法），保证重启后仍是上次选的语言。
+class LanguagePreference {
+  LanguagePreference._();
+
+  static const String _key = 'app_language';
+
+  /// 读取上次保存的语言；无记录返回 null（调用方保留默认 zh）。
+  static Future<AppLanguage?> load() async {
+    final prefs = await SharedPreferences.getInstance();
+    final value = prefs.getString(_key);
+    switch (value) {
+      case 'zh':
+        return AppLanguage.zh;
+      case 'en':
+        return AppLanguage.en;
+      case 'ja':
+        return AppLanguage.ja;
+      default:
+        return null;
+    }
+  }
+
+  static Future<void> save(AppLanguage language) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_key, language.name);
+  }
+}

@@ -79,9 +79,9 @@ class _BindDeviceView extends StatelessWidget {
                                   ),
                                 ),
                               ),
-                              const Center(
+                              Center(
                                 child: Text(
-                                  '绑定设备',
+                                  AppL10n.of(context).homeBindDevice,
                                   style: _HomeTextStyles.navTitle,
                                 ),
                               ),
@@ -101,7 +101,7 @@ class _BindDeviceView extends StatelessWidget {
                           ),
                         ),
                         const SizedBox(height: 16),
-                        ..._modeContent(),
+                        ..._modeContent(context),
                         const SizedBox(height: 16),
                       ],
                     ),
@@ -118,23 +118,26 @@ class _BindDeviceView extends StatelessWidget {
   }
 
   /// 根据 [mode] 返回雷达下方的主体内容。
-  List<Widget> _modeContent() {
+  List<Widget> _modeContent(BuildContext context) {
+    final l10n = AppL10n.of(context);
     if (mode == _HomeBindMode.searching) {
       return _statusContent(
-        title: '正在搜索附近设备',
-        subtitle: '请尽量将手机靠近需要添加的设备...',
-        buttonLabel: '取消扫描',
+        context: context,
+        title: l10n.homeBindSearchingTitle,
+        subtitle: l10n.homeBindSearchingSubtitle,
+        buttonLabel: l10n.homeBindCancelScan,
         onButton: onCancel,
       );
     }
     if (_found) {
-      return _foundContent();
+      return _foundContent(context);
     }
     if (_notFound && !showScanHelp) {
       return _statusContent(
-        title: '未发现设备',
-        subtitle: '设备连接中断，请检查设备状态后重试',
-        buttonLabel: '重新扫描',
+        context: context,
+        title: l10n.homeBindNotFoundTitle,
+        subtitle: l10n.homeBindNotFoundSubtitle,
+        buttonLabel: l10n.homeRescan,
         onButton: onRetry,
       );
     }
@@ -144,6 +147,7 @@ class _BindDeviceView extends StatelessWidget {
 
   /// searching / notFound 共用：标题 + 副标题 +「扫描不到怎么办?」+ 主按钮。
   List<Widget> _statusContent({
+    required BuildContext context,
     required String title,
     required String subtitle,
     required String buttonLabel,
@@ -166,8 +170,8 @@ class _BindDeviceView extends StatelessWidget {
       GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onHelp,
-        child: const Text(
-          '扫描不到怎么办?',
+        child: Text(
+          AppL10n.of(context).homeScanHelpTitle,
           textAlign: TextAlign.center,
           style: _HomeTextStyles.orangeLink,
         ),
@@ -181,13 +185,16 @@ class _BindDeviceView extends StatelessWidget {
   }
 
   /// found 场景：附近设备列表 +「立即绑定」。
-  List<Widget> _foundContent() {
+  List<Widget> _foundContent(BuildContext context) {
     return [
       const SizedBox(height: 8),
       Row(
         children: [
-          const Expanded(
-            child: Text('附近设备', style: _HomeTextStyles.sectionTitle),
+          Expanded(
+            child: Text(
+              AppL10n.of(context).homeNearbyDevices,
+              style: _HomeTextStyles.sectionTitle,
+            ),
           ),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -221,7 +228,10 @@ class _BindDeviceView extends StatelessWidget {
       const Spacer(),
       SizedBox(
         height: 56,
-        child: _GradientButton(label: '立即绑定', onPressed: onBind),
+        child: _GradientButton(
+          label: AppL10n.of(context).homeBindNow,
+          onPressed: onBind,
+        ),
       ),
     ];
   }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'legal_document_view.dart';
 
 /// 用户协议页面，对应 UI 稿「用户协议」。正文为占位文案，接入正式条款时替换 [_sections]。
@@ -9,11 +10,11 @@ class UserAgreementPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const FigmaScreen(
-      title: '用户协议',
+    return FigmaScreen(
+      title: AppL10n.of(context).setAgreementTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
-      body: LegalDocumentView(
+      body: const LegalDocumentView(
         title: '《BoltStar 用户协议》',
         updatedAt: '2026-5-13',
         effectiveAt: '2026-5-13',

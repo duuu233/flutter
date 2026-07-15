@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'bind_device_debug_entry.dart';
 import 'bind_device_scan_help.dart';
 
@@ -14,7 +15,7 @@ class BindDeviceNotFound extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FigmaScreen(
-      title: '绑定设备',
+      title: AppL10n.of(context).bindDeviceTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -30,14 +31,14 @@ class BindDeviceNotFound extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
-            '未发现设备',
+          Text(
+            AppL10n.of(context).bindNotFoundTitle,
             textAlign: TextAlign.center,
             style: FigmaTextStyles.pageHeading,
           ),
           const SizedBox(height: 8),
-          const Text(
-            '设备连接中断，请检查设备状态后重试',
+          Text(
+            AppL10n.of(context).bindNotFoundHint,
             textAlign: TextAlign.center,
             style: FigmaTextStyles.bodySmall,
           ),
@@ -56,7 +57,10 @@ class BindDeviceNotFound extends StatelessWidget {
           const SizedBox(height: 16),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: '重新扫描', onPressed: onRetry),
+      bottom: FigmaPrimaryButton(
+        label: AppL10n.of(context).bindRescan,
+        onPressed: onRetry,
+      ),
     );
   }
 }
@@ -71,10 +75,10 @@ class _ScanHelpLink extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: const Text(
-        '扫描不到怎么办？',
+      child: Text(
+        AppL10n.of(context).bindScanHelpLink,
         textAlign: TextAlign.center,
-        style: TextStyle(
+        style: const TextStyle(
           color: Color(0xFF2A2B2B),
           fontSize: 14,
           fontWeight: FontWeight.w400,

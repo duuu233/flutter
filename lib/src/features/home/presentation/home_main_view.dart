@@ -56,7 +56,7 @@ class _HomeMainView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const _HomeNavBar(title: '首页'),
+        _HomeNavBar(title: AppL10n.of(context).tabHome),
         Expanded(
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -121,7 +121,7 @@ class _HomeMainView extends StatelessWidget {
           ),
         ),
         const Spacer(),
-        ..._castSection(),
+        ..._castSection(context),
         const Spacer(),
         Padding(
           padding: _textInset,
@@ -142,10 +142,10 @@ class _HomeMainView extends StatelessWidget {
           child: SizedBox(width: 240, height: 189, child: _UnboundDeviceArt()),
         ),
         const SizedBox(height: 12),
-        const SizedBox(
+        SizedBox(
           width: double.infinity,
           child: Text(
-            '请先绑定相框设备后再投屏照片',
+            AppL10n.of(context).homeUnboundHint,
             textAlign: TextAlign.center,
             style: _HomeTextStyles.mutedBody,
           ),
@@ -156,7 +156,7 @@ class _HomeMainView extends StatelessWidget {
             width: 200,
             height: 44,
             child: _GradientButton(
-              label: '绑定设备',
+              label: AppL10n.of(context).homeBindDevice,
               height: 44,
               fontSize: 15,
               icon: Container(
@@ -178,7 +178,7 @@ class _HomeMainView extends StatelessWidget {
         ),
         // const Spacer(flex: 6),
         const SizedBox(height: 68),
-        ..._castSection(),
+        ..._castSection(context),
         const Spacer(),
         Padding(
           padding: _textInset,
@@ -190,14 +190,17 @@ class _HomeMainView extends StatelessWidget {
   }
 
   /// 两种场景共用的底部「选择投屏方式」标题 + 拍照/相册两张入口卡。
-  List<Widget> _castSection() {
+  List<Widget> _castSection(BuildContext context) {
     return [
       Padding(
         padding: _textInset,
         child: GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onShowCastSheet,
-          child: const Text('选择投屏方式', style: _HomeTextStyles.sectionTitle),
+          child: Text(
+            AppL10n.of(context).homeCastSheetTitle,
+            style: _HomeTextStyles.sectionTitle,
+          ),
         ),
       ),
       const SizedBox(height: 8),
@@ -217,8 +220,8 @@ class _HomeMainView extends StatelessWidget {
           children: [
             Expanded(
               child: _CastEntryCard(
-                title: '拍照',
-                subtitle: '拍摄照片并投屏',
+                title: AppL10n.of(context).homeCastCameraTitle,
+                subtitle: AppL10n.of(context).homeCastCameraCardSubtitle,
                 artAsset: 'assets/images/camera_material.png',
                 arrowAsset: 'assets/images/home-icon05.png',
                 backgroundAsset: 'assets/images/home-camera-card-bg.png',
@@ -229,8 +232,8 @@ class _HomeMainView extends StatelessWidget {
             const SizedBox(width: 9),
             Expanded(
               child: _CastEntryCard(
-                title: '相册',
-                subtitle: '选择照片并投屏',
+                title: AppL10n.of(context).homeCastAlbumTitle,
+                subtitle: AppL10n.of(context).homeCastAlbumCardSubtitle,
                 artAsset: 'assets/images/album_material.png',
                 arrowAsset: 'assets/images/home-icon06.png',
                 backgroundAsset: 'assets/images/home-album-card-bg.png',

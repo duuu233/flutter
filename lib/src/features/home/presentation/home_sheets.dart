@@ -41,10 +41,10 @@ class _ScanHelpSheet extends StatelessWidget {
                   children: [
                     Stack(
                       children: [
-                        const SizedBox(
+                        SizedBox(
                           width: double.infinity,
                           child: Text(
-                            '扫描不到怎么办?',
+                            AppL10n.of(context).homeScanHelpTitle,
                             textAlign: TextAlign.center,
                             style: _HomeTextStyles.sheetTitle,
                           ),
@@ -81,18 +81,18 @@ class _ScanHelpSheet extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 26),
-                    const Align(
-                      alignment: Alignment.centerLeft,
-                      child: Text('请检查：', style: _HomeTextStyles.helpTitle),
-                    ),
-                    const SizedBox(height: 12),
-                    const Align(
+                    Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
-                        '1.设备是否有电?\n'
-                        '2.当前设备是否被占用?\n'
-                        '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
-                        '4.设备是否与手机距离过远，隔离或有其他遮挡物',
+                        AppL10n.of(context).homeScanHelpChecklistTitle,
+                        style: _HomeTextStyles.helpTitle,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        AppL10n.of(context).homeScanHelpBody,
                         style: _HomeTextStyles.helpBody,
                       ),
                     ),
@@ -100,7 +100,10 @@ class _ScanHelpSheet extends StatelessWidget {
                     SizedBox(
                       width: double.infinity,
                       height: 56,
-                      child: _GradientButton(label: '重新扫描', onPressed: onRetry),
+                      child: _GradientButton(
+                        label: AppL10n.of(context).homeRescan,
+                        onPressed: onRetry,
+                      ),
                     ),
                   ],
                 ),
@@ -215,11 +218,14 @@ class _CastMethodSheet extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text('选择投屏方式', style: _HomeTextStyles.sheetTitle),
+              Text(
+                AppL10n.of(context).homeCastSheetTitle,
+                style: _HomeTextStyles.sheetTitle,
+              ),
               const SizedBox(height: 25),
               _CastSheetRow(
-                title: '拍照',
-                subtitle: '调用手机相机拍照',
+                title: AppL10n.of(context).homeCastCameraTitle,
+                subtitle: AppL10n.of(context).homeCastCameraSheetSubtitle,
                 artAsset: 'assets/images/home-media-mini01.png',
                 arrowAsset: 'assets/images/home-camera-card-right-icon.png',
                 onTap: onCamera,
@@ -227,8 +233,8 @@ class _CastMethodSheet extends StatelessWidget {
               // 小程序 .media-option margin-bottom: 20rpx = 10。
               const SizedBox(height: 10),
               _CastSheetRow(
-                title: '相册',
-                subtitle: '从手机相册选择照片',
+                title: AppL10n.of(context).homeCastAlbumTitle,
+                subtitle: AppL10n.of(context).homeCastAlbumSheetSubtitle,
                 artAsset: 'assets/images/home-media-mini02.png',
                 arrowAsset: 'assets/images/home-album-card-right-icon.png',
                 onTap: onAlbum,
@@ -243,8 +249,11 @@ class _CastMethodSheet extends StatelessWidget {
                   child: InkWell(
                     borderRadius: BorderRadius.circular(28),
                     onTap: () => Navigator.maybePop(context),
-                    child: const Center(
-                      child: Text('取消', style: _HomeTextStyles.cancelButton),
+                    child: Center(
+                      child: Text(
+                        AppL10n.of(context).cancel,
+                        style: _HomeTextStyles.cancelButton,
+                      ),
                     ),
                   ),
                 ),

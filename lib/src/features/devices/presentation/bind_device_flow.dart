@@ -6,6 +6,7 @@ import '../../../device/frame_device_protocol.dart';
 import '../../../device/serial_match.dart';
 import '../../../native_device_api.dart';
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import 'bind_device_found.dart';
@@ -57,7 +58,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         return;
       }
       setState(() => _stage = _Stage.notFound);
-      _toast('当前设备暂不支持蓝牙或未授权：$error');
+      _toast(AppL10n.of(context).bindBtUnsupported(error));
       return;
     }
     if (!mounted) {
@@ -65,20 +66,22 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     }
     if (!status.bluetoothPermissionGranted) {
       setState(() => _stage = _Stage.notFound);
+      final l10n = AppL10n.of(context);
       await _showBluetoothGuide(
-        title: '需要蓝牙权限',
-        message: '搜索附近相框需要「蓝牙」与「附近设备」权限。请在系统设置中开启后，点「重新扫描」重试。',
-        actionLabel: '去设置',
+        title: l10n.bindBtPermissionTitle,
+        message: l10n.bindBtPermissionMessage,
+        actionLabel: l10n.bindGoSettings,
         onAction: NativeDeviceApi.openAppSettings,
       );
       return;
     }
     if (!status.bluetoothEnabled) {
       setState(() => _stage = _Stage.notFound);
+      final l10n = AppL10n.of(context);
       await _showBluetoothGuide(
-        title: '请先打开手机蓝牙开关',
-        message: '手机蓝牙未开启，无法搜索附近相框。打开蓝牙后，点「重新扫描」重试。',
-        actionLabel: '去打开蓝牙',
+        title: l10n.bindBtOffTitle,
+        message: l10n.bindBtOffMessage,
+        actionLabel: l10n.bindGoOpenBt,
         onAction: NativeDeviceApi.openBluetoothSettings,
       );
       return;
@@ -93,7 +96,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       if (!mounted) {
         return;
       }
-      _toast('扫描失败：$error');
+      _toast(AppL10n.of(context).bindScanFailed(error));
       setState(() => _stage = _Stage.notFound);
       return;
     }
@@ -112,10 +115,11 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     final screen = BleController.screenLabelOf(result);
     final battery = BleController.batteryOf(result);
     final signal = BleController.rssiToSignalText(result.rssi);
+    final l10n = AppL10n.of(context);
     final parts = <String>[
       if (screen.isNotEmpty) screen,
-      if (battery != null) '电量$battery%',
-      '信号 ${signal.isEmpty ? '--' : signal}',
+      if (battery != null) l10n.bindBatteryLabel(battery),
+      l10n.bindSignalLabel(signal.isEmpty ? '--' : signal),
     ];
     return BindDeviceEntry(
       id: result.device.remoteId.str,
@@ -144,7 +148,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('取消'),
+            child: Text(AppL10n.of(dialogContext).cancel),
           ),
           TextButton(
             onPressed: () async {
@@ -176,19 +180,19 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     setState(() => _binding = true);
 
     // 真机设备：先连接读取真实信息（电量/播放/屏幕/固件），连接失败则中止绑定（无模拟兜底）。
-    _toast('连接设备中');
+    _toast(AppL10n.of(context).bindConnecting);
     final error = await _ble.connect(result);
     if (!mounted) {
       return;
     }
     if (error != null) {
       setState(() => _binding = false);
-      _toast('设备连接失败：$error');
+      _toast(AppL10n.of(context).bindConnectFailed(error));
       return;
     }
 
     // 连接并读取设备信息成功：先提示「连接成功」，短暂停留让用户看到后（对齐小程序 800ms），再走绑定。
-    _toast('连接成功');
+    _toast(AppL10n.of(context).bindConnectSuccess);
     await Future<void>.delayed(const Duration(milliseconds: 800));
     if (!mounted) {
       return;
@@ -224,7 +228,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       // 保持 binding=true 直到返回上一页，避免 500ms 窗口内被重复点击触发二次操作。
       widget.state.selectDevice(existed.id);
       widget.state.reconcileConnectionFlags();
-      _toast('该设备已绑定，已为你连接');
+      _toast(AppL10n.of(context).bindAlreadyBoundConnected);
       _popAfter(const Duration(milliseconds: 500));
       return;
     }
@@ -259,7 +263,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       widget.state.selectDevice(persisted.id);
     }
     widget.state.reconcileConnectionFlags();
-    _toast('绑定成功');
+    _toast(AppL10n.of(context).bindSuccess);
     // 绑定成功后不再断开连接：返回设备列表即显示「已连接」。保持 binding=true 直到返回上一页。
     _popAfter(const Duration(milliseconds: 500));
   }

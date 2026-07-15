@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/home_figma_common.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'bind_device_debug_entry.dart';
 
 /// 绑定设备-发现设备页里展示的单台设备视图模型。
@@ -60,7 +61,7 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
         : (entries.isNotEmpty ? entries.first.id : '');
 
     return FigmaScreen(
-      title: '绑定设备',
+      title: AppL10n.of(context).bindDeviceTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -77,10 +78,10 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
           const SizedBox(height: 20),
           Row(
             children: [
-              const Expanded(
+              Expanded(
                 child: Text(
-                  '附近设备',
-                  style: TextStyle(
+                  AppL10n.of(context).bindNearbyDevices,
+                  style: const TextStyle(
                     color: Color(0xFF2A2B2B),
                     fontSize: 18,
                     fontWeight: FontWeight.w600,
@@ -133,7 +134,7 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
         ],
       ),
       bottom: FigmaHomePrimaryButton(
-        label: '立即绑定',
+        label: AppL10n.of(context).bindBindNow,
         onPressed: selectedId.isEmpty
             ? null
             : () => widget.onBindId?.call(selectedId),
