@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../device/ble_controller.dart';
@@ -22,6 +24,8 @@ class BoltStarApp extends StatefulWidget {
 class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   final PhotoFrameState _state = PhotoFrameState.seeded();
   int _currentIndex = 0;
+  bool _showSplash = true;
+  Timer? _splashTimer;
 
   /// 全局 Navigator：登录态失效时需要在没有 BuildContext 的情况下把栈弹回根路由。
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
@@ -34,6 +38,12 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _state.addListener(_handleAuthChanged);
+    // 首帧后短暂保留品牌启动页，避免 Flutter 初始化完成时直接闪入登录/首页。
+    _splashTimer = Timer(const Duration(milliseconds: 900), () {
+      if (mounted) {
+        setState(() => _showSplash = false);
+      }
+    });
     // 恢复上次选择的语言（持久化在本地）。异步读取，读到后 switchLanguage 会 notify 触发整树重译。
     LanguagePreference.load().then((language) {
       if (language != null && mounted) {
@@ -44,6 +54,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
 
   @override
   void dispose() {
+    _splashTimer?.cancel();
     _state.removeListener(_handleAuthChanged);
     WidgetsBinding.instance.removeObserver(this);
     _state.dispose();
@@ -120,10 +131,41 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
           // 语言作用域置于 Navigator 之上：切换语言时所有路由（含 push 出来的业务页）随之重译。
           builder: (context, child) => AppLocalizationsScope(
             language: _state.language,
-            child: child ?? const SizedBox.shrink(),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                child ?? const SizedBox.shrink(),
+                if (_showSplash) const _AppSplash(),
+              ],
+            ),
           ),
         );
       },
+    );
+  }
+}
+
+/// 跨平台 Flutter 启动页：与 Android 原生启动背景衔接，使用产品指定的 bg01 + logo。
+class _AppSplash extends StatelessWidget {
+  const _AppSplash();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xFFF7EDE2),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
+          Center(
+            child: Image.asset(
+              'assets/images/logo.png',
+              width: 210,
+              fit: BoxFit.contain,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

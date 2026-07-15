@@ -25,6 +25,7 @@ import 'cast_result_common.dart';
 class CastingProgressPage extends StatefulWidget {
   const CastingProgressPage({
     super.key,
+    this.state,
     this.progress = 10 / 12,
     this.progressLabel = '10/12',
     this.userProductId,
@@ -38,6 +39,7 @@ class CastingProgressPage extends StatefulWidget {
 
   final double progress;
   final String progressLabel;
+  final PhotoFrameState? state;
 
   /// 后端设备 id（写投屏记录用）。为空则为纯展示模式。
   final Object? userProductId;
@@ -147,6 +149,12 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             onProgress: handleProgress,
           );
     if (!mounted) return;
+    if (widget.state != null && widget.userProductId != null) {
+      await widget.state!.refreshConnectedDeviceInfo(
+        widget.userProductId.toString(),
+      );
+      if (!mounted) return;
+    }
     final l10n = AppL10n.of(context);
     setState(() {
       _successCount = result.uploaded;
@@ -232,8 +240,13 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         // 选完图先进预览页（对齐小程序 result.js chooseCamera/chooseAlbum → 跳 preview）。
         // 没有设备对象（从投屏记录「再次投屏」进来的）时退化为直接投。
         builder: (_) => device != null
-            ? CastPreviewPage(device: device, imagePaths: paths)
+            ? CastPreviewPage(
+                state: widget.state,
+                device: device,
+                imagePaths: paths,
+              )
             : CastingProgressPage(
+                state: widget.state,
                 userProductId: widget.userProductId,
                 deviceName: widget.deviceName,
                 imagePaths: paths,
@@ -242,22 +255,29 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
     );
   }
 
-  /// 「重新投屏」：用同一批图（或同一条记录的设备帧）原样再跑一次。
-  ///
-  /// 小程序这里是 `redirectTo` 回预览页重选；这里的图已经是预览页处理过（裁剪/旋转/中心裁切）
-  /// 的成品，直接以相同入参重跑即可，不必再走一遍预览。
+  /// 「重新投屏」：重新进入预览/裁剪流程（对齐小程序记录页与结果页）。
   void _retry() {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
-        builder: (_) => CastingProgressPage(
-          userProductId: widget.userProductId,
-          device: widget.device,
-          deviceName: widget.deviceName,
-          imagePaths: widget.imagePaths,
-          recastImgBle: widget.recastImgBle,
-          recastUpirId: widget.recastUpirId,
-          recastImgUrl: widget.recastImgUrl,
-        ),
+        builder: (_) => widget.device != null && widget.imagePaths.isNotEmpty
+            ? CastPreviewPage(
+                state: widget.state,
+                device: widget.device!,
+                imagePaths: widget.imagePaths,
+                recastImgBle: widget.recastImgBle,
+                recastUpirId: widget.recastUpirId,
+                recastImgUrl: widget.recastImgUrl,
+              )
+            : CastingProgressPage(
+                state: widget.state,
+                userProductId: widget.userProductId,
+                device: widget.device,
+                deviceName: widget.deviceName,
+                imagePaths: widget.imagePaths,
+                recastImgBle: widget.recastImgBle,
+                recastUpirId: widget.recastUpirId,
+                recastImgUrl: widget.recastImgUrl,
+              ),
       ),
     );
   }

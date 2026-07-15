@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -419,8 +420,11 @@ class _HomePageState extends State<HomePage> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) =>
-            CastPreviewPage(device: activeDevice, imagePaths: imagePaths),
+        builder: (_) => CastPreviewPage(
+          state: widget.state,
+          device: activeDevice,
+          imagePaths: imagePaths,
+        ),
       ),
     );
     if (!mounted) {

@@ -60,7 +60,7 @@ class DeviceDetailsPage extends StatelessWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('编辑设备名称'),
+        title: Text(AppL10n.of(context).devRenameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
@@ -162,7 +162,11 @@ class DeviceDetailsPage extends StatelessWidget {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) => CastPreviewPage(device: device, imagePaths: imagePaths),
+        builder: (_) => CastPreviewPage(
+          state: state,
+          device: device,
+          imagePaths: imagePaths,
+        ),
       ),
     );
     state.refreshAlbum();
@@ -582,31 +586,36 @@ class _DeviceActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        height: 44,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient: primary
-              ? const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-                )
-              : null,
-          color: primary ? null : Colors.white.withValues(alpha: 0.86),
-          borderRadius: BorderRadius.circular(22),
-          border: primary ? null : Border.all(color: const Color(0xFFFF6A20)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: primary ? Colors.white : const Color(0xFFFF6A20),
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            height: 1,
+    return Container(
+      height: 44,
+      decoration: BoxDecoration(
+        gradient: primary
+            ? const LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
+              )
+            : null,
+        color: primary ? null : Colors.white.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(22),
+        border: primary ? null : Border.all(color: const Color(0xFFFF6A20)),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(22),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: primary ? Colors.white : const Color(0xFFFF6A20),
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                height: 1,
+              ),
+            ),
           ),
         ),
       ),

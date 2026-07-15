@@ -35,7 +35,8 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('微信授权登录'), findsOneWidget);
+    final weChatButton = find.bySemanticsLabel('微信授权登录');
+    expect(weChatButton, findsOneWidget);
     expect(
       find.byWidgetPredicate(
         (widget) =>
@@ -47,7 +48,9 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('微信授权登录'));
+    expect(tester.getSize(weChatButton), const Size(48, 48));
+
+    await tester.tap(weChatButton);
     await tester.pump();
 
     expect(fakeClient.callCount, 0);

@@ -94,7 +94,9 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
 
   void _save() {
     widget.state.switchLanguage(_selected.language);
-    AppToast.show(context, '已保存');
+    // 持久化后立即由根节点重建语言作用域；当前页和已 push 的页面都会同步更新。
+    LanguagePreference.save(_selected.language);
+    AppToast.show(context, AppL10n.of(context).languageSaved);
   }
 }
 

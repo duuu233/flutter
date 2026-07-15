@@ -321,17 +321,17 @@ class _AuthCanvas extends StatelessWidget {
               loading: submitting && !weChatSubmitting,
             ),
           ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 48,
+          const SizedBox(height: 24),
+          _RegisterPrompt(onRegister: onRegister),
+          const Spacer(flex: 4),
+          // 微信授权是次要登录入口：按小程序样式放在页面底部，使用圆形微信图标。
+          Center(
             child: _WeChatLoginButton(
               onPressed: submitting ? null : onWeChatLogin,
               loading: weChatSubmitting,
             ),
           ),
-          const SizedBox(height: 18),
-          _RegisterPrompt(onRegister: onRegister),
-          const Spacer(flex: 4),
+          const SizedBox(height: 20),
           Center(
             child: _AgreementRow(
               agreed: agreed,
@@ -664,7 +664,10 @@ class _PrimaryButton extends StatelessWidget {
                       color: Colors.white,
                     ),
                   )
-                : const Text('登 录', style: _AuthTextStyles.button),
+                : Text(
+                    AppL10n.of(context).accLoginButton,
+                    style: _AuthTextStyles.button,
+                  ),
           ),
         ),
       ),
@@ -684,37 +687,38 @@ class _WeChatLoginButton extends StatelessWidget {
       button: true,
       enabled: onPressed != null,
       label: '微信授权登录',
-      child: Material(
-        color: const Color(0xFF07C160),
-        borderRadius: BorderRadius.circular(71),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (loading)
-                const SizedBox.square(
-                  dimension: 22,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              else
-                Image.asset(
-                  'assets/images/login-wx-icon.png',
-                  width: 25,
-                  height: 25,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.chat_bubble_rounded,
-                    size: 23,
-                    color: Colors.white,
-                  ),
-                ),
-              const SizedBox(width: 10),
-              const Text('微信授权登录', style: _AuthTextStyles.weChatButton),
-            ],
+      child: SizedBox.square(
+        dimension: 48,
+        child: Material(
+          color: onPressed == null
+              ? const Color(0xFF07C160).withValues(alpha: 0.55)
+              : const Color(0xFF07C160),
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onPressed,
+            customBorder: const CircleBorder(),
+            child: Center(
+              child: loading
+                  ? const SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Image.asset(
+                      'assets/images/login-wx-icon.png',
+                      width: 30,
+                      height: 30,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) => const Icon(
+                        Icons.wechat,
+                        size: 30,
+                        color: Colors.white,
+                      ),
+                    ),
+            ),
           ),
         ),
       ),
@@ -877,13 +881,6 @@ class _AuthTextStyles {
     fontWeight: FontWeight.w500,
     height: 1.2,
     letterSpacing: 2,
-  );
-
-  static const weChatButton = TextStyle(
-    color: Colors.white,
-    fontSize: 16,
-    fontWeight: FontWeight.w500,
-    height: 1.2,
   );
 
   static const register = TextStyle(

@@ -130,7 +130,9 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
           autofocus: true,
           maxLength: 6,
           cursorColor: const Color(0xFFEB5F1B),
-          decoration: const InputDecoration(hintText: '请输入设备名称（1-6个字符）'),
+          decoration: InputDecoration(
+            hintText: '${AppL10n.of(context).devNameHint} (1-6)',
+          ),
         ),
         actions: [
           TextButton(
@@ -484,16 +486,16 @@ class _DeviceCard extends StatelessWidget {
           Container(
             height: 42,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [
-                  Colors.white.withValues(alpha: 0.38),
-                  Colors.white.withValues(alpha: 0.55),
-                ],
-              ),
+              color: Colors.white.withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: Colors.white.withValues(alpha: 0.31)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color.fromRGBO(44, 63, 97, 0.03),
+                  offset: Offset(0, 4),
+                  blurRadius: 12.1,
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -501,10 +503,10 @@ class _DeviceCard extends StatelessWidget {
                   child: _DeviceActionButton(
                     iconAsset: 'assets/images/screen-casting-icon01.png',
                     fallbackIcon: Icons.cast_rounded,
-                    iconWidth: 16,
-                    iconHeight: 15,
-                    label: '投屏',
-                    color: const Color(0xFF777E88),
+                    iconWidth: 20,
+                    iconHeight: 20,
+                    label: AppL10n.of(context).devCast,
+                    color: const Color(0xFFEB5F1B),
                     onTap: onCast,
                   ),
                 ),
@@ -517,9 +519,11 @@ class _DeviceCard extends StatelessWidget {
                     fallbackIcon: device.connected
                         ? Icons.link_off_rounded
                         : Icons.bluetooth_rounded,
-                    iconWidth: 14,
-                    iconHeight: 14,
-                    label: device.connected ? '断开' : '连接',
+                    iconWidth: 20,
+                    iconHeight: 20,
+                    label: device.connected
+                        ? AppL10n.of(context).devDisconnect
+                        : AppL10n.of(context).devConnectShort,
                     color: device.connected
                         ? const Color(0xFFEB5F1B)
                         : const Color(0xFF2079FC),
@@ -557,31 +561,36 @@ class _DeviceActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(
-            iconAsset,
-            width: iconWidth,
-            height: iconHeight,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) =>
-                Icon(fallbackIcon, size: 16, color: color),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: onTap,
+        child: SizedBox.expand(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Image.asset(
+                iconAsset,
+                width: iconWidth,
+                height: iconHeight,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(fallbackIcon, size: 16, color: color),
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: color,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  height: 1,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              height: 1,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

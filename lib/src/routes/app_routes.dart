@@ -31,7 +31,9 @@ import '../features/settings/presentation/settings_page.dart';
 import '../features/settings/presentation/update_boltstar_page.dart';
 import '../features/devices/presentation/ota_upgrade_page.dart';
 import '../features/settings/presentation/user_agreement_page.dart';
+import '../shared/l10n/app_l10n.dart';
 import '../shared/widgets/app_toast.dart';
+import '../shared/widgets/app_widgets.dart';
 import '../state.dart';
 
 /// 全局路由观察者：供页面实现 [RouteAware] 感知「被覆盖的页 pop 回来」(didPopNext)，
@@ -204,6 +206,18 @@ class AppRoutes {
                 ),
               );
               if (ok != true || !context.mounted) {
+                return;
+              }
+              AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
+              final feedback = await state.disconnectDevice(
+                state.selectedDevice.id,
+              );
+              if (!context.mounted) {
+                return;
+              }
+              AppLoadingDialog.hide(context);
+              if (!feedback.success) {
+                AppToast.warn(context, feedback.message);
                 return;
               }
             }

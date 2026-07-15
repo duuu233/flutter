@@ -781,6 +781,35 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 主动回读当前连接设备的 0x01 信息并刷新内存、当前图片等实时字段。
+  /// 上传、删除等会改变固件图片索引的操作完成后调用，避免详情页继续展示操作前的缓存。
+  Future<void> refreshConnectedDeviceInfo(String deviceId) async {
+    DeviceItem? device;
+    for (final item in _devices) {
+      if (item.id == deviceId) {
+        device = item;
+        break;
+      }
+    }
+    if (device == null || !_sessionMatches(device)) {
+      return;
+    }
+    for (var attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await Future<void>.delayed(const Duration(milliseconds: 350));
+      }
+      try {
+        final info = await BleController.instance.client.readDeviceInfo();
+        _applyConnectedInfo(device, info);
+        device.connected = true;
+        notifyListeners();
+        return;
+      } catch (_) {
+        // 固件刚写图/删图后可能短暂繁忙，稍等后再回读；最终失败保留当前缓存。
+      }
+    }
+  }
+
   /// 按硬件序列号去重设备列表（对齐小程序 `list.js dedupeDevices`）：序列号归一化
   /// （大写、去 `:`/`-`/空白）为 key，无序列号时退回 `id:`；冲突保留首个，但当前选中项优先。
   List<DeviceItem> _dedupeDevicesBySerial(List<DeviceItem> devices) {
@@ -1578,8 +1607,15 @@ class PhotoFrameState extends ChangeNotifier {
     // 1) 设备优先：已连接则先读设备信息(0x01)拿到已占槽位 + 当前屏显图，把选中照片解析成设备槽位，
     //    一条 0x12 批量删除；删到当前屏显图再刷屏(0x24)。设备删除失败即中止、不动后端。
     // 目标设备 = 这些照片所属设备（单设备图库保证同一台）。跨设备批次会按同一掩码删错槽位(0x12)，防御拦截。
-    final targetId = photos.first.deviceId;
-    if (photos.any((photo) => photo.deviceId != targetId)) {
+    final targetDevice = _deviceForAlbumPhoto(photos.first);
+    if (targetDevice == null) {
+      return ActionFeedback(
+        success: false,
+        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+      );
+    }
+    final targetId = targetDevice.id;
+    if (photos.any((photo) => _deviceForAlbumPhoto(photo)?.id != targetId)) {
       return ActionFeedback(
         success: false,
         message: tr(
@@ -1589,15 +1625,7 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    final targetMatches = _devices
-        .where((device) => device.id == targetId)
-        .toList();
-    if (targetMatches.isEmpty) {
-      return ActionFeedback(
-        success: false,
-        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
-      );
-    }
+    final targetMatches = [targetDevice];
     // 未连接到「照片所属设备」则自动扫连（对齐小程序 ensureConnectedForAction），连不上中止、不动后端。
     if (!_sessionMatches(targetMatches.first)) {
       final connectFeedback = await connectDevice(targetId);
@@ -1613,7 +1641,7 @@ class PhotoFrameState extends ChangeNotifier {
         final occupied = FrameProtocol.maskToIndexes(info.imgMask);
         final slotIndexes = <int>[];
         for (final photo in photos) {
-          final slot = _resolveDeviceImageIndex(photo, occupied);
+          final slot = _resolveDeviceImageIndex(photo, occupied, targetDevice);
           if (slot >= 0 && !slotIndexes.contains(slot)) {
             slotIndexes.add(slot);
           }
@@ -1675,6 +1703,7 @@ class PhotoFrameState extends ChangeNotifier {
     for (final photo in photos) {
       photo.isOnDevice = false;
     }
+    await refreshConnectedDeviceInfo(targetMatches.first.id);
     notifyListeners();
     // 4) 回后端对账列表/计数（对齐小程序删除后 loadPhotos）；失败则保留上面的本地软隐藏。
     await refreshAlbum();
@@ -1711,16 +1740,15 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     // 未连接到照片所属设备则自动扫连（对齐小程序 ensureActiveDeviceConnection），连不上中止。
-    final targetDeviceId = photo.deviceId; // photo 已判空
-    final targetMatches = _devices
-        .where((device) => device.id == targetDeviceId)
-        .toList();
-    if (targetMatches.isEmpty) {
+    final targetDevice = _deviceForAlbumPhoto(photo);
+    if (targetDevice == null) {
       return ActionFeedback(
         success: false,
         message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
       );
     }
+    final targetDeviceId = targetDevice.id;
+    final targetMatches = [targetDevice];
     if (!_sessionMatches(targetMatches.first)) {
       final connectFeedback = await connectDevice(targetDeviceId);
       if (!connectFeedback.success) {
@@ -1731,7 +1759,7 @@ class PhotoFrameState extends ChangeNotifier {
     try {
       final info = await client.readDeviceInfo();
       final occupied = FrameProtocol.maskToIndexes(info.imgMask);
-      final slot = _resolveDeviceImageIndex(photo, occupied);
+      final slot = _resolveDeviceImageIndex(photo, occupied, targetDevice);
       if (slot < 0) {
         return ActionFeedback(
           success: false,
@@ -1779,19 +1807,33 @@ class PhotoFrameState extends ChangeNotifier {
   /// 即最早上传的图落在最小槽位。所以本设备在库照片要按「上传先后」升序排（主键 uProductImgId
   /// 越小越早，取不到时退回 uploadedAt），第 N 张才对应升序槽位 occupied[N]——直接按后端列表
   /// 顺序去对会刷错图。读不到掩码时回退到位置本身；照片不在本设备上返回 -1。
-  int _resolveDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
-    final devicePhotos =
-        _albumPhotos
-            .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
-            .toList()
-          ..sort((a, b) {
-            final ai = int.tryParse(a.id);
-            final bi = int.tryParse(b.id);
-            if (ai != null && bi != null && ai != bi) {
-              return ai.compareTo(bi);
-            }
-            return a.uploadedAt.compareTo(b.uploadedAt);
-          });
+  int _resolveDeviceImageIndex(
+    AlbumPhoto photo,
+    List<int> occupied,
+    DeviceItem device,
+  ) {
+    var devicePhotos = _albumPhotos
+        .where(
+          (item) =>
+              item.isOnDevice &&
+              (item.deviceId == device.id ||
+                  (item.deviceId.isEmpty &&
+                      item.deviceName.isNotEmpty &&
+                      item.deviceName == device.name)),
+        )
+        .toList();
+    // 旧记录可能既没有 userProductId 也没有设备名；单设备场景与小程序一致退回当前图库顺序。
+    if (devicePhotos.isEmpty) {
+      devicePhotos = _albumPhotos.where((item) => item.isOnDevice).toList();
+    }
+    devicePhotos.sort((a, b) {
+      final ai = int.tryParse(a.id);
+      final bi = int.tryParse(b.id);
+      if (ai != null && bi != null && ai != bi) {
+        return ai.compareTo(bi);
+      }
+      return a.uploadedAt.compareTo(b.uploadedAt);
+    });
     final pos = devicePhotos.indexWhere((item) => item.id == photo.id);
     if (pos < 0) {
       return -1;
@@ -1800,6 +1842,24 @@ class PhotoFrameState extends ChangeNotifier {
       return pos < occupied.length ? occupied[pos] : -1;
     }
     return pos;
+  }
+
+  /// 兼容图库旧数据缺 userProductId：先按设备 id，再按设备名，最后退回当前选中设备。
+  DeviceItem? _deviceForAlbumPhoto(AlbumPhoto photo) {
+    for (final device in _devices) {
+      if (photo.deviceId.isNotEmpty && device.id == photo.deviceId) {
+        return device;
+      }
+    }
+    for (final device in _devices) {
+      if (photo.deviceName.isNotEmpty && device.name == photo.deviceName) {
+        return device;
+      }
+    }
+    if (_devices.isEmpty) {
+      return null;
+    }
+    return selectedDevice;
   }
 
   CastAttemptResult recastAlbumPhoto(String photoId, String deviceId) {
@@ -1937,6 +1997,7 @@ class PhotoFrameState extends ChangeNotifier {
   /// 仅当后端返回非空列表时替换本地列表，避免首页 [selectedDevice] 落空；失败保留当前列表。
   Future<ActionFeedback> refreshDevices() async {
     try {
+      final previous = List<DeviceItem>.of(_devices);
       final data = await BoltFoxApi.getUserProductList({
         'pageIndex': 1,
         'pageSize': 100, // 对齐小程序 getDevices({pageSize:100})
@@ -1950,6 +2011,42 @@ class PhotoFrameState extends ChangeNotifier {
       // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
       for (final device in mapped) {
         device.connected = _sessionMatches(device);
+        DeviceItem? old;
+        final serial = device.serialNumber
+            .replaceAll(RegExp(r'[:\-\s]'), '')
+            .toUpperCase();
+        for (final item in previous) {
+          final oldSerial = item.serialNumber
+              .replaceAll(RegExp(r'[:\-\s]'), '')
+              .toUpperCase();
+          final sameSerial =
+              serial.isNotEmpty &&
+              oldSerial.isNotEmpty &&
+              (serial == oldSerial ||
+                  serial.contains(oldSerial) ||
+                  oldSerial.contains(serial));
+          if (item.id == device.id || sameSerial) {
+            old = item;
+            break;
+          }
+        }
+        if (old != null) {
+          // 后端列表不下发 BLE 实时字段，刷新列表时必须保留刚回读到的真机内存/当前图片。
+          device.liveImageCount = old.liveImageCount;
+          device.liveCapacity = old.liveCapacity;
+          device.imageMask = old.imageMask;
+          device.currentImageIndex = old.currentImageIndex;
+          device.batteryLevel = old.batteryLevel;
+          device.playbackMode = old.playbackMode;
+          device.carouselEnabled = old.carouselEnabled;
+          device.carouselIntervalSeconds = old.carouselIntervalSeconds;
+          if (old.firmwareVersion.isNotEmpty) {
+            device.firmwareVersion = old.firmwareVersion;
+          }
+        }
+        if (device.connected && old == null) {
+          _applyConnectedInfo(device, BleController.instance.info);
+        }
       }
       _devices
         ..clear()
@@ -2355,16 +2452,16 @@ class PhotoFrameState extends ChangeNotifier {
     // 3) 同步本地：设备已无图（IMG_MASK 清零 / 当前索引复位），相册对应照片标记为不在设备上。
     device.imageMask = 0;
     device.currentImageIndex = 0;
+    device.liveImageCount = 0;
     // 清空成功后即时回读设备信息(0x01)刷新内存/电量，不等下次列表/详情接口往返（对齐小程序 refreshDeviceMemoryFromBle）。
     // 读失败静默（设备刚擦完可能短暂无响应），随后 refreshDevices/详情会再同步；内存已随上面清零即时归位。
     try {
       final info = await client.readDeviceInfo();
-      if (info.battery > 0) {
-        device.batteryLevel = info.battery;
-      }
+      _applyConnectedInfo(device, info);
       if (FrameProtocol.maskToIndexes(info.imgMask).isEmpty) {
         device.imageMask = 0;
         device.currentImageIndex = 0;
+        device.liveImageCount = 0;
       }
     } catch (_) {
       // 回读失败不影响清空结果（已按成功处理）。
@@ -2844,9 +2941,9 @@ class PhotoFrameState extends ChangeNotifier {
       crc32: 0,
       color: _paletteColor(index),
       note: '',
-      // 后端无时间字段：保持列表原序（后端已按时间倒序），故这里按下标构造递减时间戳，
-      // 避免 myAlbum 里按 uploadedAt 排序时全部相等而打乱后端顺序。
-      uploadedAt: DateTime.now().subtract(Duration(microseconds: index)),
+      // 后端无时间字段且列表为最新在前：用同一固定基准按下标递减，保证排序稳定。
+      // 不能逐行 DateTime.now() 再减 index——循环耗时会抵消递减量，导致图片与固件槽位错配。
+      uploadedAt: DateTime.utc(2000).subtract(Duration(microseconds: index)),
       imageUrl: url.isEmpty ? null : url,
       imgBle: imgBle.isEmpty ? null : imgBle,
     );
@@ -2886,6 +2983,7 @@ class PhotoFrameState extends ChangeNotifier {
           : (status == CastStatus.success ? '投屏成功' : '投屏失败'),
       // upTime=最近修改时间，joinTime=添加时间（小程序 normalizeProjectionRecord 同序）。
       createdAt: _parseDate(data['upTime'] ?? data['joinTime']),
+      photoId: (data['uProductImgId'] ?? data['uproductImgId'])?.toString(),
       imageUrl: url.isEmpty ? null : url,
       imgBle: imgBle.isEmpty ? null : imgBle,
     );

@@ -139,7 +139,11 @@ class _DevicesPageState extends State<DevicesPage> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) => CastPreviewPage(device: device, imagePaths: imagePaths),
+        builder: (_) => CastPreviewPage(
+          state: widget.state,
+          device: device,
+          imagePaths: imagePaths,
+        ),
       ),
     );
     state.refreshAlbum();

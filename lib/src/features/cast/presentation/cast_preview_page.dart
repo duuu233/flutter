@@ -37,15 +37,28 @@ import 'casting_progress_page.dart';
 class CastPreviewPage extends StatefulWidget {
   const CastPreviewPage({
     super.key,
+    this.state,
     required this.device,
     required this.imagePaths,
+    this.recastImgBle,
+    this.recastUpirId,
+    this.recastImgUrl,
   });
 
   /// 投屏目标设备。裁剪比例取它的屏幕分辨率。
   final DeviceItem device;
 
+  /// 用于投屏完成后把真机最新内存同步回设备列表/详情。
+  final PhotoFrameState? state;
+
   /// 待投屏的本地原图路径（已由 CastPhotoPicker 降采样到长边 1920）。
   final List<String> imagePaths;
+
+  /// 从投屏记录进入时携带的原设备帧。用户未编辑图片时可继续直传；
+  /// 一旦裁剪或旋转，必须改走普通上传/转码，保证投出去的是最后保存的图片。
+  final String? recastImgBle;
+  final Object? recastUpirId;
+  final String? recastImgUrl;
 
   @override
   State<CastPreviewPage> createState() => _CastPreviewPageState();
@@ -343,10 +356,16 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
       return;
     }
 
+    final directRecast =
+        _photos.length == 1 &&
+        !_photos.single.edited &&
+        widget.recastImgBle != null &&
+        widget.recastImgBle!.isNotEmpty;
+
     AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
     final paths = <String>[];
     final ratio = _deviceRatio;
-    for (final photo in _photos) {
+    for (final photo in directRecast ? const <_PreviewPhoto>[] : _photos) {
       if (photo.matchesRatio(ratio)) {
         paths.add(photo.path); // 裁剪产物：比例已是设备比例，原样投
         continue;
@@ -372,11 +391,16 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
     await Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => CastingProgressPage(
+          state: widget.state,
           userProductId: widget.device.id,
           // 带上设备对象：投屏页的「继续投屏」要靠它跳回预览页。
           device: widget.device,
           deviceName: widget.device.name,
-          imagePaths: paths,
+          // 直传记录也保留预览图路径，失败后点「重新投屏」才能重新进入裁剪页。
+          imagePaths: directRecast ? [_photos.single.path] : paths,
+          recastImgBle: directRecast ? widget.recastImgBle : null,
+          recastUpirId: directRecast ? widget.recastUpirId : null,
+          recastImgUrl: directRecast ? widget.recastImgUrl : null,
         ),
       ),
     );
