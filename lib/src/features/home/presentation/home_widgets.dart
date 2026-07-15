@@ -609,134 +609,115 @@ class _ConnectedDeviceCard extends StatelessWidget {
             ),
           ],
         ),
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 当前小程序同一张 OSS 卡片底图；加载期间/离线时回退本地资源。
-            ClipRRect(
-              borderRadius: BorderRadius.circular(24),
-              child: Image.network(
-                'https://oss.boltfox.cn/prodFile/202607072104114724571.png',
-                fit: BoxFit.fill,
-                loadingBuilder: (context, child, progress) =>
-                    progress == null ? child : _cardBackgroundFallback(),
-                errorBuilder: (context, error, stackTrace) =>
-                    _cardBackgroundFallback(),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
-                children: [
-                  // 左侧圆环图标（home-icon02.png，166rpx≈83）。
-                  Image.asset(
-                    'assets/images/home-icon02.png',
-                    width: 83,
-                    height: 83,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const SizedBox(
-                        width: 78,
-                        height: 78,
-                        child: _DeviceOrbitMark(),
-                      );
-                    },
-                  ),
-                  // 右侧设备信息。
-                  SizedBox(
-                    width: 138,
-                    height: 110,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          device.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: _HomeTextStyles.deviceCardTitle,
-                        ),
-                        const SizedBox(height: 9),
-                        Row(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10.55, sigmaY: 10.55),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                Image.asset('assets/images/home-bg01.png', fit: BoxFit.fill),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      // 左侧圆环图标（home-icon02.png，166rpx≈83）。
+                      Image.asset(
+                        'assets/images/home-icon02.png',
+                        width: 83,
+                        height: 83,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const SizedBox(
+                            width: 78,
+                            height: 78,
+                            child: _DeviceOrbitMark(),
+                          );
+                        },
+                      ),
+                      // 右侧设备信息。
+                      SizedBox(
+                        width: 138,
+                        height: 110,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Image.asset(
-                              device.connected
-                                  ? 'assets/images/bluetooth-icon.png'
-                                  : 'assets/images/bluetooth-icon-not.png',
-                              width: 11,
-                              height: 14,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  Icons.bluetooth_rounded,
-                                  color: device.connected
-                                      ? const Color(0xFF4A98FF)
-                                      : const Color(0xFF777E88),
-                                  size: 14,
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 7),
                             Text(
-                              device.connected
-                                  ? AppL10n.of(context).homeConnected
-                                  : AppL10n.of(context).homeDisconnected,
-                              style: _HomeTextStyles.deviceMeta.copyWith(
-                                color: device.connected
-                                    ? const Color(0xFF287DFF)
-                                    : null,
-                              ),
+                              device.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _HomeTextStyles.deviceCardTitle,
                             ),
+                            const SizedBox(height: 9),
+                            Row(
+                              children: [
+                                Image.asset(
+                                  device.connected
+                                      ? 'assets/images/bluetooth-icon.png'
+                                      : 'assets/images/bluetooth-icon-not.png',
+                                  width: 11,
+                                  height: 14,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return Icon(
+                                      Icons.bluetooth_rounded,
+                                      color: device.connected
+                                          ? const Color(0xFF4A98FF)
+                                          : const Color(0xFF777E88),
+                                      size: 14,
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 7),
+                                Text(
+                                  device.connected
+                                      ? AppL10n.of(context).homeConnected
+                                      : AppL10n.of(context).homeDisconnected,
+                                  style: _HomeTextStyles.deviceMeta.copyWith(
+                                    color: device.connected
+                                        ? const Color(0xFF287DFF)
+                                        : null,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (device.connected) ...[
+                              const SizedBox(height: 11),
+                              Row(
+                                children: [
+                                  Image.asset(
+                                    _batteryIconAsset(device.batteryLevel),
+                                    width: 26,
+                                    fit: BoxFit.contain,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return const Icon(
+                                        Icons.battery_2_bar_rounded,
+                                        color: Color(0xFFFF6A24),
+                                        size: 18,
+                                      );
+                                    },
+                                  ),
+                                  const SizedBox(width: 7),
+                                  Text(
+                                    '${device.batteryLevel}%',
+                                    style: _HomeTextStyles.deviceMeta,
+                                  ),
+                                ],
+                              ),
+                            ] else ...[
+                              const SizedBox(height: 22),
+                              _HomeConnectButton(onTap: onConnect),
+                            ],
                           ],
                         ),
-                        if (device.connected) ...[
-                          const SizedBox(height: 11),
-                          Row(
-                            children: [
-                              Image.asset(
-                                _batteryIconAsset(device.batteryLevel),
-                                width: 26,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Icon(
-                                    Icons.battery_2_bar_rounded,
-                                    color: Color(0xFFFF6A24),
-                                    size: 18,
-                                  );
-                                },
-                              ),
-                              const SizedBox(width: 7),
-                              Text(
-                                '${device.batteryLevel}%',
-                                style: _HomeTextStyles.deviceMeta,
-                              ),
-                            ],
-                          ),
-                        ] else ...[
-                          const SizedBox(height: 22),
-                          _HomeConnectButton(onTap: onConnect),
-                        ],
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _cardBackgroundFallback() {
-    return Image.asset(
-      'assets/images/home-bg01.png',
-      fit: BoxFit.fill,
-      errorBuilder: (context, error, stackTrace) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
+          ),
         ),
       ),
     );
@@ -982,7 +963,6 @@ class _CastEntryCard extends StatelessWidget {
     required this.artAsset,
     required this.arrowAsset,
     required this.backgroundAsset,
-    required this.fallbackColor,
     required this.onTap,
   });
 
@@ -991,7 +971,6 @@ class _CastEntryCard extends StatelessWidget {
   final String artAsset;
   final String arrowAsset;
   final String backgroundAsset;
-  final Color fallbackColor;
   final VoidCallback onTap;
 
   @override
@@ -1008,39 +987,22 @@ class _CastEntryCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 卡面层：圆角渐变底图 + 1px 白描边 + 0.64 半透明 + 柔和投影。
-            // 对照前端 CSS：border-radius:20; border:1px solid #FFF; opacity:0.64;
-            //              background:radial-gradient(...)（暖白/浅蓝已烘焙进底图）;
-            //              box-shadow:0 3px 12px rgba(44,63,97,0.04)。
-            // 投影放在最外层（全强度），卡面（描边+底图）整体 0.64，避免阴影一并被淡到不可见。
+            // 小程序当前 `.projection-card`：无描边、无额外白底，直接铺本地背景图；
+            // border-radius: 40rpx; box-shadow: 0 8rpx 32rpx rgba(60,53,16,0.12)。
             DecoratedBox(
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(20),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color.fromRGBO(44, 63, 97, 0.04),
-                    offset: Offset(0, 3),
-                    blurRadius: 12,
+                    color: Color(0x1F3C3510),
+                    offset: Offset(0, 4),
+                    blurRadius: 16,
                   ),
                 ],
               ),
-              child: Opacity(
-                opacity: 0.64,
-                child: Container(
-                  clipBehavior: Clip.antiAlias,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white, width: 1),
-                  ),
-                  child: Image.asset(
-                    backgroundAsset,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      // 兜底：底图缺失时用纯色近似卡面（暖白/浅蓝）。
-                      return ColoredBox(color: fallbackColor);
-                    },
-                  ),
-                ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: Image.asset(backgroundAsset, fit: BoxFit.fill),
               ),
             ),
             // 内容层：左上素材图 + 底部「名称/描述 + 箭头」行，对照小程序 .projection-card
