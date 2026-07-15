@@ -71,11 +71,11 @@ class _HomeTextStyles {
     height: 1,
   );
 
-  // .device-title → font-size 40rpx(=20) / weight 700 / #2a2d32
+  // .device-title → font-size 40rpx(=20) / weight 500 / #2a2d32
   static const deviceCardTitle = TextStyle(
     color: Color(0xFF2A2D32),
     fontSize: 20,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w500,
     height: 1.2,
   );
 

@@ -23,11 +23,27 @@ class _GuidePageState extends State<GuidePage> {
   @override
   void initState() {
     super.initState();
+    final initial = widget.state.faqArticles;
+    if (initial.isNotEmpty) {
+      _expanded.add(initial.first.id);
+      // 小程序的本地兜底数据首项和「空间已满」项默认展开。
+      if (initial.length > 1) {
+        _expanded.add(initial.last.id);
+      }
+    }
     // 打开时刷新常见问题（失败保留内置文案）。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await widget.state.refreshFaq();
       if (mounted) {
-        setState(() {});
+        setState(() {
+          final refreshed = widget.state.faqArticles;
+          final ids = refreshed.map((item) => item.id).toSet();
+          _expanded.removeWhere((id) => !ids.contains(id));
+          // 后端 FAQ 替换本地列表后，小程序默认展开新的第一项。
+          if (_expanded.isEmpty && refreshed.isNotEmpty) {
+            _expanded.add(refreshed.first.id);
+          }
+        });
       }
     });
   }

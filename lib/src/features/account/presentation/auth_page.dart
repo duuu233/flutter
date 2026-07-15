@@ -6,15 +6,23 @@ import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
+import '../data/wechat_authorization_client.dart';
 
-/// 邮箱密码登录页（应用唯一登录页，路由 `/auth`）。
+/// 邮箱密码 / 微信授权登录页（应用唯一登录页，路由 `/auth`）。
 ///
 /// 退出登录 / 用户注销后进入；按 375x812 设计稿还原，背景图全屏铺满、表单等比适配。
-/// 登录逻辑只保留邮箱密码校验；忘记密码 / 去注册 / 用户协议 / 隐私政策均跳转对应页面。
+/// 微信入口走微信开放平台「移动应用微信登录」取得 code，再由业务后端换取 userToken。
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key, required this.state});
+  const AuthPage({
+    super.key,
+    required this.state,
+    this.weChatAuthorizationClient,
+  });
 
   final PhotoFrameState state;
+
+  /// 便于替换 SDK 和在 widget 测试中注入 fake。
+  final WeChatAuthorizationClient? weChatAuthorizationClient;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -22,11 +30,13 @@ class AuthPage extends StatefulWidget {
 
 class _AuthPageState extends State<AuthPage> {
   late final TextEditingController _emailController;
+  late final WeChatAuthorizationClient _weChatAuthorizationClient;
   final TextEditingController _passwordController = TextEditingController();
 
   bool _passwordVisible = false;
   bool _agreed = false;
   bool _showErrors = false;
+  bool _weChatSubmitting = false;
 
   @override
   void initState() {
@@ -34,6 +44,8 @@ class _AuthPageState extends State<AuthPage> {
     _emailController = TextEditingController(
       text: widget.state.currentUser.email,
     );
+    _weChatAuthorizationClient =
+        widget.weChatAuthorizationClient ?? defaultWeChatAuthorizationClient;
     // 未登录邮箱时，自动填充上次输入过的邮箱（本地缓存），回访用户免于重复输入。
     if (_emailController.text.trim().isEmpty) {
       EmailHistory.latest().then((email) {
@@ -89,7 +101,13 @@ class _AuthPageState extends State<AuthPage> {
                 onUserAgreement: _openUserAgreement,
                 onPrivacyPolicy: _openPrivacyPolicy,
                 onLogin: _login,
+<<<<<<< HEAD
                 onWechatLogin: _wechatLogin,
+=======
+                onWeChatLogin: _loginWithWeChat,
+                submitting: _submitting,
+                weChatSubmitting: _weChatSubmitting,
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
               ),
             ),
           ],
@@ -119,7 +137,10 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
 
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _weChatSubmitting = true;
+    });
     final feedback = await widget.state.loginWithPassword(email, password);
     if (!mounted) {
       return;
@@ -133,6 +154,7 @@ class _AuthPageState extends State<AuthPage> {
     // `loginWithPassword` 置好登录态并 notifyListeners 后，根节点会自动把自己换成主壳层。
   }
 
+<<<<<<< HEAD
   void _wechatLogin() {
     // App 主登录为邮箱密码，未接入微信一键登录 SDK（见 boltfox_api.dart）。
     // 底部圆形入口先占位，点按明确提示暂未开放，避免伪装成可用的微信登录。
@@ -141,6 +163,41 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     _showFeedback(AppL10n.of(context).accWechatUnavailable);
+=======
+  Future<void> _loginWithWeChat() async {
+    if (_submitting) {
+      return;
+    }
+    if (!_agreed) {
+      _showFeedback('请先阅读并同意用户协议和隐私政策');
+      return;
+    }
+
+    setState(() => _submitting = true);
+    try {
+      final code = await _weChatAuthorizationClient.authorize();
+      final feedback = await widget.state.loginWithWeChatCode(code);
+      if (!mounted) {
+        return;
+      }
+      _showFeedback(feedback.message);
+    } on WeChatAuthorizationException catch (error) {
+      if (mounted) {
+        _showFeedback(error.message);
+      }
+    } catch (_) {
+      if (mounted) {
+        _showFeedback('微信授权失败，请稍后重试');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submitting = false;
+          _weChatSubmitting = false;
+        });
+      }
+    }
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
   }
 
   void _forgotPassword() {
@@ -178,7 +235,13 @@ class _AuthCanvas extends StatelessWidget {
     required this.onUserAgreement,
     required this.onPrivacyPolicy,
     required this.onLogin,
+<<<<<<< HEAD
     required this.onWechatLogin,
+=======
+    required this.onWeChatLogin,
+    required this.submitting,
+    required this.weChatSubmitting,
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
   });
 
   final TextEditingController emailController;
@@ -193,7 +256,13 @@ class _AuthCanvas extends StatelessWidget {
   final VoidCallback onUserAgreement;
   final VoidCallback onPrivacyPolicy;
   final VoidCallback onLogin;
+<<<<<<< HEAD
   final VoidCallback onWechatLogin;
+=======
+  final VoidCallback onWeChatLogin;
+  final bool submitting;
+  final bool weChatSubmitting;
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
 
   @override
   Widget build(BuildContext context) {
@@ -268,8 +337,22 @@ class _AuthCanvas extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          SizedBox(height: 56, child: _PrimaryButton(onPressed: onLogin)),
-          const SizedBox(height: 24),
+          SizedBox(
+            height: 56,
+            child: _PrimaryButton(
+              onPressed: submitting ? null : onLogin,
+              loading: submitting && !weChatSubmitting,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 48,
+            child: _WeChatLoginButton(
+              onPressed: submitting ? null : onWeChatLogin,
+              loading: weChatSubmitting,
+            ),
+          ),
+          const SizedBox(height: 18),
           _RegisterPrompt(onRegister: onRegister),
           const Spacer(flex: 4),
           // 微信授权登录：底部圆形图标入口（邮箱密码为主登录，微信为次要入口）。
@@ -569,9 +652,10 @@ class _ErrorText extends StatelessWidget {
 }
 
 class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.onPressed});
+  const _PrimaryButton({required this.onPressed, required this.loading});
 
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -598,10 +682,22 @@ class _PrimaryButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(71),
           onTap: onPressed,
           child: Center(
+<<<<<<< HEAD
             child: Text(
               AppL10n.of(context).accLoginButton,
               style: _AuthTextStyles.button,
             ),
+=======
+            child: loading
+                ? const SizedBox.square(
+                    dimension: 22,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Colors.white,
+                    ),
+                  )
+                : const Text('登 录', style: _AuthTextStyles.button),
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
           ),
         ),
       ),
@@ -609,6 +705,7 @@ class _PrimaryButton extends StatelessWidget {
   }
 }
 
+<<<<<<< HEAD
 /// 微信授权登录圆形入口：`login-wx-icon.png` 是白色微信图标，需垫在品牌绿圆底上才可见。
 class _WechatLoginButton extends StatelessWidget {
   const _WechatLoginButton({required this.onTap});
@@ -635,6 +732,51 @@ class _WechatLoginButton extends StatelessWidget {
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) =>
                 const Icon(Icons.wechat, color: Colors.white, size: 30),
+=======
+class _WeChatLoginButton extends StatelessWidget {
+  const _WeChatLoginButton({required this.onPressed, required this.loading});
+
+  final VoidCallback? onPressed;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      enabled: onPressed != null,
+      label: '微信授权登录',
+      child: Material(
+        color: const Color(0xFF07C160),
+        borderRadius: BorderRadius.circular(71),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onPressed,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (loading)
+                const SizedBox.square(
+                  dimension: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              else
+                Image.asset(
+                  'assets/images/login-wx-icon.png',
+                  width: 25,
+                  height: 25,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.chat_bubble_rounded,
+                    size: 23,
+                    color: Colors.white,
+                  ),
+                ),
+              const SizedBox(width: 10),
+              const Text('微信授权登录', style: _AuthTextStyles.weChatButton),
+            ],
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
           ),
         ),
       ),
@@ -797,6 +939,13 @@ class _AuthTextStyles {
     fontWeight: FontWeight.w500,
     height: 1.2,
     letterSpacing: 2,
+  );
+
+  static const weChatButton = TextStyle(
+    color: Colors.white,
+    fontSize: 16,
+    fontWeight: FontWeight.w500,
+    height: 1.2,
   );
 
   static const register = TextStyle(

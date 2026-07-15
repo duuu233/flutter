@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../shared/l10n/app_l10n.dart';
@@ -7,8 +8,8 @@ import '../../../state.dart';
 
 /// 轮播设置页：开启/关闭轮播 + 选择轮播方式（顺序 / 随机）。
 ///
-/// 对照微信小程序 `photo-album/subpackages/device/slideshow`：需已连接设备，切换开关/方式走真实
-/// BLE `setPlayback`（见 [PhotoFrameState.setDeviceCarousel]）；未连接时提示「请先连接设备」并还原开关，
+/// 对照微信小程序 `photo-album/subpackages/device/slideshow`：切换开关/方式时先确保目标设备已连接，
+/// 断线则自动扫连，再走真实 BLE `setPlayback`（见 [PhotoFrameState.setDeviceCarousel]）；
 /// 未开启轮播时「轮播方式」置灰不可选（对齐小程序 `is-disabled`）。
 class CarouselSettingsPage extends StatefulWidget {
   const CarouselSettingsPage({super.key, required this.state});
@@ -51,6 +52,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
       return;
     }
     setState(() => _busy = true);
+    AppLoadingDialog.show(context, '保存中');
     final feedback = await widget.state.setDeviceCarousel(
       widget.state.selectedDevice.id,
       enabled: enabled,
@@ -59,6 +61,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
     if (!mounted) {
       return;
     }
+    AppLoadingDialog.hide(context);
     setState(() {
       _busy = false;
       if (feedback.success) {
@@ -67,11 +70,14 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
       }
       // 失败：状态不变，开关按当前 _enabled 自动还原（对齐小程序 applyPlayback 失败还原开关）。
     });
-    _showSnack(feedback.message);
+    // 成功后开关/选项本身已刷新，作为操作反馈；仅失败时提示。
+    if (!feedback.success) {
+      _showSnack(feedback.message);
+    }
   }
 
   void _showSnack(String message) {
-    AppToast.show(context, message);
+    AppToast.warn(context, message);
   }
 
   @override

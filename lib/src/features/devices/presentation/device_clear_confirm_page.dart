@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../../../shared/l10n/app_l10n.dart';
@@ -23,6 +24,7 @@ class DeviceClearConfirmPage extends StatefulWidget {
 class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
   // 1=第一步警示；2=第二步确认。
   int _step = 1;
+  bool _busy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -30,7 +32,11 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     return Stack(
       children: [
         FigmaScreen(
+<<<<<<< HEAD
           title: AppL10n.of(context).devDetailTitle,
+=======
+          title: '设备详情',
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
           body: DeviceDetailsBody(state: widget.state),
         ),
         Positioned.fill(
@@ -63,14 +69,25 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
   }
 
   Future<void> _confirm(BuildContext context) async {
+    if (_busy) {
+      return;
+    }
+    setState(() => _busy = true);
+    AppLoadingDialog.show(context, '清空中');
     final feedback = await widget.state.clearDeviceMemory(
       widget.state.selectedDevice.id,
     );
     if (!context.mounted) {
       return;
     }
-    AppToast.show(context, feedback.message);
-    // 清空完成后返回设备详情。
-    Navigator.of(context).maybePop();
+    AppLoadingDialog.hide(context);
+    setState(() => _busy = false);
+    if (feedback.success) {
+      AppToast.show(context, '已清空');
+      // 仅清空成功后返回设备详情；失败保留二次确认页供用户重试。
+      Navigator.of(context).maybePop();
+    } else {
+      AppToast.warn(context, feedback.message);
+    }
   }
 }

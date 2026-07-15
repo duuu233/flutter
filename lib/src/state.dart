@@ -541,8 +541,9 @@ class PhotoFrameState extends ChangeNotifier {
   int get minePhotoCount =>
       _currentUser.imgCount > 0 ? _currentUser.imgCount : myAlbum.length;
 
-  int get mineDeviceCount =>
-      _currentUser.productCount > 0 ? _currentUser.productCount : _devices.length;
+  int get mineDeviceCount => _currentUser.productCount > 0
+      ? _currentUser.productCount
+      : _devices.length;
 
   int get successCount {
     return _castRecords
@@ -654,18 +655,6 @@ class PhotoFrameState extends ChangeNotifier {
       return;
     }
     _isOffline = value;
-    notifyListeners();
-  }
-
-  /// 投屏「压缩图片」开关（对齐小程序预览页 switch）：开=后端压到约300-400KB，关=传原图。
-  /// 默认开启；小程序用 Storage 持久化，App 暂无本地持久化依赖，先记在会话内（重启回到默认开）。
-  bool projectionCompress = true;
-
-  void setProjectionCompress(bool value) {
-    if (projectionCompress == value) {
-      return;
-    }
-    projectionCompress = value;
     notifyListeners();
   }
 
@@ -795,8 +784,7 @@ class PhotoFrameState extends ChangeNotifier {
   /// 按硬件序列号去重设备列表（对齐小程序 `list.js dedupeDevices`）：序列号归一化
   /// （大写、去 `:`/`-`/空白）为 key，无序列号时退回 `id:`；冲突保留首个，但当前选中项优先。
   List<DeviceItem> _dedupeDevicesBySerial(List<DeviceItem> devices) {
-    String norm(String s) =>
-        s.replaceAll(RegExp(r'[:\-\s]'), '').toUpperCase();
+    String norm(String s) => s.replaceAll(RegExp(r'[:\-\s]'), '').toUpperCase();
     final map = <String, DeviceItem>{};
     final order = <String>[];
     for (final device in devices) {
@@ -878,6 +866,55 @@ class PhotoFrameState extends ChangeNotifier {
           zh: '登录成功，已同步到个人资料。',
           en: 'Login succeeded and profile updated.',
           ja: 'ログインに成功し、プロフィールに反映しました。',
+        ),
+      );
+    } catch (error) {
+      return _apiFailure(error);
+    }
+  }
+
+  /// 微信开放平台「移动应用微信登录」入口。
+  ///
+  /// [code] 由移动端微信 SDK 返回，只能使用一次；服务端负责用 AppSecret 换取微信身份并返回
+  /// BoltStar 的 userToken。客户端绝不保存微信 access_token / refresh_token / AppSecret。
+  Future<ActionFeedback> loginWithWeChatCode(String code) async {
+    final authorizationCode = code.trim();
+    if (authorizationCode.isEmpty) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '微信授权凭证无效，请重新登录。',
+          en: 'Invalid WeChat authorization code. Please try again.',
+          ja: 'WeChat の認証コードが無効です。もう一度お試しください。',
+        ),
+      );
+    }
+
+    try {
+      final data = await BoltFoxApi.weChatMobileLogin(code: authorizationCode);
+      final token = _readToken(data);
+      if (token == null || token.isEmpty) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '微信登录响应缺少登录凭证，请稍后重试。',
+            en: 'The WeChat login response did not contain a session token.',
+            ja: 'WeChat ログイン応答にセッショントークンがありません。',
+          ),
+        );
+      }
+
+      ApiSession.instance.setToken(token);
+      _isLoggedIn = true;
+      _applyUserInfo(data);
+      _userLoaded = true;
+      notifyListeners();
+      return ActionFeedback(
+        success: true,
+        message: tr(
+          zh: '微信登录成功。',
+          en: 'Signed in with WeChat.',
+          ja: 'WeChat でログインしました。',
         ),
       );
     } catch (error) {
@@ -1158,11 +1195,7 @@ class PhotoFrameState extends ChangeNotifier {
       notifyListeners();
       return ActionFeedback(
         success: true,
-        message: tr(
-          zh: '头像已更新。',
-          en: 'Avatar updated.',
-          ja: 'アバターを更新しました。',
-        ),
+        message: tr(zh: '头像已更新。', en: 'Avatar updated.', ja: 'アバターを更新しました。'),
       );
     } catch (error) {
       return _apiFailure(error);
@@ -1179,7 +1212,8 @@ class PhotoFrameState extends ChangeNotifier {
       return _extractUploadedUrl(data.first);
     }
     if (data is Map) {
-      final url = data['url'] ??
+      final url =
+          data['url'] ??
           data['fileUrl'] ??
           data['filePath'] ??
           data['path'] ??
@@ -1555,8 +1589,9 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    final targetMatches =
-        _devices.where((device) => device.id == targetId).toList();
+    final targetMatches = _devices
+        .where((device) => device.id == targetId)
+        .toList();
     if (targetMatches.isEmpty) {
       return ActionFeedback(
         success: false,
@@ -1677,8 +1712,9 @@ class PhotoFrameState extends ChangeNotifier {
     }
     // 未连接到照片所属设备则自动扫连（对齐小程序 ensureActiveDeviceConnection），连不上中止。
     final targetDeviceId = photo.deviceId; // photo 已判空
-    final targetMatches =
-        _devices.where((device) => device.id == targetDeviceId).toList();
+    final targetMatches = _devices
+        .where((device) => device.id == targetDeviceId)
+        .toList();
     if (targetMatches.isEmpty) {
       return ActionFeedback(
         success: false,
@@ -1855,6 +1891,18 @@ class PhotoFrameState extends ChangeNotifier {
           zh: '设备名称不能为空。',
           en: 'Device name cannot be empty.',
           ja: '端末名は必須です。',
+        ),
+      );
+    }
+    // 对齐小程序 utils/device-name.js：按 Unicode 码点计数，最多 6 个字符。
+    // 使用 runes，emoji / 生僻字不会被 UTF-16 代理对误算成两个字符。
+    if (value.runes.length > 6) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '设备名称最多6个字符',
+          en: 'Device name must be at most 6 characters.',
+          ja: '端末名は6文字以内です。',
         ),
       );
     }
@@ -2051,10 +2099,11 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    final terms = [model, screen, scanName]
-        .map((s) => s.trim().toLowerCase())
-        .where((s) => s.isNotEmpty)
-        .toList();
+    final terms = [
+      model,
+      screen,
+      scanName,
+    ].map((s) => s.trim().toLowerCase()).where((s) => s.isNotEmpty).toList();
     int scoreOf(Map<String, dynamic> product) {
       final text = [
         product['productName'],
@@ -2150,9 +2199,9 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 设置设备轮播（对齐小程序 `slideshow.js applyPlayback`）：需已连接设备，走 BLE
+  /// 设置设备轮播（对齐小程序 `slideshow.js applyPlayback`）：操作前确保目标设备已连接，再走 BLE
   /// `setPlayback` 下发播放模式(顺序 order / 随机 random / 关闭 manual) + 间隔秒，成功后更新本地。
-  /// 未连接直接提示「请先连接设备」、不改状态（页面据此还原开关）；蓝牙失败统一「设备暂时无法连接」。
+  /// 未连接或活动会话属于其他设备时自动扫连目标设备；蓝牙失败统一返回连接错误并由页面还原开关。
   ///
   /// [enabled] 为 false 时下发 manual（关闭轮播）；为 true 时用 [mode]（manual 会被纠正为 sequence）。
   Future<ActionFeedback> setDeviceCarousel(
@@ -2162,19 +2211,17 @@ class PhotoFrameState extends ChangeNotifier {
   }) async {
     final device = _findDevice(deviceId);
     final client = BleController.instance.client;
-    if (!client.connected) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '请先连接设备',
-          en: 'Please connect the device first.',
-          ja: '先に端末を接続してください。',
-        ),
-      );
+    if (!client.connected || !_sessionMatches(device)) {
+      final connected = await connectDevice(deviceId);
+      if (!connected.success) {
+        return connected;
+      }
     }
     final targetMode = !enabled
         ? FramePlaybackMode.manual
-        : (mode == FramePlaybackMode.manual ? FramePlaybackMode.sequence : mode);
+        : (mode == FramePlaybackMode.manual
+              ? FramePlaybackMode.sequence
+              : mode);
     final modeStr = targetMode == FramePlaybackMode.random
         ? 'random'
         : (targetMode == FramePlaybackMode.manual ? 'manual' : 'order');
@@ -2772,8 +2819,9 @@ class PhotoFrameState extends ChangeNotifier {
   /// 原实现读的 `imgName` / `createTime` 等键后端根本不存在——标题永远是「照片」、
   /// imgBle 整个丢掉（图库照片没法再次投屏）。
   AlbumPhoto _albumPhotoFromJson(Map<String, dynamic> data, int index) {
-    final id = (data['uProductImgId'] ?? data['uproductImgId'] ?? _nextId('photo'))
-        .toString();
+    final id =
+        (data['uProductImgId'] ?? data['uproductImgId'] ?? _nextId('photo'))
+            .toString();
     final deviceId = (data['userProductId'] ?? '').toString();
     final deviceName = (data['productName'] ?? '').toString();
     final url = (data['img'] ?? '').toString();

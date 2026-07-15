@@ -9,7 +9,8 @@ import 'crypto_util.dart';
 /// 业务方法只传业务字段。返回值为后端 `retData`（动态类型，由调用方按接口解析）。
 ///
 /// App 与小程序差异：
-/// - App 走邮箱登录/注册体系，不接入 `setWechatAppLogin`（微信一键登录）。
+/// - App 同时支持邮箱密码登录和微信开放平台「移动应用微信登录」；后者只提交移动应用 SDK
+///   返回的一次性 code，不提交小程序手机号授权的 encryptedData / iv。
 /// - App 需要版本更新与安卓下载接口（小程序跳过）。
 class BoltFoxApi {
   BoltFoxApi._();
@@ -64,11 +65,6 @@ class BoltFoxApi {
     Object? deviceUploadState,
     int? targetWidth,
     int? targetHeight,
-    // ⚠️ isCompress 并不是后端真实参数：swagger 的 setUserProductUpload 入参里没有它
-    // （只有 targetWidth/targetHeight/useLab/dither/saturation… 这些图像处理参数）。
-    // 小程序也一直在传，后端直接忽略——即传不传都一样，压缩与否由后端自己决定。
-    // 保留仅为与小程序保持一致，**不要**依赖它来控制压缩。
-    int isCompress = 1,
   }) {
     return _http.upload(
       '/Client/Basic/setUserProductUpload',
@@ -78,7 +74,8 @@ class BoltFoxApi {
         'deviceUploadState': ?deviceUploadState,
         'targetWidth': ?targetWidth,
         'targetHeight': ?targetHeight,
-        'isCompress': isCompress == 0 ? 0 : 1,
+        // 对齐小程序 2026-07-13：产品已取消压缩开关，后端压缩恒开。
+        'isCompress': 1,
       },
     );
   }
@@ -141,6 +138,19 @@ class BoltFoxApi {
     );
   }
 
+  /// 微信开放平台「移动应用微信登录」。
+  ///
+  /// [code] 来自移动端微信 SDK 的 `snsapi_userinfo` 授权回调。AppSecret、code 换
+  /// access_token 以及用户身份合并都必须在服务端完成；客户端只接收业务 userToken。
+  /// 后端可根据公共 header 中的 terminal（iOS=1 / Android=2）与小程序（3）区分流程。
+  static Future<dynamic> weChatMobileLogin({required String code}) {
+    return _http.postJson(
+      '/Client/User/setWechatAppLogin',
+      body: {'code': code},
+      auth: false,
+    );
+  }
+
   /// 邮箱注册。[emailCode] 为 `sendEmail(sendType:1)` 收到的验证码。
   static Future<dynamic> userRegister({
     required String email,
@@ -168,7 +178,11 @@ class BoltFoxApi {
   }) {
     return _http.postJson(
       '/Client/User/resetPassword',
-      body: {'email': email, 'password': md5Hex(password), 'emailCode': emailCode},
+      body: {
+        'email': email,
+        'password': md5Hex(password),
+        'emailCode': emailCode,
+      },
       auth: false,
     );
   }
@@ -195,8 +209,9 @@ class BoltFoxApi {
     required String emailCode,
     String? password,
   }) {
-    final md5Password =
-        (password == null || password.isEmpty) ? '' : md5Hex(password);
+    final md5Password = (password == null || password.isEmpty)
+        ? ''
+        : md5Hex(password);
     return _http.postJson(
       '/Client/User/changeUserEmail',
       body: {

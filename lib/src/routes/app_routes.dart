@@ -31,6 +31,7 @@ import '../features/settings/presentation/settings_page.dart';
 import '../features/settings/presentation/update_boltstar_page.dart';
 import '../features/devices/presentation/ota_upgrade_page.dart';
 import '../features/settings/presentation/user_agreement_page.dart';
+import '../shared/widgets/app_toast.dart';
 import '../state.dart';
 
 /// 全局路由观察者：供页面实现 [RouteAware] 感知「被覆盖的页 pop 回来」(didPopNext)，
@@ -78,7 +79,8 @@ class AppRoutes {
   static const figmaPrivacyPolicy = '/figma/settings/privacy-policy';
   static const figmaUserAgreement = '/figma/settings/user-agreement';
   static const figmaUpdateBoltStar = '/figma/settings/update';
-  static const figmaUpdateBoltStarAvailable = '/figma/settings/update/available';
+  static const figmaUpdateBoltStarAvailable =
+      '/figma/settings/update/available';
   static const figmaUpdateBoltStarProgress = '/figma/settings/update/progress';
 
   static Route<dynamic> onGenerateRoute({
@@ -139,11 +141,7 @@ class AppRoutes {
         builder = (_) => const BindDeviceScanHelp();
         break;
       case AppRoutes.figmaPhotoPreviewAdjustImage:
-        // 「压缩图片」开关接全局状态：投屏链路（castImages→setUserProductUpload.isCompress）据此取值
-        builder = (_) => PhotoPreviewAdjustImagePage(
-              compressImage: state.projectionCompress,
-              onCompressChanged: state.setProjectionCompress,
-            );
+        builder = (_) => const PhotoPreviewAdjustImagePage();
         break;
       case AppRoutes.figmaPhotoPreviewSaved:
         builder = (_) => const PhotoPreviewSavedPage();
@@ -170,6 +168,12 @@ class AppRoutes {
         builder = (context) => DeviceDetailsPage(
           state: state,
           onCarouselSettings: () {
+            // 对齐小程序 detail.js goSlideshow：入口时未连接直接拦截；若进入后链路掉线，
+            // 设置页提交时仍会按 ensureConnectedForAction 自动重连。
+            if (!state.selectedDevice.connected) {
+              AppToast.show(context, '请先连接设备');
+              return;
+            }
             Navigator.of(
               context,
             ).pushNamed<void>(AppRoutes.figmaCarouselSettings);
@@ -243,9 +247,8 @@ class AppRoutes {
         );
         break;
       case AppRoutes.figmaUpdateBoltStarProgress:
-        builder = (_) => const UpdateBoltStarPage(
-          stage: BoltStarUpdateStage.downloading,
-        );
+        builder = (_) =>
+            const UpdateBoltStarPage(stage: BoltStarUpdateStage.downloading);
         break;
       default:
         builder = (_) => _UnknownRoutePage(routeName: settings.name);

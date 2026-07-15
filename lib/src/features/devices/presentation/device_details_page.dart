@@ -50,7 +50,7 @@ class DeviceDetailsPage extends StatelessWidget {
   }
 
   void _snack(BuildContext context, String message) {
-    AppToast.show(context, message);
+    AppToast.warn(context, message);
   }
 
   /// 摘要卡编辑图标：重命名当前设备（对齐小程序 detail.js `showRenameModal`）。
@@ -60,12 +60,21 @@ class DeviceDetailsPage extends StatelessWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
+<<<<<<< HEAD
         title: Text(AppL10n.of(context).devRenameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLength: 20,
           decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
+=======
+        title: const Text('编辑设备名称'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 6,
+          decoration: const InputDecoration(hintText: '请输入设备名称（1-6个字符）'),
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
         ),
         actions: [
           TextButton(
@@ -79,11 +88,11 @@ class DeviceDetailsPage extends StatelessWidget {
         ],
       ),
     );
-    if (name == null || name.isEmpty || name == device.name) {
+    if (name == null || name == device.name) {
       return;
     }
     final feedback = await state.renameDevice(device.id, name);
-    if (context.mounted) {
+    if (context.mounted && !feedback.success) {
       _snack(context, feedback.message);
     }
   }
@@ -91,10 +100,20 @@ class DeviceDetailsPage extends StatelessWidget {
   /// 顶部操作栏「连接蓝牙 / 断开连接」（对齐小程序 detail.js `toggleConnection`）。
   Future<void> _toggleConnection(BuildContext context) async {
     final device = state.selectedDevice;
-    final feedback = device.connected
+    final wasConnected = device.connected;
+    if (!wasConnected) {
+      AppLoadingDialog.show(context, '连接设备中');
+    }
+    final feedback = wasConnected
         ? await state.disconnectDevice(device.id)
         : await state.connectDevice(device.id);
-    if (context.mounted) {
+    if (!context.mounted) {
+      return;
+    }
+    if (!wasConnected) {
+      AppLoadingDialog.hide(context);
+    }
+    if (!feedback.success) {
       _snack(context, feedback.message);
     }
   }
@@ -148,16 +167,11 @@ class DeviceDetailsPage extends StatelessWidget {
     if (!context.mounted || imagePaths.isEmpty) {
       return;
     }
-    // 投屏「无预览 / 无中心裁切」：选好图直接走真实投屏（原图交后端转码 .raw → BLE 直传设备）。
-    // App 端不做预览、不做端上裁切/旋转编辑（既定方针，与小程序最小可用链路一致）。
+    // 与小程序一致：选图后进入预览，可裁剪、旋转、还原原图，确认后再走后端转码与 BLE 图传。
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) => CastPreviewPage(
-          device: device,
-          imagePaths: imagePaths,
-          compressImage: state.projectionCompress,
-        ),
+        builder: (_) => CastPreviewPage(device: device, imagePaths: imagePaths),
       ),
     );
     state.refreshAlbum();
@@ -422,8 +436,8 @@ class DeviceDetailsBody extends StatelessWidget {
                         device.newVersionNo,
                       )
                     : (device.firmwareVersion.isEmpty
-                        ? '-'
-                        : device.firmwareVersion),
+                          ? '-'
+                          : device.firmwareVersion),
                 showChevron: true,
                 onTap: onOtaUpgrade,
               ),

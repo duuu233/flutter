@@ -95,7 +95,8 @@ class _MinePageState extends State<MinePage> {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             _FeatureCard(
-                              iconAsset: 'assets/images/mine-icon01.png',
+                              iconAsset: 'assets/images/mine-icon06.png',
+                              iconBackground: const Color(0x1AFFAF8B),
                               fallbackIcon:
                                   Icons.photo_size_select_actual_outlined,
                               fallbackColor: const Color(0xFFFF6A24),
@@ -111,7 +112,8 @@ class _MinePageState extends State<MinePage> {
                               },
                             ),
                             _FeatureCard(
-                              iconAsset: 'assets/images/mine-icon02.png',
+                              iconAsset: 'assets/images/mine-icon07.png',
+                              iconBackground: const Color(0xFFE7F2FF),
                               fallbackIcon: Icons.devices_other_outlined,
                               fallbackColor: const Color(0xFF4A98FF),
                               title: AppL10n.of(context).mineMyDevices,
@@ -126,7 +128,8 @@ class _MinePageState extends State<MinePage> {
                               },
                             ),
                             _FeatureCard(
-                              iconAsset: 'assets/images/mine-icon03.png',
+                              iconAsset: 'assets/images/mine-icon08.png',
+                              iconBackground: const Color(0x1AFFAF8B),
                               fallbackIcon: Icons.view_list_rounded,
                               fallbackColor: const Color(0xFFFF6A24),
                               title: AppL10n.of(context).mineCastManagement,
@@ -224,7 +227,7 @@ class _MineBackground extends StatelessWidget {
 }
 
 /// 个人资料卡（小程序 `.profile-card`）：底图 `mine-header-bg01.png` +
-/// 头像 `mine-header.png`（112rpx≈56）+ 昵称/ID + 右侧箭头。
+/// 头像 `mine-header.jpg`（112rpx≈56）+ 昵称/ID + 右侧箭头。
 class _ProfileCard extends StatelessWidget {
   const _ProfileCard({
     required this.nickName,
@@ -316,7 +319,7 @@ class _ProfileCard extends StatelessWidget {
   }
 }
 
-/// 个人资料卡头像（`mine-header.png`，112rpx≈56 圆形）。
+/// 个人资料卡头像（`mine-header.jpg`，112rpx≈56 圆形）。
 class _Avatar extends StatelessWidget {
   const _Avatar({this.avatarUrl = ''});
 
@@ -342,7 +345,7 @@ class _Avatar extends StatelessWidget {
 
   Widget _defaultAvatar() {
     return Image.asset(
-      'assets/images/mine-header.png',
+      'assets/images/mine-header.jpg',
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
         return Container(
@@ -362,6 +365,7 @@ class _Avatar extends StatelessWidget {
 class _FeatureCard extends StatelessWidget {
   const _FeatureCard({
     required this.iconAsset,
+    required this.iconBackground,
     required this.fallbackIcon,
     required this.fallbackColor,
     required this.title,
@@ -370,6 +374,7 @@ class _FeatureCard extends StatelessWidget {
   });
 
   final String iconAsset;
+  final Color iconBackground;
   final IconData fallbackIcon;
   final Color fallbackColor;
   final String title;
@@ -409,22 +414,22 @@ class _FeatureCard extends StatelessWidget {
             Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Image.asset(
-                  iconAsset,
+                Container(
                   width: 56,
                   height: 56,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: fallbackColor.withValues(alpha: 0.10),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Icon(fallbackIcon, color: fallbackColor, size: 28),
-                    );
-                  },
+                  decoration: BoxDecoration(
+                    color: iconBackground,
+                    shape: BoxShape.circle,
+                  ),
+                  alignment: Alignment.center,
+                  child: Image.asset(
+                    iconAsset,
+                    width: 34,
+                    height: 34,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        Icon(fallbackIcon, color: fallbackColor, size: 28),
+                  ),
                 ),
                 const SizedBox(height: 11),
                 Text(title, style: _MineTextStyles.cardTitle),

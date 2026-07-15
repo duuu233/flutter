@@ -68,23 +68,34 @@ class _DevicesPageState extends State<DevicesPage> {
             if (!context.mounted) {
               return;
             }
-            _showMessage(context, feedback.message);
+            if (!feedback.success) {
+              _showMessage(context, feedback.message);
+            }
           },
           onConnect: (deviceId) async {
             // 真实 BLE 连接：复用活动会话或扫描匹配（只认序列号，改名不影响连接）。
+<<<<<<< HEAD
             _showMessage(context, AppL10n.of(context).devicesConnecting);
+=======
+            AppLoadingDialog.show(context, '连接设备中');
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
             final feedback = await state.connectDevice(deviceId);
             if (!context.mounted) {
               return;
             }
-            _showMessage(context, feedback.message);
+            AppLoadingDialog.hide(context);
+            if (!feedback.success) {
+              _showMessage(context, feedback.message);
+            }
           },
           onDisconnect: (deviceId) async {
             final feedback = await state.disconnectDevice(deviceId);
             if (!context.mounted) {
               return;
             }
-            _showMessage(context, feedback.message);
+            if (!feedback.success) {
+              _showMessage(context, feedback.message);
+            }
           },
         );
       },
@@ -92,7 +103,7 @@ class _DevicesPageState extends State<DevicesPage> {
   }
 
   void _showMessage(BuildContext context, String message) {
-    AppToast.show(context, message);
+    AppToast.warn(context, message);
   }
 
   /// 列表项「投屏」：选中设备 → 未连接自动扫连 → 拍照/相册 → 真实投屏（对齐小程序 list.js startProjection）。
@@ -132,11 +143,7 @@ class _DevicesPageState extends State<DevicesPage> {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) => CastPreviewPage(
-          device: device,
-          imagePaths: imagePaths,
-          compressImage: state.projectionCompress,
-        ),
+        builder: (_) => CastPreviewPage(device: device, imagePaths: imagePaths),
       ),
     );
     state.refreshAlbum();

@@ -1,20 +1,13 @@
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:BoltStar/src/app.dart';
 
 void main() {
-  testWidgets('app boots and can switch to mine tab', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('app boots on the required login page', (tester) async {
     await tester.pumpWidget(const BoltStarApp());
     await tester.pump();
 
-    expect(find.byKey(const Key('home-title')), findsOneWidget);
-
-    await tester.tap(find.text('我的'));
-    await tester.pump();
-
-    expect(find.byKey(const Key('mine-page-title')), findsOneWidget);
+    expect(find.text('登 录'), findsOneWidget);
+    expect(find.text('微信授权登录'), findsOneWidget);
   });
 }

@@ -12,8 +12,6 @@ class PhotoPreviewAdjustImagePage extends StatelessWidget {
     this.onCrop,
     this.onRotate,
     this.onOriginal,
-    this.compressImage = true,
-    this.onCompressChanged,
   });
 
   final VoidCallback? onSave;
@@ -21,12 +19,6 @@ class PhotoPreviewAdjustImagePage extends StatelessWidget {
   final VoidCallback? onCrop;
   final VoidCallback? onRotate;
   final VoidCallback? onOriginal;
-
-  /// 「压缩图片」开关初始值（对齐小程序预览页 switch，默认开启=后端压到约300-400KB）。
-  final bool compressImage;
-
-  /// 开关变化回调（接 PhotoFrameState.setProjectionCompress，投屏链路据此传 isCompress）。
-  final ValueChanged<bool>? onCompressChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -89,11 +81,6 @@ class PhotoPreviewAdjustImagePage extends StatelessWidget {
               onOriginal: onOriginal,
             ),
           ),
-          const SizedBox(height: 12),
-          _CompressSwitchRow(
-            value: compressImage,
-            onChanged: onCompressChanged,
-          ),
         ],
       ),
       bottom: FigmaPrimaryButton(label: l10n.cresStartCast, onPressed: onStartCasting),
@@ -101,6 +88,7 @@ class PhotoPreviewAdjustImagePage extends StatelessWidget {
   }
 }
 
+<<<<<<< HEAD
 /// 「压缩图片」开关行（对齐小程序预览页）：开=后端压缩到约300-400KB，关=传原图。
 /// 页面本身是 Stateless，这里内聚一个局部 State 让开关即时响应，再经 [onChanged] 上报持久层。
 class _CompressSwitchRow extends StatefulWidget {
@@ -140,6 +128,8 @@ class _CompressSwitchRowState extends State<_CompressSwitchRow> {
   }
 }
 
+=======
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
 class _PreviewCounter extends StatelessWidget {
   const _PreviewCounter({required this.label});
 

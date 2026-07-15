@@ -1,7 +1,12 @@
 import 'dart:async';
+<<<<<<< HEAD
 import 'dart:ui' show ImageFilter;
+=======
+import 'dart:io';
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../shared/l10n/app_l10n.dart';
 
@@ -76,6 +81,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
+  String? _pendingAvatarPath;
+  bool _updatingAvatar = false;
+  bool _openingDeviceList = false;
+
   // ================= 调试开关（调样式用，发布前改回 null）=================
   // 把下面的 null 改成想看的场景，例如 `_DebugScene.boundHome`，即可让首页固定
   // 停在该场景。改这个值后请用「热重启 Hot Restart（按大写 R）」生效；
@@ -119,19 +128,20 @@ class _HomePageState extends State<HomePage> {
   /// 原来这里要求 `connected == true`，于是「已绑定但蓝牙没连」（冷启动的常态，
   /// 因为后端根本不存连接态）会被误判成「未绑定」，首页一直显示绑定引导空态。
   ///
-  /// 展示优先级同小程序：已连接的 → 上次选中的 → 第一台。
+  /// 展示优先级：用户刚在轮播中选中的 → 已连接的 → 第一台。
+  /// 否则用户滑到一台未连接设备后，状态刷新会立刻把轮播弹回已连接设备。
   DeviceItem? get _activeDevice {
     final devices = widget.state.devices;
     if (devices.isEmpty) {
       return null;
     }
-    final connected = devices.where((device) => device.connected);
-    if (connected.isNotEmpty) {
-      return connected.first;
-    }
     final selectedId = widget.state.selectedDeviceId;
     final selected = devices.where((device) => device.id == selectedId);
-    return selected.isNotEmpty ? selected.first : devices.first;
+    if (selected.isNotEmpty) {
+      return selected.first;
+    }
+    final connected = devices.where((device) => device.connected);
+    return connected.isNotEmpty ? connected.first : devices.first;
   }
 
   @override
@@ -231,15 +241,25 @@ class _HomePageState extends State<HomePage> {
               ? (waitingDevices && _debugScene == null
                     ? const PageLoading()
                     : _HomeMainView(
-                  state: widget.state,
-                  activeDevice: activeDevice,
-                  onBindDevice: _startScan,
-                  onAddDevice: _startScan,
-                  onShowCastSheet: _showCastMethodSheet,
-                  onCamera: () => _startCast(ImageSourceType.camera),
-                  onAlbum: () => _startCast(ImageSourceType.album),
-                  onOpenMine: widget.onOpenMine,
-                ))
+                        state: widget.state,
+                        activeDevice: activeDevice,
+                        devices: widget.state.devices,
+                        onBindDevice: _startScan,
+                        onAddDevice: _startScan,
+                        pendingAvatarPath: _pendingAvatarPath,
+                        onChangeAvatar: _changeAvatar,
+                        onDeviceChanged: (device) {
+                          widget.state.selectDevice(device.id);
+                        },
+                        onOpenDevices: _openDeviceList,
+                        onConnectDevice: (device) {
+                          _ensureConnected(device.id);
+                        },
+                        onShowCastSheet: _showCastMethodSheet,
+                        onCamera: () => _startCast(ImageSourceType.camera),
+                        onAlbum: () => _startCast(ImageSourceType.album),
+                        onOpenMine: widget.onOpenMine,
+                      ))
               : _BindDeviceView(
                   mode: bindMode,
                   devices: _nearbyDevices,
@@ -280,13 +300,56 @@ class _HomePageState extends State<HomePage> {
   /// （首页内嵌的 mock 绑定视图 [_BindDeviceView] 仅保留给 [_debugScene] 调样式用，
   ///  正常交互不再触发。）
   void _startScan() {
-    Navigator.of(context)
-        .pushNamed<void>(AppRoutes.figmaBindDeviceSearching)
-        .then((_) {
-          if (mounted) {
-            widget.state.refreshDevices();
-          }
-        });
+    Navigator.of(
+      context,
+    ).pushNamed<void>(AppRoutes.figmaBindDeviceSearching).then((_) {
+      if (mounted) {
+        widget.state.refreshDevices();
+      }
+    });
+  }
+
+  /// 首页头像入口：选择后立即本地回显并上传，对齐小程序 `onChooseAvatar`。
+  Future<void> _changeAvatar() async {
+    if (_updatingAvatar) {
+      return;
+    }
+    XFile? file;
+    try {
+      file = await ImagePicker().pickImage(source: ImageSource.gallery);
+    } catch (_) {
+      if (mounted) {
+        AppToast.warn(context, '头像更新失败');
+      }
+      return;
+    }
+    if (file == null || !mounted) {
+      return;
+    }
+
+    _updatingAvatar = true;
+    setState(() => _pendingAvatarPath = file!.path);
+    final feedback = await widget.state.updateAvatar(file.path);
+    if (!mounted) {
+      return;
+    }
+    _updatingAvatar = false;
+    setState(() => _pendingAvatarPath = null);
+    if (feedback.success) {
+      AppToast.show(context, '头像已更新');
+    } else {
+      AppToast.warn(context, '头像更新失败');
+    }
+  }
+
+  /// 设备卡面积较大，锁住重复点击，避免同一列表页被连续压栈。
+  Future<void> _openDeviceList() async {
+    if (_openingDeviceList) {
+      return;
+    }
+    _openingDeviceList = true;
+    await Navigator.of(context).pushNamed<void>(AppRoutes.figmaMyDevices);
+    _openingDeviceList = false;
   }
 
   /// 退出绑定流程，回到主视图。
@@ -356,17 +419,12 @@ class _HomePageState extends State<HomePage> {
       true,
     );
 
-    // 投屏「无预览 / 无中心裁切」：选好图直接进入真实投屏。
-    // 与小程序一致的最小可用链路——原图交后端接口，后端按设备分辨率转码出 .raw 再 BLE 直传设备；
-    // App 端不做预览、不做端上裁切/旋转编辑（既定方针）。
+    // 与小程序一致：选图后先进入投屏预览，可选择裁剪、旋转或保留原图，确认后再投屏。
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) => CastPreviewPage(
-          device: activeDevice,
-          imagePaths: imagePaths,
-          compressImage: widget.state.projectionCompress,
-        ),
+        builder: (_) =>
+            CastPreviewPage(device: activeDevice, imagePaths: imagePaths),
       ),
     );
     if (!mounted) {
@@ -377,8 +435,6 @@ class _HomePageState extends State<HomePage> {
     widget.state.refreshCastRecords();
   }
 
-  /// 「重新连接」按钮：用户**手动**发起的连接（非投屏入口的自动重连）。
-  /// 连接结果以吐司提示，连上后由用户再次点投屏——投屏本身不触发连接。
   /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），
   /// 连上返回 true；失败弹提示并返回 false。供投屏入口在未连接时自动重连。
   Future<bool> _ensureConnected(String deviceId) async {
@@ -452,6 +508,6 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showFeedback(String message) {
-    AppToast.show(context, message);
+    AppToast.warn(context, message);
   }
 }

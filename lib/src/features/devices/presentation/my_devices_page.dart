@@ -128,9 +128,13 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
         content: TextField(
           controller: controller,
           autofocus: true,
-          maxLength: 20,
+          maxLength: 6,
           cursorColor: const Color(0xFFEB5F1B),
+<<<<<<< HEAD
           decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
+=======
+          decoration: const InputDecoration(hintText: '请输入设备名称（1-6个字符）'),
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
         ),
         actions: [
           TextButton(
@@ -145,7 +149,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
       ),
     );
     controller.dispose();
-    if (name != null && name.trim().isNotEmpty) {
+    if (name != null) {
       // 通过回调走真实接口；列表名称由上层 state 更新后重建。
       widget.onRename?.call(device.id, name.trim());
     }
@@ -186,7 +190,11 @@ class _AddDeviceButton extends StatelessWidget {
                 color: Color(0xFFFF6A24),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.add_rounded, color: Colors.white, size: 22),
+              child: const Icon(
+                Icons.add_rounded,
+                color: Colors.white,
+                size: 22,
+              ),
             );
           },
         ),
@@ -478,6 +486,7 @@ class _DeviceCard extends StatelessWidget {
           // 操作栏（投屏 | 连接/断开）：与上面的详情点击区是**兄弟节点**，
           // 不在它的手势范围内，所以这两个按钮的点击不可能被「进详情」抢走。
           Container(
+<<<<<<< HEAD
               height: 42,
               // 对齐小程序 .device-actions：白 0.4 平底 + 轻投影（原来是左右白渐变、无阴影）。
               decoration: BoxDecoration(
@@ -530,9 +539,55 @@ class _DeviceCard extends StatelessWidget {
                       onTap: onToggleConnection,
                     ),
                   ),
+=======
+            height: 42,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+                colors: [
+                  Colors.white.withValues(alpha: 0.38),
+                  Colors.white.withValues(alpha: 0.55),
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
                 ],
               ),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.31)),
             ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _DeviceActionButton(
+                    iconAsset: 'assets/images/screen-casting-icon01.png',
+                    fallbackIcon: Icons.cast_rounded,
+                    iconWidth: 16,
+                    iconHeight: 15,
+                    label: '投屏',
+                    color: const Color(0xFF777E88),
+                    onTap: onCast,
+                  ),
+                ),
+                Container(width: 1, height: 19, color: const Color(0xFFDADDDF)),
+                Expanded(
+                  child: _DeviceActionButton(
+                    iconAsset: device.connected
+                        ? 'assets/images/disconnect-icon01.png'
+                        : 'assets/images/bluetooth-connection.png',
+                    fallbackIcon: device.connected
+                        ? Icons.link_off_rounded
+                        : Icons.bluetooth_rounded,
+                    iconWidth: 14,
+                    iconHeight: 14,
+                    label: device.connected ? '断开' : '连接',
+                    color: device.connected
+                        ? const Color(0xFFEB5F1B)
+                        : const Color(0xFF2079FC),
+                    onTap: onToggleConnection,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
