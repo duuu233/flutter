@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../cast/cast_photo_picker.dart';
@@ -73,7 +74,11 @@ class _DevicesPageState extends State<DevicesPage> {
           },
           onConnect: (deviceId) async {
             // 真实 BLE 连接：复用活动会话或扫描匹配（只认序列号，改名不影响连接）。
+<<<<<<< HEAD
+            _showMessage(context, AppL10n.of(context).devicesConnecting);
+=======
             AppLoadingDialog.show(context, '连接设备中');
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
             final feedback = await state.connectDevice(deviceId);
             if (!context.mounted) {
               return;
@@ -128,7 +133,7 @@ class _DevicesPageState extends State<DevicesPage> {
           : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (context.mounted) {
-        _showMessage(context, '无法读取照片，请检查相机/相册权限后重试。');
+        _showMessage(context, AppL10n.of(context).devicesReadPhotoFailed);
       }
       return;
     }
@@ -147,7 +152,7 @@ class _DevicesPageState extends State<DevicesPage> {
 
   /// 未连接则蒙层 loading 自动扫连（对齐小程序 ensureConnectedForAction）；连上 true，失败提示 false。
   Future<bool> _ensureConnected(BuildContext context, String deviceId) async {
-    AppLoadingDialog.show(context, '连接设备中');
+    AppLoadingDialog.show(context, AppL10n.of(context).bindConnecting);
     final feedback = await widget.state.connectDevice(deviceId);
     if (!context.mounted) {
       return false;
@@ -159,33 +164,8 @@ class _DevicesPageState extends State<DevicesPage> {
     return feedback.success;
   }
 
-  /// 拍照 / 相册选择面板（对齐小程序 media 选择 sheet）。
+  /// 拍照 / 相册选择面板：走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款）。
   Future<ImageSourceType?> _pickCastSource(BuildContext context) {
-    return showModalBottomSheet<ImageSourceType>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (sheetContext) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_camera_outlined),
-              title: const Text('拍照'),
-              onTap: () =>
-                  Navigator.of(sheetContext).pop(ImageSourceType.camera),
-            ),
-            ListTile(
-              leading: const Icon(Icons.collections_outlined),
-              title: const Text('从相册选择'),
-              onTap: () =>
-                  Navigator.of(sheetContext).pop(ImageSourceType.album),
-            ),
-          ],
-        ),
-      ),
-    );
+    return CastPhotoPicker.chooseSource(context);
   }
 }

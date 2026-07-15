@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
 /// 绑定邮箱页：为未绑定邮箱的账号设置「邮箱 + 登录密码」，对照小程序
@@ -44,8 +45,9 @@ class _BindEmailIncompletePageState extends State<BindEmailIncompletePage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '绑定邮箱',
+      title: l10n.accBindEmailTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -53,41 +55,41 @@ class _BindEmailIncompletePageState extends State<BindEmailIncompletePage> {
           FigmaAccountFormCard(
             children: [
               FigmaAccountField(
-                label: '邮箱',
+                label: l10n.accEmail,
                 controller: _emailController,
-                hintText: '请输入邮箱地址',
+                hintText: l10n.accEmailAddressHint,
                 keyboardType: TextInputType.emailAddress,
               ),
               const FigmaFormDivider(),
               FigmaVerificationField(
                 controller: _codeController,
                 onGetCode: _getCode,
-                countdownLabel: _countdown > 0 ? '$_countdown秒后重新获取' : null,
+                countdownLabel: _countdown > 0 ? l10n.accResendIn(_countdown) : null,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '密码',
+                label: l10n.accPassword,
                 controller: _passwordController,
-                hintText: '请输入密码',
+                hintText: l10n.accPasswordHint,
                 obscureText: true,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '确认密码',
+                label: l10n.accConfirmPassword,
                 controller: _confirmPasswordController,
-                hintText: '请确认密码',
+                hintText: l10n.accConfirmPasswordHint,
                 obscureText: true,
               ),
             ],
           ),
-          const Padding(
-            padding: EdgeInsets.only(top: 14),
-            child: FigmaInfoTip(text: '绑定邮箱可以用于app登录'),
+          Padding(
+            padding: const EdgeInsets.only(top: 14),
+            child: FigmaInfoTip(text: l10n.accBindEmailTip),
           ),
         ],
       ),
       bottom: FigmaPrimaryButton(
-        label: '确认绑定',
+        label: l10n.accConfirmBind,
         onPressed: _submitting ? null : _confirm,
       ),
     );
@@ -128,11 +130,11 @@ class _BindEmailIncompletePageState extends State<BindEmailIncompletePage> {
   Future<void> _confirm() async {
     final password = _passwordController.text;
     if (password.isEmpty) {
-      _showSnack('请设置用于 app 登录的密码。');
+      _showSnack(AppL10n.of(context).accSetLoginPassword);
       return;
     }
     if (password != _confirmPasswordController.text) {
-      _showSnack('两次输入的密码不一致，请重新输入。');
+      _showSnack(AppL10n.of(context).accPasswordMismatchRetry);
       return;
     }
     setState(() => _submitting = true);

@@ -1,8 +1,14 @@
 import 'dart:async';
+<<<<<<< HEAD
+import 'dart:ui' show ImageFilter;
+=======
 import 'dart:io';
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+
+import '../../../shared/l10n/app_l10n.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/widgets/app_toast.dart';
@@ -373,10 +379,11 @@ class _HomePageState extends State<HomePage> {
   Future<void> _startCast(ImageSourceType source) async {
     final activeDevice = _activeDevice;
     if (activeDevice == null) {
+      final l10n = AppL10n.of(context);
       await _showDeviceNotice(
-        title: '暂未绑定设备',
-        message: '当前暂无可投屏设备，请先绑定相框设备',
-        buttonLabel: '立即绑定',
+        title: l10n.homeNoDeviceTitle,
+        message: l10n.homeNoDeviceMessage,
+        buttonLabel: l10n.homeBindNow,
         onPressed: _startScan,
       );
       return;
@@ -398,7 +405,7 @@ class _HomePageState extends State<HomePage> {
           : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (mounted) {
-        _showFeedback('无法读取照片，请检查相机/相册权限后重试。');
+        _showFeedback(AppL10n.of(context).homeReadPhotoFailed);
       }
       return;
     }
@@ -431,7 +438,7 @@ class _HomePageState extends State<HomePage> {
   /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），
   /// 连上返回 true；失败弹提示并返回 false。供投屏入口在未连接时自动重连。
   Future<bool> _ensureConnected(String deviceId) async {
-    AppLoadingDialog.show(context, '连接设备中');
+    AppLoadingDialog.show(context, AppL10n.of(context).homeConnectingDevice);
     final feedback = await widget.state.connectDevice(deviceId);
     if (!mounted) {
       return false;
@@ -470,10 +477,11 @@ class _HomePageState extends State<HomePage> {
 
   /// 「首页-离线断网模式」提示。
   Future<void> _showOfflineNotice() async {
+    final l10n = AppL10n.of(context);
     await _showDeviceNotice(
-      title: '离线模式',
-      message: '当前网络异常，app进入离线模式无法同步投屏记录与图库',
-      buttonLabel: '我知道了',
+      title: l10n.homeOfflineTitle,
+      message: l10n.homeOfflineMessage,
+      buttonLabel: l10n.gotIt,
       onPressed: () {},
     );
   }

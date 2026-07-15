@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
 /// 「我的」页：对照微信小程序 `photo-album/pages/mine` 精准还原。
@@ -31,11 +32,6 @@ class _MinePageState extends State<MinePage> {
     widget.state.refreshAlbum();
   }
 
-  /// 统计数字的展示文案：接口没回来之前显示占位 `--`，不要先渲染一个 `0` 再跳成真实值
-  /// （小程序 profile 页同样用 `--` 占位）。
-  String _countText(bool loaded, int value, String unit) =>
-      loaded ? '$value$unit' : '--$unit';
-
   @override
   Widget build(BuildContext context) {
     final state = widget.state;
@@ -56,9 +52,9 @@ class _MinePageState extends State<MinePage> {
                       children: [
                         // 顶部居中标题（page-nav title="我的"）。
                         const SizedBox(height: 12),
-                        const Text(
-                          '我的',
-                          key: Key('mine-page-title'),
+                        Text(
+                          AppL10n.of(context).tabMine,
+                          key: const Key('mine-page-title'),
                           textAlign: TextAlign.center,
                           style: _MineTextStyles.navTitle,
                         ),
@@ -83,12 +79,12 @@ class _MinePageState extends State<MinePage> {
                         ),
                         // 常用功能：margin-top 92rpx(=46)，标题底 24rpx(=12)。
                         const SizedBox(height: 46),
-                        const Padding(
+                        Padding(
                           padding: _inset,
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              '常用功能',
+                              AppL10n.of(context).mineCommonFeatures,
                               style: _MineTextStyles.sectionTitle,
                             ),
                           ),
@@ -104,11 +100,10 @@ class _MinePageState extends State<MinePage> {
                               fallbackIcon:
                                   Icons.photo_size_select_actual_outlined,
                               fallbackColor: const Color(0xFFFF6A24),
-                              title: '我的图库',
-                              subtitle: _countText(
+                              title: AppL10n.of(context).mineMyGallery,
+                              subtitle: AppL10n.of(context).minePhotoCountText(
                                 state.userLoaded || state.albumLoaded,
                                 state.minePhotoCount,
-                                '张照片',
                               ),
                               onTap: () {
                                 Navigator.of(
@@ -121,11 +116,10 @@ class _MinePageState extends State<MinePage> {
                               iconBackground: const Color(0xFFE7F2FF),
                               fallbackIcon: Icons.devices_other_outlined,
                               fallbackColor: const Color(0xFF4A98FF),
-                              title: '我的设备',
-                              subtitle: _countText(
+                              title: AppL10n.of(context).mineMyDevices,
+                              subtitle: AppL10n.of(context).mineDeviceCountText(
                                 state.userLoaded || state.devicesLoaded,
                                 state.mineDeviceCount,
-                                '个设备',
                               ),
                               onTap: () {
                                 Navigator.of(
@@ -138,7 +132,7 @@ class _MinePageState extends State<MinePage> {
                               iconBackground: const Color(0x1AFFAF8B),
                               fallbackIcon: Icons.view_list_rounded,
                               fallbackColor: const Color(0xFFFF6A24),
-                              title: '投屏管理',
+                              title: AppL10n.of(context).mineCastManagement,
                               subtitle: '',
                               onTap: () {
                                 Navigator.of(context).pushNamed<void>(
@@ -150,12 +144,12 @@ class _MinePageState extends State<MinePage> {
                         ),
                         // 服务与帮助：margin-top 86rpx(=43)。
                         const SizedBox(height: 43),
-                        const Padding(
+                        Padding(
                           padding: _inset,
                           child: Align(
                             alignment: Alignment.centerLeft,
                             child: Text(
-                              '服务与帮助',
+                              AppL10n.of(context).mineServiceHelp,
                               style: _MineTextStyles.sectionTitle,
                             ),
                           ),
@@ -166,7 +160,7 @@ class _MinePageState extends State<MinePage> {
                           child: _ServiceRow(
                             iconAsset: 'assets/images/mine-icon05.png',
                             fallbackIcon: Icons.menu_book_outlined,
-                            title: '操作指南',
+                            title: AppL10n.of(context).mineGuide,
                             onTap: () {
                               Navigator.of(
                                 context,
@@ -180,7 +174,7 @@ class _MinePageState extends State<MinePage> {
                           child: _ServiceRow(
                             iconAsset: 'assets/images/mine-icon04.png',
                             fallbackIcon: Icons.settings_outlined,
-                            title: '设置',
+                            title: AppL10n.of(context).mineSettings,
                             onTap: () {
                               Navigator.of(
                                 context,
@@ -297,7 +291,7 @@ class _ProfileCard extends StatelessWidget {
                         if (userId.isNotEmpty) ...[
                           const SizedBox(height: 10),
                           Text(
-                            'ID：$userId',
+                            AppL10n.of(context).mineUserId(userId),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: _MineTextStyles.profileId,
@@ -546,20 +540,20 @@ class _MineTabBar extends StatelessWidget {
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: onOpenHome,
-              child: const _MineTabItem(
+              child: _MineTabItem(
                 iconAsset: 'assets/images/tabbar-home01.png',
                 fallbackIcon: Icons.home_outlined,
-                label: '首页',
-                color: Color(0xFF777D86),
+                label: AppL10n.of(context).tabHome,
+                color: const Color(0xFF777D86),
               ),
             ),
           ),
-          const Expanded(
+          Expanded(
             child: _MineTabItem(
               iconAsset: 'assets/images/tabbar-mine02.png',
               fallbackIcon: Icons.person_rounded,
-              label: '我的',
-              color: Color(0xFFFF6421),
+              label: AppL10n.of(context).tabMine,
+              color: const Color(0xFFFF6421),
             ),
           ),
         ],
@@ -588,12 +582,12 @@ class _MineTabItem extends StatelessWidget {
       children: [
         Image.asset(
           iconAsset,
-          width: 28,
-          height: 28,
+          width: 24,
+          height: 24,
           fit: BoxFit.contain,
           semanticLabel: label,
           errorBuilder: (context, error, stackTrace) =>
-              Icon(fallbackIcon, color: color, size: 28),
+              Icon(fallbackIcon, color: color, size: 24),
         ),
         const SizedBox(height: 2),
         Text(

@@ -4,6 +4,7 @@ import '../device/ble_controller.dart';
 import '../features/account/presentation/auth_page.dart';
 import '../features/shell/presentation/shell_page.dart';
 import '../routes/app_routes.dart';
+import '../shared/l10n/app_l10n.dart';
 import '../state.dart';
 import 'app_theme.dart';
 
@@ -33,6 +34,12 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _state.addListener(_handleAuthChanged);
+    // 恢复上次选择的语言（持久化在本地）。异步读取，读到后 switchLanguage 会 notify 触发整树重译。
+    LanguagePreference.load().then((language) {
+      if (language != null && mounted) {
+        _state.switchLanguage(language);
+      }
+    });
   }
 
   @override
@@ -110,6 +117,11 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
           // 命名路由仍复用同一个 `_state`，避免页面之间出现两份业务数据。
           onGenerateRoute: (settings) =>
               AppRoutes.onGenerateRoute(settings: settings, state: _state),
+          // 语言作用域置于 Navigator 之上：切换语言时所有路由（含 push 出来的业务页）随之重译。
+          builder: (context, child) => AppLocalizationsScope(
+            language: _state.language,
+            child: child ?? const SizedBox.shrink(),
+          ),
         );
       },
     );

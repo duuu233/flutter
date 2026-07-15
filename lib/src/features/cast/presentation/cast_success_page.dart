@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'cast_result_common.dart';
 
 /// 投屏成功页：提示投屏完成并提供继续投屏 / 返回首页，对应 UI 稿「投屏成功」。
@@ -18,8 +19,9 @@ class CastSuccessPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '投屏成功',
+      title: l10n.cresSuccessTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -31,14 +33,14 @@ class CastSuccessPage extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-          const Text(
-            '投屏成功',
+          Text(
+            l10n.cresSuccessTitle,
             textAlign: TextAlign.center,
             style: projectionResultTitleStyle,
           ),
           const SizedBox(height: 11),
-          const Text(
-            '照片已成功投屏到设备，可前往相册查看',
+          Text(
+            l10n.cresSuccessDesc,
             textAlign: TextAlign.center,
             style: projectionResultDescStyle,
           ),
@@ -53,10 +55,10 @@ class CastSuccessPage extends StatelessWidget {
       bottom: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          FigmaPrimaryButton(label: '继续投屏', onPressed: onContinueCasting),
+          FigmaPrimaryButton(label: l10n.cresContinueCast, onPressed: onContinueCasting),
           const SizedBox(height: 12),
           FigmaSecondaryButton(
-            label: '返回首页',
+            label: l10n.cresBackHome,
             onPressed: onBackHome ?? () => Navigator.maybePop(context),
           ),
         ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
@@ -120,7 +121,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     }
     return state.devices.isNotEmpty
         ? state.deviceName(state.devices.first.id)
-        : '相框';
+        : AppL10n.of(context).galFrame;
   }
 
   void _toggleAll() {
@@ -208,12 +209,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('提示'),
-        content: const Text('当前设备已被执行清空操作，请重新上传图片'),
+        title: Text(AppL10n.of(context).galTip),
+        content: Text(AppL10n.of(context).galDeviceClearedNotice),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('确认'),
+            child: Text(AppL10n.of(context).galConfirm),
           ),
         ],
       ),
@@ -263,7 +264,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     }
     // 设备侧删除(0x12)可能耗时较久（最长约 180s），期间用蒙层 loading 阻断误操作
     // （对齐小程序 wx.showLoading({title:'删除中', mask:true})）。
-    _showBlockingLoading('删除中');
+    _showBlockingLoading(AppL10n.of(context).galDeleting);
     final feedback = await state.deleteAlbumPhotos(_selectedIds);
     if (mounted) {
       _dismissBlockingLoading();
@@ -286,10 +287,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   Future<void> _refreshSelectedOnScreen() async {
     if (_selectedIds.length != 1) {
       // 对齐小程序：多选时刷屏给出提示而非静默无反应。
-      _showFeedback('刷新屏幕只能选中一张图片');
+      _showFeedback(AppL10n.of(context).galRefreshSingleOnly);
       return;
     }
-    _showBlockingLoading('刷新中');
+    _showBlockingLoading(AppL10n.of(context).galRefreshing);
     final feedback = await state.refreshGalleryPhotoOnScreen(_selectedIds.first);
     if (mounted) {
       _dismissBlockingLoading();
@@ -310,7 +311,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     final hasSelection = _selectedIds.isNotEmpty;
 
     return FigmaScreen(
-      title: '我的图库',
+      title: AppL10n.of(context).galTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
       // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
@@ -331,9 +332,9 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                       GestureDetector(
                         behavior: HitTestBehavior.opaque,
                         onTap: _toggleAll,
-                        child: const Text(
-                          '全选',
-                          style: TextStyle(
+                        child: Text(
+                          AppL10n.of(context).galSelectAll,
+                          style: const TextStyle(
                             color: Color(0xFFFF5F1F),
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -343,7 +344,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                       ),
                       const SizedBox(width: 9),
                       Text(
-                        '共 ${photos.length} 张',
+                        AppL10n.of(context).galTotalCount(photos.length),
                         style: const TextStyle(
                           color: Color(0xFF777E88),
                           fontSize: 14,
@@ -382,7 +383,6 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                 ),
                 if (hasSelection)
                   _SelectionBar(
-                    count: _selectedIds.length,
                     onDelete: _confirmDelete,
                     // 刷屏常驻（对齐小程序）：多选时点它给出「只能选一张」提示。
                     onRefresh: _refreshSelectedOnScreen,
@@ -557,16 +557,15 @@ class _SelectCircle extends StatelessWidget {
   }
 }
 
-/// 选中底栏（小程序 `.album-bottom-bar`）：删除按钮 + 已选数量 + 投屏。
+/// 选中底栏（小程序 `.album-bottom-bar`）：透明浮层，居中三枚渐变圆按钮 刷新/删除/取消。
+/// 无白底、无阴影、无「已选 N 张」文案（对齐小程序 background:transparent + 三圆居中）。
 class _SelectionBar extends StatelessWidget {
   const _SelectionBar({
-    required this.count,
     required this.onDelete,
     this.onRefresh,
     required this.onCancel,
   });
 
-  final int count;
   final VoidCallback onDelete;
 
   /// 刷屏（0x24）常驻：多选时点击由外部给出「只能选一张」提示（对齐小程序）。
@@ -577,119 +576,109 @@ class _SelectionBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF7E96B8).withValues(alpha: 0.14),
-            blurRadius: 17,
-            offset: const Offset(0, -6),
+    // padding: 24rpx 46rpx calc(24rpx + safe-bottom)；背景透明、无阴影。
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        23,
+        12,
+        23,
+        12 + MediaQuery.of(context).padding.bottom,
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // 刷新屏幕：橙色渐变（.action-refresh）。
+          _CircleAction(
+            asset: 'assets/images/album-icon01.png',
+            fallback: Icons.cast_rounded,
+            iconSize: 28,
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFF8B3D), Color(0xFFFF641F)],
+            ),
+            shadowColor: const Color(0xFFFF641F).withValues(alpha: 0.32),
+            onTap: onRefresh,
+          ),
+          const SizedBox(width: 45), // gap:90rpx
+          // 删除：红色渐变（.action-delete）。
+          _CircleAction(
+            asset: 'assets/images/album-icon02.png',
+            fallback: Icons.delete_outline_rounded,
+            iconSize: 28,
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0xFFFF5B56), Color(0xFFF5322C)],
+            ),
+            shadowColor: const Color(0xFFF5322C).withValues(alpha: 0.30),
+            onTap: onDelete,
+          ),
+          const SizedBox(width: 45),
+          // 取消：深色实底、图标更小（.action-cancel）。
+          _CircleAction(
+            asset: 'assets/images/album-icon03.png',
+            fallback: Icons.close_rounded,
+            iconSize: 20,
+            color: const Color(0xFF2F3033),
+            shadowColor: const Color(0xFF2F3033).withValues(alpha: 0.28),
+            onTap: onCancel,
           ),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(23, 16, 23, 16),
-        child: Row(
-          children: [
-            // 删除按钮（圆形白底 + del-icon.png）。
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onDelete,
-              child: Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF7E96B8).withValues(alpha: 0.15),
-                      blurRadius: 13,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Center(
-                  child: Image.asset(
-                    'assets/images/del-icon.png',
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) => const Icon(
-                      Icons.delete_outline_rounded,
-                      color: Color(0xFF777E88),
-                      size: 22,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            if (onRefresh != null) ...[
-              const SizedBox(width: 14),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onRefresh,
-                child: Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF7E96B8).withValues(alpha: 0.15),
-                        blurRadius: 13,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.cast_rounded,
-                      color: Color(0xFFFF5F1F),
-                      size: 22,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-            Expanded(
-              child: Center(
-                child: Text.rich(
-                  TextSpan(
-                    style: const TextStyle(
-                      color: Color(0xFF2A2D32),
-                      fontSize: 14,
-                      height: 1.2,
-                    ),
-                    children: [
-                      const TextSpan(text: '已选 '),
-                      TextSpan(
-                        text: '$count',
-                        style: const TextStyle(color: Color(0xFFFF5F1F)),
-                      ),
-                      const TextSpan(text: ' 张'),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-            // 取消选择按钮（对齐小程序底栏「取消」）。
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onCancel,
-              child: Container(
-                height: 44,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                alignment: Alignment.center,
-                child: const Text(
-                  '取消',
-                  style: TextStyle(color: Color(0xFF777E88), fontSize: 14),
-                ),
-              ),
+    );
+  }
+}
+
+/// 单枚圆形操作按钮（小程序 `.bottom-action`）：48 圆，渐变/实底 + 彩色投影。
+class _CircleAction extends StatelessWidget {
+  const _CircleAction({
+    required this.asset,
+    required this.fallback,
+    required this.iconSize,
+    required this.shadowColor,
+    required this.onTap,
+    this.gradient,
+    this.color,
+  });
+
+  final String asset;
+  final IconData fallback;
+  final double iconSize;
+  final Color shadowColor;
+  final VoidCallback? onTap;
+  final Gradient? gradient;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          gradient: gradient,
+          color: color,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: shadowColor,
+              blurRadius: 13,
+              offset: const Offset(0, 6),
             ),
           ],
+        ),
+        child: Center(
+          child: Image.asset(
+            asset,
+            width: iconSize,
+            height: iconSize,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                Icon(fallback, color: Colors.white, size: iconSize),
+          ),
         ),
       ),
     );
@@ -736,9 +725,9 @@ class _DeleteDialog extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '删除照片',
-                        style: TextStyle(
+                      Text(
+                        AppL10n.of(context).galDeletePhotos,
+                        style: const TextStyle(
                           color: Color(0xFF25282D),
                           fontSize: 19,
                           fontWeight: FontWeight.w700,
@@ -747,7 +736,7 @@ class _DeleteDialog extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        '确认删除已选的$count张照片吗？删除后将从当前设备图库中移除，且无法恢复',
+                        AppL10n.of(context).galDeleteConfirm(count),
                         style: const TextStyle(
                           color: Color(0xFF6F7782),
                           fontSize: 12,
@@ -766,7 +755,7 @@ class _DeleteDialog extends StatelessWidget {
                 children: [
                   Expanded(
                     child: _DialogButton(
-                      label: '取消',
+                      label: AppL10n.of(context).cancel,
                       textColor: const Color(0xFF32363C),
                       background: const Color(0xFFEEEEEE),
                       onTap: () => Navigator.of(context).pop(false),
@@ -775,7 +764,7 @@ class _DeleteDialog extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: _DialogButton(
-                      label: '确认',
+                      label: AppL10n.of(context).galConfirm,
                       textColor: Colors.white,
                       gradient: const LinearGradient(
                         begin: Alignment.topCenter,
@@ -867,9 +856,9 @@ class _GalleryEmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 27),
-          const Text(
-            '当前没有可查看的设备照片',
-            style: TextStyle(
+          Text(
+            AppL10n.of(context).galEmptyTitle,
+            style: const TextStyle(
               color: Color(0xFF25282D),
               fontSize: 19,
               fontWeight: FontWeight.w700,
@@ -877,9 +866,9 @@ class _GalleryEmptyState extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 10),
-          const Text(
-            '你可以重新投屏照片到设备',
-            style: TextStyle(
+          Text(
+            AppL10n.of(context).galEmptySubtitle,
+            style: const TextStyle(
               color: Color(0xFF777E88),
               fontSize: 13,
               height: 1.4,
@@ -889,7 +878,7 @@ class _GalleryEmptyState extends StatelessWidget {
           SizedBox(
             width: double.infinity,
             child: FigmaPrimaryButton(
-              label: '重新投屏',
+              label: AppL10n.of(context).galCastAgain,
               onPressed: () => Navigator.maybePop(context),
             ),
           ),

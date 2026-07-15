@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
@@ -22,7 +23,8 @@ class SettingsPage extends StatelessWidget {
   /// 检查 App 更新：查最新版本 → 有更新则弹窗 → 「立即更新」用 url_launcher 打开下载地址
   /// （对齐小程序 app.js 里的 getLastVersion / getAndroidDownload TODO）。
   Future<void> _checkUpdate(BuildContext context) async {
-    AppToast.show(context, '正在检查更新…');
+    final l10n = AppL10n.of(context);
+    AppToast.show(context, l10n.checkingUpdate);
     AppVersionInfo info;
     try {
       info = await state.checkAppVersion();
@@ -30,7 +32,7 @@ class SettingsPage extends StatelessWidget {
       if (!context.mounted) {
         return;
       }
-      AppToast.show(context, '检查更新失败：$error');
+      AppToast.show(context, l10n.checkUpdateFailed(error));
       return;
     }
     if (!context.mounted) {
@@ -40,12 +42,12 @@ class SettingsPage extends StatelessWidget {
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('检查更新'),
-          content: Text('当前已是最新版本 v${info.currentVersion}。'),
+          title: Text(l10n.checkUpdate),
+          content: Text(l10n.alreadyLatest(info.currentVersion)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(),
-              child: const Text('我知道了'),
+              child: Text(l10n.gotIt),
             ),
           ],
         ),
@@ -55,18 +57,18 @@ class SettingsPage extends StatelessWidget {
     final go = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: Text('发现新版本 v${info.latestVersion}'),
+        title: Text(l10n.newVersionFound(info.latestVersion)),
         content: Text(
-          info.description.isEmpty ? '检测到新版本，是否立即更新？' : info.description,
+          info.description.isEmpty ? l10n.newVersionPrompt : info.description,
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('暂不更新'),
+            child: Text(l10n.updateLater),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('立即更新'),
+            child: Text(l10n.updateNow),
           ),
         ],
       ),
@@ -77,7 +79,7 @@ class SettingsPage extends StatelessWidget {
     final url = info.downloadUrl.trim();
     if (url.isEmpty) {
       if (context.mounted) {
-        AppToast.show(context, '暂无下载地址，请前往官网或应用商店更新。');
+        AppToast.show(context, l10n.noDownloadUrl);
       }
       return;
     }
@@ -89,8 +91,9 @@ class SettingsPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '设置',
+      title: l10n.settingsTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -100,8 +103,8 @@ class SettingsPage extends StatelessWidget {
             child: _SettingsRow(
               iconAsset: 'assets/images/set-icon01.png',
               iconBg: const Color(0x14FF6421),
-              title: '语种设置',
-              value: _languageLabel(state.language),
+              title: l10n.languageSetting,
+              value: l10n.currentLanguageLabel,
               onTap: () => Navigator.of(
                 context,
               ).pushNamed<void>(AppRoutes.figmaLanguageSettings),
@@ -115,7 +118,7 @@ class SettingsPage extends StatelessWidget {
                 _SettingsRow(
                   iconAsset: 'assets/images/set-icon02.png',
                   iconBg: const Color(0x1A287DFF),
-                  title: '联系方式',
+                  title: l10n.contactUs,
                   value: _contact,
                   trailing: _RowTrailing.copy,
                   onTap: () => _copyContact(context),
@@ -124,7 +127,7 @@ class SettingsPage extends StatelessWidget {
                 _SettingsRow(
                   iconAsset: 'assets/images/set-icon03.png',
                   iconBg: const Color(0x1A287DFF),
-                  title: '隐私政策',
+                  title: l10n.privacyPolicy,
                   onTap: () => Navigator.of(
                     context,
                   ).pushNamed<void>(AppRoutes.figmaPrivacyPolicy),
@@ -133,7 +136,7 @@ class SettingsPage extends StatelessWidget {
                 _SettingsRow(
                   iconAsset: 'assets/images/set-icon04.png',
                   iconBg: const Color(0x1A287DFF),
-                  title: '用户协议',
+                  title: l10n.userAgreement,
                   onTap: () => Navigator.of(
                     context,
                   ).pushNamed<void>(AppRoutes.figmaUserAgreement),
@@ -142,7 +145,7 @@ class SettingsPage extends StatelessWidget {
                 _SettingsRow(
                   iconAsset: 'assets/images/set-icon04.png',
                   iconBg: const Color(0x1A287DFF),
-                  title: '检查更新',
+                  title: l10n.checkUpdate,
                   onTap: () => _checkUpdate(context),
                 ),
               ],
@@ -162,12 +165,12 @@ class SettingsPage extends StatelessWidget {
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _confirmDeleteAccount(context),
-            child: const Padding(
-              padding: EdgeInsets.symmetric(vertical: 4),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
               child: Text(
-                '用户注销',
+                l10n.deleteAccount,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Color(0xFF808690),
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
@@ -181,30 +184,20 @@ class SettingsPage extends StatelessWidget {
     );
   }
 
-  String _languageLabel(AppLanguage language) {
-    switch (language) {
-      case AppLanguage.zh:
-        return '简中';
-      case AppLanguage.en:
-        return 'English';
-      case AppLanguage.ja:
-        return '日本語';
-    }
-  }
-
   Future<void> _copyContact(BuildContext context) async {
     await Clipboard.setData(const ClipboardData(text: _contact));
     if (!context.mounted) {
       return;
     }
-    AppToast.show(context, '已复制联系方式');
+    AppToast.show(context, AppL10n.of(context).contactCopied);
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
+    final l10n = AppL10n.of(context);
     final confirmed = await _showConfirmDialog(
       context,
-      title: '退出登录',
-      message: '退出后将返回登录页，是否继续?',
+      title: l10n.logout,
+      message: l10n.logoutConfirmMessage,
     );
     if (confirmed != true || !context.mounted) {
       return;
@@ -220,12 +213,13 @@ class SettingsPage extends StatelessWidget {
   }
 
   Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final l10n = AppL10n.of(context);
     // 两步确认（对齐小程序 index.js delete-warn → delete）：
     // 第一步警示设备照片需自行清空，否则注销后无法再删。
     final step1 = await _showConfirmDialog(
       context,
-      title: '用户注销',
-      message: '注销将永久删除您的所有账号数据，请确认设备照片已自行清空，否则注销后将无法删除设备照片。',
+      title: l10n.deleteAccount,
+      message: l10n.deleteAccountWarn1,
     );
     if (step1 != true || !context.mounted) {
       return;
@@ -233,8 +227,8 @@ class SettingsPage extends StatelessWidget {
     // 第二步二次确认。
     final step2 = await _showConfirmDialog(
       context,
-      title: '确认注销',
-      message: '我已了解设备照片需自行处理的说明，并确认继续注销。',
+      title: l10n.deleteAccountConfirmTitle,
+      message: l10n.deleteAccountWarn2,
     );
     if (step2 != true || !context.mounted) {
       return;
@@ -391,10 +385,10 @@ class _LogoutButton extends StatelessWidget {
         child: InkWell(
           borderRadius: radius,
           onTap: onTap,
-          child: const Center(
+          child: Center(
             child: Text(
-              '退出登录',
-              style: TextStyle(
+              AppL10n.of(context).logout,
+              style: const TextStyle(
                 color: Color(0xFFEB5F1B),
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
@@ -450,7 +444,7 @@ class _ConfirmDialog extends StatelessWidget {
               children: [
                 Expanded(
                   child: _DialogButton(
-                    label: '取消',
+                    label: AppL10n.of(context).cancel,
                     filled: false,
                     onPressed: () => Navigator.of(context).pop(false),
                   ),
@@ -458,7 +452,7 @@ class _ConfirmDialog extends StatelessWidget {
                 const SizedBox(width: 20),
                 Expanded(
                   child: _DialogButton(
-                    label: '确定',
+                    label: AppL10n.of(context).confirm,
                     filled: true,
                     onPressed: () => Navigator.of(context).pop(true),
                   ),

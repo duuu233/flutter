@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../state.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'device_details_page.dart';
 
 /// 清空设备内容确认页：两步二次确认清空设备内的照片，对应小程序 `detail.js` 的
@@ -31,7 +32,11 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     return Stack(
       children: [
         FigmaScreen(
+<<<<<<< HEAD
+          title: AppL10n.of(context).devDetailTitle,
+=======
           title: '设备详情',
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
           body: DeviceDetailsBody(state: widget.state),
         ),
         Positioned.fill(
@@ -44,10 +49,10 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
               iconAsset: 'assets/images/device-detail-icon05.png',
               fallbackIcon: Icons.cleaning_services_outlined,
               accent: const Color(0xFFFF6A20),
-              title: '一键清空',
+              title: AppL10n.of(context).devClearAll,
               message: isStep1
-                  ? '将清空设备内所有照片，同时清空图库，请谨慎选择是否继续？'
-                  : '我已阅读并了解此操作的结果，确认清空设备与图库内的全部照片。',
+                  ? AppL10n.of(context).devClearStep1Message
+                  : AppL10n.of(context).devClearStep2Message,
               onCancel: widget.onCancel ?? () => Navigator.maybePop(context),
               onConfirm: () {
                 if (isStep1) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 
 /// 照片预览-已保存页：展示已保存的照片预览，对应 UI 稿「照片预览-已保存」。
 class PhotoPreviewSavedPage extends StatelessWidget {
@@ -19,8 +20,9 @@ class PhotoPreviewSavedPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '照片预览',
+      title: l10n.cresPreviewTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -35,10 +37,10 @@ class PhotoPreviewSavedPage extends StatelessWidget {
                 color: const Color(0xFFE6ECF4),
                 borderRadius: BorderRadius.circular(20),
               ),
-              child: const Center(
+              child: Center(
                 child: Text(
-                  '图片占位',
-                  style: TextStyle(color: Color(0xFF9AA1AB), fontSize: 14),
+                  l10n.cresImagePlaceholder,
+                  style: const TextStyle(color: Color(0xFF9AA1AB), fontSize: 14),
                 ),
               ),
             ),
@@ -51,7 +53,7 @@ class PhotoPreviewSavedPage extends StatelessWidget {
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: '开始投屏', onPressed: onStartCasting),
+      bottom: FigmaPrimaryButton(label: l10n.cresStartCast, onPressed: onStartCasting),
     );
   }
 }
@@ -92,6 +94,7 @@ class _PhotoToolBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       borderRadius: 20,
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -101,19 +104,19 @@ class _PhotoToolBar extends StatelessWidget {
           _PhotoToolButton(
             iconAsset: 'assets/images/preview-icon01.png',
             fallbackIcon: Icons.crop_rounded,
-            label: '裁剪',
+            label: l10n.cresCrop,
             onTap: onCrop,
           ),
           _PhotoToolButton(
             iconAsset: 'assets/images/preview-icon02.png',
             fallbackIcon: Icons.rotate_right_rounded,
-            label: '旋转',
+            label: l10n.cresRotate,
             onTap: onRotate,
           ),
           _PhotoToolButton(
             iconAsset: 'assets/images/preview-icon03.png',
             fallbackIcon: Icons.image_outlined,
-            label: '原图',
+            label: l10n.cresOriginal,
             onTap: onOriginal,
           ),
         ],

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/frame_device_protocol.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
 /// 轮播设置页：开启/关闭轮播 + 选择轮播方式（顺序 / 随机）。
@@ -83,7 +84,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
   Widget build(BuildContext context) {
     final modeDisabled = !_enabled || _busy;
     return FigmaScreen(
-      title: '轮播设置',
+      title: AppL10n.of(context).carouselTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -96,7 +97,12 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
                 // 开启轮播开关。
                 Row(
                   children: [
-                    const Expanded(child: Text('开启轮播', style: _titleStyle)),
+                    Expanded(
+                      child: Text(
+                        AppL10n.of(context).carouselEnable,
+                        style: _titleStyle,
+                      ),
+                    ),
                     Switch.adaptive(
                       value: _enabled,
                       activeThumbColor: Colors.white,
@@ -108,16 +114,16 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
                   ],
                 ),
                 // 提示行：圆圈「i」+ 说明。
-                const Padding(
-                  padding: EdgeInsets.only(top: 9, bottom: 13),
+                Padding(
+                  padding: const EdgeInsets.only(top: 9, bottom: 13),
                   child: Row(
                     children: [
-                      _InfoBadge(),
-                      SizedBox(width: 5),
+                      const _InfoBadge(),
+                      const SizedBox(width: 5),
                       Expanded(
                         child: Text(
-                          '轮播以开启时间起算24小时后轮播下一张',
-                          style: TextStyle(
+                          AppL10n.of(context).carouselTip,
+                          style: const TextStyle(
                             color: Color(0xFF8A9099),
                             fontSize: 12,
                             height: 1.3,
@@ -134,7 +140,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
                 Padding(
                   padding: const EdgeInsets.only(top: 22, bottom: 12),
                   child: Text(
-                    '轮播方式',
+                    AppL10n.of(context).carouselMode,
                     style: _titleStyle.copyWith(
                       color: modeDisabled
                           ? const Color(0xFFB6BBC3)
@@ -143,7 +149,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
                   ),
                 ),
                 _CarouselOption(
-                  label: '顺序轮播',
+                  label: AppL10n.of(context).carouselSequence,
                   selected: _mode == FramePlaybackMode.sequence,
                   disabled: modeDisabled,
                   onTap: () =>
@@ -151,7 +157,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
                 ),
                 const SizedBox(height: 12),
                 _CarouselOption(
-                  label: '随机轮播',
+                  label: AppL10n.of(context).carouselRandom,
                   selected: _mode == FramePlaybackMode.random,
                   disabled: modeDisabled,
                   onTap: () =>

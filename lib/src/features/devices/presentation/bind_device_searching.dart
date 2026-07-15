@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import 'bind_device_debug_entry.dart';
 import 'bind_device_scan_help.dart';
 
@@ -14,7 +15,7 @@ class BindDeviceSearching extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FigmaScreen(
-      title: '绑定设备',
+      title: AppL10n.of(context).bindDeviceTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -34,14 +35,14 @@ class BindDeviceSearching extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-          const Text(
-            '正在搜索附近设备',
+          Text(
+            AppL10n.of(context).bindSearchingTitle,
             textAlign: TextAlign.center,
             style: FigmaTextStyles.pageHeading,
           ),
           const SizedBox(height: 8),
-          const Text(
-            '请尽量将手机靠近需要添加的设备...',
+          Text(
+            AppL10n.of(context).bindSearchingHint,
             textAlign: TextAlign.center,
             style: FigmaTextStyles.bodySmall,
           ),
@@ -61,7 +62,7 @@ class BindDeviceSearching extends StatelessWidget {
         ],
       ),
       bottom: FigmaPrimaryButton(
-        label: '取消扫描',
+        label: AppL10n.of(context).bindCancelScan,
         onPressed: onCancel ?? () => Navigator.maybePop(context),
       ),
     );
@@ -78,10 +79,10 @@ class _ScanHelpLink extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: const Text(
-        '扫描不到怎么办？',
+      child: Text(
+        AppL10n.of(context).bindScanHelpLink,
         textAlign: TextAlign.center,
-        style: TextStyle(
+        style: const TextStyle(
           color: Color(0xFF2A2B2B),
           fontSize: 14,
           fontWeight: FontWeight.w400,

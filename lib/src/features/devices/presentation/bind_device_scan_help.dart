@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/home_figma_common.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 
 /// 绑定设备-扫码帮助页：指引用户扫码 / 找到设备二维码，对应 UI 稿「扫码帮助」。
 class BindDeviceScanHelp extends StatelessWidget {
@@ -14,42 +15,42 @@ class BindDeviceScanHelp extends StatelessWidget {
     return Stack(
       children: [
         FigmaScreen(
-          title: '绑定设备',
+          title: AppL10n.of(context).bindDeviceTitle,
           scrollable: false,
           body: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: const [
-              Spacer(flex: 2),
-              Center(
+            children: [
+              const Spacer(flex: 2),
+              const Center(
                 child: SizedBox(
                   width: 240,
                   height: 240,
                   child: FigmaBluetoothRadar(state: FigmaRadarState.notFound),
                 ),
               ),
-              SizedBox(height: 20),
+              const SizedBox(height: 20),
               Text(
-                '未发现设备',
+                AppL10n.of(context).bindNotFoundTitle,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Color(0xFF2A2B2B),
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
                   height: 1.2,
                 ),
               ),
-              SizedBox(height: 8),
+              const SizedBox(height: 8),
               Text(
-                '设备连接中断，请检查设备状态后重试',
+                AppL10n.of(context).bindNotFoundHint,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Color(0x992A2B2B),
                   fontSize: 12,
                   fontWeight: FontWeight.w400,
                   height: 1.2,
                 ),
               ),
-              Spacer(flex: 3),
+              const Spacer(flex: 3),
             ],
           ),
         ),
@@ -74,8 +75,8 @@ class BindDeviceScanHelp extends StatelessWidget {
                     Stack(
                       alignment: Alignment.center,
                       children: [
-                        const Text(
-                          '扫描不到怎么办？',
+                        Text(
+                          AppL10n.of(context).bindScanHelpLink,
                           textAlign: TextAlign.center,
                           style: FigmaHomeTextStyles.sheetTitle,
                         ),
@@ -106,9 +107,9 @@ class BindDeviceScanHelp extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 26),
-                    const Text(
-                      '请检查：',
-                      style: TextStyle(
+                    Text(
+                      AppL10n.of(context).bindPleaseCheck,
+                      style: const TextStyle(
                         color: Color(0xFF2A2B2B),
                         fontSize: 16,
                         fontWeight: FontWeight.w600,
@@ -116,12 +117,9 @@ class BindDeviceScanHelp extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      '1.设备是否有电?\n'
-                      '2.当前设备是否被占用?\n'
-                      '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
-                      '4.设备是否与手机距离过远，隔离或有其他遮挡物',
-                      style: TextStyle(
+                    Text(
+                      AppL10n.of(context).bindCheckList,
+                      style: const TextStyle(
                         color: Color(0xCC2A2B2B),
                         fontSize: 14,
                         fontWeight: FontWeight.w400,
@@ -129,7 +127,10 @@ class BindDeviceScanHelp extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 24),
-                    FigmaHomePrimaryButton(label: '重新扫描', onPressed: onRetry),
+                    FigmaHomePrimaryButton(
+                      label: AppL10n.of(context).bindRescan,
+                      onPressed: onRetry,
+                    ),
                   ],
                 ),
               ),

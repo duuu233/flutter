@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
 /// 修改邮箱页：更换已绑定的邮箱地址，对应 UI 稿「修改邮箱」。
@@ -51,8 +52,9 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '修改邮箱',
+      title: l10n.accModifyEmailTitle,
       // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
       background: const FigmaScreenBackground(),
       body: Column(
@@ -62,43 +64,43 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
           FigmaAccountFormCard(
             children: [
               FigmaAccountField(
-                label: '当前邮箱',
+                label: l10n.accCurrentEmail,
                 controller: _currentEmailController,
                 hintText: '',
                 readOnly: true,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '新邮箱',
+                label: l10n.accNewEmail,
                 controller: _newEmailController,
-                hintText: '请输入新的邮箱地址',
+                hintText: l10n.accNewEmailHint,
                 keyboardType: TextInputType.emailAddress,
               ),
               const FigmaFormDivider(),
               FigmaVerificationField(
                 controller: _codeController,
                 onGetCode: _getCode,
-                countdownLabel: _countdown > 0 ? '$_countdown秒后重新获取' : null,
+                countdownLabel: _countdown > 0 ? l10n.accResendIn(_countdown) : null,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '密码',
+                label: l10n.accPassword,
                 controller: _passwordController,
-                hintText: '请输入密码',
+                hintText: l10n.accPasswordHint,
                 obscureText: true,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '确认密码',
+                label: l10n.accConfirmPassword,
                 controller: _confirmPasswordController,
-                hintText: '请确认密码',
+                hintText: l10n.accConfirmPasswordHint,
                 obscureText: true,
               ),
             ],
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: '确认修改', onPressed: _confirm),
+      bottom: FigmaPrimaryButton(label: l10n.accConfirmModify, onPressed: _confirm),
     );
   }
 
@@ -142,7 +144,7 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
     final confirmPassword = _confirmPasswordController.text;
     // 密码与确认密码一致性校验（对齐小程序 change-email 提交前校验）。
     if (password != confirmPassword) {
-      _showSnack('两次输入的密码不一致，请重新输入。');
+      _showSnack(AppL10n.of(context).accPasswordMismatchRetry);
       return;
     }
     setState(() => _submitting = true);

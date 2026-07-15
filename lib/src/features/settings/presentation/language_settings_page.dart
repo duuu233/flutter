@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
@@ -18,15 +19,27 @@ class LanguageSettingsPage extends StatefulWidget {
 }
 
 enum _LanguageOption {
-  simplifiedChinese('简体中文', AppLanguage.zh),
-  traditionalChinese('繁体中文', AppLanguage.zh),
-  english('English', AppLanguage.en),
-  japanese('日本语', AppLanguage.ja);
+  simplifiedChinese(AppLanguage.zh),
+  traditionalChinese(AppLanguage.zh),
+  english(AppLanguage.en),
+  japanese(AppLanguage.ja);
 
-  const _LanguageOption(this.label, this.language);
+  const _LanguageOption(this.language);
 
-  final String label;
   final AppLanguage language;
+
+  String label(AppL10n l10n) {
+    switch (this) {
+      case _LanguageOption.simplifiedChinese:
+        return l10n.langSimplifiedChinese;
+      case _LanguageOption.traditionalChinese:
+        return l10n.langTraditionalChinese;
+      case _LanguageOption.english:
+        return l10n.langEnglish;
+      case _LanguageOption.japanese:
+        return l10n.langJapanese;
+    }
+  }
 }
 
 class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
@@ -41,8 +54,9 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaScreen(
-      title: '语种设置',
+      title: l10n.languageSetting,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -62,7 +76,7 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
                       ),
                     ),
                   _LanguageRow(
-                    label: _LanguageOption.values[i].label,
+                    label: _LanguageOption.values[i].label(l10n),
                     selected: _selected == _LanguageOption.values[i],
                     onTap: () {
                       setState(() => _selected = _LanguageOption.values[i]);
@@ -74,13 +88,20 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: '保存设置', onPressed: _save),
+      bottom: FigmaPrimaryButton(label: l10n.saveSettings, onPressed: _save),
     );
   }
 
   void _save() {
     widget.state.switchLanguage(_selected.language);
+<<<<<<< HEAD
+    // 持久化：重启后仍是这次选择的语言（读回在 bolt_star_app.initState）。
+    LanguagePreference.save(_selected.language);
+    AppToast.show(context, AppL10n.of(context).languageSaved);
+    Navigator.maybePop(context);
+=======
     AppToast.show(context, '已保存');
+>>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
   }
 }
 

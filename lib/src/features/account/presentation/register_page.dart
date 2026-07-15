@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
 
@@ -138,10 +139,11 @@ class _RegisterPageState extends State<RegisterPage> {
 
   @override
   Widget build(BuildContext context) {
-    final mismatchText = _showMismatch ? '密码不一致' : null;
+    final l10n = AppL10n.of(context);
+    final mismatchText = _showMismatch ? l10n.accPasswordMismatch : null;
 
     return FigmaScreen(
-      title: '创建账户',
+      title: l10n.accCreateAccount,
       onBack: widget.onBackToLogin,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -150,32 +152,32 @@ class _RegisterPageState extends State<RegisterPage> {
           FigmaAccountFormCard(
             children: [
               FigmaAccountField(
-                label: '邮箱',
+                label: l10n.accEmail,
                 controller: _emailController,
-                hintText: '请输入邮箱地址',
+                hintText: l10n.accEmailAddressHint,
                 keyboardType: TextInputType.emailAddress,
               ),
               const FigmaFormDivider(),
               FigmaVerificationField(
                 controller: _codeController,
                 onGetCode: _getCode,
-                countdownLabel: _countdown > 0 ? '$_countdown秒后重新获取' : null,
+                countdownLabel: _countdown > 0 ? l10n.accResendIn(_countdown) : null,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '密码',
+                label: l10n.accPassword,
                 controller: _passwordController,
-                hintText: '请输入密码',
+                hintText: l10n.accPasswordHint,
                 obscureText: true,
                 errorText: mismatchText,
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
-                label: '确认密码',
+                label: l10n.accConfirmPassword,
                 controller: _confirmController,
-                hintText: '请确认密码',
+                hintText: l10n.accConfirmPasswordHint,
                 obscureText: true,
-                errorText: _showMismatch ? '密码不一致，请重新确认密码' : null,
+                errorText: _showMismatch ? l10n.accPasswordMismatchReconfirm : null,
               ),
             ],
           ),
@@ -185,7 +187,7 @@ class _RegisterPageState extends State<RegisterPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           FigmaPrimaryButton(
-            label: '注 册',
+            label: l10n.accRegisterButton,
             onPressed: _canSubmit ? _register : null,
           ),
           const SizedBox(height: 16),
@@ -193,12 +195,12 @@ class _RegisterPageState extends State<RegisterPage> {
             behavior: HitTestBehavior.opaque,
             onTap: widget.onBackToLogin ?? () => Navigator.maybePop(context),
             child: Text.rich(
-              const TextSpan(
+              TextSpan(
                 children: [
-                  TextSpan(text: '已有账户？'),
+                  TextSpan(text: l10n.accHaveAccount),
                   TextSpan(
-                    text: ' 去登录',
-                    style: TextStyle(color: Color(0xFFFF5B1F)),
+                    text: l10n.accGoLogin,
+                    style: const TextStyle(color: Color(0xFFFF5B1F)),
                   ),
                 ],
               ),

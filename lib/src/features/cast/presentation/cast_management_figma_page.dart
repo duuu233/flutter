@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
@@ -23,6 +24,11 @@ class CastManagementFigmaPage extends StatefulWidget {
 class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     with RouteAware {
   CastStatus _tab = CastStatus.success;
+
+  /// 每次拉取的本地 loading（区别于 state.castRecordsLoaded 这个「一旦成功就常驻 true」的
+  /// stale-while-revalidate 标记）。切 tab / 重入 / 首屏拉取期间都显示列表区 loading，
+  /// 避免数据回来前先闪「暂无记录」空态。
+  bool _loading = true;
 
   PhotoFrameState get state => widget.state;
 
@@ -66,9 +72,12 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
 
   /// 按当前 tab 状态回后端拉取记录（分状态拉取，避免 >100 条时本地切片丢行）。
   Future<void> _loadTab() async {
+    if (mounted) {
+      setState(() => _loading = true);
+    }
     await state.refreshCastRecords(deviceUploadState: _uploadStateOf(_tab));
     if (mounted) {
-      setState(() {});
+      setState(() => _loading = false);
     }
   }
 
@@ -79,12 +88,13 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   // 再次/重新投屏：一律直接用记录里的设备帧 imgBle 图传（不再走后端上传/转码，对齐小程序 records.js）。
   // 就算当前没连接设备，也先连设备再投屏；连上后跳投屏进度页走 imgBle 直传链路，返回后刷新记录。
   Future<void> _recast(CastRecord record) async {
+    final l10n = AppL10n.of(context);
     final imgBle = record.imgBle;
     if (imgBle == null || imgBle.isEmpty) {
-      _showSnack('该记录缺少设备帧文件，无法再次投屏');
+      _showSnack(l10n.castRecordMissingFrame);
       return;
     }
-    _showSnack('正在连接设备…');
+    _showSnack(l10n.castConnectingDevice);
     final feedback = await state.connectDevice(record.deviceId);
     if (!mounted) {
       return;
@@ -118,20 +128,21 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   }
 
   Future<void> _delete(CastRecord record) async {
+    final l10n = AppL10n.of(context);
     // 二次确认（对齐小程序 records.js:215-232 的 wx.showModal），避免误删不可恢复的记录。
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('删除投屏记录'),
-        content: const Text('确定删除这条投屏记录吗？删除后不可恢复。'),
+        title: Text(l10n.castDeleteRecordTitle),
+        content: Text(l10n.castDeleteRecordConfirm),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('取消'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('删除'),
+            child: Text(l10n.castDelete),
           ),
         ],
       ),
@@ -149,11 +160,12 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     final records = _records;
     final success = _tab == CastStatus.success;
 
     return FigmaScreen(
-      title: '投屏管理',
+      title: l10n.castManagementTitle,
       scrollable: false,
       bodyPadding: const EdgeInsets.symmetric(horizontal: 24),
       body: Column(
@@ -173,9 +185,9 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
           const SizedBox(height: 18),
           // 「共 N 条记录」也要等接口回来再显示，否则首帧会先闪一行「共 0 条记录」
           // （小程序把它一并包在 loading 的 else 分支里，同理）。
-          if (state.castRecordsLoaded)
+          if (!_loading)
             Text(
-              '共 ${records.length} 条记录',
+              l10n.castTotalRecords(records.length),
               style: const TextStyle(
                 color: Color(0xFF777E88),
                 fontSize: 12,
@@ -185,7 +197,7 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
           const SizedBox(height: 12),
           Expanded(
             // 三分支互斥链（loading 优先）：接口没回来之前不渲染「暂无记录」空态。
-            child: !state.castRecordsLoaded
+            child: _loading
                 ? const PageLoading()
                 : records.isEmpty
                 ? _EmptyRecords(success: success)
@@ -225,6 +237,7 @@ class _SegmentedTabs extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     final success = current == CastStatus.success;
     return Container(
       height: 41,
@@ -273,12 +286,12 @@ class _SegmentedTabs extends StatelessWidget {
           Row(
             children: [
               _Tab(
-                label: '投屏成功',
+                label: l10n.castSucceeded,
                 active: success,
                 onTap: () => onChanged(CastStatus.success),
               ),
               _Tab(
-                label: '投屏失败',
+                label: l10n.castFailed,
                 active: !success,
                 onTap: () => onChanged(CastStatus.failed),
               ),
@@ -336,6 +349,7 @@ class _RecordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     final success = record.status == CastStatus.success;
     return FigmaGlassCard(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
@@ -434,7 +448,7 @@ class _RecordCard extends StatelessWidget {
                   children: [
                     const Spacer(),
                     _LinkAction(
-                      label: success ? '再次投屏' : '重新投屏',
+                      label: success ? l10n.castCastAgain : l10n.castRecast,
                       color: const Color(0xFFFF6A20),
                       onTap: onRecast,
                     ),
@@ -445,7 +459,7 @@ class _RecordCard extends StatelessWidget {
                       color: const Color(0xFF2A2B2B).withValues(alpha: 0.1),
                     ),
                     _LinkAction(
-                      label: '删除',
+                      label: l10n.castDelete,
                       color: const Color(0xFF8B9098),
                       onTap: onDelete,
                     ),
@@ -511,6 +525,7 @@ class _StatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     final color = success ? const Color(0xFF35B856) : const Color(0xFFFF3045);
     final bg = success ? const Color(0xFFE9F8EF) : const Color(0xFFFFF0F1);
     return Container(
@@ -522,7 +537,7 @@ class _StatusBadge extends StatelessWidget {
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        success ? '投屏成功' : '投屏失败',
+        success ? l10n.castSucceeded : l10n.castFailed,
         style: TextStyle(
           color: color,
           fontSize: 11,
@@ -571,13 +586,14 @@ class _EmptyRecords extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 39),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            success ? '暂无成功记录' : '暂无失败记录',
+            success ? l10n.castEmptySuccessTitle : l10n.castEmptyFailedTitle,
             style: const TextStyle(
               color: Color(0xFF2A2D32),
               fontSize: 16,
@@ -587,7 +603,7 @@ class _EmptyRecords extends StatelessWidget {
           ),
           const SizedBox(height: 7),
           Text(
-            success ? '完成一次照片投屏后会显示在这里。' : '投屏失败时会保留原因，方便排查。',
+            success ? l10n.castEmptySuccessDesc : l10n.castEmptyFailedDesc,
             textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF777E88),

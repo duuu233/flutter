@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../shared/l10n/app_l10n.dart';
 
 /// 投屏结果页公共件，对照微信小程序 `photo-album/subpackages/projection/result`
 /// （progress / success / fail 在小程序是同一页的三种 status）。
@@ -63,6 +64,7 @@ class ProjectionInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -70,7 +72,7 @@ class ProjectionInfoCard extends StatelessWidget {
           _InfoRow(
             iconAsset: 'assets/images/projection-result-icon01.png',
             fallbackIcon: Icons.cast_connected_rounded,
-            label: '投屏设备',
+            label: l10n.cresDeviceLabel,
             value: deviceName,
           ),
           Container(
@@ -80,7 +82,7 @@ class ProjectionInfoCard extends StatelessWidget {
           _InfoRow(
             iconAsset: 'assets/images/projection-result-icon02.png',
             fallbackIcon: Icons.view_list_rounded,
-            label: '投屏管理',
+            label: l10n.cresManageLabel,
             value: recordLabel,
             showChevron: true,
             onTap: onTapRecords,
@@ -283,6 +285,7 @@ class ProjectionResultInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Column(
@@ -290,7 +293,7 @@ class ProjectionResultInfoCard extends StatelessWidget {
           _InfoRow(
             iconAsset: 'assets/images/projection-result-icon01.png',
             fallbackIcon: Icons.cast_connected_rounded,
-            label: '投屏设备',
+            label: l10n.cresDeviceLabel,
             value: deviceName,
           ),
           Container(
@@ -300,7 +303,7 @@ class ProjectionResultInfoCard extends StatelessWidget {
           _InfoRow(
             iconAsset: 'assets/images/projection-result-icon02.png',
             fallbackIcon: Icons.view_list_rounded,
-            label: '投屏明细',
+            label: l10n.cresDetailLabel,
             valueWidget: _CastDetail(
               successCount: successCount,
               failCount: failCount,
