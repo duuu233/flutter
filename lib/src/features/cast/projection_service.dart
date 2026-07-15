@@ -149,6 +149,9 @@ class ServerImageProjectionService {
     // 批量投屏时每张的前半段都在慢间隔上重新协商（详见 device_ble.beginTransferSession）。
     // 失败不阻断（旧固件可能不支持 0x13），只是跑得慢一点。
     var sessionOpened = false;
+    // 最后一张的异步刷屏(0x24)Future：收尾把连接间隔回落到空闲档(100ms)时要等它跑完再发——
+    // 刷屏期间设备对新指令回忙(0x0B)，两者挤在一起会让回落白白失败。失败/中断路径无刷屏则保持 null。
+    Future<int>? lastRefresh;
     try {
       // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。B2：走精简读取，不带 0x03 固件版本。
       emit(0, '正在读取设备信息…');
@@ -293,7 +296,8 @@ class ServerImageProjectionService {
         // 追加3：0x24 改 fire-and-forget，不 await——图片已全部写入设备，立即返回成功页，刷屏在后台继续
         //（真机墨水屏刷完要 ~4s，成功页因此提前）。刷屏成败本就不影响投屏结果。
         if (i == total - 1) {
-          unawaited(client.refreshScreen(index).catchError((_) => 0xFF));
+          // 存下刷屏 Future：finally 里把连接间隔回落到空闲档要等它跑完再发（避免撞 0x0B）。
+          lastRefresh = client.refreshScreen(index).catchError((_) => 0xFF);
         }
       }
 
@@ -330,9 +334,16 @@ class ServerImageProjectionService {
             : (aborted ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。' : raw),
       );
     } finally {
-      // 整批结束（成功/失败/中断都算）恢复省电长间隔。只在真的开过会话时才恢复。
+      // 整批结束（成功/失败/中断都算）恢复省电：系统侧 LOW_POWER + 下发 0x13 回落到空闲连接间隔(100ms)。
+      // 只在真的开过会话时才恢复。不 await——避免拖慢结果页返回；且若最后一张刚触发异步刷屏(0x24)，
+      // 要等它跑完再发（刷屏期间设备回忙 0x0B，挤在一起会白白失败），失败/中断路径无刷屏则立即回落。
       if (sessionOpened) {
-        await client.endTransferSession();
+        final refresh = lastRefresh;
+        if (refresh != null) {
+          unawaited(refresh.whenComplete(() => client.endTransferSession()));
+        } else {
+          unawaited(client.endTransferSession());
+        }
       }
     }
   }

@@ -230,6 +230,10 @@ class FrameBleClient {
 
     await nc.setNotifyValue(true);
     _notifySub = nc.onValueReceived.listen(_onNotify);
+
+    // 连接建立后立即把 BLE 连接间隔设为省电的空闲档(100ms)：图传时才临时切到极速档、传完再回落，
+    // 保证保活挂着的连接不长期跑在费电的极速间隔上。best-effort（内部吞错、2s 短超时），失败不阻断连接。
+    await applyIdleConnectionInterval();
   }
 
   Future<void> disconnect() async {
@@ -291,6 +295,11 @@ class FrameBleClient {
   /// iOS 15ms —— Apple 规范拒绝 <15ms 的参数更新请求，请求 7.5ms 会被直接忽略、
   /// 链路反而停在系统自选的 30/45ms 上（小程序真机实测：请求 15ms 后吞吐 11.1→17.6KB/s）。
   static double get transferConnIntervalMs => Platform.isAndroid ? 7.5 : 15.0;
+
+  /// 空闲期(非图传)的省电连接间隔：连接建立后、以及每次图传结束后都下发 0x13 把间隔回落到此值。
+  /// 只有真正传图时才由 [optimizeConnectionIntervalForTransfer] 切到极速档(安卓 7.5 / iOS 15ms)——
+  /// 连接是保活的，长期挂在费电的极速间隔上没必要（对齐小程序 device-ble.IDLE_CONN_INTERVAL_MS）。
+  static const double idleConnIntervalMs = 100;
 
   /// 读取当前 BLE 连接间隔（CMD=0x05）。返回毫秒；读不到返回 0。
   ///
@@ -358,6 +367,23 @@ class FrameBleClient {
     }
   }
 
+  /// 把 BLE 连接间隔回落到空闲省电档（[idleConnIntervalMs]=100ms）：连接建立后、以及每次图传结束后调用，
+  /// 让链路只在真正传图时跑极速档(7.5/15ms)，其余时间用省电的长间隔。best-effort、绝不抛：
+  ///   ① 已断开直接跳过——不为了设间隔反而干扰断线清理；
+  ///   ② 旧固件不支持 0x13 / 设备拒绝时吞掉（[setConnectionIntervalMs] 内部 0x13 已用 2s 短超时）。
+  /// 注意：图传最后一张的异步刷屏(0x24)期间设备会对新指令回忙(0x0B)，调用方应等刷屏跑完再调本函数，
+  /// 否则这次回落会撞上 0x0B 白白失败（见 projection_service 收尾对 lastRefresh 的链式处理）。
+  Future<void> applyIdleConnectionInterval() async {
+    if (!_linkAlive) return;
+    try {
+      await setConnectionIntervalMs(idleConnIntervalMs);
+    } catch (error) {
+      if (kDebugMode) {
+        debugPrint('[BLE] 设空闲连接间隔失败（不影响使用）：$error');
+      }
+    }
+  }
+
   /// 图传会话开始：整批投屏**只调一次**，不要每张图都调。
   ///
   /// 之前 `uploadImage` 每张都 requestFastConnection、传完又在 finally 里
@@ -368,7 +394,13 @@ class FrameBleClient {
       optimizeConnectionIntervalForTransfer();
 
   /// 图传会话结束：恢复省电长间隔。
-  Future<void> endTransferSession() => requestPowerSaveConnection();
+  /// 两条一起做：① Android 系统侧优先级回落 LOW_POWER；② 下发 0x13 把连接间隔回落到空闲档(100ms)。
+  /// 注意：批量投屏(manageConnection=false)时最后一张会异步刷屏(0x24)，调用方须等刷屏跑完再调本方法，
+  /// 否则 0x13 会撞上设备忙(0x0B)白白失败（见 projection_service 收尾对 lastRefresh 的链式处理）。
+  Future<void> endTransferSession() async {
+    await requestPowerSaveConnection();
+    await applyIdleConnectionInterval();
+  }
 
   // ── 通知接收 / 解帧派发 ───────────────────────────────────
 
