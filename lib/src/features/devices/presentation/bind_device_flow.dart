@@ -181,11 +181,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     setState(() => _binding = true);
 
     // 真机设备：先连接读取真实信息（电量/播放/屏幕/固件），连接失败则中止绑定（无模拟兜底）。
-<<<<<<< HEAD
-    _toast(AppL10n.of(context).bindConnecting);
-=======
     AppLoadingDialog.show(context, '连接设备中');
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
     final error = await _ble.connect(result);
     if (!mounted) {
       return;
@@ -196,17 +192,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       _toast(AppL10n.of(context).bindConnectFailed(error));
       return;
     }
-<<<<<<< HEAD
-
-    // 连接并读取设备信息成功：先提示「连接成功」，短暂停留让用户看到后（对齐小程序 800ms），再走绑定。
-    _toast(AppL10n.of(context).bindConnectSuccess);
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted) {
-      return;
-    }
-=======
     AppLoadingDialog.hide(context);
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
 
     final info = _ble.info;
     // 提交后端的硬件序列号：对齐小程序 api.bindDevice 的 productDeviceId 优先级 ——
@@ -239,10 +225,6 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       // 保持 binding=true 直到返回上一页，避免 500ms 窗口内被重复点击触发二次操作。
       widget.state.selectDevice(existed.id);
       widget.state.reconcileConnectionFlags();
-<<<<<<< HEAD
-      _toast(AppL10n.of(context).bindAlreadyBoundConnected);
-=======
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
       _popAfter(const Duration(milliseconds: 500));
       return;
     }
@@ -277,11 +259,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       widget.state.selectDevice(persisted.id);
     }
     widget.state.reconcileConnectionFlags();
-<<<<<<< HEAD
-    _toast(AppL10n.of(context).bindSuccess);
-=======
     AppToast.show(context, '绑定成功');
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
     // 绑定成功后不再断开连接：返回设备列表即显示「已连接」。保持 binding=true 直到返回上一页。
     _popAfter(const Duration(milliseconds: 500));
   }

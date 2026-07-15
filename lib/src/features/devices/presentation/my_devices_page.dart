@@ -130,11 +130,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
           autofocus: true,
           maxLength: 6,
           cursorColor: const Color(0xFFEB5F1B),
-<<<<<<< HEAD
-          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
-=======
           decoration: const InputDecoration(hintText: '请输入设备名称（1-6个字符）'),
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
         ),
         actions: [
           TextButton(
@@ -486,60 +482,6 @@ class _DeviceCard extends StatelessWidget {
           // 操作栏（投屏 | 连接/断开）：与上面的详情点击区是**兄弟节点**，
           // 不在它的手势范围内，所以这两个按钮的点击不可能被「进详情」抢走。
           Container(
-<<<<<<< HEAD
-              height: 42,
-              // 对齐小程序 .device-actions：白 0.4 平底 + 轻投影（原来是左右白渐变、无阴影）。
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withValues(alpha: 0.31)),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color.fromRGBO(44, 63, 97, 0.03),
-                    offset: Offset(0, 4),
-                    blurRadius: 12.1,
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _DeviceActionButton(
-                      iconAsset: 'assets/images/screen-casting-icon01.png',
-                      fallbackIcon: Icons.cast_rounded,
-                      iconWidth: 20,
-                      iconHeight: 20,
-                      label: AppL10n.of(context).devCast,
-                      // 投屏文案/图标为橙色（对齐小程序 .projection-action #eb5f1b）。
-                      color: const Color(0xFFEB5F1B),
-                      onTap: onCast,
-                    ),
-                  ),
-                  Container(
-                    width: 1,
-                    height: 19,
-                    color: const Color(0xFFDADDDF),
-                  ),
-                  Expanded(
-                    child: _DeviceActionButton(
-                      iconAsset: device.connected
-                          ? 'assets/images/disconnect-icon01.png'
-                          : 'assets/images/bluetooth-connection.png',
-                      fallbackIcon: device.connected
-                          ? Icons.link_off_rounded
-                          : Icons.bluetooth_rounded,
-                      iconWidth: 20,
-                      iconHeight: 20,
-                      label: device.connected
-                          ? AppL10n.of(context).devDisconnectShort
-                          : AppL10n.of(context).devConnectShort,
-                      color: device.connected
-                          ? const Color(0xFFEB5F1B)
-                          : const Color(0xFF2079FC),
-                      onTap: onToggleConnection,
-                    ),
-                  ),
-=======
             height: 42,
             decoration: BoxDecoration(
               gradient: LinearGradient(
@@ -548,7 +490,6 @@ class _DeviceCard extends StatelessWidget {
                 colors: [
                   Colors.white.withValues(alpha: 0.38),
                   Colors.white.withValues(alpha: 0.55),
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
                 ],
               ),
               borderRadius: BorderRadius.circular(20),

@@ -83,53 +83,14 @@ class PhotoPreviewAdjustImagePage extends StatelessWidget {
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: l10n.cresStartCast, onPressed: onStartCasting),
-    );
-  }
-}
-
-<<<<<<< HEAD
-/// 「压缩图片」开关行（对齐小程序预览页）：开=后端压缩到约300-400KB，关=传原图。
-/// 页面本身是 Stateless，这里内聚一个局部 State 让开关即时响应，再经 [onChanged] 上报持久层。
-class _CompressSwitchRow extends StatefulWidget {
-  const _CompressSwitchRow({required this.value, this.onChanged});
-
-  final bool value;
-  final ValueChanged<bool>? onChanged;
-
-  @override
-  State<_CompressSwitchRow> createState() => _CompressSwitchRowState();
-}
-
-class _CompressSwitchRowState extends State<_CompressSwitchRow> {
-  late bool _value = widget.value;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppL10n.of(context);
-    return FigmaGlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(l10n.cresCompressLabel, style: FigmaTextStyles.bodySmall),
-          ),
-          Switch(
-            value: _value,
-            activeThumbColor: const Color(0xFFEB5F1B),
-            onChanged: (value) {
-              setState(() => _value = value);
-              widget.onChanged?.call(value);
-            },
-          ),
-        ],
+      bottom: FigmaPrimaryButton(
+        label: l10n.cresStartCast,
+        onPressed: onStartCasting,
       ),
     );
   }
 }
 
-=======
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
 class _PreviewCounter extends StatelessWidget {
   const _PreviewCounter({required this.label});
 

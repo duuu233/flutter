@@ -60,21 +60,12 @@ class DeviceDetailsPage extends StatelessWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-<<<<<<< HEAD
-        title: Text(AppL10n.of(context).devRenameTitle),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 20,
-          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
-=======
         title: const Text('编辑设备名称'),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLength: 6,
           decoration: const InputDecoration(hintText: '请输入设备名称（1-6个字符）'),
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
         ),
         actions: [
           TextButton(
@@ -432,9 +423,9 @@ class DeviceDetailsBody extends StatelessWidget {
                 fallbackIcon: Icons.system_update_alt_rounded,
                 label: AppL10n.of(context).devOtaUpgrade,
                 value: device.hasFirmwareUpdate
-                    ? AppL10n.of(context).devFirmwareNewVersion(
-                        device.newVersionNo,
-                      )
+                    ? AppL10n.of(
+                        context,
+                      ).devFirmwareNewVersion(device.newVersionNo)
                     : (device.firmwareVersion.isEmpty
                           ? '-'
                           : device.firmwareVersion),
