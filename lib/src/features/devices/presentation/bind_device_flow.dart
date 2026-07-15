@@ -181,11 +181,10 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     setState(() => _binding = true);
 
     // 真机设备：先连接读取真实信息（电量/播放/屏幕/固件），连接失败则中止绑定（无模拟兜底）。
-<<<<<<< HEAD
-    _toast(AppL10n.of(context).bindConnecting);
-=======
-    AppLoadingDialog.show(context, '连接设备中');
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
+    // Bug19：全程只保留这一个 loading，直到跳转设备列表前一刻才 hide——
+    // 原实现连接成功后就 hide，随后的绑定网络请求（判重/上报/回查）+ 固定 800/500ms 延时全程无指示，
+    // 观感就是「绑定中的框都没了还没跳转」。这里改为连接→绑定全程覆盖、跳转即消失。
+    AppLoadingDialog.show(context, AppL10n.of(context).bindConnecting);
     final error = await _ble.connect(result);
     if (!mounted) {
       return;
@@ -196,17 +195,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       _toast(AppL10n.of(context).bindConnectFailed(error));
       return;
     }
-<<<<<<< HEAD
-
-    // 连接并读取设备信息成功：先提示「连接成功」，短暂停留让用户看到后（对齐小程序 800ms），再走绑定。
-    _toast(AppL10n.of(context).bindConnectSuccess);
-    await Future<void>.delayed(const Duration(milliseconds: 800));
-    if (!mounted) {
-      return;
-    }
-=======
-    AppLoadingDialog.hide(context);
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
+    // 连接读信息成功：不再 hide、也不再 800ms 停留，直接进入绑定（loading 继续覆盖）。
 
     final info = _ble.info;
     // 提交后端的硬件序列号：对齐小程序 api.bindDevice 的 productDeviceId 优先级 ——
@@ -239,11 +228,10 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       // 保持 binding=true 直到返回上一页，避免 500ms 窗口内被重复点击触发二次操作。
       widget.state.selectDevice(existed.id);
       widget.state.reconcileConnectionFlags();
-<<<<<<< HEAD
+      // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时）。
+      AppLoadingDialog.hide(context);
       _toast(AppL10n.of(context).bindAlreadyBoundConnected);
-=======
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
-      _popAfter(const Duration(milliseconds: 500));
+      Navigator.of(context).maybePop();
       return;
     }
 
@@ -260,7 +248,8 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       return;
     }
     if (!feedback.success) {
-      // 绑定失败仍停留在本页：断开占用的单连接，避免妨碍重试（对齐小程序 disconnect + 停留）。
+      // 绑定失败仍停留在本页：先关 loading，再断开占用的单连接，避免妨碍重试（对齐小程序 disconnect + 停留）。
+      AppLoadingDialog.hide(context);
       await _ble.disconnect();
       if (!mounted) {
         return;
@@ -277,13 +266,10 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       widget.state.selectDevice(persisted.id);
     }
     widget.state.reconcileConnectionFlags();
-<<<<<<< HEAD
+    // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时；_binding 保持 true 到本页销毁，防重复点击）。
+    AppLoadingDialog.hide(context);
     _toast(AppL10n.of(context).bindSuccess);
-=======
-    AppToast.show(context, '绑定成功');
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
-    // 绑定成功后不再断开连接：返回设备列表即显示「已连接」。保持 binding=true 直到返回上一页。
-    _popAfter(const Duration(milliseconds: 500));
+    Navigator.of(context).maybePop();
   }
 
   /// 在已绑定设备列表里按序列号容错交叉匹配 + 型号一票否决，找出这台已绑定记录（无则 null）。
@@ -297,15 +283,6 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       }
     }
     return null;
-  }
-
-  /// 延时返回设备列表（期间保持 binding=true，避免窗口内被重复点击触发二次绑定）。
-  void _popAfter(Duration delay) {
-    Future<void>.delayed(delay, () {
-      if (mounted) {
-        Navigator.of(context).maybePop();
-      }
-    });
   }
 
   void _toast(String message) {

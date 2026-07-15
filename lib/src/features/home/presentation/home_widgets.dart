@@ -431,36 +431,24 @@ class _GreetingTitle extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-<<<<<<< HEAD
         const Text('Hi', style: _HomeTextStyles.hi),
         const SizedBox(height: 9),
-        Text.rich(
-          TextSpan(
-            children: [
-              TextSpan(
-                text: AppL10n.of(context).homeGreetingWelcome,
-                style: _HomeTextStyles.welcome,
-              ),
-              const TextSpan(text: 'BoltStar', style: _HomeTextStyles.brand),
-            ],
-          ),
-=======
-        Text('Hi', style: _HomeTextStyles.hi),
-        SizedBox(height: 9),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('欢迎使用', style: _HomeTextStyles.welcome),
-            SizedBox(width: 6),
+            Text(
+              AppL10n.of(context).homeGreetingWelcome,
+              style: _HomeTextStyles.welcome,
+            ),
+            const SizedBox(width: 6),
             Image(
-              image: AssetImage('assets/images/logo.png'),
+              image: const AssetImage('assets/images/logo.png'),
               width: 97,
               height: 20,
               fit: BoxFit.contain,
               errorBuilder: _brandFallback,
             ),
           ],
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
         ),
       ],
     );
@@ -560,65 +548,6 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
 
   @override
   Widget build(BuildContext context) {
-<<<<<<< HEAD
-    // 对齐小程序 .device-carousel：圆角 24 + 阴影 0/4/16 rgba(60,53,16,.12) + 毛玻璃 blur(10.55)。
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        borderRadius: BorderRadius.all(Radius.circular(24)),
-        boxShadow: [
-          BoxShadow(
-            color: Color.fromRGBO(60, 53, 16, 0.12),
-            offset: Offset(0, 4),
-            blurRadius: 16,
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(24),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10.55, sigmaY: 10.55),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              // 卡片背景图铺满（home-bg01.png 自带圆角与玻璃质感）。
-              Image.asset(
-                'assets/images/home-bg01.png',
-                fit: BoxFit.fill,
-                errorBuilder: (context, error, stackTrace) {
-                  return DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(30),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.85),
-                      ),
-                    ),
-                  );
-                },
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    // 左侧圆环图标（home-icon02.png，286rpx≈143）。
-                    Image.asset(
-                      'assets/images/home-icon02.png',
-                      width: 143,
-                      height: 143,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const SizedBox(
-                          width: 136,
-                          height: 136,
-                          child: _DeviceOrbitMark(),
-                        );
-                      },
-                    ),
-                    // 右侧设备信息。
-                    Column(
-                      mainAxisSize: MainAxisSize.min,
-=======
     return Column(
       children: [
         SizedBox(
@@ -719,7 +648,6 @@ class _ConnectedDeviceCard extends StatelessWidget {
                     width: 138,
                     height: 110,
                     child: Column(
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
@@ -732,70 +660,27 @@ class _ConnectedDeviceCard extends StatelessWidget {
                         Row(
                           children: [
                             Image.asset(
-<<<<<<< HEAD
-                              'assets/images/bluetooth-icon.png',
-=======
                               device.connected
                                   ? 'assets/images/bluetooth-icon.png'
                                   : 'assets/images/bluetooth-icon-not.png',
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
                               width: 11,
                               height: 14,
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) {
-<<<<<<< HEAD
-                                return const Icon(
-                                  Icons.bluetooth_rounded,
-                                  color: Color(0xFF4A98FF),
-=======
                                 return Icon(
                                   Icons.bluetooth_rounded,
                                   color: device.connected
                                       ? const Color(0xFF4A98FF)
                                       : const Color(0xFF777E88),
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
                                   size: 14,
                                 );
                               },
                             ),
                             const SizedBox(width: 7),
                             Text(
-<<<<<<< HEAD
                               device.connected
                                   ? AppL10n.of(context).homeConnected
                                   : AppL10n.of(context).homeDisconnected,
-                              style: _HomeTextStyles.deviceMeta,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 11),
-                        Row(
-                          children: [
-                            Image.asset(
-                              _batteryIconAsset(device.batteryLevel),
-                              width: 26,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Icon(
-                                  Icons.battery_2_bar_rounded,
-                                  color: Color(0xFFFF6A24),
-                                  size: 18,
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 7),
-                            Text(
-                              '${device.batteryLevel}%',
-                              style: _HomeTextStyles.deviceMeta,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-=======
-                              device.connected ? '已连接' : '未连接',
                               style: _HomeTextStyles.deviceMeta.copyWith(
                                 color: device.connected
                                     ? const Color(0xFF287DFF)
@@ -835,14 +720,11 @@ class _ConnectedDeviceCard extends StatelessWidget {
                     ),
                   ),
                 ],
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
               ),
             ),
           ],
         ),
       ),
-<<<<<<< HEAD
-=======
     );
   }
 
@@ -900,9 +782,9 @@ class _HomeConnectButton extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            const Text(
-              '连接蓝牙',
-              style: TextStyle(
+            Text(
+              AppL10n.of(context).homeConnectBluetooth,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
                 fontWeight: FontWeight.w500,
@@ -912,7 +794,6 @@ class _HomeConnectButton extends StatelessWidget {
           ],
         ),
       ),
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
     );
   }
 }

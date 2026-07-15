@@ -755,6 +755,27 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 重新读取当前选中设备的真机内存/索引并合并回本地（对齐小程序 detail.js onShow→loadDetail→readDeviceInfo）。
+  /// 设备详情页每次打开/重入时调用：上传/删除/清空等改变设备索引的操作后，
+  /// 内存展示才不会停留在连接时（connectDevice）读到的旧值（Bug13）。未连接或读失败则保持原样。
+  Future<void> refreshSelectedDeviceMemory() async {
+    if (_selectedDeviceId.isEmpty) {
+      return;
+    }
+    final device = _findDevice(_selectedDeviceId);
+    // 只有当前 BLE 会话就是这台设备时才读；否则保持未连接的 -- 显示，不误连别台。
+    if (!_sessionMatches(device)) {
+      return;
+    }
+    try {
+      final info = await BleController.instance.client.readDeviceInfo();
+      _applyConnectedInfo(device, info);
+      notifyListeners();
+    } catch (_) {
+      // 读失败静默（与小程序 loadDetail 的 catch 一致），保持旧值。
+    }
+  }
+
   /// 把真机 0x01 读到的 [FrameDeviceInfo] 合并进本地 [device]（对齐小程序 applyConnectedDevice）。
   /// 调用方负责 notifyListeners()。[info] 为空（读取失败）时不改动，页面按 connected=false 显示 --。
   void _applyConnectedInfo(DeviceItem device, FrameDeviceInfo? info) {

@@ -1,9 +1,5 @@
 import 'dart:async';
-<<<<<<< HEAD
-import 'dart:ui' show ImageFilter;
-=======
 import 'dart:io';
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';

@@ -1,10 +1,14 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import 'cast_preview_page.dart';
 import 'casting_progress_page.dart';
 
 /// 投屏管理（投屏记录），对照微信小程序 `photo-album/subpackages/projection/records`。
@@ -85,8 +89,9 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   List<CastRecord> get _records =>
       state.castRecords.where((record) => record.status == _tab).toList();
 
-  // 再次/重新投屏：一律直接用记录里的设备帧 imgBle 图传（不再走后端上传/转码，对齐小程序 records.js）。
-  // 就算当前没连接设备，也先连设备再投屏；连上后跳投屏进度页走 imgBle 直传链路，返回后刷新记录。
+  // 再次/重新投屏：对齐小程序 records.js retryProjection —— 重新进入「裁剪/预览」流程（用记录原图），
+  // 让用户可再裁剪/旋转/还原后再投，而不是直接 imgBle 直传。
+  // 先连设备；连上后把记录原图下载到本地进投屏预览页（裁剪流程）；拿不到原图才回退 imgBle 直传，保证仍能再投。
   Future<void> _recast(CastRecord record) async {
     final l10n = AppL10n.of(context);
     final imgBle = record.imgBle;
@@ -103,24 +108,60 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
       _showSnack(feedback.message);
       return;
     }
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CastingProgressPage(
-          userProductId: record.deviceId,
-          deviceName: record.deviceName.isNotEmpty
-              ? record.deviceName
-              : state.deviceName(record.deviceId),
-          recastImgBle: imgBle,
-          recastUpirId: record.id,
-          recastImgUrl: record.imageUrl,
+    final device = state.deviceById(record.deviceId);
+    final imageUrl = record.imageUrl;
+    final localPath = (imageUrl != null && imageUrl.isNotEmpty)
+        ? await _downloadToTemp(imageUrl)
+        : null;
+    if (!mounted) {
+      return;
+    }
+    if (localPath != null) {
+      // 原图可用：进入裁剪/预览流程（与小程序一致），确认后由预览页走投屏。
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              CastPreviewPage(device: device, imagePaths: [localPath]),
         ),
-      ),
-    );
+      );
+    } else {
+      // 原图不可用（无 URL 或下载失败）：回退到 imgBle 直传，避免完全无法再投。
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CastingProgressPage(
+            userProductId: record.deviceId,
+            deviceName: record.deviceName.isNotEmpty
+                ? record.deviceName
+                : state.deviceName(record.deviceId),
+            recastImgBle: imgBle,
+            recastUpirId: record.id,
+            recastImgUrl: record.imageUrl,
+          ),
+        ),
+      );
+    }
     if (!mounted) {
       return;
     }
     // 再次投屏会新增一条投屏记录：返回后按当前 tab 刷新列表。
     await _loadTab();
+  }
+
+  /// 把记录原图下载到本地临时文件，供投屏预览页（裁剪流程）使用；失败返回 null。
+  Future<String?> _downloadToTemp(String url) async {
+    try {
+      final resp = await http.get(Uri.parse(url));
+      if (resp.statusCode != 200) {
+        return null;
+      }
+      final file = File(
+        '${Directory.systemTemp.path}/recast_${DateTime.now().microsecondsSinceEpoch}.jpg',
+      );
+      await file.writeAsBytes(resp.bodyBytes, flush: true);
+      return file.path;
+    } catch (_) {
+      return null;
+    }
   }
 
   void _showSnack(String message) {

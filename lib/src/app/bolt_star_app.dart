@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../device/ble_controller.dart';
 import '../features/account/presentation/auth_page.dart';
 import '../features/shell/presentation/shell_page.dart';
+import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../state.dart';
@@ -23,6 +24,10 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   final PhotoFrameState _state = PhotoFrameState.seeded();
   int _currentIndex = 0;
 
+  /// 冷启动闪屏：先展示一小段时间的启动页（LOGO + 背景图），再切到业务首页。
+  bool _showSplash = true;
+  static const Duration _splashDuration = Duration(milliseconds: 1800);
+
   /// 全局 Navigator：登录态失效时需要在没有 BuildContext 的情况下把栈弹回根路由。
   final GlobalKey<NavigatorState> _navigatorKey = GlobalKey<NavigatorState>();
 
@@ -34,6 +39,12 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _state.addListener(_handleAuthChanged);
+    // 冷启动闪屏：到时后切走。语言等异步初始化在这段时间内并行完成。
+    Future.delayed(_splashDuration, () {
+      if (mounted) {
+        setState(() => _showSplash = false);
+      }
+    });
     // 恢复上次选择的语言（持久化在本地）。异步读取，读到后 switchLanguage 会 notify 触发整树重译。
     LanguagePreference.load().then((language) {
       if (language != null && mounted) {
@@ -101,17 +112,22 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
           // 注意：登出/注销时只能 `popUntil(isFirst)` 回到根，不要用
           // `pushNamedAndRemoveUntil(auth, (route) => false)` —— 那会把根路由一起清掉，
           // 栈里只剩一个 /auth，登录成功后根节点即便换成主壳层也已不在栈中，用户会卡在登录页。
-          home: _state.isLoggedIn
-              ? AppShell(
-                  state: _state,
-                  currentIndex: _currentIndex,
-                  onIndexChanged: (index) {
-                    setState(() {
-                      _currentIndex = index;
-                    });
-                  },
-                )
-              : AuthPage(state: _state),
+          home: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 350),
+            child: _showSplash
+                ? const SplashPage()
+                : _state.isLoggedIn
+                ? AppShell(
+                    state: _state,
+                    currentIndex: _currentIndex,
+                    onIndexChanged: (index) {
+                      setState(() {
+                        _currentIndex = index;
+                      });
+                    },
+                  )
+                : AuthPage(state: _state),
+          ),
           // 全局路由观察者：让图库/投屏记录等页在被覆盖页 pop 回来时重入刷新。
           navigatorObservers: [appRouteObserver],
           // 命名路由仍复用同一个 `_state`，避免页面之间出现两份业务数据。

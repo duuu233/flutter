@@ -133,28 +133,15 @@ class _ProfilePageState extends State<ProfilePage> {
       file = await picker.pickImage(source: ImageSource.gallery);
     } catch (_) {
       if (mounted) {
-<<<<<<< HEAD
-        AppToast.show(context, AppL10n.of(context).accAlbumReadFailed);
-=======
-        AppToast.warn(context, '无法读取相册，请检查相册权限后重试。');
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
+        AppToast.warn(context, AppL10n.of(context).accAlbumReadFailed);
       }
       return;
     }
     if (file == null || !mounted) {
       return;
     }
-<<<<<<< HEAD
-    AppToast.show(context, AppL10n.of(context).accAvatarUploading);
-    final feedback = await widget.state.updateAvatar(file.path);
-    if (!mounted) {
-      return;
-    }
-    setState(() {});
-    AppToast.show(context, feedback.message);
-=======
+    // 点头像仅本地暂存并回显；实际上传在 _saveProfile 里与昵称一起提交（对齐小程序）。
     setState(() => _pendingAvatarPath = file!.path);
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
   }
 
   bool _saving = false;

@@ -32,11 +32,7 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     return Stack(
       children: [
         FigmaScreen(
-<<<<<<< HEAD
           title: AppL10n.of(context).devDetailTitle,
-=======
-          title: '设备详情',
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
           body: DeviceDetailsBody(state: widget.state),
         ),
         Positioned.fill(

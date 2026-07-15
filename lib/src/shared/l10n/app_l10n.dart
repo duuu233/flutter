@@ -141,6 +141,12 @@ class AppL10n {
     'WeChat login is not available yet',
     'WeChatログインはまだご利用いただけません',
   );
+  String get accWechatLogin => _pick('微信授权登录', 'Sign in with WeChat', 'WeChatでログイン');
+  String get accWechatAuthFailed => _pick(
+    '微信授权失败，请稍后重试',
+    'WeChat authorization failed, please try again later',
+    'WeChat認証に失敗しました。後ほど再試行してください',
+  );
   String get accEmailHint => _pick('请输入邮箱', 'Enter your email', 'メールアドレスを入力してください');
   String get accEmailInvalid => _pick(
     '请输入正确的邮箱地址',
@@ -810,6 +816,7 @@ class AppL10n {
   String get homeGreetingWelcome => _pick('欢迎使用 ', 'Welcome to ', 'ようこそ ');
   String get homeConnected => _pick('已连接', 'Connected', '接続済み');
   String get homeDisconnected => _pick('未连接', 'Not Connected', '未接続');
+  String get homeConnectBluetooth => _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetooth接続');
 
   // ── 图库 ──
   String get galTitle => _pick('我的图库', 'My Gallery', 'マイギャラリー');

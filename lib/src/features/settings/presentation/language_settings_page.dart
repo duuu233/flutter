@@ -94,14 +94,10 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
 
   void _save() {
     widget.state.switchLanguage(_selected.language);
-<<<<<<< HEAD
     // 持久化：重启后仍是这次选择的语言（读回在 bolt_star_app.initState）。
     LanguagePreference.save(_selected.language);
     AppToast.show(context, AppL10n.of(context).languageSaved);
     Navigator.maybePop(context);
-=======
-    AppToast.show(context, '已保存');
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
   }
 }
 

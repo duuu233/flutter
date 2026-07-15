@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/frame_device_protocol.dart';
+import '../../../routes/app_routes.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
@@ -13,7 +14,7 @@ import '../../../shared/l10n/app_l10n.dart';
 /// 对照微信小程序 `photo-album/subpackages/device/detail`：摘要卡 + 顶部操作栏（投屏 / 连接·断开）+
 /// 信息列表 + 操作列表（清空 / 删除），删除/清空走二次确认弹窗（见 [DeviceConfirmDialog]）。
 /// 展示当前选中设备（`state.selectedDevice`），随 [PhotoFrameState] 变化自动刷新。
-class DeviceDetailsPage extends StatelessWidget {
+class DeviceDetailsPage extends StatefulWidget {
   const DeviceDetailsPage({
     super.key,
     required this.state,
@@ -30,6 +31,44 @@ class DeviceDetailsPage extends StatelessWidget {
   final VoidCallback? onOtaUpgrade;
 
   @override
+  State<DeviceDetailsPage> createState() => _DeviceDetailsPageState();
+}
+
+class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
+  // 让本 State 内既有的 `state.xxx` 调用继续可用（无需逐处改成 widget.state）。
+  PhotoFrameState get state => widget.state;
+
+  @override
+  void initState() {
+    super.initState();
+    // 打开即重读一次真机内存/索引（对齐小程序 detail.js onShow→loadDetail→readDeviceInfo，Bug13）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      state.refreshSelectedDeviceMemory();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  // 从被覆盖页（投屏预览/清空/删除确认等）返回时再读一次内存（对齐小程序 onShow）。
+  @override
+  void didPopNext() {
+    state.refreshSelectedDeviceMemory();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FigmaScreen(
       title: AppL10n.of(context).devDetailTitle,
@@ -40,10 +79,10 @@ class DeviceDetailsPage extends StatelessWidget {
           onEditName: () => _renameDevice(context),
           onConnectToggle: () => _toggleConnection(context),
           onCast: () => _startCast(context),
-          onCarouselSettings: onCarouselSettings,
-          onClearDevice: onClearDevice,
-          onDeleteDevice: onDeleteDevice,
-          onOtaUpgrade: onOtaUpgrade,
+          onCarouselSettings: widget.onCarouselSettings,
+          onClearDevice: widget.onClearDevice,
+          onDeleteDevice: widget.onDeleteDevice,
+          onOtaUpgrade: widget.onOtaUpgrade,
         ),
       ),
     );
@@ -60,21 +99,12 @@ class DeviceDetailsPage extends StatelessWidget {
     final name = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-<<<<<<< HEAD
         title: Text(AppL10n.of(context).devRenameTitle),
         content: TextField(
           controller: controller,
           autofocus: true,
           maxLength: 20,
           decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
-=======
-        title: const Text('编辑设备名称'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 6,
-          decoration: const InputDecoration(hintText: '请输入设备名称（1-6个字符）'),
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
         ),
         actions: [
           TextButton(

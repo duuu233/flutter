@@ -23,11 +23,7 @@ class DeviceDeleteConfirmPage extends StatelessWidget {
     return Stack(
       children: [
         FigmaScreen(
-<<<<<<< HEAD
           title: AppL10n.of(context).devDetailTitle,
-=======
-          title: '设备详情',
->>>>>>> 890cc97b41cb000834f5f79708465e466fd86adf
           body: DeviceDetailsBody(state: state),
         ),
         Positioned.fill(
