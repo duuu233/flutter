@@ -442,7 +442,7 @@ class _GreetingTitle extends StatelessWidget {
             ),
             SizedBox(width: 6),
             Image(
-              image: AssetImage('assets/images/logo.png'),
+              image: const AssetImage('assets/images/logo.png'),
               width: 97,
               height: 20,
               fit: BoxFit.contain,

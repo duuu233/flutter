@@ -485,6 +485,7 @@ class _DeviceCard extends StatelessWidget {
           // 不在它的手势范围内，所以这两个按钮的点击不可能被「进详情」抢走。
           Container(
             height: 42,
+            // 对齐小程序 .device-actions：白 0.4 平底 + 轻投影（原来是左右白渐变、无阴影）。
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.4),
               borderRadius: BorderRadius.circular(20),
@@ -497,7 +498,9 @@ class _DeviceCard extends StatelessWidget {
                 ),
               ],
             ),
+            // crossAxisAlignment.stretch：让两个按钮铺满 42 高度，点击区覆盖整颗按钮（Bug20）。
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
                   child: _DeviceActionButton(
@@ -510,7 +513,13 @@ class _DeviceCard extends StatelessWidget {
                     onTap: onCast,
                   ),
                 ),
-                Container(width: 1, height: 19, color: const Color(0xFFDADDDF)),
+                const Center(
+                  child: SizedBox(
+                    width: 1,
+                    height: 19,
+                    child: ColoredBox(color: Color(0xFFDADDDF)),
+                  ),
+                ),
                 Expanded(
                   child: _DeviceActionButton(
                     iconAsset: device.connected

@@ -241,7 +241,8 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       return;
     }
     if (!feedback.success) {
-      // 绑定失败仍停留在本页：断开占用的单连接，避免妨碍重试（对齐小程序 disconnect + 停留）。
+      // 绑定失败仍停留在本页：先关 loading，再断开占用的单连接，避免妨碍重试（对齐小程序 disconnect + 停留）。
+      AppLoadingDialog.hide(context);
       await _ble.disconnect();
       if (!mounted) {
         return;
@@ -276,15 +277,6 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       }
     }
     return null;
-  }
-
-  /// 延时返回设备列表（期间保持 binding=true，避免窗口内被重复点击触发二次绑定）。
-  void _popAfter(Duration delay) {
-    Future<void>.delayed(delay, () {
-      if (mounted) {
-        Navigator.of(context).maybePop();
-      }
-    });
   }
 
   void _toast(String message) {

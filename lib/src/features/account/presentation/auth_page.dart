@@ -135,7 +135,8 @@ class _AuthPageState extends State<AuthPage> {
 
     setState(() {
       _submitting = true;
-      _weChatSubmitting = true;
+      // 邮箱密码登录：走主按钮 loading（primary loading = submitting && !weChatSubmitting）。
+      _weChatSubmitting = false;
     });
     final feedback = await widget.state.loginWithPassword(email, password);
     if (!mounted) {
@@ -155,11 +156,14 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     if (!_agreed) {
-      _showFeedback('请先阅读并同意用户协议和隐私政策');
+      _showFeedback(AppL10n.of(context).accAgreementRequired);
       return;
     }
 
-    setState(() => _submitting = true);
+    setState(() {
+      _submitting = true;
+      _weChatSubmitting = true;
+    });
     try {
       final code = await _weChatAuthorizationClient.authorize();
       final feedback = await widget.state.loginWithWeChatCode(code);
@@ -173,7 +177,7 @@ class _AuthPageState extends State<AuthPage> {
       }
     } catch (_) {
       if (mounted) {
-        _showFeedback('微信授权失败，请稍后重试');
+        _showFeedback(AppL10n.of(context).accWechatAuthFailed);
       }
     } finally {
       if (mounted) {

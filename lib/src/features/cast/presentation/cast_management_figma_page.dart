@@ -159,8 +159,23 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
           recastUpirId: record.id,
           recastImgUrl: record.imageUrl,
         ),
-      ),
-    );
+      );
+    } else {
+      // 原图不可用（无 URL 或下载失败）：回退到 imgBle 直传，避免完全无法再投。
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => CastingProgressPage(
+            userProductId: record.deviceId,
+            deviceName: record.deviceName.isNotEmpty
+                ? record.deviceName
+                : state.deviceName(record.deviceId),
+            recastImgBle: imgBle,
+            recastUpirId: record.id,
+            recastImgUrl: record.imageUrl,
+          ),
+        ),
+      );
+    }
     if (!mounted) {
       return;
     }
