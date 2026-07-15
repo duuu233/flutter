@@ -130,9 +130,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
           autofocus: true,
           maxLength: 6,
           cursorColor: const Color(0xFFEB5F1B),
-          decoration: InputDecoration(
-            hintText: '${AppL10n.of(context).devNameHint} (1-6)',
-          ),
+          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
         ),
         actions: [
           TextButton(
@@ -509,6 +507,7 @@ class _DeviceCard extends StatelessWidget {
                     iconWidth: 20,
                     iconHeight: 20,
                     label: AppL10n.of(context).devCast,
+                    // 投屏文案/图标为橙色（对齐小程序 .projection-action #eb5f1b）。
                     color: const Color(0xFFEB5F1B),
                     onTap: onCast,
                   ),
@@ -531,7 +530,7 @@ class _DeviceCard extends StatelessWidget {
                     iconWidth: 20,
                     iconHeight: 20,
                     label: device.connected
-                        ? AppL10n.of(context).devDisconnect
+                        ? AppL10n.of(context).devDisconnectShort
                         : AppL10n.of(context).devConnectShort,
                     color: device.connected
                         ? const Color(0xFFEB5F1B)
@@ -570,36 +569,31 @@ class _DeviceActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(20),
-        onTap: onTap,
-        child: SizedBox.expand(
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Image.asset(
-                iconAsset,
-                width: iconWidth,
-                height: iconHeight,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) =>
-                    Icon(fallbackIcon, size: 16, color: color),
-              ),
-              const SizedBox(width: 5),
-              Text(
-                label,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  height: 1,
-                ),
-              ),
-            ],
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset(
+            iconAsset,
+            width: iconWidth,
+            height: iconHeight,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                Icon(fallbackIcon, size: 16, color: color),
           ),
-        ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1,
+            ),
+          ),
+        ],
       ),
     );
   }

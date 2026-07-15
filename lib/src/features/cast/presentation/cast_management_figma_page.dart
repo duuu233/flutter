@@ -9,6 +9,7 @@ import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'cast_preview_page.dart';
+import 'casting_progress_page.dart';
 
 /// 投屏管理（投屏记录），对照微信小程序 `photo-album/subpackages/projection/records`。
 ///
@@ -88,8 +89,9 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   List<CastRecord> get _records =>
       state.castRecords.where((record) => record.status == _tab).toList();
 
-  // 再次/重新投屏：先下载记录的预览原图并重新进入裁剪页；未编辑时仍可直传 imgBle，
-  // 编辑过则按最后保存的图片重新上传/转码。对齐小程序 records.js → preview。
+  // 再次/重新投屏：对齐小程序 records.js retryProjection —— 重新进入「裁剪/预览」流程（用记录原图），
+  // 让用户可再裁剪/旋转/还原后再投，而不是直接 imgBle 直传。
+  // 先连设备；连上后把记录原图下载到本地进投屏预览页（裁剪流程）；拿不到原图才回退 imgBle 直传，保证仍能再投。
   Future<void> _recast(CastRecord record) async {
     final l10n = AppL10n.of(context);
     final imgBle = record.imgBle;
@@ -97,67 +99,29 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
       _showSnack(l10n.castRecordMissingFrame);
       return;
     }
-    DeviceItem? device;
-    for (final item in state.devices) {
-      if (item.id == record.deviceId ||
-          (record.deviceName.isNotEmpty && item.name == record.deviceName)) {
-        device = item;
-        break;
-      }
-    }
-    if (device == null && state.devices.isNotEmpty) {
-      device = state.selectedDevice;
-    }
-    if (device == null) {
-      _showSnack(l10n.otaDeviceNotFound);
-      return;
-    }
-
-    AppLoadingDialog.show(context, l10n.castConnectingDevice);
-    final feedback = await state.connectDevice(device.id);
+    _showSnack(l10n.castConnectingDevice);
+    final feedback = await state.connectDevice(record.deviceId);
     if (!mounted) {
       return;
     }
     if (!feedback.success) {
-      AppLoadingDialog.hide(context);
       _showSnack(feedback.message);
       return;
     }
-
-    // 与小程序一致：优先用图库里同一 uProductImgId 的原图，找不到再退回记录 img。
-    await state.refreshAlbum();
-    String? imageUrl;
-    if (record.photoId != null) {
-      for (final photo in state.myAlbum) {
-        if (photo.id == record.photoId && photo.imageUrl?.isNotEmpty == true) {
-          imageUrl = photo.imageUrl;
-          break;
-        }
-      }
-    }
-    imageUrl ??= record.imageUrl;
-    String? localPath;
-    if (imageUrl != null && imageUrl.isNotEmpty) {
-      localPath = await _downloadPreviewImage(imageUrl);
-    }
+    final device = state.deviceById(record.deviceId);
+    final imageUrl = record.imageUrl;
+    final localPath = (imageUrl != null && imageUrl.isNotEmpty)
+        ? await _downloadToTemp(imageUrl)
+        : null;
     if (!mounted) {
       return;
     }
-    AppLoadingDialog.hide(context);
-    if (localPath == null) {
-      _showSnack(l10n.castCannotReadPhoto);
-      return;
-    }
-
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => CastPreviewPage(
-          state: state,
-          device: device!,
-          imagePaths: [localPath!],
-          recastImgBle: imgBle,
-          recastUpirId: record.id,
-          recastImgUrl: record.imageUrl,
+    if (localPath != null) {
+      // 原图可用：进入裁剪/预览流程（与小程序一致），确认后由预览页走投屏。
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) =>
+              CastPreviewPage(device: device, imagePaths: [localPath]),
         ),
       );
     } else {
@@ -179,27 +143,21 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     if (!mounted) {
       return;
     }
-    // 不在这里删除预览临时文件：预览页会被进度页 pushReplacement，失败后「重新投屏」
-    // 仍需要这个原图路径再次进入裁剪。系统临时目录会由操作系统统一回收。
     // 再次投屏会新增一条投屏记录：返回后按当前 tab 刷新列表。
     await _loadTab();
   }
 
-  Future<String?> _downloadPreviewImage(String url) async {
+  /// 把记录原图下载到本地临时文件，供投屏预览页（裁剪流程）使用；失败返回 null。
+  Future<String?> _downloadToTemp(String url) async {
     try {
-      final response = await http
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 20));
-      if (response.statusCode < 200 ||
-          response.statusCode >= 300 ||
-          response.bodyBytes.isEmpty) {
+      final resp = await http.get(Uri.parse(url));
+      if (resp.statusCode != 200) {
         return null;
       }
       final file = File(
-        '${Directory.systemTemp.path}${Platform.pathSeparator}'
-        'recast_preview_${DateTime.now().microsecondsSinceEpoch}.jpg',
+        '${Directory.systemTemp.path}/recast_${DateTime.now().microsecondsSinceEpoch}.jpg',
       );
-      await file.writeAsBytes(response.bodyBytes, flush: true);
+      await file.writeAsBytes(resp.bodyBytes, flush: true);
       return file.path;
     } catch (_) {
       return null;

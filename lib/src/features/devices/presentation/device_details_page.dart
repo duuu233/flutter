@@ -103,8 +103,8 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
         content: TextField(
           controller: controller,
           autofocus: true,
-          maxLength: 6,
-          decoration: const InputDecoration(hintText: '请输入设备名称（1-6个字符）'),
+          maxLength: 20,
+          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
         ),
         actions: [
           TextButton(
@@ -201,11 +201,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) => CastPreviewPage(
-          state: state,
-          device: device,
-          imagePaths: imagePaths,
-        ),
+        builder: (_) => CastPreviewPage(device: device, imagePaths: imagePaths),
       ),
     );
     state.refreshAlbum();
@@ -466,9 +462,9 @@ class DeviceDetailsBody extends StatelessWidget {
                 fallbackIcon: Icons.system_update_alt_rounded,
                 label: AppL10n.of(context).devOtaUpgrade,
                 value: device.hasFirmwareUpdate
-                    ? AppL10n.of(
-                        context,
-                      ).devFirmwareNewVersion(device.newVersionNo)
+                    ? AppL10n.of(context).devFirmwareNewVersion(
+                        device.newVersionNo,
+                      )
                     : (device.firmwareVersion.isEmpty
                           ? '-'
                           : device.firmwareVersion),
@@ -625,36 +621,31 @@ class _DeviceActionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 44,
-      decoration: BoxDecoration(
-        gradient: primary
-            ? const LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-              )
-            : null,
-        color: primary ? null : Colors.white.withValues(alpha: 0.86),
-        borderRadius: BorderRadius.circular(22),
-        border: primary ? null : Border.all(color: const Color(0xFFFF6A20)),
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(22),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Center(
-            child: Text(
-              label,
-              style: TextStyle(
-                color: primary ? Colors.white : const Color(0xFFFF6A20),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                height: 1,
-              ),
-            ),
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 44,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          gradient: primary
+              ? const LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
+                )
+              : null,
+          color: primary ? null : Colors.white.withValues(alpha: 0.86),
+          borderRadius: BorderRadius.circular(22),
+          border: primary ? null : Border.all(color: const Color(0xFFFF6A20)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: primary ? Colors.white : const Color(0xFFFF6A20),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            height: 1,
           ),
         ),
       ),

@@ -328,7 +328,6 @@ class _AuthCanvas extends StatelessWidget {
           const SizedBox(height: 24),
           _RegisterPrompt(onRegister: onRegister),
           const Spacer(flex: 4),
-          // 微信授权是次要登录入口：按小程序样式放在页面底部，使用圆形微信图标。
           Center(
             child: _WeChatLoginButton(
               onPressed: submitting ? null : onWeChatLogin,
@@ -679,6 +678,7 @@ class _PrimaryButton extends StatelessWidget {
   }
 }
 
+/// 微信授权登录圆形入口：作为次要入口置于页面底部。
 class _WeChatLoginButton extends StatelessWidget {
   const _WeChatLoginButton({required this.onPressed, required this.loading});
 
@@ -690,7 +690,7 @@ class _WeChatLoginButton extends StatelessWidget {
     return Semantics(
       button: true,
       enabled: onPressed != null,
-      label: '微信授权登录',
+      label: AppL10n.of(context).accWechatLogin,
       child: SizedBox.square(
         dimension: 48,
         child: Material(

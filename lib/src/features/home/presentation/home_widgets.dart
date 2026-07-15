@@ -431,8 +431,8 @@ class _GreetingTitle extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text('Hi', style: _HomeTextStyles.hi),
-        SizedBox(height: 9),
+        const Text('Hi', style: _HomeTextStyles.hi),
+        const SizedBox(height: 9),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -440,7 +440,7 @@ class _GreetingTitle extends StatelessWidget {
               AppL10n.of(context).homeGreetingWelcome,
               style: _HomeTextStyles.welcome,
             ),
-            SizedBox(width: 6),
+            const SizedBox(width: 6),
             Image(
               image: const AssetImage('assets/images/logo.png'),
               width: 97,
@@ -599,131 +599,130 @@ class _ConnectedDeviceCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onOpenDevices,
       child: DecoratedBox(
-        decoration: const BoxDecoration(
-          borderRadius: BorderRadius.all(Radius.circular(24)),
-          boxShadow: [
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: const [
             BoxShadow(
-              color: Color.fromRGBO(60, 53, 16, 0.12),
+              color: Color(0x1F3C3510),
               blurRadius: 16,
               offset: Offset(0, 4),
             ),
           ],
         ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(24),
-          child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10.55, sigmaY: 10.55),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // App 直接使用本地背景，避免网络加载导致卡片闪烁或样式不一致。
-                Image.asset(
-                  'assets/images/home-bg01.png',
-                  fit: BoxFit.fill,
-                  errorBuilder: (context, error, stackTrace) =>
-                      _cardBackgroundFallback(),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      // 左侧圆环图标（home-icon02.png，166rpx≈83）。
-                      Image.asset(
-                        'assets/images/home-icon02.png',
-                        width: 83,
-                        height: 83,
-                        fit: BoxFit.contain,
-                        errorBuilder: (context, error, stackTrace) {
-                          return const SizedBox(
-                            width: 78,
-                            height: 78,
-                            child: _DeviceOrbitMark(),
-                          );
-                        },
-                      ),
-                      // 右侧设备信息。
-                      SizedBox(
-                        width: 138,
-                        height: 110,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // 当前小程序同一张 OSS 卡片底图；加载期间/离线时回退本地资源。
+            ClipRRect(
+              borderRadius: BorderRadius.circular(24),
+              child: Image.network(
+                'https://oss.boltfox.cn/prodFile/202607072104114724571.png',
+                fit: BoxFit.fill,
+                loadingBuilder: (context, child, progress) =>
+                    progress == null ? child : _cardBackgroundFallback(),
+                errorBuilder: (context, error, stackTrace) =>
+                    _cardBackgroundFallback(),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  // 左侧圆环图标（home-icon02.png，166rpx≈83）。
+                  Image.asset(
+                    'assets/images/home-icon02.png',
+                    width: 83,
+                    height: 83,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const SizedBox(
+                        width: 78,
+                        height: 78,
+                        child: _DeviceOrbitMark(),
+                      );
+                    },
+                  ),
+                  // 右侧设备信息。
+                  SizedBox(
+                    width: 138,
+                    height: 110,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          device.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _HomeTextStyles.deviceCardTitle,
+                        ),
+                        const SizedBox(height: 9),
+                        Row(
                           children: [
+                            Image.asset(
+                              device.connected
+                                  ? 'assets/images/bluetooth-icon.png'
+                                  : 'assets/images/bluetooth-icon-not.png',
+                              width: 11,
+                              height: 14,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.bluetooth_rounded,
+                                  color: device.connected
+                                      ? const Color(0xFF4A98FF)
+                                      : const Color(0xFF777E88),
+                                  size: 14,
+                                );
+                              },
+                            ),
+                            const SizedBox(width: 7),
                             Text(
-                              device.name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _HomeTextStyles.deviceCardTitle,
-                            ),
-                            const SizedBox(height: 9),
-                            Row(
-                              children: [
-                                Image.asset(
-                                  device.connected
-                                      ? 'assets/images/bluetooth-icon.png'
-                                      : 'assets/images/bluetooth-icon-not.png',
-                                  width: 11,
-                                  height: 14,
-                                  fit: BoxFit.contain,
-                                  errorBuilder: (context, error, stackTrace) {
-                                    return Icon(
-                                      Icons.bluetooth_rounded,
-                                      color: device.connected
-                                          ? const Color(0xFF4A98FF)
-                                          : const Color(0xFF777E88),
-                                      size: 14,
-                                    );
-                                  },
-                                ),
-                                const SizedBox(width: 7),
-                                Text(
-                                  device.connected
-                                      ? AppL10n.of(context).homeConnected
-                                      : AppL10n.of(context).homeDisconnected,
-                                  style: _HomeTextStyles.deviceMeta.copyWith(
-                                    color: device.connected
-                                        ? const Color(0xFF287DFF)
-                                        : null,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            if (device.connected) ...[
-                              const SizedBox(height: 11),
-                              Row(
-                                children: [
-                                  Image.asset(
-                                    _batteryIconAsset(device.batteryLevel),
-                                    width: 26,
-                                    fit: BoxFit.contain,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      return const Icon(
-                                        Icons.battery_2_bar_rounded,
-                                        color: Color(0xFFFF6A24),
-                                        size: 18,
-                                      );
-                                    },
-                                  ),
-                                  const SizedBox(width: 7),
-                                  Text(
-                                    '${device.batteryLevel}%',
-                                    style: _HomeTextStyles.deviceMeta,
-                                  ),
-                                ],
+                              device.connected
+                                  ? AppL10n.of(context).homeConnected
+                                  : AppL10n.of(context).homeDisconnected,
+                              style: _HomeTextStyles.deviceMeta.copyWith(
+                                color: device.connected
+                                    ? const Color(0xFF287DFF)
+                                    : null,
                               ),
-                            ] else ...[
-                              const SizedBox(height: 22),
-                              _HomeConnectButton(onTap: onConnect),
-                            ],
+                            ),
                           ],
                         ),
-                      ),
-                    ],
+                        if (device.connected) ...[
+                          const SizedBox(height: 11),
+                          Row(
+                            children: [
+                              Image.asset(
+                                _batteryIconAsset(device.batteryLevel),
+                                width: 26,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(
+                                    Icons.battery_2_bar_rounded,
+                                    color: Color(0xFFFF6A24),
+                                    size: 18,
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 7),
+                              Text(
+                                '${device.batteryLevel}%',
+                                style: _HomeTextStyles.deviceMeta,
+                              ),
+                            ],
+                          ),
+                        ] else ...[
+                          const SizedBox(height: 22),
+                          _HomeConnectButton(onTap: onConnect),
+                        ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
+          ],
         ),
       ),
     );
@@ -784,7 +783,7 @@ class _HomeConnectButton extends StatelessWidget {
             ),
             const SizedBox(width: 6),
             Text(
-              AppL10n.of(context).devConnectBluetooth,
+              AppL10n.of(context).homeConnectBluetooth,
               style: const TextStyle(
                 color: Colors.white,
                 fontSize: 12,
