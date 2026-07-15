@@ -32,7 +32,7 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     return Stack(
       children: [
         FigmaScreen(
-          title: '设备详情',
+          title: AppL10n.of(context).devDetailTitle,
           body: DeviceDetailsBody(state: widget.state),
         ),
         Positioned.fill(
@@ -69,7 +69,7 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
       return;
     }
     setState(() => _busy = true);
-    AppLoadingDialog.show(context, '清空中');
+    AppLoadingDialog.show(context, AppL10n.of(context).devClearing);
     final feedback = await widget.state.clearDeviceMemory(
       widget.state.selectedDevice.id,
     );
@@ -79,7 +79,7 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     AppLoadingDialog.hide(context);
     setState(() => _busy = false);
     if (feedback.success) {
-      AppToast.show(context, '已清空');
+      AppToast.show(context, AppL10n.of(context).devCleared);
       // 仅清空成功后返回设备详情；失败保留二次确认页供用户重试。
       Navigator.of(context).maybePop();
     } else {

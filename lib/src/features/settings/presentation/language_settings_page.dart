@@ -20,7 +20,7 @@ class LanguageSettingsPage extends StatefulWidget {
 
 enum _LanguageOption {
   simplifiedChinese(AppLanguage.zh),
-  traditionalChinese(AppLanguage.zh),
+  traditionalChinese(AppLanguage.zhHant),
   english(AppLanguage.en),
   japanese(AppLanguage.ja);
 
@@ -44,6 +44,7 @@ enum _LanguageOption {
 
 class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
   late _LanguageOption _selected = _initialOption();
+  bool _saving = false;
 
   _LanguageOption _initialOption() {
     return _LanguageOption.values.firstWhere(
@@ -92,11 +93,24 @@ class _LanguageSettingsPageState extends State<LanguageSettingsPage> {
     );
   }
 
-  void _save() {
+  Future<void> _save() async {
+    if (_saving) {
+      return;
+    }
+    _saving = true;
     widget.state.switchLanguage(_selected.language);
-    // 持久化后立即由根节点重建语言作用域；当前页和已 push 的页面都会同步更新。
-    LanguagePreference.save(_selected.language);
-    AppToast.show(context, AppL10n.of(context).languageSaved);
+    // 先重建语言作用域，再等待本地落盘，避免用户保存后立即退出导致语言丢失。
+    try {
+      await LanguagePreference.save(_selected.language);
+    } finally {
+      if (mounted) {
+        _saving = false;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    AppToast.show(context, AppL10n(_selected.language).languageSaved);
   }
 }
 

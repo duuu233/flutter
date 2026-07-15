@@ -9,8 +9,9 @@ import 'network/api_rows.dart';
 import 'network/api_session.dart';
 import 'network/boltfox_api.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'shared/l10n/chinese_script.dart';
 
-enum AppLanguage { zh, en, ja }
+enum AppLanguage { zh, zhHant, en, ja }
 
 enum PermissionKind { location, bluetooth, album, camera }
 
@@ -435,6 +436,8 @@ class PhotoFrameState extends ChangeNotifier {
     switch (_language) {
       case AppLanguage.zh:
         return zh;
+      case AppLanguage.zhHant:
+        return toTraditionalChinese(zh);
       case AppLanguage.en:
         return en ?? zh;
       case AppLanguage.ja:
@@ -446,6 +449,8 @@ class PhotoFrameState extends ChangeNotifier {
     switch (value) {
       case AppLanguage.zh:
         return '中文';
+      case AppLanguage.zhHant:
+        return '繁體中文';
       case AppLanguage.en:
         return 'English';
       case AppLanguage.ja:
@@ -501,7 +506,7 @@ class PhotoFrameState extends ChangeNotifier {
     if (_language == AppLanguage.en) {
       return '$month/$day ${value.year} $hour:$minute';
     }
-    if (_language == AppLanguage.ja) {
+    if (_language == AppLanguage.ja || _language == AppLanguage.zhHant) {
       return '${value.year}/$month/$day $hour:$minute';
     }
     return '${value.year}-$month-$day $hour:$minute';
@@ -694,9 +699,8 @@ class PhotoFrameState extends ChangeNotifier {
     for (final item in _devices) {
       item.connected = identical(item, device);
     }
-    // 连接后把真机 0x01(readDeviceInfo) 的全部字段回填到本地设备，对齐小程序
-    // detail.js/list.js 的 applyConnectedDevice（电量/内存/播放模式/间隔/固件/当前张）。
-    // 之前只同步电量，导致详情页内存恒显 0、播放模式/固件为默认、且 setPlayback 用错间隔。
+    // 连接 loading 内只把真机 0x01 核心字段回填到本地设备
+    // （电量/内存/播放模式/间隔/当前张）。固件版本保留后端值，不让 0x03 挡住连接页。
     _applyConnectedInfo(device, ble.info);
     notifyListeners();
     return ActionFeedback(
@@ -707,30 +711,47 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 断开设备的 BLE 连接（对齐小程序设备列表「断开」按钮）。
   Future<ActionFeedback> disconnectDevice(String deviceId) async {
+    final trace = DeviceInteractionTrace('disconnect-device');
     final ble = BleController.instance;
-    for (final device in _devices) {
-      if (device.id != deviceId) {
-        continue;
+    try {
+      for (final device in _devices) {
+        if (device.id != deviceId) {
+          continue;
+        }
+        // 单连接模型：这台设备确实占着活动会话（序列号交叉匹配）或页面显示已连接时才真正断开。
+        if (device.connected ||
+            ble.sessionMatchesSerial(
+              device.serialNumber,
+              screenCode: device.screenType.code,
+            )) {
+          await trace.measure('ble-disconnect', ble.disconnect);
+        } else {
+          trace.mark('ble-disconnect-skipped');
+        }
+        device.connected = false;
+        notifyListeners();
+        trace.finish(success: true);
+        return ActionFeedback(
+          success: true,
+          message: tr(zh: '已断开。', en: 'Disconnected.', ja: '切断しました。'),
+        );
       }
-      // 单连接模型：这台设备确实占着活动会话（序列号交叉匹配）或页面显示已连接时才真正断开。
-      if (device.connected ||
-          ble.sessionMatchesSerial(
-            device.serialNumber,
-            screenCode: device.screenType.code,
-          )) {
-        await ble.disconnect();
-      }
-      device.connected = false;
-      notifyListeners();
+      trace.finish(success: false, stage: 'device-not-found');
       return ActionFeedback(
-        success: true,
-        message: tr(zh: '已断开。', en: 'Disconnected.', ja: '切断しました。'),
+        success: false,
+        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+      );
+    } catch (error) {
+      trace.finish(success: false, stage: 'ble-disconnect-failed');
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '断开设备失败，请稍后重试。',
+          en: 'Failed to disconnect the device. Please try again.',
+          ja: '端末を切断できませんでした。もう一度お試しください。',
+        ),
       );
     }
-    return ActionFeedback(
-      success: false,
-      message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
-    );
   }
 
   /// 这台设备是否正占着当前 BLE 活动会话（序列号容错交叉匹配）。
@@ -1654,7 +1675,7 @@ class PhotoFrameState extends ChangeNotifier {
     String refreshWarn = '';
     if (client.connected) {
       try {
-        final info = await client.readDeviceInfo();
+        final info = await client.readTransferInfo();
         final occupied = FrameProtocol.maskToIndexes(info.imgMask);
         final slotIndexes = <int>[];
         for (final photo in photos) {
@@ -1774,7 +1795,7 @@ class PhotoFrameState extends ChangeNotifier {
     }
     final client = BleController.instance.client;
     try {
-      final info = await client.readDeviceInfo();
+      final info = await client.readTransferInfo();
       final occupied = FrameProtocol.maskToIndexes(info.imgMask);
       final slot = _resolveDeviceImageIndex(photo, occupied);
       if (slot < 0) {
@@ -2202,12 +2223,18 @@ class PhotoFrameState extends ChangeNotifier {
       final tasks = <Future<void>>[];
       if (target != null && (target.connected || _sessionMatches(target))) {
         // BLE 释放与后端解绑互不依赖，并行执行，避免两段耗时串行叠加。
-        tasks.add(
-          trace.measure('ble-disconnect', () async {
-            await BleController.instance.disconnect();
+        tasks.add(() async {
+          try {
+            await trace.measure('ble-disconnect', () async {
+              await BleController.instance.disconnect();
+            });
+          } catch (_) {
+            // 后端解绑成功后记录已不存在；BLE 释放失败不应把整体误报为删除失败。
+            trace.mark('ble-disconnect-ignored');
+          } finally {
             target!.connected = false;
-          }),
-        );
+          }
+        }());
       }
       tasks.add(
         trace.measure('backend-delete', () async {
@@ -2218,8 +2245,8 @@ class PhotoFrameState extends ChangeNotifier {
       _devices.removeWhere((device) => device.id == deviceId);
       _albumPhotos.removeWhere((photo) => photo.deviceId == deviceId);
       _castRecords.removeWhere((record) => record.deviceId == deviceId);
-      if (_selectedDeviceId == deviceId && _devices.isNotEmpty) {
-        _selectedDeviceId = _devices.first.id;
+      if (_selectedDeviceId == deviceId) {
+        _selectedDeviceId = _devices.isEmpty ? '' : _devices.first.id;
       }
       notifyListeners();
       trace.mark('local-state-sync');
@@ -2397,6 +2424,7 @@ class PhotoFrameState extends ChangeNotifier {
     }
     // 设备忙(0x0B)：设备答得上话、只是暂时在忙，别归成「设备暂时无法连接」，原样提示稍后重试。
     if (!deviceCleared && FrameProtocol.isBusyMessage(clearError?.toString())) {
+      trace.finish(success: false, stage: 'device-busy');
       return ActionFeedback(
         success: false,
         message: tr(
@@ -2408,6 +2436,7 @@ class PhotoFrameState extends ChangeNotifier {
     }
     if (!deviceCleared) {
       // 设备侧未清成功一律统一提示「设备暂时无法连接」，不把底层设备错误码抛给用户。
+      trace.finish(success: false, stage: 'device-clear-failed');
       return ActionFeedback(
         success: false,
         message: tr(
@@ -2420,28 +2449,19 @@ class PhotoFrameState extends ChangeNotifier {
 
     // 2) 设备清空成功后再清后端记录；接口类错误如实提示，不误报成设备连不上。
     try {
-      await BoltFoxApi.clearUserProductImg(deviceId);
+      await trace.measure('backend-clear', () async {
+        await BoltFoxApi.clearUserProductImg(deviceId);
+      });
     } catch (error) {
+      trace.finish(success: false, stage: 'backend-clear-failed');
       return _apiFailure(error);
     }
 
     // 3) 同步本地：设备已无图（IMG_MASK 清零 / 当前索引复位），相册对应照片标记为不在设备上。
     device.imageMask = 0;
     device.currentImageIndex = 0;
-    // 清空成功后即时回读设备信息(0x01)刷新内存/电量，不等下次列表/详情接口往返（对齐小程序 refreshDeviceMemoryFromBle）。
-    // 读失败静默（设备刚擦完可能短暂无响应），随后 refreshDevices/详情会再同步；内存已随上面清零即时归位。
-    try {
-      final info = await client.readDeviceInfo();
-      if (info.battery > 0) {
-        device.batteryLevel = info.battery;
-      }
-      if (FrameProtocol.maskToIndexes(info.imgMask).isEmpty) {
-        device.imageMask = 0;
-        device.currentImageIndex = 0;
-      }
-    } catch (_) {
-      // 回读失败不影响清空结果（已按成功处理）。
-    }
+    // 此处不再阻塞等待成功后的设备回读。确认页会先关闭 loading、提示成功并返回详情页，
+    // 详情页 didPopNext 再以后台方式调用 refreshSelectedDeviceMemory（且仅读 0x01）。
     var clearedCount = 0;
     for (final photo in _albumPhotos.where(
       (item) => item.deviceId == deviceId && item.isOnDevice,
@@ -2450,6 +2470,8 @@ class PhotoFrameState extends ChangeNotifier {
       clearedCount += 1;
     }
     notifyListeners();
+    trace.mark('local-state-sync');
+    trace.finish(success: true);
     return ActionFeedback(
       success: true,
       message: tr(

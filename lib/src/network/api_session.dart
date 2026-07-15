@@ -44,6 +44,9 @@ class ApiSession {
       case AppLanguage.zh:
         _languageCode = 2;
         break;
+      case AppLanguage.zhHant:
+        _languageCode = 3;
+        break;
       case AppLanguage.ja:
         _languageCode = 4;
         break;

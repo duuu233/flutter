@@ -256,6 +256,7 @@ class BleController extends ChangeNotifier {
 
   /// 连接设备并读取设备信息。成功返回 null，失败返回错误文案。
   Future<String?> connect(ScanResult result) async {
+    final trace = DeviceInteractionTrace('connect-device');
     connecting = true;
     deviceName = displayName(result);
     // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
@@ -263,18 +264,27 @@ class BleController extends ChangeNotifier {
     broadcastScreenType = advertisingOf(result)?.screenType ?? 0;
     notifyListeners();
     try {
-      await _client.connect(result.device);
+      await trace.measure('gatt-connect-and-discover', () async {
+        await _client.connect(result.device);
+      });
       try {
-        info = await _client.readDeviceInfo();
+        // 连接成功只同步页面需要的 0x01 核心信息。固件版本 0x03 不应挡在
+        // loading 结束前；OTA 页面有独立的版本接口，详情已有后端版本兜底。
+        info = await trace.measure(
+          'read-core-info-0x01',
+          _client.readTransferInfo,
+        );
       } catch (_) {
         // 设备信息读取失败不阻断连接，后续可重试。
         info = null;
       }
       notifyListeners();
+      trace.finish(success: true);
       return null;
     } catch (error) {
       info = null;
       notifyListeners();
+      trace.finish(success: false);
       return error.toString();
     } finally {
       connecting = false;
@@ -351,8 +361,14 @@ class BleController extends ChangeNotifier {
       trace.finish(success: false, stage: 'target-not-found');
       return '未搜索到该设备，请确认设备已开机并在附近';
     }
-    final error = await trace.measure('connect-and-read-info', () => connect(target));
-    trace.finish(success: error == null, stage: error == null ? 'complete' : 'connect-failed');
+    final error = await trace.measure(
+      'connect-and-read-info',
+      () => connect(target),
+    );
+    trace.finish(
+      success: error == null,
+      stage: error == null ? 'complete' : 'connect-failed',
+    );
     return error;
   }
 

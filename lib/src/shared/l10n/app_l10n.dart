@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../state.dart';
+import 'chinese_script.dart';
 
 /// 语言作用域：由 [MaterialApp.builder] 注入到 Navigator **之上**，成为所有路由（含 push 出来的
 /// 业务页）的祖先。切换语言时其 [language] 变化，凡是通过 [AppL10n.of] 读取文案的页面（都注册了
@@ -42,10 +43,12 @@ class AppL10n {
   static AppL10n of(BuildContext context) =>
       AppL10n(AppLocalizationsScope.languageOf(context));
 
-  String _pick(String zh, String en, String ja) {
+  String _pick(String zh, String en, String ja, [String? zhHant]) {
     switch (language) {
       case AppLanguage.zh:
         return zh;
+      case AppLanguage.zhHant:
+        return zhHant ?? toTraditionalChinese(zh);
       case AppLanguage.en:
         return en;
       case AppLanguage.ja:
@@ -73,7 +76,8 @@ class AppL10n {
   String get deleteAccount => _pick('用户注销', 'Delete Account', 'アカウント削除');
 
   /// 设置页「语种设置」行右侧的当前语言短标签。
-  String get currentLanguageLabel => _pick('简中', 'English', '日本語');
+  String get currentLanguageLabel =>
+      _pick('简中', 'English', '日本語', '繁中');
 
   String get checkingUpdate => _pick('正在检查更新…', 'Checking for updates…', '更新を確認中…');
   String checkUpdateFailed(Object error) => _pick(
@@ -243,6 +247,38 @@ class AppL10n {
       _pick('$seconds秒后重新获取', 'Resend in ${seconds}s', '$seconds秒後に再取得');
 
   // ── 投屏 ──
+  String get castStageTranscoding =>
+      _pick('图片转码中', 'Transcoding Image', '画像を変換中');
+  String get castStageProcessing =>
+      _pick('图片处理中', 'Processing Image', '画像を処理中');
+  String get castStageTransferring =>
+      _pick('图片传输中', 'Transferring Image', '画像を転送中');
+  String get castReadingDeviceInfo => _pick(
+    '正在读取设备信息…',
+    'Reading device information…',
+    'デバイス情報を読み込んでいます…',
+  );
+  String castPreparingImage(int current, int total) => _pick(
+    '正在准备第 $current/$total 张…',
+    'Preparing image $current of $total…',
+    '$total 枚中 $current 枚目を準備中…',
+  );
+  String castTransferringImage(int current, int total) => _pick(
+    '正在投第 $current/$total 张…',
+    'Casting image $current of $total…',
+    '$total 枚中 $current 枚目をキャスト中…',
+  );
+  String castTransferredImages(int uploaded, int total) => _pick(
+    '已投 $uploaded/$total 张',
+    'Cast $uploaded of $total images',
+    '$total 枚中 $uploaded 枚をキャストしました',
+  );
+  String get castPreparingImageSingle =>
+      _pick('正在准备图片…', 'Preparing image…', '画像を準備中…');
+  String get castTransferringSingle =>
+      _pick('正在投屏…', 'Casting…', 'キャスト中…');
+  String get castTransferredSingle =>
+      _pick('投屏成功', 'Cast successful', 'キャストに成功しました');
   String get castResultSuccessTitle => _pick('投屏完成', 'Cast Complete', 'キャスト完了');
   String get castResultSuccessDesc => _pick(
     '照片已成功投屏到设备，可前往相册查看',
@@ -573,12 +609,15 @@ class AppL10n {
     '新しいバージョン $version',
   );
   String get devClearAll => _pick('一键清空', 'Clear All', '一括消去');
+  String get devClearing => _pick('清空中…', 'Clearing…', '消去中…');
+  String get devCleared => _pick('已清空', 'Cleared', '消去しました');
   String get devClearAllValue => _pick(
     '清空设备本地所有照片',
     'Erase all photos stored on the device',
     'デバイス内のすべての写真を消去',
   );
   String get devDeleteDevice => _pick('删除设备', 'Delete Device', 'デバイスを削除');
+  String get devDeleting => _pick('删除中', 'Deleting…', '削除中…');
   String get devDeleteDeviceValue => _pick(
     '删除后将无法恢复',
     'Cannot be undone once deleted',
@@ -937,6 +976,10 @@ class LanguagePreference {
     switch (value) {
       case 'zh':
         return AppLanguage.zh;
+      case 'zhHant':
+      case 'zh-Hant':
+      case 'zh_hant':
+        return AppLanguage.zhHant;
       case 'en':
         return AppLanguage.en;
       case 'ja':

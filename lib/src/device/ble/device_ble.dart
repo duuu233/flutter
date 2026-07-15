@@ -67,6 +67,13 @@ class _Pending {
 
 /// 单设备 BLE 会话。一个实例管理一台已连接设备的收发与图传。
 class FrameBleClient {
+  /// 真实投屏参数，与小程序 `utils/device-ble.js` 保持一致。
+  static const int transferPacketPaceMs = 3;
+  static const int transferWindowPackets = 10;
+  static const int transferWindowMaxPackets = 10;
+  static const Duration transferAckAdvanceTimeout = Duration(milliseconds: 600);
+  static const int transferMaxRetries = 15;
+
   BluetoothDevice? _device;
   BluetoothCharacteristic? _writeChar;
   StreamSubscription<List<int>>? _notifySub;
@@ -111,7 +118,7 @@ class FrameBleClient {
   /// （对齐小程序 `utils/bluetooth.js` 的 `isAllowedFrame` 白名单过滤）。为 null/空则不过滤（调试台 allowAll 用）。
   /// [onUpdate]：每搜到一台**新**设备就回调一次「当前已搜到的（已过滤+按信号降序）列表」，供绑定页
   /// 「搜出一个显示一个」增量渲染（对齐小程序 `discoverDevices` 的 onUpdate），不必等满 timeout。
-  /// [stopWhen]：命中即停。每次列表更新时用「当前已搜到的列表」判断是否已达成目标（如已扫到要连的那台），
+  /// [until]：命中即停。每次列表更新时用「当前已搜到的列表」判断是否已达成目标（如已扫到要连的那台），
   /// 返回真即**立刻停扫并返回**，不再苦等满 timeout——把「连接前扫描」从雷打不动 timeout 压到扫到即走
   /// （通常 <1s），对齐小程序 `bluetooth.discoverDevices` 的 `until`。未命中仍等满 timeout，给设备现身留足
   /// 时间；不传则行为完全不变（绑定/调试整窗扫描照旧）。自身异常按「未命中」处理。
@@ -140,14 +147,7 @@ class FrameBleClient {
     List<ScanResult> sorted() =>
         found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
 
-    var stopRequested = false;
-    Future<void> stopWhenMatched() async {
-      try {
-        await FlutterBluePlus.stopScan();
-      } catch (_) {
-        // 到点自然停扫或系统已停止时无需额外处理。
-      }
-    }
+    final earlyStop = Completer<void>();
 
     final sub = FlutterBluePlus.scanResults.listen((list) {
       var changed = false;
@@ -174,30 +174,16 @@ class FrameBleClient {
             // 页面回调自身异常不能中断扫描
           }
         }
-        if (!stopRequested && until != null) {
+        if (!earlyStop.isCompleted && until != null) {
           try {
             if (until(current)) {
-              stopRequested = true;
-              // 与小程序 discoverDevices(until) 一致：目标一出现就停扫，
-              // 不再等待完整 timeout。停止失败仍会由原 timeout 兜底。
-              unawaited(stopWhenMatched());
+              // 与小程序 discoverDevices(until) 一致：目标一出现就让等待方收网，
+              // finally 会统一停止系统扫描并清理订阅。
+              earlyStop.complete();
             }
           } catch (_) {
             // 匹配器异常不能中断扫描，继续等待自然超时。
           }
-        }
-      }
-      // 目标已扫到就提前收网、不等满 timeout（对齐小程序 discoverDevices 的 until）。放在 onUpdate 之后，
-      // 页面最后一次增量渲染照常；stopWhen 自身异常按「未命中」处理，退回等满 timeout。
-      if (stopWhen != null && !earlyStop.isCompleted) {
-        var done = false;
-        try {
-          done = stopWhen(sorted());
-        } catch (_) {
-          done = false;
-        }
-        if (done && !earlyStop.isCompleted) {
-          earlyStop.complete();
         }
       }
     });
@@ -705,8 +691,8 @@ class FrameBleClient {
     // 发送节奏上界（ms）。3ms 对齐小程序 PACKET_PACE_MS：固件已扩大收包缓冲(10 包)，
     // 配合 7.5ms 连接间隔按最快速率喂数据。原来默认 10ms —— AIMD 每 6 个干净窗口才降 0.5ms，
     // 从 10 探到 0 要 120 个窗口，整张图的前 1/6 都跑在明显偏慢的节奏上。
-    int pace = 3,
-    int window = 10,
+    int pace = transferPacketPaceMs,
+    int window = transferWindowPackets,
     // 是否由本方法自己管理连接参数（设快 / 传完恢复省电）。
     // 批量投屏请传 false，改由调用方在**整批**首尾各调一次
     // [beginTransferSession] / [endTransferSession] —— 否则每张之间链路会掉回
@@ -757,7 +743,9 @@ class FrameBleClient {
       final chunk = dataChunk;
       final win = window < 1
           ? 1
-          : (window > 10 ? 10 : window); // 固件收包缓冲 10 包，夹到 [1,10]
+          : (window > transferWindowMaxPackets
+                ? transferWindowMaxPackets
+                : window); // 固件收包缓冲 10 包，夹到 [1,10]
       final totalPackets = (dataSize + chunk - 1) ~/ chunk;
 
       // D1：预取阶段按会话分包大小预组好的全部 0x21 帧，分包/帧数对得上才用（会话重建后 MTU 可能变化）；
@@ -818,7 +806,7 @@ class FrameBleClient {
         // 等设备 0x23 把「已连续接收包号」推过 before；超时 600ms（< 设备 1s 红线，PRD 6.4.1）。
         final advanced = await _waitAckAdvance(
           before,
-          const Duration(milliseconds: 600),
+          transferAckAdvanceTimeout,
         );
         if (!advanced) {
           // 超时回调和通知可能同时发生；重发前再复查一次，已推进就直接继续填窗。
@@ -827,7 +815,7 @@ class FrameBleClient {
             onProgress?.call(_confirmed(totalPackets), totalPackets, 'data');
             continue;
           }
-          if (++retries > 15) {
+          if (++retries > transferMaxRetries) {
             throw FrameBleException(
               '图传中断：设备停在已接收第 $_lastImgAck 包不再前进。可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunk 字节',
             );

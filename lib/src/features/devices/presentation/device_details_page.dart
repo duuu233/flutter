@@ -665,6 +665,15 @@ Future<bool?> showDeviceConfirmDialog(
   required String message,
   String? confirmLabel,
 }) {
+  var resolved = false;
+  void close(BuildContext dialogContext, [bool? result]) {
+    if (resolved) {
+      return;
+    }
+    resolved = true;
+    Navigator.of(dialogContext).pop(result);
+  }
+
   return showDialog<bool>(
     context: context,
     barrierColor: Colors.black.withValues(alpha: 0.4),
@@ -678,8 +687,8 @@ Future<bool?> showDeviceConfirmDialog(
           title: title,
           message: message,
           confirmLabel: confirmLabel,
-          onCancel: () => Navigator.of(dialogContext).pop(),
-          onConfirm: () => Navigator.of(dialogContext).pop(true),
+          onCancel: () => close(dialogContext),
+          onConfirm: () => close(dialogContext, true),
         ),
       ),
     ),

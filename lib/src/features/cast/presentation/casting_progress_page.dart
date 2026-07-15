@@ -120,7 +120,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   }
 
   Future<void> _runProjection() async {
-    final service = ServerImageProjectionService();
+    final service = ServerImageProjectionService(l10n: AppL10n.of(context));
     void handleProgress(CastProgress p) {
       if (!mounted) return;
       setState(() {

@@ -114,7 +114,7 @@ class _CastMethodSheet extends StatelessWidget {
               ),
               const SizedBox(height: 25),
               _CastSheetRow(
-                title: '拍照',
+                title: l10n.cresMethodCamera,
                 subtitle: l10n.cresMethodCameraDesc,
                 artAsset: 'assets/images/home-media-mini01.png',
                 arrowAsset: 'assets/images/home-camera-card-right-icon.png',
@@ -123,7 +123,7 @@ class _CastMethodSheet extends StatelessWidget {
               // 小程序 .media-option margin-bottom: 20rpx = 10。
               const SizedBox(height: 10),
               _CastSheetRow(
-                title: '相册',
+                title: l10n.cresMethodAlbum,
                 subtitle: l10n.cresMethodAlbumDesc,
                 artAsset: 'assets/images/home-media-mini02.png',
                 arrowAsset: 'assets/images/home-album-card-right-icon.png',

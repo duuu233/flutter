@@ -165,6 +165,7 @@ class AppRoutes {
         builder = (_) => DevicesPage(state: state);
         break;
       case AppRoutes.figmaDeviceDetails:
+        var deleteFlowBusy = false;
         builder = (context) => DeviceDetailsPage(
           state: state,
           onCarouselSettings: () {
@@ -184,64 +185,82 @@ class AppRoutes {
             ).pushNamed<void>(AppRoutes.figmaDeviceClearConfirm);
           },
           onDeleteDevice: () async {
-            // 对齐小程序 detail.js showDeleteConfirm：删除全程走浮层「二次确认弹窗」，不再用系统弹框/整页。
-            //   · 连接中：先弹「需先断开」前置确认弹窗 → 断开 → 再弹删除确认弹窗；
-            //   · 未连接：直接弹删除确认弹窗。
-            const deleteIcon = 'assets/images/device-detail-icon06.png';
-            const deleteAccent = Color(0xFFFF3045);
-            if (state.selectedDevice.connected) {
-              final proceed = await showDeviceConfirmDialog(
+            if (deleteFlowBusy) {
+              return;
+            }
+            deleteFlowBusy = true;
+            try {
+              // 对齐小程序 detail.js showDeleteConfirm：删除全程走浮层「二次确认弹窗」，不再用系统弹框/整页。
+              //   · 连接中：先弹「需先断开」前置确认弹窗 → 断开 → 再弹删除确认弹窗；
+              //   · 未连接：直接弹删除确认弹窗。
+              const deleteIcon = 'assets/images/device-detail-icon06.png';
+              const deleteAccent = Color(0xFFFF3045);
+              if (state.selectedDevice.connected) {
+                final proceed = await showDeviceConfirmDialog(
+                  context,
+                  iconAsset: deleteIcon,
+                  fallbackIcon: Icons.delete_outline_rounded,
+                  accent: deleteAccent,
+                  title: AppL10n.of(context).devDeleteDevice,
+                  message: AppL10n.of(context).devDeleteNeedDisconnect,
+                  confirmLabel: AppL10n.of(context).devDisconnectShort,
+                );
+                if (proceed != true || !context.mounted) {
+                  return;
+                }
+                AppLoadingDialog.show(
+                  context,
+                  AppL10n.of(context).devDisconnecting,
+                );
+                late final ActionFeedback feedback;
+                try {
+                  feedback = await state.disconnectDevice(
+                    state.selectedDevice.id,
+                  );
+                } finally {
+                  if (context.mounted) {
+                    AppLoadingDialog.hide(context);
+                  }
+                }
+                if (!context.mounted) {
+                  return;
+                }
+                if (!feedback.success) {
+                  AppToast.warn(context, feedback.message);
+                  return;
+                }
+              }
+              if (!context.mounted) {
+                return;
+              }
+              final confirmed = await showDeviceConfirmDialog(
                 context,
                 iconAsset: deleteIcon,
                 fallbackIcon: Icons.delete_outline_rounded,
                 accent: deleteAccent,
                 title: AppL10n.of(context).devDeleteDevice,
-                message: AppL10n.of(context).devDeleteNeedDisconnect,
-                confirmLabel: AppL10n.of(context).devDisconnectShort,
+                message: AppL10n.of(context).devDeleteDeviceMessage,
               );
-              if (proceed != true || !context.mounted) {
+              if (confirmed != true || !context.mounted) {
                 return;
               }
-              AppLoadingDialog.show(
-                context,
-                AppL10n.of(context).devDisconnecting,
-              );
-              final feedback = await state.disconnectDevice(
+              AppLoadingDialog.show(context, AppL10n.of(context).devDeleting);
+              final navigator = Navigator.of(context);
+              final feedback = await state.deleteDevice(
                 state.selectedDevice.id,
               );
               if (!context.mounted) {
                 return;
               }
               AppLoadingDialog.hide(context);
-              if (!feedback.success) {
+              if (feedback.success) {
+                // 删除成功：详情页出栈回到设备列表（列表刷新即为反馈，不再弹提示，对齐小程序）。
+                navigator.pop();
+              } else {
                 AppToast.warn(context, feedback.message);
-                return;
               }
-            }
-            if (!context.mounted) {
-              return;
-            }
-            final confirmed = await showDeviceConfirmDialog(
-              context,
-              iconAsset: deleteIcon,
-              fallbackIcon: Icons.delete_outline_rounded,
-              accent: deleteAccent,
-              title: AppL10n.of(context).devDeleteDevice,
-              message: AppL10n.of(context).devDeleteDeviceMessage,
-            );
-            if (confirmed != true || !context.mounted) {
-              return;
-            }
-            final navigator = Navigator.of(context);
-            final feedback = await state.deleteDevice(state.selectedDevice.id);
-            if (!context.mounted) {
-              return;
-            }
-            if (feedback.success) {
-              // 删除成功：详情页出栈回到设备列表（列表刷新即为反馈，不再弹提示，对齐小程序）。
-              navigator.pop();
-            } else {
-              AppToast.warn(context, feedback.message);
+            } finally {
+              deleteFlowBusy = false;
             }
           },
           onOtaUpgrade: () {

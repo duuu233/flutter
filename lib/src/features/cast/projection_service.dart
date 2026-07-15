@@ -21,7 +21,9 @@ import 'package:image/image.dart' as img;
 import '../../device/ble/device_ble.dart';
 import '../../device/ble/frame_protocol.dart';
 import '../../device/ble_controller.dart';
+import '../../device/device_interaction_trace.dart';
 import '../../network/boltfox_api.dart';
+import '../../shared/l10n/app_l10n.dart';
 
 /// 投屏进度回调载荷。语义完全对齐小程序 `result.js`（进度页三段式：转码→处理→传输）。
 class CastProgress {
@@ -87,10 +89,12 @@ class ProjectionAbortedException implements Exception {
 
 /// 服务器转换 + BLE 图传投屏服务。复用 [BleController] 持有的已连接设备。
 class ServerImageProjectionService {
-  ServerImageProjectionService({BleController? ble})
-    : _ble = ble ?? BleController.instance;
+  ServerImageProjectionService({BleController? ble, AppL10n? l10n})
+    : _ble = ble ?? BleController.instance,
+      _l10n = l10n;
 
   final BleController _ble;
+  final AppL10n? _l10n;
 
   /// 逐张把 [filePaths] 里的原图经后端转换成设备帧并图传到设备。
   ///
@@ -124,10 +128,16 @@ class ServerImageProjectionService {
 
     final total = images.length;
     int uploaded = 0;
+    final trace = DeviceInteractionTrace('cast-images');
+    trace.mark(
+      'params-conn-${FrameBleClient.transferConnIntervalMs}ms-'
+      'pace-${FrameBleClient.transferPacketPaceMs}ms-'
+      'window-${FrameBleClient.transferWindowPackets}',
+    );
 
     // 阶段标题与「第几张」是跨 emit 保持的（小程序里就是 data 上的 title / progressCurrent），
     // 只有明确切阶段/切张时才更新，传输过程中的高频 emit 只带百分比。
-    var stageTitle = CastStage.transcoding;
+    var stageTitle = _l10n?.castStageTranscoding ?? CastStage.transcoding;
     var currentIndex = 0;
 
     void emit(double percent, String message, {String? title, int? current}) {
@@ -154,8 +164,11 @@ class ServerImageProjectionService {
     Future<int>? lastRefresh;
     try {
       // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。B2：走精简读取，不带 0x03 固件版本。
-      emit(0, '正在读取设备信息…');
-      final info = await client.readTransferInfo();
+      emit(0, _l10n?.castReadingDeviceInfo ?? '正在读取设备信息…');
+      final info = await trace.measure(
+        'read-core-info-0x01',
+        client.readTransferInfo,
+      );
       // 机型/尺寸分开判（对齐小程序 result.js:367-375）：只有 0x03 才是「该型号暂不支持图传」；
       // 读到 0 尺寸多半是刷屏后短暂断连，应提示「重新连接」而非误报机型不支持。
       if (info.screenType == 0x03) {
@@ -179,12 +192,15 @@ class ServerImageProjectionService {
       final prefetch = List<Future<_AcquiredFrame>?>.filled(total, null);
       void startPrefetch(int idx) {
         if (idx < 0 || idx >= total || prefetch[idx] != null) return;
-        prefetch[idx] = _acquireFrame(
-          client: client,
-          filePath: images[idx],
-          userProductId: userProductId,
-          width: info.width,
-          height: info.height,
+        prefetch[idx] = trace.measure(
+          'prepare-image-${idx + 1}',
+          () => _acquireFrame(
+            client: client,
+            filePath: images[idx],
+            userProductId: userProductId,
+            width: info.width,
+            height: info.height,
+          ),
         );
       }
 
@@ -194,7 +210,10 @@ class ServerImageProjectionService {
       // 这段等待正好被首张的「上传+后端转码+下载」网络耗时吸收，不额外拖慢链路
       // （对齐小程序 result.js：先 startPrefetch(0)，再并行 optimizeConnectionIntervalForTransfer）。
       // 必须在第一次 uploadImage 之前完成，否则整批就白设了。
-      await client.beginTransferSession();
+      await trace.measure(
+        'set-fast-connection-interval',
+        client.beginTransferSession,
+      );
       sessionOpened = true;
 
       // 2) 逐张：预取的 .bin 帧 → 选空闲槽位 → 图传 → 设备成功才写记录 → 刷新显示。
@@ -204,8 +223,8 @@ class ServerImageProjectionService {
         // 新的一张：百分比归 0，张数计到 i+1，标题切「图片处理中」（对齐小程序 result.js:452-456）。
         emit(
           0,
-          '正在准备第 ${i + 1}/$total 张…',
-          title: CastStage.processing,
+          _l10n?.castPreparingImage(i + 1, total) ?? '正在准备第 ${i + 1}/$total 张…',
+          title: _l10n?.castStageProcessing ?? CastStage.processing,
           current: i + 1,
         );
         final acquired = await prefetch[i]!;
@@ -230,7 +249,12 @@ class ServerImageProjectionService {
         if (index < 0) throw FrameBleException('设备已存满');
 
         // 开始图传本张：标题切「图片传输中」，百分比从 0 起（对齐小程序 result.js:483）。
-        emit(0, '正在投第 ${i + 1}/$total 张…', title: CastStage.transferring);
+        emit(
+          0,
+          _l10n?.castTransferringImage(i + 1, total) ??
+              '正在投第 ${i + 1}/$total 张…',
+          title: _l10n?.castStageTransferring ?? CastStage.transferring,
+        );
 
         // 进度上报节流：BLE 每收到一个 ACK 就会回调一次，一张图上千个包 → 上千次 setState。
         // 高频重建会反过来抢占主 isolate、拖慢图传本身。这里限制页面最多约 8 次/秒更新：
@@ -242,29 +266,38 @@ class ServerImageProjectionService {
 
         // 本张设备事务：只有 BLE 图传失败才回滚删掉刚传到设备的图，再向外抛出让整单判失败。
         try {
-          await client.uploadImage(
-            screenType: info.screenType,
-            index: index,
-            width: info.width,
-            height: info.height,
-            data: frameData,
-            prepared: acquired.prepared, // D1/D2：预取阶段算好的 CRC32 + 预组帧
-            // 连接参数由整批的 beginTransferSession 统一管，别每张来回切。
-            manageConnection: false,
-            shouldAbort: shouldAbort,
-            onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
-              // 百分比 = 本张的分包进度（不是整单进度），对齐小程序 result.js:517。
-              final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
-              final percent = (frac * 100).floor().clamp(0, 100);
-              final nowMs = stopwatch.elapsedMilliseconds;
-              if (percent != 100 &&
-                  (percent == lastPercent || nowMs - lastEmitMs < 120)) {
-                return;
-              }
-              lastPercent = percent;
-              lastEmitMs = nowMs;
-              emit(frac, '正在投第 ${i + 1}/$total 张…');
-            },
+          await trace.measure(
+            'ble-transfer-image-${i + 1}',
+            () => client.uploadImage(
+              screenType: info.screenType,
+              index: index,
+              width: info.width,
+              height: info.height,
+              data: frameData,
+              pace: FrameBleClient.transferPacketPaceMs,
+              window: FrameBleClient.transferWindowPackets,
+              prepared: acquired.prepared, // D1/D2：预取阶段算好的 CRC32 + 预组帧
+              // 连接参数由整批的 beginTransferSession 统一管，别每张来回切。
+              manageConnection: false,
+              shouldAbort: shouldAbort,
+              onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
+                // 百分比 = 本张的分包进度（不是整单进度），对齐小程序 result.js:517。
+                final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
+                final percent = (frac * 100).floor().clamp(0, 100);
+                final nowMs = stopwatch.elapsedMilliseconds;
+                if (percent != 100 &&
+                    (percent == lastPercent || nowMs - lastEmitMs < 120)) {
+                  return;
+                }
+                lastPercent = percent;
+                lastEmitMs = nowMs;
+                emit(
+                  frac,
+                  _l10n?.castTransferringImage(i + 1, total) ??
+                      '正在投第 ${i + 1}/$total 张…',
+                );
+              },
+            ),
           );
         } catch (error) {
           await _rollbackDeviceImage(client, index);
@@ -289,7 +322,12 @@ class ServerImageProjectionService {
         usedIndexes = [...usedIndexes, index];
         uploaded++;
         // 本张完成：百分比打满、张数计到已投成功数（对齐小程序 result.js:583）。
-        emit(1, '已投 $uploaded/$total 张', current: uploaded);
+        emit(
+          1,
+          _l10n?.castTransferredImages(uploaded, total) ??
+              '已投 $uploaded/$total 张',
+          current: uploaded,
+        );
 
         // 只有最后一张传完后才刷新屏幕(0x24)：部分固件收到 0x24 会断开蓝牙，批量传输中途刷屏会导致
         // 后续图片传输失败。故中间张一律不刷屏，等全部传完只对最后一张执行一次 0x24。
@@ -301,15 +339,17 @@ class ServerImageProjectionService {
         }
       }
 
+      trace.finish(success: true);
       return ProjectionResult(
         success: true,
         uploaded: uploaded,
         total: total,
-        message: '投屏成功',
+        message: _l10n?.castTransferredSingle ?? '投屏成功',
       );
     } on ProjectionAbortedException {
       // 部分成功也判成功页（对齐小程序 finishProjection：uploaded>=1 → success）：已物理写入设备的
       // 照片不该被显示成「投屏失败」，否则用户会重投造成重复上传（占用新槽位）。
+      trace.finish(success: uploaded >= 1, stage: 'aborted');
       return ProjectionResult(
         success: uploaded >= 1,
         uploaded: uploaded,
@@ -325,6 +365,7 @@ class ServerImageProjectionService {
           (shouldAbort?.call() ?? false) || raw.contains('UPLOAD_ABORTED');
       // 任一张失败即中断本单（对齐小程序「任意一张失败即中断」）；但只要已成功过至少 1 张就判成功页
       //（部分成功），uploaded>=1 → success，与小程序 finishProjection 一致。
+      trace.finish(success: uploaded >= 1, stage: 'failed');
       return ProjectionResult(
         success: uploaded >= 1,
         uploaded: uploaded,
@@ -365,7 +406,7 @@ class ServerImageProjectionService {
     final client = _ble.client;
 
     // 再次投屏是单张 imgBle 直传：不走后端转码，故没有「图片转码中」阶段之外的准备工作。
-    var stageTitle = CastStage.transcoding;
+    var stageTitle = _l10n?.castStageTranscoding ?? CastStage.transcoding;
     var currentIndex = 0;
 
     void emit(double percent, String message, {String? title, int? current}) {
@@ -399,9 +440,20 @@ class ServerImageProjectionService {
       );
     }
 
+    final trace = DeviceInteractionTrace('recast-image');
+    trace.mark(
+      'params-conn-${FrameBleClient.transferConnIntervalMs}ms-'
+      'pace-${FrameBleClient.transferPacketPaceMs}ms-'
+      'window-${FrameBleClient.transferWindowPackets}',
+    );
+    Future<void>? sessionReady;
+    Future<int>? lastRefresh;
     try {
-      emit(0, '正在读取设备信息…');
-      final info = await client.readTransferInfo(); // B2：精简读取，不带 0x03 固件版本
+      emit(0, _l10n?.castReadingDeviceInfo ?? '正在读取设备信息…');
+      final info = await trace.measure(
+        'read-core-info-0x01',
+        client.readTransferInfo,
+      ); // B2：精简读取，不带 0x03 固件版本
       // 机型/尺寸分开判（对齐小程序 result.js）：0x03 才是不支持；尺寸 0 多为短暂断连，提示重连。
       if (info.screenType == 0x03) {
         throw FrameBleException('该型号暂不支持图传');
@@ -418,9 +470,23 @@ class ServerImageProjectionService {
         throw FrameBleException('设备空间不足：设备已存满');
       }
 
-      // 直接下载记录里后端转换好的设备帧(.bin)，不再调后端上传/转码。
-      emit(0, '正在准备图片…', title: CastStage.processing, current: 1);
-      final frameData = await _downloadFrameBin(imgBleUrl);
+      // 直接下载记录里后端转换好的设备帧(.bin)，同时开始极速连接间隔协商。
+      // 两者互不占用资源，把 0x13 + 300ms 回读等待隐藏在网络下载中。
+      emit(
+        0,
+        _l10n?.castPreparingImageSingle ?? '正在准备图片…',
+        title: _l10n?.castStageProcessing ?? CastStage.processing,
+        current: 1,
+      );
+      final frameFuture = trace.measure(
+        'download-device-frame',
+        () => _downloadFrameBin(imgBleUrl),
+      );
+      sessionReady = trace.measure(
+        'set-fast-connection-interval',
+        client.beginTransferSession,
+      );
+      final frameData = await frameFuture;
       if (frameData.length != expected4bpp) {
         final head = FrameProtocol.bytesToHex(
           frameData.sublist(0, frameData.length < 16 ? frameData.length : 16),
@@ -440,12 +506,23 @@ class ServerImageProjectionService {
       // D1/D2 图传预处理（整图 CRC32 + 预组 0x21 帧），失败回退不阻断本张。
       PreparedTransfer? prepared;
       try {
-        prepared = await client.prepareImageTransfer(frameData);
+        prepared = await trace.measure(
+          'prepare-image',
+          () => client.prepareImageTransfer(frameData),
+        );
       } catch (_) {
         prepared = null;
       }
 
-      emit(0, '正在投屏…', title: CastStage.transferring, current: 1);
+      emit(
+        0,
+        _l10n?.castTransferringSingle ?? '正在投屏…',
+        title: _l10n?.castStageTransferring ?? CastStage.transferring,
+        current: 1,
+      );
+
+      // 图片准备完成时极速协商通常也已完成；传第一包前仅做正确性收口。
+      await sessionReady;
 
       // 进度上报节流，同 castImages：BLE 每个 ACK 回调一次，不节流会有上千次 setState
       // 抢占主 isolate、反过来拖慢图传。约 8 次/秒；100% 必发。
@@ -454,59 +531,77 @@ class ServerImageProjectionService {
       final stopwatch = Stopwatch()..start();
 
       try {
-        await client.uploadImage(
-          screenType: info.screenType,
-          index: index,
-          width: info.width,
-          height: info.height,
-          data: frameData,
-          prepared: prepared,
-          shouldAbort: shouldAbort,
-          onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
-            final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
-            final percent = (frac * 100).floor().clamp(0, 100);
-            final nowMs = stopwatch.elapsedMilliseconds;
-            if (percent != 100 &&
-                (percent == lastPercent || nowMs - lastEmitMs < 120)) {
-              return;
-            }
-            lastPercent = percent;
-            lastEmitMs = nowMs;
-            emit(frac, '正在投屏…', title: CastStage.transferring, current: 1);
-          },
+        await trace.measure(
+          'ble-transfer-image-1',
+          () => client.uploadImage(
+            screenType: info.screenType,
+            index: index,
+            width: info.width,
+            height: info.height,
+            data: frameData,
+            pace: FrameBleClient.transferPacketPaceMs,
+            window: FrameBleClient.transferWindowPackets,
+            prepared: prepared,
+            manageConnection: false,
+            shouldAbort: shouldAbort,
+            onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
+              final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
+              final percent = (frac * 100).floor().clamp(0, 100);
+              final nowMs = stopwatch.elapsedMilliseconds;
+              if (percent != 100 &&
+                  (percent == lastPercent || nowMs - lastEmitMs < 120)) {
+                return;
+              }
+              lastPercent = percent;
+              lastEmitMs = nowMs;
+              emit(
+                frac,
+                _l10n?.castTransferringSingle ?? '正在投屏…',
+                title: _l10n?.castStageTransferring ?? CastStage.transferring,
+                current: 1,
+              );
+            },
+          ),
         );
       } catch (error) {
         await _rollbackDeviceImage(client, index);
         rethrow;
       }
 
-      // 单张再次投屏：传完刷新到这张（0x24）。追加3：fire-and-forget 不阻塞成功页，刷屏失败不影响结果。
-      unawaited(client.refreshScreen(index).catchError((_) => 0xFF));
+      // 单张再次投屏：传完刷新到这张（0x24）。fire-and-forget 不阻塞成功页；
+      // finally 会在刷屏后再恢复空闲连接间隔，避免 0x13 与刷屏忙状态冲突。
+      lastRefresh = client.refreshScreen(index).catchError((_) => 0xFF);
 
       // 设备图传成功 → 新增一条成功记录（尽力而为，失败只忽略）。
-      await _addRetryRecord(
-        userProductId: userProductId,
-        upirId: upirId,
-        imgUrl: imgUrl,
-        imgBle: imgBleUrl,
-        deviceUploadState: 1,
+      unawaited(
+        _addRetryRecord(
+          userProductId: userProductId,
+          upirId: upirId,
+          imgUrl: imgUrl,
+          imgBle: imgBleUrl,
+          deviceUploadState: 1,
+        ),
       );
-      emit(1, '投屏成功', current: 1);
-      return const ProjectionResult(
+      emit(1, _l10n?.castTransferredSingle ?? '投屏成功', current: 1);
+      trace.finish(success: true);
+      return ProjectionResult(
         success: true,
         uploaded: 1,
         total: 1,
-        message: '投屏成功',
+        message: _l10n?.castTransferredSingle ?? '投屏成功',
       );
     } on ProjectionAbortedException {
       // 中断也新增一条失败记录（对齐小程序：_retryImageInFlight 未清即补记失败）。
-      await _addRetryRecord(
-        userProductId: userProductId,
-        upirId: upirId,
-        imgUrl: imgUrl,
-        imgBle: imgBleUrl,
-        deviceUploadState: 0,
+      unawaited(
+        _addRetryRecord(
+          userProductId: userProductId,
+          upirId: upirId,
+          imgUrl: imgUrl,
+          imgBle: imgBleUrl,
+          deviceUploadState: 0,
+        ),
       );
+      trace.finish(success: false, stage: 'aborted');
       return const ProjectionResult(
         success: false,
         uploaded: 0,
@@ -518,19 +613,38 @@ class ServerImageProjectionService {
       final aborted =
           (shouldAbort?.call() ?? false) || raw.contains('UPLOAD_ABORTED');
       // 下载/图传失败也新增一条失败记录(deviceUploadState=0)。
-      await _addRetryRecord(
-        userProductId: userProductId,
-        upirId: upirId,
-        imgUrl: imgUrl,
-        imgBle: imgBleUrl,
-        deviceUploadState: 0,
+      unawaited(
+        _addRetryRecord(
+          userProductId: userProductId,
+          upirId: upirId,
+          imgUrl: imgUrl,
+          imgBle: imgBleUrl,
+          deviceUploadState: 0,
+        ),
       );
+      trace.finish(success: false, stage: 'failed');
       return ProjectionResult(
         success: false,
         uploaded: 0,
         total: 1,
         message: aborted ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。' : raw,
       );
+    } finally {
+      // 不阻塞结果页：即使下载/校验提前失败，也会在极速协商收口后恢复省电档。
+      final ready = sessionReady;
+      if (ready != null) {
+        unawaited(
+          ready
+              .then((_) async {
+                final refresh = lastRefresh;
+                if (refresh != null) {
+                  await refresh;
+                }
+                await client.endTransferSession();
+              })
+              .catchError((_) {}),
+        );
+      }
     }
   }
 
