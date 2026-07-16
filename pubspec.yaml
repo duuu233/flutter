@@ -52,11 +52,11 @@ dependencies:
   # 版本更新：跳转浏览器/应用商店下载新版 APK
   url_launcher: ^6.3.0
   # 读取当前 App 版本号，供 getLastVersion 比对是否有新版本
-  package_info_plus: ^8.0.0
+  package_info_plus: ^10.2.1
   # 本地持久化（登录邮箱历史缓存等轻量键值）
   shared_preferences: ^2.3.2
   # 微信开放平台移动应用授权；业务层通过适配器隔离，便于后续替换 SDK
-  fluwx: 5.7.7
+  fluwx: ^6.0.0
   # 投屏预览页的「裁剪」：**原生**裁剪器（Android=uCrop / iOS=TOCropViewController）。
   # 小程序是自己用 canvas + touch 事件手搓的裁剪框（783 行），那是被微信沙箱逼的；
   # App 直接用原生裁剪器：手势更跟手、自带旋转/网格/回弹，还能锁定宽高比并直接导出 JPEG。
@@ -67,7 +67,7 @@ dependencies:
   #   ② 用户没做任何编辑时，投屏前按设备比例做一次 aspectFill 中心裁切。
   # 必须能编码 JPEG：dart:ui 的 toByteData 只支持 png，而 png 是同画质 jpg 的 5~10 倍体积，
   # 直接拖慢投屏的上传阶段（小程序也为此从 png 换成了 jpg q0.92）。
-  image: ^4.5.4
+  image: 4.9.1
 
 dev_dependencies:
   flutter_test:
