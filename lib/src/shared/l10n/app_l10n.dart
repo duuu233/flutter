@@ -56,6 +56,11 @@ class AppL10n {
     }
   }
 
+  /// 供页面侧的长文（法务文档等）按当前语言取文案：与 [_pick] 同规则，
+  /// 繁中缺省时由简中自动转换。短文案仍应集中在本目录里加 getter。
+  String pick(String zh, String en, String ja, [String? zhHant]) =>
+      _pick(zh, en, ja, zhHant);
+
   // ── 后端 retMsg 兜底本地化 ─────────────────────────────────────────────
   /// 已知的后端 retMsg 原文 → (zh, en, ja)。BoltFox 后端**忽略** language 参数，
   /// retMsg 以英文为主（个别中文，如「请重新登录！」），简中/繁中/日文用户会直接
@@ -207,6 +212,11 @@ class AppL10n {
     'No download link. Please update via the website or app store.',
     'ダウンロードリンクがありません。公式サイトまたはストアから更新してください。',
   );
+  String get openDownloadFailed => _pick(
+    '无法打开下载地址，请前往官网或应用商店更新。',
+    'Could not open the download link. Please update via the website or app store.',
+    'ダウンロードリンクを開けませんでした。公式サイトまたはストアから更新してください。',
+  );
   String get contactCopied => _pick('已复制联系方式', 'Contact copied', '連絡先をコピーしました');
 
   String get logoutConfirmMessage => _pick(
@@ -278,6 +288,17 @@ class AppL10n {
   );
   String get accPasswordHint => _pick('请输入密码', 'Enter your password', 'パスワードを入力してください');
   String get accPasswordEmpty => _pick('密码不能为空', 'Password cannot be empty', 'パスワードは空にできません');
+  // 密码规则（注册 / 忘记密码 / 修改密码设置新密码时用；登录页不校验规则）。
+  String get accPasswordRuleHint => _pick(
+    '请输入6-12位数字加英文密码',
+    '6-12 characters, letters & digits',
+    '6〜12桁の英字と数字を入力',
+  );
+  String get accPasswordRuleError => _pick(
+    '密码需为6-12位数字和英文字母组合',
+    'Password must be 6-12 characters and contain both letters and digits.',
+    'パスワードは英字と数字を含む6〜12桁で入力してください',
+  );
   String get accForgotPasswordLink => _pick('忘记密码?', 'Forgot password?', 'パスワードをお忘れですか？');
   String get accWelcome => _pick('欢迎使用', 'Welcome to', 'ようこそ');
   String get accLoginSubtitle => _pick(

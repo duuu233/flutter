@@ -166,8 +166,11 @@ class _AuthPageState extends State<AuthPage> {
     setState(() => _submitting = false);
     if (feedback.success) {
       await EmailHistory.add(email); // 记住成功登录过的邮箱，下次自动填充
+    } else {
+      // 只在失败时提示。登录成功不弹「登录成功，已同步个人资料」——
+      // 根节点随即切到主壳层，界面变化本身就是反馈（用户要求去掉）。
+      _showFeedback(feedback.message);
     }
-    _showFeedback(feedback.message);
     // 登录成功后**不需要**在这里导航：本页是强制登录门控下的根页面（见 bolt_star_app.dart），
     // `loginWithPassword` 置好登录态并 notifyListeners 后，根节点会自动把自己换成主壳层。
   }
@@ -193,7 +196,10 @@ class _AuthPageState extends State<AuthPage> {
       if (!mounted) {
         return;
       }
-      _showFeedback(feedback.message);
+      if (!feedback.success) {
+        // 同邮箱登录：成功不弹提示，失败才提示。
+        _showFeedback(feedback.message);
+      }
     } on WeChatAuthorizationException catch (error) {
       if (mounted) {
         // 按错误类别取当前语言文案；exception.message 是中文详情，只进日志。

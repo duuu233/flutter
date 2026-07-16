@@ -234,11 +234,18 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       // 会挤爆固定容器，钳制到 1.3x 作为止血（长期应把固定高改 minHeight）。
       builder: (context, child) => MediaQuery.withClampedTextScaling(
         maxScaleFactor: 1.3,
-        child: AnimatedBuilder(
-          animation: _state,
-          builder: (context, _) => AppLocalizationsScope(
-            language: _state.language,
-            child: child ?? const SizedBox.shrink(),
+        // 全局「点空白处收起键盘」：置于 Navigator 之上，覆盖所有页面（含对话框/弹层）。
+        // 手势竞技场里可交互组件（按钮/输入框/列表项）总是赢家，只有无人认领的
+        // 空白点击才会落到这层 onTap —— 不会拦截或延迟任何现有交互。
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          child: AnimatedBuilder(
+            animation: _state,
+            builder: (context, _) => AppLocalizationsScope(
+              language: _state.language,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
       ),

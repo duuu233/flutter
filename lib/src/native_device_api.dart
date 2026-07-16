@@ -76,10 +76,17 @@ class NativeDeviceApi {
   }
 
   static Future<DevicePermissionStatus> requestBluetoothPermissions() async {
-    final result = await _channel.invokeMapMethod<String, dynamic>(
-      'requestBluetoothPermissions',
-    );
-    return DevicePermissionStatus.fromMap(result);
+    // 通道异常（方法未实现的平台 / PlatformException）不能冒泡：
+    // ensurePermission 等调用方没有兜底 try/catch，会直接崩掉连接流程。
+    // 失败按「全不可用」返回，调用方走既有的「蓝牙不可用」提示分支。
+    try {
+      final result = await _channel.invokeMapMethod<String, dynamic>(
+        'requestBluetoothPermissions',
+      );
+      return DevicePermissionStatus.fromMap(result);
+    } catch (_) {
+      return DevicePermissionStatus.fromMap(null);
+    }
   }
 
   static Future<DevicePermissionStatus> requestLocationPermission() async {
@@ -162,11 +169,17 @@ class NativeDeviceApi {
     } catch (_) {}
   }
 
+  /// 打开系统蓝牙设置。绑定引导页的点按入口，通道异常时静默跳过（不崩）。
   static Future<void> openBluetoothSettings() async {
-    await _channel.invokeMethod<void>('openBluetoothSettings');
+    try {
+      await _channel.invokeMethod<void>('openBluetoothSettings');
+    } catch (_) {}
   }
 
+  /// 打开本 App 的系统设置页。同上，通道异常时静默跳过。
   static Future<void> openAppSettings() async {
-    await _channel.invokeMethod<void>('openAppSettings');
+    try {
+      await _channel.invokeMethod<void>('openAppSettings');
+    } catch (_) {}
   }
 }

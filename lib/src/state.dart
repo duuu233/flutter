@@ -1278,6 +1278,12 @@ class PhotoFrameState extends ChangeNotifier {
       }
       await BoltFoxApi.changeAvatar(url);
       _currentUser.avatarUrl = url;
+      // 落库后回读一次用户信息：以后端最终存储的头像地址为准。上传接口返回的
+      // 地址可能是相对路径/中转地址，直接拿来展示可能加载不出（“保存成功后
+      // 头像不出来”的一类根源）；回读失败时保留上传地址作显示兜底，不影响结果。
+      try {
+        _applyUserInfo(await BoltFoxApi.getUserInfo());
+      } catch (_) {}
       notifyListeners();
       return ActionFeedback(
         success: true,
@@ -1892,12 +1898,35 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   CastAttemptResult recastAlbumPhoto(String photoId, String deviceId) {
-    final photo = _albumPhotos.firstWhere((item) => item.id == photoId);
-    return castDraft(draft: draftFromAlbumPhoto(photo), deviceId: deviceId);
+    // 防御：id 不在列表时返回失败而非 StateError（本方法目前无调用方，防将来接线踩雷）。
+    final photos = _albumPhotos.where((item) => item.id == photoId);
+    if (photos.isEmpty) {
+      return CastAttemptResult(
+        success: false,
+        message: tr(
+          zh: '照片不存在或已删除。',
+          en: 'Photo not found or already deleted.',
+          ja: '写真が見つからないか、削除されています。',
+        ),
+      );
+    }
+    return castDraft(draft: draftFromAlbumPhoto(photos.first), deviceId: deviceId);
   }
 
   CastAttemptResult recastRecord(String recordId, String deviceId) {
-    final record = _castRecords.firstWhere((item) => item.id == recordId);
+    // 防御：同 recastAlbumPhoto。
+    final records = _castRecords.where((item) => item.id == recordId);
+    if (records.isEmpty) {
+      return CastAttemptResult(
+        success: false,
+        message: tr(
+          zh: '投屏记录不存在或已删除。',
+          en: 'Cast record not found or already deleted.',
+          ja: '投影履歴が見つからないか、削除されています。',
+        ),
+      );
+    }
+    final record = records.first;
     return castDraft(
       draft: DraftPhoto(
         id: _nextId('draft-record'),
@@ -2668,7 +2697,33 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   DeviceItem _findDevice(String deviceId) {
-    return _devices.firstWhere((device) => device.id == deviceId);
+    final matches = _devices.where((device) => device.id == deviceId);
+    if (matches.isNotEmpty) {
+      return matches.first;
+    }
+    // 容错：id 可能已不在列表——删除/解绑设备后 notifyListeners 会让仍停留在
+    // 详情页的那一帧先重建（selectedDevice），投屏记录也可能反查已删除的设备
+    // （deviceById）。原来 firstWhere 无 orElse 直接抛 StateError 崩整帧；
+    // 返回一个中性的「未连接占位设备」让这一帧安全渲染。
+    return DeviceItem(
+      id: deviceId,
+      name: '',
+      kind: '',
+      screenType: FrameScreenType.inch589,
+      batteryLevel: 0,
+      charging: false,
+      connected: false,
+      role: DeviceRole.owner,
+      serialNumber: '',
+      hardwareVersion: '',
+      firmwareVersion: '',
+      imageMask: 0,
+      currentImageIndex: -1,
+      playbackMode: FramePlaybackMode.sequence,
+      carouselIntervalSeconds:
+          FrameProtocolConfig.defaultCarouselIntervalSeconds,
+      carouselEnabled: false,
+    );
   }
 
   /// 内置常见问题（接口失败 / 离线时的兜底文案，与小程序 guide 一致）。
@@ -2940,8 +2995,7 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 常见问题详情：`/Client/Product/getProductFaqDetail`，懒加载并回填 [FaqArticle.answer]。
   Future<void> loadFaqDetail(String id) async {
-    final index = _faqArticles.indexWhere((faq) => faq.id == id);
-    if (index < 0) {
+    if (!_faqArticles.any((faq) => faq.id == id)) {
       return;
     }
     try {
@@ -2954,8 +3008,13 @@ class PhotoFrameState extends ChangeNotifier {
         answer = data;
       }
       if (answer != null && answer.isNotEmpty) {
-        _faqArticles[index].answer = answer;
-        notifyListeners();
+        // await 期间 refreshFaq 可能已重建/重排列表：按 id 重查，
+        // 不能沿用 await 前的下标（会越界或把答案写进别的条目）。
+        final index = _faqArticles.indexWhere((faq) => faq.id == id);
+        if (index >= 0) {
+          _faqArticles[index].answer = answer;
+          notifyListeners();
+        }
       }
     } catch (_) {
       // 详情拉取失败时保留列表已有文案。

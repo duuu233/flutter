@@ -35,6 +35,8 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _confirmController = TextEditingController();
 
   bool _showMismatch = false;
+  // 密码不符合规则（6-12 位且同时含数字与英文字母），就地在密码行下方提示。
+  bool _showRuleError = false;
   bool _submitting = false;
   // 验证码请求在途标记：服务器响应前连点会发多封验证码邮件。
   bool _sendingCode = false;
@@ -42,6 +44,10 @@ class _RegisterPageState extends State<RegisterPage> {
   Timer? _timer;
 
   static final _emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
+  // 密码规则：6-12 位，必须同时包含数字和英文字母，且只允许数字/字母。
+  static final _passwordPattern = RegExp(
+    r'^(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{6,12}$',
+  );
 
   @override
   void initState() {
@@ -67,8 +73,11 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   void _onChanged() {
-    if (_showMismatch) {
-      setState(() => _showMismatch = false);
+    if (_showMismatch || _showRuleError) {
+      setState(() {
+        _showMismatch = false;
+        _showRuleError = false;
+      });
     } else {
       setState(() {});
     }
@@ -93,14 +102,19 @@ class _RegisterPageState extends State<RegisterPage> {
     // 点击立刻弹蒙层 loading：后端同步发信可能数秒才响应，期间阻断重复点击
     //（否则连点会发多封验证码邮件），也让用户立刻感知「已在发送」。
     AppLoadingDialog.show(context, AppL10n.of(context).accSendingCode);
-    // sendType:1 = 注册验证码。
-    final feedback = await widget.state.sendEmailCode(
-      email: _emailController.text,
-      sendType: 1,
-    );
-    _sendingCode = false;
-    if (mounted) {
-      AppLoadingDialog.hide(context);
+    final ActionFeedback feedback;
+    try {
+      // sendType:1 = 注册验证码。
+      feedback = await widget.state.sendEmailCode(
+        email: _emailController.text,
+        sendType: 1,
+      );
+    } finally {
+      // 任何异常都必须收掉 loading，否则遮罩卡死整个页面。
+      _sendingCode = false;
+      if (mounted) {
+        AppLoadingDialog.hide(context);
+      }
     }
     if (!mounted) {
       return;
@@ -126,6 +140,10 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _register() async {
     if (_submitting) {
+      return;
+    }
+    if (!_passwordPattern.hasMatch(_passwordController.text)) {
+      setState(() => _showRuleError = true);
       return;
     }
     if (_passwordController.text != _confirmController.text) {
@@ -158,7 +176,10 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
-    final mismatchText = _showMismatch ? l10n.accPasswordMismatch : null;
+    // 密码行错误优先级：规则不符 > 两次不一致。
+    final passwordErrorText = _showRuleError
+        ? l10n.accPasswordRuleError
+        : (_showMismatch ? l10n.accPasswordMismatch : null);
 
     return FigmaScreen(
       title: l10n.accCreateAccount,
@@ -186,9 +207,10 @@ class _RegisterPageState extends State<RegisterPage> {
               FigmaAccountField(
                 label: l10n.accPassword,
                 controller: _passwordController,
-                hintText: l10n.accPasswordHint,
+                // 密码规则占位提示（6-12位数字+英文），登录页不展示。
+                hintText: l10n.accPasswordRuleHint,
                 obscureText: true,
-                errorText: mismatchText,
+                errorText: passwordErrorText,
                 autofillHints: const [AutofillHints.newPassword],
               ),
               const FigmaFormDivider(),

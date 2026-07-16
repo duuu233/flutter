@@ -441,9 +441,12 @@ class DeviceDetailsBody extends StatelessWidget {
                 iconAsset: 'assets/images/device-detail-icon02.png',
                 fallbackIcon: Icons.tag_rounded,
                 label: AppL10n.of(context).devDeviceId,
-                value: device.serialNumber.isEmpty
-                    ? device.id
-                    : device.serialNumber,
+                // 设备ID只在已连接时展示（用户定版：未连接一律 -- 占位）。
+                // 也**不再回退 device.id**——那是后端记录主键 userProductId，
+                // 不是设备ID，回退显示会让用户以为设备有个「默认ID」。
+                value: device.connected && device.serialNumber.isNotEmpty
+                    ? device.serialNumber
+                    : '--',
               ),
               const _ThinDivider(),
               _DetailRow(

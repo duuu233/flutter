@@ -355,8 +355,17 @@ class PageLoadError extends StatelessWidget {
 class AppLoadingDialog {
   AppLoadingDialog._();
 
+  /// 当前展示中的 loading 路由。[hide] 只精确移除它——之前是盲目
+  /// `Navigator.pop()` 栈顶：若 loading 已被其它路径关掉（或从未弹出），
+  /// 会误弹掉底下的业务页面，甚至在空栈上 pop 直接崩溃（修改密码发验证码
+  /// 偶现闪退的一类根源）。
+  static Route<void>? _route;
+
   static void show(BuildContext context, [String? text]) {
-    showDialog<void>(
+    if (_route != null) {
+      return; // 已有 loading 在展示（约定成对调用，不该发生），不重复叠加。
+    }
+    final route = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
       // 默认的 barrier 是 black54（54% 纯黑），整屏压成一片黑、把中间的转圈图标闷在里面。
@@ -364,11 +373,24 @@ class AppLoadingDialog {
       barrierColor: Colors.black.withValues(alpha: 0.18),
       builder: (_) => _LoadingBox(text: text),
     );
+    _route = route;
+    Navigator.of(context, rootNavigator: true).push(route).whenComplete(() {
+      // 路由以任何方式出栈后清引用，防止 hide 拿着失效路由操作。
+      if (identical(_route, route)) {
+        _route = null;
+      }
+    });
   }
 
-  /// 关闭 loading。务必与 [show] 成对调用（用 rootNavigator 才能关掉对话框路由）。
+  /// 关闭 loading。务必与 [show] 成对调用。
+  /// 只移除自己的对话框路由：重复调用 / loading 不在时静默返回，绝不误弹页面。
   static void hide(BuildContext context) {
-    Navigator.of(context, rootNavigator: true).pop();
+    final route = _route;
+    _route = null;
+    if (route == null || !route.isActive) {
+      return;
+    }
+    route.navigator?.removeRoute(route);
   }
 }
 

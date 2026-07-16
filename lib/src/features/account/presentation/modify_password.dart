@@ -34,6 +34,11 @@ class _ModifyPasswordState extends State<ModifyPassword> {
   bool _sendingCode = false;
   Timer? _timer;
 
+  // 密码规则：6-12 位，必须同时包含数字和英文字母，且只允许数字/字母。
+  static final _passwordPattern = RegExp(
+    r'^(?=.*[A-Za-z])(?=.*[0-9])[A-Za-z0-9]{6,12}$',
+  );
+
   @override
   void initState() {
     super.initState();
@@ -80,7 +85,8 @@ class _ModifyPasswordState extends State<ModifyPassword> {
               FigmaAccountField(
                 label: l10n.accNewPassword,
                 controller: _newPasswordController,
-                hintText: l10n.accPasswordHint,
+                // 密码规则占位提示（6-12位数字+英文），登录页不展示。
+                hintText: l10n.accPasswordRuleHint,
                 obscureText: true,
               ),
               const FigmaFormDivider(),
@@ -106,15 +112,20 @@ class _ModifyPasswordState extends State<ModifyPassword> {
     // 点击立刻弹蒙层 loading：后端同步发信可能数秒才响应，期间阻断重复点击
     //（否则连点会发多封验证码邮件），也让用户立刻感知「已在发送」。
     AppLoadingDialog.show(context, AppL10n.of(context).accSendingCode);
-    // 已登录用户改密，验证码统一走 sendEmail，sendType:2。
-    final feedback = await widget.state.sendEmailCode(
-      email: _emailController.text,
-      sendType: 2,
-      loggedIn: true,
-    );
-    _sendingCode = false;
-    if (mounted) {
-      AppLoadingDialog.hide(context);
+    final ActionFeedback feedback;
+    try {
+      // 已登录用户改密，验证码统一走 sendEmail，sendType:2。
+      feedback = await widget.state.sendEmailCode(
+        email: _emailController.text,
+        sendType: 2,
+        loggedIn: true,
+      );
+    } finally {
+      // 任何异常都必须收掉 loading，否则遮罩卡死整个页面。
+      _sendingCode = false;
+      if (mounted) {
+        AppLoadingDialog.hide(context);
+      }
     }
     if (!mounted) {
       return;
@@ -140,6 +151,10 @@ class _ModifyPasswordState extends State<ModifyPassword> {
 
   Future<void> _confirm() async {
     if (_submitting) {
+      return;
+    }
+    if (!_passwordPattern.hasMatch(_newPasswordController.text)) {
+      _showSnack(AppL10n.of(context).accPasswordRuleError);
       return;
     }
     if (_newPasswordController.text != _confirmPasswordController.text) {

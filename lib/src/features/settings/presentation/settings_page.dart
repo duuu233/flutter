@@ -103,7 +103,16 @@ class SettingsPage extends StatelessWidget {
       }
       return;
     }
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (error) {
+      // market:// 在没有应用商店的 ROM 上无处理者会抛 PlatformException
+      //（ActivityNotFoundException），不能让它冒泡崩掉 App。
+      debugPrint('[Settings] 打开下载地址失败: $error');
+      if (context.mounted) {
+        AppToast.show(context, l10n.openDownloadFailed);
+      }
+    }
   }
 
   @override

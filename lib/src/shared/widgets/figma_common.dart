@@ -425,6 +425,7 @@ class FigmaAccountField extends StatefulWidget {
     this.errorText,
     this.trailing,
     this.autofillHints,
+    this.valueColor,
   });
 
   final String label;
@@ -434,6 +435,9 @@ class FigmaAccountField extends StatefulWidget {
   final bool obscureText;
   final bool readOnly;
   final String? errorText;
+
+  /// 输入值文字颜色覆盖（如个人信息页昵称行按小程序用灰色 #777E88）。
+  final Color? valueColor;
 
   /// 输入框右侧附加控件（如昵称行的编辑图标）。
   final Widget? trailing;
@@ -496,8 +500,13 @@ class _FigmaAccountFieldState extends State<FigmaAccountField> {
                   obscureText: _obscured,
                   autofillHints: widget.autofillHints,
                   cursorColor: const Color(0xFFEB5F1B),
-                  // 只读值（如当前邮箱）用小程序的灰色 #777e88，可编辑值用深色。
-                  style: widget.readOnly
+                  // 只读值（如当前邮箱）用小程序的灰色 #777e88，可编辑值用深色；
+                  // valueColor 显式指定时优先。
+                  style: widget.valueColor != null
+                      ? FigmaTextStyles.formValue.copyWith(
+                          color: widget.valueColor,
+                        )
+                      : widget.readOnly
                       ? FigmaTextStyles.formValue.copyWith(
                           color: const Color(0xFF777E88),
                         )

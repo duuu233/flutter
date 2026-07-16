@@ -38,10 +38,14 @@ class AppToast {
     SemanticsService.announce(message, Directionality.of(context));
 
     // 长文案按阅读速度加时（每 10 个字符约 +300ms，封顶 6s），2 秒读不完 40 字的错误提示。
+    // ⚠️ 不能写成 `duration.clamp(下界, 6000)`：消息超过 ~190 字时下界 > 上界，
+    // `num.clamp` 会直接抛 ArgumentError —— 后端/网络返回长错误文案时一弹 toast 就崩。
+    final readingMs = 300 + message.length * 30;
+    final wantedMs = readingMs > duration.inMilliseconds
+        ? readingMs
+        : duration.inMilliseconds;
     final effective = Duration(
-      milliseconds: duration.inMilliseconds
-          .clamp(300 + message.length * 30, 6000)
-          .toInt(),
+      milliseconds: wantedMs > 6000 ? 6000 : wantedMs,
     );
     Future<void>.delayed(effective, () {
       // 期间没有被新提示顶掉才移除（避免重复 remove 同一 entry）。

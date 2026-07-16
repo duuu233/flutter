@@ -315,7 +315,9 @@ class _EmptyDevices extends StatelessWidget {
 /// 电量百分比文案（如 "80%"）→ `BatteryLevel/battery-{档}.png` 资源路径。
 String _batteryIconForLabel(String label) {
   final match = RegExp(r'\d+').firstMatch(label);
-  final value = match == null ? 100 : int.parse(match.group(0)!).clamp(0, 100);
+  // tryParse：超长数字串（>19 位）会让 int.parse 抛 FormatException。
+  final value = (match == null ? 100 : int.tryParse(match.group(0)!) ?? 100)
+      .clamp(0, 100);
   const levels = <int>[0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
   var nearest = levels.first;
   for (final candidate in levels) {
