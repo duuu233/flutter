@@ -33,6 +33,24 @@
 		<string>weixinULAPI</string>
 		<string>weixinURLParamsAPI</string>
 	</array>
+	<!-- 微信授权回调 URL Scheme（fluwx 必需）：把 wxYOUR_WECHAT_APPID 替换为微信开放平台的真实 AppID
+	     （形如 wx1234567890abcdef），与 dart-define 的 WECHAT_APP_ID 保持一致；缺失则授权后无法回跳 App。 -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>weixin</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>wxYOUR_WECHAT_APPID</string>
+			</array>
+		</dict>
+	</array>
+	<!-- 仅使用 HTTPS 等豁免加密，免去 App Store Connect 每次上传的出口合规答题。 -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
@@ -60,11 +78,10 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- iPhone 仅竖屏：全部页面按 375 宽竖屏设计（登录页 CustomPaint 坐标写死等），横屏必然错乱。 -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
-		<string>UIInterfaceOrientationLandscapeLeft</string>
-		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>

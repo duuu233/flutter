@@ -53,6 +53,10 @@ class DeviceInteractionTrace {
     required int durationMs,
     required String status,
   }) {
+    // debugPrint 在 release 下仍会写 logcat，交互耗时日志只在 debug 输出。
+    if (!kDebugMode) {
+      return;
+    }
     debugPrint(
       '[DeviceInteraction][$operation#$id] stage=$stage status=$status '
       'durationMs=$durationMs totalMs=${_total.elapsedMilliseconds}',

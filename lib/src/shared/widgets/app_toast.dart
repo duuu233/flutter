@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 /// 居中吐司提示（对齐微信小程序 `wx.showToast` 的**居中**展示，替代 Flutter 默认底部 SnackBar）。
 ///
@@ -32,8 +33,17 @@ class AppToast {
     final entry = OverlayEntry(builder: (_) => _ToastBubble(message: message));
     _current = entry;
     overlay.insert(entry);
+    // 播报给读屏器：OverlayEntry 短暂出现又消失，TalkBack/VoiceOver 用户
+    // 否则完全感知不到提示内容。
+    SemanticsService.announce(message, Directionality.of(context));
 
-    Future<void>.delayed(duration, () {
+    // 长文案按阅读速度加时（每 10 个字符约 +300ms，封顶 6s），2 秒读不完 40 字的错误提示。
+    final effective = Duration(
+      milliseconds: duration.inMilliseconds
+          .clamp(300 + message.length * 30, 6000)
+          .toInt(),
+    );
+    Future<void>.delayed(effective, () {
       // 期间没有被新提示顶掉才移除（避免重复 remove 同一 entry）。
       if (seq == _seq && identical(_current, entry)) {
         entry.remove();

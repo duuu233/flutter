@@ -36,8 +36,8 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
-import 'package:http/http.dart' as http;
 
+import '../../network/api_client.dart';
 import 'frame_protocol.dart';
 
 // ── 协议常量 ──────────────────────────────────────────────
@@ -474,7 +474,9 @@ class FrameOtaClient {
         (startWaiter != null && echo != _opData && echo != _opEnd)) {
       final ack = _parseStartAck(bytes);
       if (ack == null) {
-        debugPrint('[OTA] 忽略无法识别的应答帧：${FrameProtocol.bytesToHex(bytes)}');
+        if (kDebugMode) {
+          debugPrint('[OTA] 忽略无法识别的应答帧：${FrameProtocol.bytesToHex(bytes)}');
+        }
         return;
       }
       if (startWaiter != null && !startWaiter.isCompleted) {
@@ -669,7 +671,7 @@ class FrameOtaClient {
   Future<OtaResult> _transferData(
     Uint8List bytes,
     int crc32, {
-    int pace = 20,
+    int pace = 3,
     void Function(OtaProgress)? onProgress,
     bool Function()? shouldAbort,
     Duration finalTimeout = const Duration(seconds: 15),
@@ -739,7 +741,9 @@ class FrameOtaClient {
           _buildDataFrame(payload.sublist(start, end)),
           transferChar,
         );
-        if (pace > 0) {
+        // 批内最后一包发完直接进入等 ACK，不再多睡一个 pace——
+        // 停等窗口本身就是流控，末包后的延时纯属白等。
+        if (pace > 0 && k < batchEnd - 1) {
           await Future<void>.delayed(Duration(milliseconds: pace));
         }
       }
@@ -826,11 +830,19 @@ class FrameOtaClient {
 
   // ── 固件包加载 / 准备 ──────────────────────────────────────
   static Future<Uint8List> _downloadFirmware(String url) async {
-    final resp = await http.get(Uri.parse(url));
-    if (resp.statusCode < 200 || resp.statusCode >= 300) {
-      throw OtaException('固件包下载失败(${resp.statusCode})');
+    // 共用 ApiClient 的连接池；加超时——之前没有超时，弱网半途挂起会让
+    // OTA 永远卡在「准备固件包」。
+    try {
+      final resp = await ApiClient.instance.httpClient
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 30));
+      if (resp.statusCode < 200 || resp.statusCode >= 300) {
+        throw OtaException('固件包下载失败(${resp.statusCode})');
+      }
+      return resp.bodyBytes;
+    } on TimeoutException {
+      throw OtaException('固件包下载超时，请检查网络后重试');
     }
-    return resp.bodyBytes;
   }
 
   static Uint8List _mockFirmwareBuffer(int size, String? version) {
@@ -874,10 +886,12 @@ class FrameOtaClient {
     }
     final payloadSize = _computeFwSize(size);
     if (payloadSize < _minFwSize || payloadSize > _maxFwSize) {
-      debugPrint(
-        '[OTA] bin payload $payloadSize 字节超出建议范围 '
-        '0x${_minFwSize.toRadixString(16)}~0x${_maxFwSize.toRadixString(16)}（仅告警，最终以设备应答为准）',
-      );
+      if (kDebugMode) {
+        debugPrint(
+          '[OTA] bin payload $payloadSize 字节超出建议范围 '
+          '0x${_minFwSize.toRadixString(16)}~0x${_maxFwSize.toRadixString(16)}（仅告警，最终以设备应答为准）',
+        );
+      }
     }
     // v1.5：一切校验数据(含 CRC32)由固件方预先打进升级包头信息、并由设备端校验；手机不再计算/携带
     // CRC32。这里仅为本地展示/日志算一次整包 CRC32；调用方显式给了期望值才做核对。
@@ -1001,7 +1015,9 @@ class FrameOtaClient {
     void Function(OtaProgress)? onProgress,
     bool Function()? shouldAbort,
     bool dryRun = false,
-    int pace = 20,
+    // 3ms 对齐图传链路的发包节奏（transferPacketPaceMs）：PRN=3 的停等窗口本身
+    // 就是流控，20ms/包纯粹把 1000+ 包的固件拖慢 ~20s。
+    int pace = 3,
     int? objType,
     Duration finalTimeout = const Duration(seconds: 15),
   }) async {

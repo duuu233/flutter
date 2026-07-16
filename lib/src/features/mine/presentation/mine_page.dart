@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
@@ -334,10 +335,13 @@ class _Avatar extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(shape: BoxShape.circle),
       child: avatarUrl.isNotEmpty
-          ? Image.network(
-              avatarUrl,
+          ? CachedNetworkImage(
+              imageUrl: avatarUrl,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => _defaultAvatar(),
+              // 56lp 圆形头像，按物理像素解码，避免原图全尺寸位图进内存。
+              memCacheWidth:
+                  (56 * MediaQuery.devicePixelRatioOf(context)).round(),
+              errorWidget: (context, url, error) => _defaultAvatar(),
             )
           : _defaultAvatar(),
     );

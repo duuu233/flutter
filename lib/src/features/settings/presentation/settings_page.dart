@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../network/api_exception.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
@@ -32,7 +33,14 @@ class SettingsPage extends StatelessWidget {
       if (!context.mounted) {
         return;
       }
-      AppToast.show(context, l10n.checkUpdateFailed(error));
+      // ApiException 的 message 已本地化，直接展示；其他异常只给通用文案，详情进日志。
+      debugPrint('[Settings] 检查更新失败: $error');
+      AppToast.show(
+        context,
+        error is ApiException
+            ? error.message
+            : l10n.checkUpdateFailedGeneric,
+      );
       return;
     }
     if (!context.mounted) {
@@ -84,9 +92,18 @@ class SettingsPage extends StatelessWidget {
       return;
     }
     final uri = Uri.tryParse(url);
-    if (uri != null) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    // scheme 白名单：downloadUrl 来自后端接口，若后端被篡改返回 intent://、tel://
+    // 等任意 scheme，externalApplication 会直接拉起任意外部应用。只放行
+    // https 与两端应用商店 scheme，其余静默拒绝并提示无下载地址。
+    const allowedSchemes = {'https', 'market', 'itms-apps'};
+    if (uri == null || !allowedSchemes.contains(uri.scheme)) {
+      debugPrint('[Settings] 拒绝非白名单下载地址: $url');
+      if (context.mounted) {
+        AppToast.show(context, l10n.noDownloadUrl);
+      }
+      return;
     }
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   @override

@@ -74,6 +74,12 @@ android {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
+            // Flutter 的 Gradle 插件默认对 release 开 R8 + shrinkResources；
+            // 这里追加微信 OpenSDK / uCrop 的 keep 规则（见 proguard-rules.pro）。
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro",
+            )
         }
     }
 }

@@ -8,7 +8,6 @@ import '../features/account/presentation/profile_page.dart';
 import '../features/account/presentation/register_page.dart';
 import '../features/cast/presentation/cast_failed_page.dart';
 import '../features/cast/presentation/cast_management_figma_page.dart';
-import '../features/cast/presentation/cast_management_page.dart';
 import '../features/cast/presentation/cast_success_page.dart';
 import '../features/cast/presentation/casting_progress_page.dart';
 import '../features/cast/presentation/photo_preview_adjust_image_page.dart';
@@ -49,7 +48,6 @@ class AppRoutes {
 
   static const profile = '/profile';
   static const devices = '/devices';
-  static const castManagement = '/cast-management';
   static const guide = '/guide';
   static const settings = '/settings';
   static const bleDebug = '/ble-debug';
@@ -96,9 +94,6 @@ class AppRoutes {
         break;
       case AppRoutes.devices:
         builder = (_) => DevicesPage(state: state);
-        break;
-      case AppRoutes.castManagement:
-        builder = (_) => CastManagementPage(state: state);
         break;
       case AppRoutes.guide:
         builder = (_) => GuidePage(state: state);
@@ -172,7 +167,7 @@ class AppRoutes {
             // 对齐小程序 detail.js goSlideshow：入口时未连接直接拦截；若进入后链路掉线，
             // 设置页提交时仍会按 ensureConnectedForAction 自动重连。
             if (!state.selectedDevice.connected) {
-              AppToast.show(context, '请先连接设备');
+              AppToast.show(context, AppL10n.of(context).devConnectFirst);
               return;
             }
             Navigator.of(

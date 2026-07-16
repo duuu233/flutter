@@ -364,10 +364,13 @@ class _Avatar extends StatelessWidget {
                 fit: BoxFit.cover,
                 errorBuilder: (context, error, stackTrace) => _fallback(),
               )
-            : Image.network(
-                url,
+            : CachedNetworkImage(
+                imageUrl: url,
                 fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => Image.asset(
+                // 36lp 圆形头像，按物理像素解码，避免原图全尺寸位图进内存。
+                memCacheWidth:
+                    (36 * MediaQuery.devicePixelRatioOf(context)).round(),
+                errorWidget: (context, imageUrl, error) => Image.asset(
                   'assets/images/mine-header.jpg',
                   fit: BoxFit.cover,
                   errorBuilder: (context, error, stackTrace) => _fallback(),
@@ -951,6 +954,7 @@ class _CastEntryCard extends StatelessWidget {
   const _CastEntryCard({
     required this.title,
     required this.subtitle,
+    required this.isCamera,
     required this.artAsset,
     required this.arrowAsset,
     required this.backgroundAsset,
@@ -959,6 +963,7 @@ class _CastEntryCard extends StatelessWidget {
 
   final String title;
   final String subtitle;
+  final bool isCamera;
   final String artAsset;
   final String arrowAsset;
   final String backgroundAsset;
@@ -1013,10 +1018,10 @@ class _CastEntryCard extends StatelessWidget {
                       fit: BoxFit.contain,
                       errorBuilder: (context, error, stackTrace) {
                         return Icon(
-                          title == '拍照'
+                          isCamera
                               ? Icons.photo_camera_rounded
                               : Icons.photo_library_rounded,
-                          color: title == '拍照'
+                          color: isCamera
                               ? const Color(0xFFFF6A24)
                               : const Color(0xFF287BFF),
                           size: 44,
@@ -1064,7 +1069,7 @@ class _CastEntryCard extends StatelessWidget {
                             errorBuilder: (context, error, stackTrace) {
                               return Icon(
                                 Icons.arrow_forward_rounded,
-                                color: title == '拍照'
+                                color: isCamera
                                     ? const Color(0xFFFF6A24)
                                     : const Color(0xFF287BFF),
                                 size: 30,
@@ -1090,6 +1095,7 @@ class _CastSheetRow extends StatelessWidget {
   const _CastSheetRow({
     required this.title,
     required this.subtitle,
+    required this.isCamera,
     required this.artAsset,
     required this.arrowAsset,
     required this.onTap,
@@ -1097,6 +1103,7 @@ class _CastSheetRow extends StatelessWidget {
 
   final String title;
   final String subtitle;
+  final bool isCamera;
   final String artAsset;
   final String arrowAsset;
   final VoidCallback onTap;
@@ -1123,10 +1130,10 @@ class _CastSheetRow extends StatelessWidget {
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
                 return Icon(
-                  title == '拍照'
+                  isCamera
                       ? Icons.photo_camera_rounded
                       : Icons.photo_library_rounded,
-                  color: title == '拍照'
+                  color: isCamera
                       ? const Color(0xFFFF6A24)
                       : const Color(0xFF287BFF),
                   size: 34,
@@ -1154,7 +1161,7 @@ class _CastSheetRow extends StatelessWidget {
               errorBuilder: (context, error, stackTrace) {
                 return Icon(
                   Icons.arrow_forward_rounded,
-                  color: title == '拍照'
+                  color: isCamera
                       ? const Color(0xFFFF6A24)
                       : const Color(0xFF287BFF),
                   size: 26,

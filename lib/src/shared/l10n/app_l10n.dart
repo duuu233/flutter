@@ -60,6 +60,34 @@ class AppL10n {
   String get cancel => _pick('取消', 'Cancel', 'キャンセル');
   String get confirm => _pick('确定', 'OK', '確定');
   String get gotIt => _pick('我知道了', 'Got it', '了解しました');
+  String get loading => _pick('加载中…', 'Loading…', '読み込み中…');
+
+  // ── 网络层兜底（ApiClient 经 ApiSession 语言取用，无 BuildContext）─────
+  String get netTimeout => _pick(
+    '网络超时，请稍后再试',
+    'Network timeout. Please try again later.',
+    'ネットワークタイムアウトです。しばらくしてから再試行してください。',
+  );
+  String get netConnectFailed => _pick(
+    '网络连接失败，请稍后再试',
+    'Network connection failed. Please try again later.',
+    'ネットワーク接続に失敗しました。しばらくしてから再試行してください。',
+  );
+  String get netSessionExpired =>
+      _pick('登录已过期', 'Session expired. Please log in again.', 'ログインの有効期限が切れました。');
+  String get netServerError =>
+      _pick('服务器异常', 'Server error. Please try again later.', 'サーバーエラーが発生しました。');
+  String get netRequestFailed =>
+      _pick('业务处理失败', 'Request failed. Please try again.', '処理に失敗しました。');
+  String get netUploadFileRequired =>
+      _pick('请选择上传文件', 'Please choose a file to upload.', 'アップロードするファイルを選択してください。');
+  String get loadFailedTitle => _pick('加载失败', 'Failed to Load', '読み込みに失敗しました');
+  String get loadFailedDesc => _pick(
+    '网络异常，请检查网络后重试',
+    'Network error. Check your connection and try again.',
+    'ネットワークエラーです。接続を確認して再試行してください。',
+  );
+  String get retry => _pick('重试', 'Retry', '再試行');
 
   // ── 底部导航 ────────────────────────────────────────────────────────────
   String get tabHome => _pick('首页', 'Home', 'ホーム');
@@ -84,6 +112,11 @@ class AppL10n {
     '检查更新失败：$error',
     'Update check failed: $error',
     '更新の確認に失敗しました：$error',
+  );
+  String get checkUpdateFailedGeneric => _pick(
+    '检查更新失败，请稍后再试',
+    'Update check failed. Please try again later.',
+    '更新の確認に失敗しました。しばらくしてから再試行してください。',
   );
   String alreadyLatest(String version) => _pick(
     '当前已是最新版本 v$version。',
@@ -146,6 +179,25 @@ class AppL10n {
     'WeChatログインはまだご利用いただけません',
   );
   String get accWechatLogin => _pick('微信授权登录', 'Sign in with WeChat', 'WeChatでログイン');
+  String get accWechatNotInstalled => _pick(
+    '请先安装微信后再使用微信授权登录。',
+    'Please install WeChat before signing in with WeChat.',
+    'WeChatをインストールしてからWeChatログインをご利用ください。',
+  );
+  String get accWechatCanceled =>
+      _pick('已取消微信授权。', 'WeChat authorization canceled.', 'WeChat認証をキャンセルしました。');
+  String get accWechatDenied =>
+      _pick('微信授权被拒绝。', 'WeChat authorization was denied.', 'WeChat認証が拒否されました。');
+  String get accWechatVersionUnsupported => _pick(
+    '当前微信版本不支持授权登录。',
+    'This WeChat version does not support sign-in.',
+    'このWeChatバージョンはログインに対応していません。',
+  );
+  String get accWechatTimeout => _pick(
+    '微信授权已超时，请重新登录。',
+    'WeChat authorization timed out. Please try again.',
+    'WeChat認証がタイムアウトしました。再度お試しください。',
+  );
   String get accWechatAuthFailed => _pick(
     '微信授权失败，请稍后重试',
     'WeChat authorization failed, please try again later',
@@ -194,6 +246,8 @@ class AppL10n {
     'パスワードが一致しません。確認用パスワードを再入力してください',
   );
   String get accRegisterButton => _pick('注 册', 'Sign Up', '登録');
+  String get accShowPassword => _pick('显示密码', 'Show password', 'パスワードを表示');
+  String get accHidePassword => _pick('隐藏密码', 'Hide password', 'パスワードを非表示');
   String get accHaveAccount => _pick('已有账户？', 'Already have an account?', 'すでにアカウントをお持ちですか？');
   String get accGoLogin => _pick(' 去登录', ' Log in', ' ログイン');
   String get accForgotPasswordTitle => _pick('忘记密码', 'Forgot Password', 'パスワードを忘れた');
@@ -203,6 +257,12 @@ class AppL10n {
     'The two passwords do not match',
     '入力した2つのパスワードが一致しません',
   );
+  // 验证码组件（注册 / 忘记密码 / 修改邮箱三条流程共用，见 FigmaVerificationField）。
+  String get accVerifyCodeLabel => _pick('验证码', 'Code', '認証コード');
+  String get accVerifyCodeHint =>
+      _pick('请输入验证码', 'Enter the code', '認証コードを入力');
+  String get accGetVerifyCode => _pick('获取验证码', 'Get Code', 'コードを取得');
+
   String get accModifyEmailTitle => _pick('修改邮箱', 'Change Email', 'メールアドレス変更');
   String get accCurrentEmail => _pick('当前邮箱', 'Current Email', '現在のメールアドレス');
   String get accNewEmail => _pick('新邮箱', 'New Email', '新しいメールアドレス');
@@ -226,6 +286,15 @@ class AppL10n {
   String get accNotBound => _pick('暂未绑定', 'Not bound', '未連携');
   String get accAvatar => _pick('头像', 'Avatar', 'アバター');
   String get accAvatarUploading => _pick('头像上传中…', 'Uploading avatar…', 'アバターをアップロード中…');
+  String get accAvatarUpdated => _pick('头像已更新', 'Avatar updated', 'アバターを更新しました');
+  String get accAvatarUpdateFailed =>
+      _pick('头像更新失败', 'Failed to update avatar', 'アバターの更新に失敗しました');
+  String get accCannotReadAlbum => _pick(
+    '无法读取相册，请检查相册权限后重试。',
+    'Cannot access the photo library. Check album permissions and try again.',
+    'アルバムを読み込めません。権限を確認して再試行してください。',
+  );
+  String get saving => _pick('保存中', 'Saving…', '保存中…');
   String get accAlbumReadFailed => _pick(
     '无法读取相册，请检查相册权限后重试。',
     'Cannot access the album. Please check album permissions and try again.',
@@ -365,6 +434,18 @@ class AppL10n {
   String get castContinue => _pick('继续投屏', 'Continue Casting', 'キャストを続ける');
   String get castRecast => _pick('重新投屏', 'Cast Again', 'もう一度キャスト');
   String get castBackHome => _pick('返回首页', 'Back to Home', 'ホームに戻る');
+
+  // ── 投屏中退出确认（PopScope 拦截）────────────────────────────────────
+  String get castExitConfirmTitle =>
+      _pick('正在投屏', 'Casting in Progress', 'キャスト中');
+  String get castExitConfirmContent => _pick(
+    '现在退出将中断本次投屏，已传输的图片可能不完整。确定要退出吗？',
+    'Leaving now will interrupt this cast and photos may be incomplete. Leave anyway?',
+    '今終了すると、このキャストが中断され、写真が不完全になる可能性があります。終了しますか？',
+  );
+  String get castExitConfirmStay => _pick('继续投屏', 'Keep Casting', 'キャストを続ける');
+  String get castExitConfirmLeave => _pick('退出', 'Leave', '終了する');
+  String get castDefaultDeviceName => _pick('相框', 'Frame', 'フォトフレーム');
   String get castManagementTitle => _pick('投屏管理', 'Cast Management', 'キャスト管理');
   String castTotalRecords(int count) =>
       _pick('共 $count 条记录', '$count records', '全 $count 件');
@@ -536,15 +617,37 @@ class AppL10n {
     'このデバイスは既に追加済みです。接続しました。',
   );
   String get bindSuccess => _pick('绑定成功', 'Bound successfully', '追加しました');
-  String bindBtUnsupported(Object error) => _pick(
-    '当前设备暂不支持蓝牙或未授权：$error',
-    'This device does not support Bluetooth or is not authorized: $error',
-    'この端末はBluetoothに対応していないか、許可されていません：$error',
+  // 注意：这三条 toast **不要**把原始异常对象插值进用户文案——
+  // MissingPluginException 之类的整段英文技术文本会出现在 2~3 秒的 toast 里，
+  // 用户读不完也看不懂。异常详情由调用方 debugPrint 进日志。
+  // ── BLE 层用户可见文案（BleController 经 languageResolver 取用）────────
+  String get bleUnavailable => _pick(
+    '蓝牙不可用：请开启蓝牙并授予“附近的设备”权限',
+    'Bluetooth unavailable: turn on Bluetooth and grant the "Nearby devices" permission.',
+    'Bluetoothを利用できません：Bluetoothをオンにし、「付近のデバイス」権限を許可してください。',
   );
-  String bindScanFailed(Object error) => _pick(
-    '扫描失败：$error',
-    'Scan failed: $error',
-    'スキャンに失敗しました：$error',
+  String get bleDeviceNotFound => _pick(
+    '未搜索到该设备，请确认设备已开机并在附近',
+    'Device not found. Make sure it is powered on and nearby.',
+    'デバイスが見つかりません。電源が入っていて近くにあることを確認してください。',
+  );
+
+  // 蓝牙信号五档（对齐小程序 rssiToSignalText：极强/强/正常/偏弱/弱）。
+  String get signalVeryStrong => _pick('极强', 'Excellent', '非常に強い');
+  String get signalStrong => _pick('强', 'Strong', '強い');
+  String get signalNormal => _pick('正常', 'Fair', '普通');
+  String get signalWeak => _pick('偏弱', 'Weak', 'やや弱い');
+  String get signalVeryWeak => _pick('弱', 'Very weak', '弱い');
+
+  String get bindBtUnsupported => _pick(
+    '当前设备暂不支持蓝牙或未授权，请检查系统蓝牙权限',
+    'This device does not support Bluetooth or is not authorized. Check system Bluetooth permissions.',
+    'この端末はBluetoothに対応していないか、許可されていません。システムのBluetooth権限を確認してください。',
+  );
+  String get bindScanFailed => _pick(
+    '扫描失败，请稍后重试',
+    'Scan failed. Please try again.',
+    'スキャンに失敗しました。再試行してください。',
   );
   String bindConnectFailed(Object error) => _pick(
     '设备连接失败：$error',
@@ -583,6 +686,8 @@ class AppL10n {
   String get devNameHint => _pick('请输入设备名称', 'Enter a device name', 'デバイス名を入力してください');
   String get devConfirm => _pick('确认', 'Confirm', '確認');
   String get devConnecting => _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
+  String get devConnectFirst =>
+      _pick('请先连接设备', 'Please connect the device first', '先にデバイスを接続してください');
   String get devDisconnecting => _pick('断开中', 'Disconnecting…', '切断中…');
   String get devPhotoReadFailed => _pick(
     '无法读取照片，请检查相机/相册权限后重试。',
@@ -713,9 +818,31 @@ class AppL10n {
     'アップグレードが中断されました：アップグレード中にスマホがバックグラウンドに移行するかページを離れました。画面を常時点灯にして再試行してください。',
   );
   String get otaUpgradeNowAction => _pick('立即升级', 'Upgrade Now', '今すぐアップグレード');
+
+  // ── OTA 升级中退出确认（PopScope 拦截）──────────────────────────────
+  String get otaExitConfirmTitle =>
+      _pick('固件升级中', 'Upgrade in Progress', 'アップグレード中');
+  String get otaExitConfirmContent => _pick(
+    '现在退出将中断固件传输，升级会失败并需要重新开始。确定要退出吗？',
+    'Leaving now will interrupt the firmware transfer; the upgrade will fail and must be restarted. Leave anyway?',
+    '今終了するとファームウェア転送が中断され、アップグレードは失敗し、最初からやり直しになります。終了しますか？',
+  );
+  String get otaExitConfirmStay => _pick('继续升级', 'Keep Upgrading', 'アップグレードを続ける');
+  String get otaExitConfirmLeave => _pick('退出', 'Leave', '終了する');
+
   String get otaRecheck => _pick('重新检查', 'Check Again', '再確認');
   String get otaDone => _pick('已完成', 'Done', '完了');
   String get otaChecking => _pick('检查中', 'Checking…', '確認中…');
+  String get otaMissingDeviceId => _pick(
+    '缺少设备ID，无法检查固件版本。',
+    'Missing device ID; cannot check the firmware version.',
+    'デバイスIDがないため、ファームウェアバージョンを確認できません。',
+  );
+  String get otaGenericFailure => _pick(
+    '升级失败，请重试',
+    'Upgrade failed. Please try again.',
+    'アップグレードに失敗しました。再試行してください。',
+  );
   String get otaCheckingFirmware => _pick(
     '正在检查固件版本...',
     'Checking firmware version…',
@@ -877,6 +1004,7 @@ class AppL10n {
   String get galConfirm => _pick('确认', 'Confirm', '確認');
   String get galDeleting => _pick('删除中', 'Deleting…', '削除中…');
   String get galRefreshing => _pick('刷新中', 'Refreshing…', '更新中…');
+  String get galRefreshScreen => _pick('刷新屏幕', 'Refresh Screen', '画面を更新');
   String get galRefreshSingleOnly => _pick(
     '刷新屏幕只能选中一张图片',
     'You can only refresh the screen with one photo selected.',

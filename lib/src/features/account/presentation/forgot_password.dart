@@ -26,12 +26,26 @@ class _ForgotPasswordState extends State<ForgotPassword> {
 
   int _countdown = 0;
   bool _submitting = false;
+  // 验证码请求在途标记：服务器响应前连点会发多封验证码邮件。
+  bool _sendingCode = false;
+  // 两次密码不一致：就地在确认密码行下方提示（原来只弹 2 秒 toast），输入即清除。
+  bool _showMismatch = false;
   Timer? _timer;
+
+  static final _emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
 
   @override
   void initState() {
     super.initState();
     _emailController = TextEditingController();
+    _passwordController.addListener(_clearMismatch);
+    _confirmPasswordController.addListener(_clearMismatch);
+  }
+
+  void _clearMismatch() {
+    if (_showMismatch && mounted) {
+      setState(() => _showMismatch = false);
+    }
   }
 
   @override
@@ -60,6 +74,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                 controller: _emailController,
                 hintText: l10n.accEmailHint,
                 keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
               ),
               const FigmaFormDivider(),
               FigmaVerificationField(
@@ -73,6 +88,8 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                 controller: _passwordController,
                 hintText: l10n.accPasswordHint,
                 obscureText: true,
+                errorText: _showMismatch ? l10n.accPasswordMismatch : null,
+                autofillHints: const [AutofillHints.newPassword],
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
@@ -80,24 +97,37 @@ class _ForgotPasswordState extends State<ForgotPassword> {
                 controller: _confirmPasswordController,
                 hintText: l10n.accConfirmPasswordHint,
                 obscureText: true,
+                errorText:
+                    _showMismatch ? l10n.accPasswordMismatchReconfirm : null,
               ),
             ],
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: l10n.accConfirmButton, onPressed: _confirm),
+      bottom: FigmaPrimaryButton(
+        label: l10n.accConfirmButton,
+        onPressed: _submitting ? null : _confirm,
+        loading: _submitting,
+      ),
     );
   }
 
   Future<void> _getCode() async {
-    if (_countdown > 0) {
+    if (_countdown > 0 || _sendingCode) {
       return;
     }
+    // 本地先校验邮箱格式，空/格式错不发请求。
+    if (!_emailPattern.hasMatch(_emailController.text.trim())) {
+      _showSnack(AppL10n.of(context).accEmailInvalid);
+      return;
+    }
+    _sendingCode = true;
     // 忘记密码（未登录）走 sendType:2。
     final feedback = await widget.state.sendEmailCode(
       email: _emailController.text,
       sendType: 2,
     );
+    _sendingCode = false;
     if (!mounted) {
       return;
     }
@@ -125,7 +155,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
       return;
     }
     if (_passwordController.text != _confirmPasswordController.text) {
-      _showSnack(AppL10n.of(context).accPasswordMismatchTwice);
+      setState(() => _showMismatch = true);
       return;
     }
     setState(() => _submitting = true);

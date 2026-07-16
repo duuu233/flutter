@@ -332,7 +332,13 @@ class MainActivity : FlutterActivity() {
                 Manifest.permission.BLUETOOTH_SCAN,
             )
         } else {
-            arrayOf(Manifest.permission.BLUETOOTH)
+            arrayOf(
+                Manifest.permission.BLUETOOTH,
+                // Android 6~11：BLE 扫描结果依赖已授权的定位权限（BLUETOOTH 只是
+                // 安装时权限）。此前从不弹定位授权，这些系统上扫描会静默返回空列表。
+                // 12+ 由 BLUETOOTH_SCAN(neverForLocation) 覆盖，无需定位。
+                Manifest.permission.ACCESS_FINE_LOCATION,
+            )
         }
     }
 

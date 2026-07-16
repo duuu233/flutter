@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
@@ -316,9 +317,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       bodyPadding: EdgeInsets.zero,
       // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
       background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
-      // 三分支互斥链（loading 优先）：接口没回来之前只显示 loading，绝不先渲染空态。
+      // 四分支互斥链（loading 优先）：接口没回来之前只显示 loading，绝不先渲染空态；
+      // 刷新失败且本地无数据 → 「加载失败 + 重试」（断网时不能误显示「还没有照片」）。
       body: !state.albumLoaded || !state.devicesLoaded
           ? const PageLoading()
+          : photos.isEmpty &&
+                (state.albumLoadError || state.devicesLoadError)
+          ? PageLoadError(onRetry: _reloadFromBackend)
           : photos.isEmpty
           ? _buildEmptyBody()
           : Column(
@@ -360,25 +365,37 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                   ),
                 ),
                 Expanded(
-                  child: GridView.builder(
-                    padding: EdgeInsets.fromLTRB(23, 0, 23, hasSelection ? 16 : 17),
-                    physics: const BouncingScrollPhysics(),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 3,
-                          mainAxisSpacing: 7,
-                          crossAxisSpacing: 7,
-                          childAspectRatio: 1,
-                        ),
-                    itemCount: photos.length,
-                    itemBuilder: (context, index) {
-                      final photo = photos[index];
-                      return _GalleryTile(
-                        photo: photo,
-                        selected: _selectedIds.contains(photo.id),
-                        onTap: () => _toggleOne(photo.id),
-                      );
-                    },
+                  // 下拉刷新：此前数据只在进页/回页时刷新，用户没有任何手动恢复手段。
+                  child: RefreshIndicator(
+                    onRefresh: _reloadFromBackend,
+                    color: const Color(0xFFEB5F1B),
+                    child: GridView.builder(
+                      padding: EdgeInsets.fromLTRB(
+                        23,
+                        0,
+                        23,
+                        hasSelection ? 16 : 17,
+                      ),
+                      physics: const BouncingScrollPhysics(
+                        parent: AlwaysScrollableScrollPhysics(),
+                      ),
+                      gridDelegate:
+                          const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            mainAxisSpacing: 7,
+                            crossAxisSpacing: 7,
+                            childAspectRatio: 1,
+                          ),
+                      itemCount: photos.length,
+                      itemBuilder: (context, index) {
+                        final photo = photos[index];
+                        return _GalleryTile(
+                          photo: photo,
+                          selected: _selectedIds.contains(photo.id),
+                          onTap: () => _toggleOne(photo.id),
+                        );
+                      },
+                    ),
                   ),
                 ),
                 if (hasSelection)
@@ -480,12 +497,17 @@ class _GalleryTile extends StatelessWidget {
             ),
             if (photo.imageUrl != null)
               Positioned.fill(
-                child: Image.network(
-                  photo.imageUrl!,
+                child: CachedNetworkImage(
+                  imageUrl: photo.imageUrl!,
                   // aspectFit：完整显示原图、保持比例不裁切不拉伸（对齐小程序 list.wxml mode=aspectFit），
                   // 留白落在下方色块渐变上；避免 cover 中心裁切与后端记录 img 比例不一致。
                   fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
+                  // 3 列网格瓦片约 120lp，按物理像素解码：原图(≤1920 长边)解码位图
+                  // ~11MB/张，一页 100 张远超 ImageCache 100MB 上限，滚动时反复
+                  // 解码+重下载；限宽后 ~30 倍内存降幅，可全量驻留缓存。
+                  memCacheWidth:
+                      (140 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  errorWidget: (context, url, error) =>
                       const SizedBox.shrink(),
                 ),
               ),
@@ -599,6 +621,7 @@ class _SelectionBar extends StatelessWidget {
             ),
             shadowColor: const Color(0xFFFF641F).withValues(alpha: 0.32),
             onTap: onRefresh,
+            label: AppL10n.of(context).galRefreshScreen,
           ),
           const SizedBox(width: 45), // gap:90rpx
           // 删除：红色渐变（.action-delete）。
@@ -613,6 +636,7 @@ class _SelectionBar extends StatelessWidget {
             ),
             shadowColor: const Color(0xFFF5322C).withValues(alpha: 0.30),
             onTap: onDelete,
+            label: AppL10n.of(context).galDeletePhotos,
           ),
           const SizedBox(width: 45),
           // 取消：深色实底、图标更小（.action-cancel）。
@@ -623,6 +647,7 @@ class _SelectionBar extends StatelessWidget {
             color: const Color(0xFF2F3033),
             shadowColor: const Color(0xFF2F3033).withValues(alpha: 0.28),
             onTap: onCancel,
+            label: AppL10n.of(context).cancel,
           ),
         ],
       ),
@@ -638,6 +663,7 @@ class _CircleAction extends StatelessWidget {
     required this.iconSize,
     required this.shadowColor,
     required this.onTap,
+    required this.label,
     this.gradient,
     this.color,
   });
@@ -647,12 +673,18 @@ class _CircleAction extends StatelessWidget {
   final double iconSize;
   final Color shadowColor;
   final VoidCallback? onTap;
+
+  /// 无障碍语义标签：纯图标按钮对读屏器不可见，必须显式标注。
+  final String label;
   final Gradient? gradient;
   final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
@@ -680,6 +712,7 @@ class _CircleAction extends StatelessWidget {
                 Icon(fallback, color: Colors.white, size: iconSize),
           ),
         ),
+      ),
       ),
     );
   }
@@ -879,7 +912,10 @@ class _GalleryEmptyState extends StatelessWidget {
             width: double.infinity,
             child: FigmaPrimaryButton(
               label: AppL10n.of(context).galCastAgain,
-              onPressed: () => Navigator.maybePop(context),
+              // 文案承诺「重新投屏」，行为就回到首页（投屏入口所在地），
+              // 而不是只 pop 回上一页（通常是「我的」，引导断裂）。
+              onPressed: () =>
+                  Navigator.of(context).popUntil((route) => route.isFirst),
             ),
           ),
         ],

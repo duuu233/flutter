@@ -232,6 +232,7 @@ class _HomeMainView extends StatelessWidget {
               child: _CastEntryCard(
                 title: AppL10n.of(context).homeCastCameraTitle,
                 subtitle: AppL10n.of(context).homeCastCameraCardSubtitle,
+                isCamera: true,
                 artAsset: 'assets/images/camera_material.png',
                 arrowAsset: 'assets/images/home-icon05.png',
                 backgroundAsset: 'assets/images/home-camera-card-bg.png',
@@ -243,6 +244,7 @@ class _HomeMainView extends StatelessWidget {
               child: _CastEntryCard(
                 title: AppL10n.of(context).homeCastAlbumTitle,
                 subtitle: AppL10n.of(context).homeCastAlbumCardSubtitle,
+                isCamera: false,
                 artAsset: 'assets/images/album_material.png',
                 arrowAsset: 'assets/images/home-icon06.png',
                 backgroundAsset: 'assets/images/home-album-card-bg.png',

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -314,7 +315,7 @@ class _HomePageState extends State<HomePage> {
       file = await ImagePicker().pickImage(source: ImageSource.gallery);
     } catch (_) {
       if (mounted) {
-        AppToast.warn(context, '头像更新失败');
+        AppToast.warn(context, AppL10n.of(context).accAvatarUpdateFailed);
       }
       return;
     }
@@ -331,9 +332,9 @@ class _HomePageState extends State<HomePage> {
     _updatingAvatar = false;
     setState(() => _pendingAvatarPath = null);
     if (feedback.success) {
-      AppToast.show(context, '头像已更新');
+      AppToast.show(context, AppL10n.of(context).accAvatarUpdated);
     } else {
-      AppToast.warn(context, '头像更新失败');
+      AppToast.warn(context, AppL10n.of(context).accAvatarUpdateFailed);
     }
   }
 

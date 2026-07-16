@@ -35,8 +35,12 @@ class _RegisterPageState extends State<RegisterPage> {
 
   bool _showMismatch = false;
   bool _submitting = false;
+  // 验证码请求在途标记：服务器响应前连点会发多封验证码邮件。
+  bool _sendingCode = false;
   int _countdown = 0;
   Timer? _timer;
+
+  static final _emailPattern = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$');
 
   @override
   void initState() {
@@ -76,14 +80,21 @@ class _RegisterPageState extends State<RegisterPage> {
       _confirmController.text.isNotEmpty;
 
   Future<void> _getCode() async {
-    if (_countdown > 0) {
+    if (_countdown > 0 || _sendingCode) {
       return;
     }
+    // 本地先校验邮箱格式，空/格式错不发请求（原来空邮箱也会打接口）。
+    if (!_emailPattern.hasMatch(_emailController.text.trim())) {
+      _showSnack(AppL10n.of(context).accEmailInvalid);
+      return;
+    }
+    _sendingCode = true;
     // sendType:1 = 注册验证码。
     final feedback = await widget.state.sendEmailCode(
       email: _emailController.text,
       sendType: 1,
     );
+    _sendingCode = false;
     if (!mounted) {
       return;
     }
@@ -156,6 +167,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 controller: _emailController,
                 hintText: l10n.accEmailAddressHint,
                 keyboardType: TextInputType.emailAddress,
+                autofillHints: const [AutofillHints.email],
               ),
               const FigmaFormDivider(),
               FigmaVerificationField(
@@ -170,6 +182,7 @@ class _RegisterPageState extends State<RegisterPage> {
                 hintText: l10n.accPasswordHint,
                 obscureText: true,
                 errorText: mismatchText,
+                autofillHints: const [AutofillHints.newPassword],
               ),
               const FigmaFormDivider(),
               FigmaAccountField(
@@ -188,7 +201,9 @@ class _RegisterPageState extends State<RegisterPage> {
         children: [
           FigmaPrimaryButton(
             label: l10n.accRegisterButton,
-            onPressed: _canSubmit ? _register : null,
+            // 提交中按钮转圈并不可点，用户能感知「正在提交」（原来只有静默防重入）。
+            onPressed: (_canSubmit && !_submitting) ? _register : null,
+            loading: _submitting,
           ),
           const SizedBox(height: 16),
           GestureDetector(

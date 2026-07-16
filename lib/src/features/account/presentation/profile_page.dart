@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -136,7 +137,7 @@ class _ProfilePageState extends State<ProfilePage> {
       file = await picker.pickImage(source: ImageSource.gallery);
     } catch (_) {
       if (mounted) {
-        AppToast.warn(context, '无法读取相册，请检查相册权限后重试。');
+        AppToast.warn(context, AppL10n.of(context).accCannotReadAlbum);
       }
       return;
     }
@@ -154,7 +155,7 @@ class _ProfilePageState extends State<ProfilePage> {
     }
     final user = widget.state.currentUser;
     setState(() => _saving = true);
-    AppLoadingDialog.show(context, '保存中');
+    AppLoadingDialog.show(context, AppL10n.of(context).saving);
     final profileFeedback = await widget.state.updateProfile(
       nickname: _nicknameController.text,
       email: user.email,
@@ -245,10 +246,14 @@ class _AvatarRow extends StatelessWidget {
                         errorBuilder: (context, error, stackTrace) =>
                             _fallback(),
                       )
-                    : Image.network(
-                        url,
+                    : CachedNetworkImage(
+                        imageUrl: url,
                         fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) =>
+                        // 32lp 圆形头像，按物理像素解码，避免原图全尺寸位图进内存。
+                        memCacheWidth:
+                            (32 * MediaQuery.devicePixelRatioOf(context))
+                                .round(),
+                        errorWidget: (context, imageUrl, error) =>
                             Image.asset(
                               'assets/images/mine-header.jpg',
                               fit: BoxFit.cover,

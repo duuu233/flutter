@@ -226,6 +226,7 @@ class _CastMethodSheet extends StatelessWidget {
               _CastSheetRow(
                 title: AppL10n.of(context).homeCastCameraTitle,
                 subtitle: AppL10n.of(context).homeCastCameraSheetSubtitle,
+                isCamera: true,
                 artAsset: 'assets/images/home-media-mini01.png',
                 arrowAsset: 'assets/images/home-camera-card-right-icon.png',
                 onTap: onCamera,
@@ -235,6 +236,7 @@ class _CastMethodSheet extends StatelessWidget {
               _CastSheetRow(
                 title: AppL10n.of(context).homeCastAlbumTitle,
                 subtitle: AppL10n.of(context).homeCastAlbumSheetSubtitle,
+                isCamera: false,
                 artAsset: 'assets/images/home-media-mini02.png',
                 arrowAsset: 'assets/images/home-album-card-right-icon.png',
                 onTap: onAlbum,

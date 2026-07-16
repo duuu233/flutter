@@ -84,6 +84,9 @@ class FrameBleClient {
   int _mtu = 23;
   bool _writeWithoutResponse = true;
   int _lastImgAck = -1; // 设备已连续接收到的最后包号
+  // 图传发送方在等 0x23 累计 ACK 时挂起的唤醒器；ACK 一到 _onNotify 即 complete。
+  // 图传协议全程串行（同一时刻只有一张图在传），单个字段即可。
+  Completer<void>? _imgAckWaiter;
 
   /// 收发监听回调（可选）。
   void Function(BleMonitorRecord record)? onMonitor;
@@ -534,6 +537,10 @@ class FrameBleClient {
         if (parsed.crcOk) {
           final seq = FrameProtocol.parseImgAck(parsed.payload);
           if (seq > _lastImgAck) _lastImgAck = seq;
+          // 事件驱动唤醒等 ACK 的发送方（见 _waitAckAdvance）：
+          // ACK 到达即刻推进，不再吃 15ms 轮询的平均 7.5ms 延迟。
+          final waiter = _imgAckWaiter;
+          if (waiter != null && !waiter.isCompleted) waiter.complete();
         }
         continue;
       }
@@ -944,12 +951,25 @@ class FrameBleClient {
     return Future<void>.delayed(Duration(microseconds: (ms * 1000).round()));
   }
 
-  /// 轮询等待 _lastImgAck 超过 minExclusive；超时返回 false。15ms 轮询足够（BLE notify 延迟级别）。
+  /// 等待 _lastImgAck 超过 minExclusive；超时返回 false。
+  ///
+  /// 事件驱动：挂一个 Completer，_onNotify 收到 0x23 ACK 时立即唤醒。
+  /// 之前用 15ms 轮询，窗口打满时每次停等平均多耗 ~7.5ms——480×720 一帧
+  /// 733 包按每窗一停估算，每张图要白等 0.5~1s。
   Future<bool> _waitAckAdvance(int minExclusive, Duration timeout) async {
     final deadline = DateTime.now().add(timeout);
     while (_lastImgAck <= minExclusive) {
-      if (DateTime.now().isAfter(deadline)) return false;
-      await Future<void>.delayed(const Duration(milliseconds: 15));
+      final remaining = deadline.difference(DateTime.now());
+      if (remaining <= Duration.zero) return false;
+      // 检查与挂载之间没有 await，单 isolate 下不会丢唤醒。
+      final waiter = _imgAckWaiter = Completer<void>();
+      try {
+        await waiter.future.timeout(remaining);
+      } on TimeoutException {
+        return _lastImgAck > minExclusive;
+      } finally {
+        if (identical(_imgAckWaiter, waiter)) _imgAckWaiter = null;
+      }
     }
     return true;
   }
