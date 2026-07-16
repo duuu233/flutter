@@ -218,7 +218,9 @@ class _AddDeviceButton extends StatelessWidget {
   }
 }
 
-/// 空态卡片（小程序 `.empty-device`）：桃色圆角图标盒 + 标题 + 说明 + 渐变「添加设备」CTA。
+/// 空态卡片（小程序 `.empty-device glass-panel`）：**全宽**玻璃面板 +
+/// 桃色圆角图标盒（内为 CSS 画法复刻的橙色「相框」图形，非图片资源）+
+/// 标题 + 说明 + 渐变「添加设备」CTA。
 class _EmptyDevices extends StatelessWidget {
   const _EmptyDevices({this.onAddDevice});
 
@@ -226,16 +228,18 @@ class _EmptyDevices extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Align(
-      alignment: Alignment.topCenter,
-      child: FigmaGlassCard(
-        borderRadius: 14,
-        child: Padding(
+    // 面板与小程序一致占满页宽（原实现 Align 收缩包裹内容，卡片只有文字那么宽）。
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FigmaGlassCard(
+          borderRadius: 14,
+          // .empty-device padding: 76rpx 36rpx = 38 / 18。
           padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 18),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 桃色圆角图标盒（.empty-device__art，56×56，bg rgba(255,106,32,0.1)，radius 15）。
+              // 桃色圆角图标盒（.empty-device__art，112rpx=56，bg rgba(255,106,32,0.1)，radius 30rpx=15）。
               Container(
                 width: 56,
                 height: 56,
@@ -244,17 +248,7 @@ class _EmptyDevices extends StatelessWidget {
                   color: const Color(0xFFFF6A20).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(15),
                 ),
-                child: Image.asset(
-                  'assets/images/device-list-icon04.png',
-                  width: 34,
-                  height: 34,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) => const Icon(
-                    Icons.photo_library_outlined,
-                    color: Color(0xFFFF6A20),
-                    size: 30,
-                  ),
-                ),
+                child: const _FrameLogoGlyph(),
               ),
               const SizedBox(height: 13),
               Text(
@@ -307,9 +301,59 @@ class _EmptyDevices extends StatelessWidget {
             ],
           ),
         ),
-      ),
+      ],
     );
   }
+}
+
+/// 复刻小程序 app.wxss `.frame-logo`：橙色描边「相框 + 底座」图形
+/// （48×40rpx 边框 + 底部 U 形小支架，纯绘制，无图片资源）。
+class _FrameLogoGlyph extends StatelessWidget {
+  const _FrameLogoGlyph();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: 24,
+      height: 27,
+      child: CustomPaint(painter: _FrameLogoPainter()),
+    );
+  }
+}
+
+class _FrameLogoPainter extends CustomPainter {
+  const _FrameLogoPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final stroke = Paint()
+      ..color = const Color(0xFFFF6A20)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
+
+    // 相框主体：24×20（rpx 值减半），2 描边、2 圆角。描边居中于路径，内缩 1。
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(1, 1, 22, 18),
+        const Radius.circular(2),
+      ),
+      stroke,
+    );
+
+    // 底座：相框下方 2 间隙处的开口朝上 U 形（.frame-logo::before，border-top: 0）。
+    const double left = 3, right = 21, top = 22, bottom = 26, radius = 2;
+    final path = Path()
+      ..moveTo(left, top)
+      ..lineTo(left, bottom - radius)
+      ..quadraticBezierTo(left, bottom, left + radius, bottom)
+      ..lineTo(right - radius, bottom)
+      ..quadraticBezierTo(right, bottom, right, bottom - radius)
+      ..lineTo(right, top);
+    canvas.drawPath(path, stroke);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 电量百分比文案（如 "80%"）→ `BatteryLevel/battery-{档}.png` 资源路径。

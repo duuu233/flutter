@@ -10,6 +10,7 @@ import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import 'bind_device_found.dart';
 import 'bind_device_not_found.dart';
@@ -29,11 +30,13 @@ class BindDeviceFlowPage extends StatefulWidget {
   State<BindDeviceFlowPage> createState() => _BindDeviceFlowPageState();
 }
 
-enum _Stage { scanning, found, notFound }
+enum _Stage { permission, scanning, found, notFound }
 
 class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   final BleController _ble = BleController.instance;
-  _Stage _stage = _Stage.scanning;
+  // 初始为「权限确认」安静占位态：系统授权框必须**先于**扫描动画单独出现，
+  // 不能压在「正在搜索」雷达页上同屏弹出（产品要求：先授权，后设备操作）。
+  _Stage _stage = _Stage.permission;
   List<ScanResult> _results = const [];
   bool _binding = false;
 
@@ -44,8 +47,9 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   }
 
   Future<void> _startScan() async {
+    // 权限阶段：页面保持只有导航栏的安静占位，等系统授权框（定位/附近设备）先行处理完。
     setState(() {
-      _stage = _Stage.scanning;
+      _stage = _Stage.permission;
       _results = const [];
     });
     // 蓝牙开启/权限校验（对齐小程序 utils/bluetooth.js openAdapter + describeAdapterError）：
@@ -69,6 +73,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       return;
     }
     if (!status.bluetoothPermissionGranted) {
+      // 用户拒绝授权：直接弹「去设置」引导框（对齐产品图3），页面落到「未发现设备」可重试。
       setState(() => _stage = _Stage.notFound);
       final l10n = AppL10n.of(context);
       await _showBluetoothGuide(
@@ -90,6 +95,8 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       );
       return;
     }
+    // 权限/开关全就绪，才切入「正在搜索」态开始设备操作（雷达动画 + BLE 扫描同时开始）。
+    setState(() => _stage = _Stage.scanning);
     // 扫描：对齐小程序 bind.js —— 白名单只留目标相框（2 个尺寸），12s 窗口给「同时 2 台及以上」
     // 每台足够广播机会被搜到。与小程序 bind.wxml 一致：整段扫描期间保持「正在搜索」页
     //（列表由 `!scanning && devices.length` 门控），扫描结束后才一次性展示搜到的设备列表。
@@ -305,6 +312,14 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   @override
   Widget build(BuildContext context) {
     switch (_stage) {
+      case _Stage.permission:
+        // 权限确认中的安静占位页：只有导航栏与背景，系统授权框单独呈现，
+        // 不与「正在搜索」的雷达动画同屏。
+        return FigmaScreen(
+          title: AppL10n.of(context).bindDeviceTitle,
+          scrollable: false,
+          body: const SizedBox.expand(),
+        );
       case _Stage.scanning:
         return BindDeviceSearching(onCancel: () => Navigator.maybePop(context));
       case _Stage.notFound:

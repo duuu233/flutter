@@ -1,17 +1,24 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
+import 'auth_widgets.dart';
 
-/// 创建账户 / 注册页，对应 UI 稿「创建账户-未输入 / 已输入可注册 / 密码不一致」。
+/// 创建账户 / 注册页（一级业务界面）。
 ///
-/// 三种状态由用户输入自然驱动：未填写时主按钮置灰，填写后变为可点击，
-/// 点击时若两次密码不一致则在密码、确认密码下方提示。
+/// 与登录页共用同一套视觉（`auth_widgets.dart`）：同一张全屏背景、LOGO、
+/// 胶囊输入框、渐变主按钮与协议确认行；**不**再与修改/忘记密码页共用表单卡样式。
+///
+/// 校验时机与登录页一致：点「注册」时统一判断并在对应输入框下方就地提示，
+/// 重新输入即清除提示；键盘「完成」只收起键盘，不触发校验。
+/// 注册同样要求勾选协议（对齐登录页的协议确认）。
 class RegisterPage extends StatefulWidget {
   const RegisterPage({
     super.key,
@@ -34,9 +41,17 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _passwordController = TextEditingController();
   final TextEditingController _confirmController = TextEditingController();
 
-  bool _showMismatch = false;
+  bool _passwordVisible = false;
+  bool _confirmVisible = false;
+  bool _agreed = false;
+
+  // 各字段独立的校验错误：点「注册」时统一判定，重新输入即清除对应项。
+  bool _emailError = false;
+  bool _codeError = false;
   // 密码不符合规则（6-12 位且同时含数字与英文字母），就地在密码行下方提示。
-  bool _showRuleError = false;
+  bool _ruleError = false;
+  bool _mismatchError = false;
+
   bool _submitting = false;
   // 验证码请求在途标记：服务器响应前连点会发多封验证码邮件。
   bool _sendingCode = false;
@@ -52,14 +67,30 @@ class _RegisterPageState extends State<RegisterPage> {
   @override
   void initState() {
     super.initState();
-    for (final controller in [
-      _emailController,
-      _codeController,
-      _passwordController,
-      _confirmController,
-    ]) {
-      controller.addListener(_onChanged);
-    }
+    // 输入即清除对应字段的错误提示（与登录页一致；仅在有提示挂着时才重建）。
+    _emailController.addListener(() {
+      if (_emailError && mounted) {
+        setState(() => _emailError = false);
+      }
+    });
+    _codeController.addListener(() {
+      if (_codeError && mounted) {
+        setState(() => _codeError = false);
+      }
+    });
+    _passwordController.addListener(() {
+      if ((_ruleError || _mismatchError) && mounted) {
+        setState(() {
+          _ruleError = false;
+          _mismatchError = false;
+        });
+      }
+    });
+    _confirmController.addListener(() {
+      if (_mismatchError && mounted) {
+        setState(() => _mismatchError = false);
+      }
+    });
   }
 
   @override
@@ -72,30 +103,13 @@ class _RegisterPageState extends State<RegisterPage> {
     super.dispose();
   }
 
-  void _onChanged() {
-    if (_showMismatch || _showRuleError) {
-      setState(() {
-        _showMismatch = false;
-        _showRuleError = false;
-      });
-    } else {
-      setState(() {});
-    }
-  }
-
-  bool get _canSubmit =>
-      _emailController.text.trim().isNotEmpty &&
-      _codeController.text.trim().isNotEmpty &&
-      _passwordController.text.isNotEmpty &&
-      _confirmController.text.isNotEmpty;
-
   Future<void> _getCode() async {
     if (_countdown > 0 || _sendingCode) {
       return;
     }
     // 本地先校验邮箱格式，空/格式错不发请求（原来空邮箱也会打接口）。
     if (!_emailPattern.hasMatch(_emailController.text.trim())) {
-      _showSnack(AppL10n.of(context).accEmailInvalid);
+      setState(() => _emailError = true);
       return;
     }
     _sendingCode = true;
@@ -142,12 +156,24 @@ class _RegisterPageState extends State<RegisterPage> {
     if (_submitting) {
       return;
     }
-    if (!_passwordPattern.hasMatch(_passwordController.text)) {
-      setState(() => _showRuleError = true);
+    // 同登录页：点注册先收起键盘，再校验/弹提示。
+    FocusManager.instance.primaryFocus?.unfocus();
+    final emailValid = _emailPattern.hasMatch(_emailController.text.trim());
+    final codeFilled = _codeController.text.trim().isNotEmpty;
+    final ruleOk = _passwordPattern.hasMatch(_passwordController.text);
+    final confirmOk = _passwordController.text == _confirmController.text;
+    if (!emailValid || !codeFilled || !ruleOk || !confirmOk) {
+      setState(() {
+        _emailError = !emailValid;
+        _codeError = !codeFilled;
+        _ruleError = !ruleOk;
+        // 密码本身不合规时先只提示规则错误，规则过了再比对两次一致性。
+        _mismatchError = ruleOk && !confirmOk;
+      });
       return;
     }
-    if (_passwordController.text != _confirmController.text) {
-      setState(() => _showMismatch = true);
+    if (!_agreed) {
+      _showSnack(AppL10n.of(context).accAgreementRequired);
       return;
     }
     setState(() => _submitting = true);
@@ -173,90 +199,260 @@ class _RegisterPageState extends State<RegisterPage> {
     AppToast.show(context, message);
   }
 
+  void _openUserAgreement() {
+    Navigator.of(context).pushNamed<void>(AppRoutes.figmaUserAgreement);
+  }
+
+  void _openPrivacyPolicy() {
+    Navigator.of(context).pushNamed<void>(AppRoutes.figmaPrivacyPolicy);
+  }
+
   @override
   Widget build(BuildContext context) {
-    final l10n = AppL10n.of(context);
-    // 密码行错误优先级：规则不符 > 两次不一致。
-    final passwordErrorText = _showRuleError
-        ? l10n.accPasswordRuleError
-        : (_showMismatch ? l10n.accPasswordMismatch : null);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: SystemUiOverlayStyle.dark.copyWith(
+        statusBarColor: Colors.transparent,
+        systemNavigationBarColor: Colors.white,
+      ),
+      child: Scaffold(
+        // 同登录页：键盘弹起时压缩视口并允许滚动，小屏上注册按钮不被键盘盖住。
+        resizeToAvoidBottomInset: true,
+        backgroundColor: const Color(0xFFF7FAFF),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const AuthBackground(),
+            SafeArea(
+              child: LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 26),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
+                    ),
+                    child: IntrinsicHeight(child: _buildColumn(context)),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-    return FigmaScreen(
-      title: l10n.accCreateAccount,
-      onBack: widget.onBackToLogin,
-      body: Column(
+  Widget _buildColumn(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    return AutofillGroup(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          const SizedBox(height: 4),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: FigmaBackButton(
+              onTap:
+                  widget.onBackToLogin ?? () => Navigator.maybePop(context),
+            ),
+          ),
+          const Spacer(flex: 2),
+          // LOGO + 标题（同登录页的标题组风格）。
+          const BoltStarWordmark(),
+          const SizedBox(height: 14),
+          Text(l10n.accCreateAccount, style: AuthTextStyles.title),
           const SizedBox(height: 12),
-          FigmaAccountFormCard(
-            children: [
-              FigmaAccountField(
-                label: l10n.accEmail,
-                controller: _emailController,
-                hintText: l10n.accEmailAddressHint,
-                keyboardType: TextInputType.emailAddress,
-                autofillHints: const [AutofillHints.email],
+          Text(l10n.accRegisterSubtitle, style: AuthTextStyles.subtitle),
+          const SizedBox(height: 30),
+          // 邮箱。
+          SizedBox(
+            height: 56,
+            child: AuthPillTextField(
+              controller: _emailController,
+              hintText: l10n.accEmailAddressHint,
+              icon: Image.asset(
+                'assets/images/email_icon.png',
+                width: 24,
+                height: 24,
               ),
-              const FigmaFormDivider(),
-              FigmaVerificationField(
-                controller: _codeController,
-                onGetCode: _getCode,
-                countdownLabel: _countdown > 0 ? l10n.accResendIn(_countdown) : null,
-              ),
-              const FigmaFormDivider(),
-              FigmaAccountField(
-                label: l10n.accPassword,
-                controller: _passwordController,
-                // 密码规则占位提示（6-12位数字+英文），登录页不展示。
-                hintText: l10n.accPasswordRuleHint,
-                obscureText: true,
-                errorText: passwordErrorText,
-                autofillHints: const [AutofillHints.newPassword],
-              ),
-              const FigmaFormDivider(),
-              FigmaAccountField(
-                label: l10n.accConfirmPassword,
-                controller: _confirmController,
-                hintText: l10n.accConfirmPasswordHint,
-                obscureText: true,
-                errorText: _showMismatch ? l10n.accPasswordMismatchReconfirm : null,
-              ),
-            ],
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              showError: _emailError,
+              autofillHints: const [AutofillHints.email],
+            ),
           ),
-        ],
-      ),
-      bottom: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FigmaPrimaryButton(
-            label: l10n.accRegisterButton,
-            // 提交中按钮转圈并不可点，用户能感知「正在提交」（原来只有静默防重入）。
-            onPressed: (_canSubmit && !_submitting) ? _register : null,
-            loading: _submitting,
-          ),
+          if (_emailError)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 23),
+              child: AuthErrorText(text: l10n.accEmailInvalid),
+            ),
           const SizedBox(height: 16),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onBackToLogin ?? () => Navigator.maybePop(context),
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: l10n.accHaveAccount),
-                  TextSpan(
-                    text: l10n.accGoLogin,
-                    style: const TextStyle(color: Color(0xFFFF5B1F)),
-                  ),
-                ],
+          // 验证码 + 获取验证码。
+          SizedBox(
+            height: 56,
+            child: AuthPillTextField(
+              controller: _codeController,
+              hintText: l10n.accVerifyCodeHint,
+              // 无验证码切图资源，用同色系图标保持与左侧图标一致的视觉份量。
+              icon: const Icon(
+                Icons.verified_user_outlined,
+                size: 24,
+                color: Color(0xFF8C9092),
               ),
-              style: const TextStyle(
-                color: Color(0x992A2B2B),
-                fontSize: 14,
-                fontWeight: FontWeight.w400,
-                height: 1.2,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.next,
+              showError: _codeError,
+              trailing: _CodeButton(
+                label: _countdown > 0
+                    ? l10n.accResendIn(_countdown)
+                    : l10n.accGetVerifyCode,
+                enabled: _countdown <= 0 && !_sendingCode,
+                onTap: _getCode,
               ),
             ),
           ),
+          if (_codeError)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 23),
+              child: AuthErrorText(text: l10n.accVerifyCodeHint),
+            ),
+          const SizedBox(height: 16),
+          // 密码（占位提示密码规则：6-12位数字+英文）。
+          SizedBox(
+            height: 56,
+            child: AuthPillTextField(
+              controller: _passwordController,
+              hintText: l10n.accPasswordRuleHint,
+              icon: Image.asset(
+                'assets/images/password_icon.png',
+                width: 24,
+                height: 24,
+              ),
+              keyboardType: TextInputType.visiblePassword,
+              textInputAction: TextInputAction.next,
+              obscureText: !_passwordVisible,
+              showError: _ruleError,
+              autofillHints: const [AutofillHints.newPassword],
+              trailing: AuthEyeButton(
+                visible: _passwordVisible,
+                onPressed: () =>
+                    setState(() => _passwordVisible = !_passwordVisible),
+                showTooltip: l10n.accShowPassword,
+                hideTooltip: l10n.accHidePassword,
+              ),
+            ),
+          ),
+          if (_ruleError)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 23),
+              child: AuthErrorText(text: l10n.accPasswordRuleError),
+            ),
+          const SizedBox(height: 16),
+          // 确认密码。
+          SizedBox(
+            height: 56,
+            child: AuthPillTextField(
+              controller: _confirmController,
+              hintText: l10n.accConfirmPasswordHint,
+              icon: Image.asset(
+                'assets/images/password_icon.png',
+                width: 24,
+                height: 24,
+              ),
+              keyboardType: TextInputType.visiblePassword,
+              // 键盘「完成」只收起键盘，不触发校验（同登录页）。
+              textInputAction: TextInputAction.done,
+              obscureText: !_confirmVisible,
+              showError: _mismatchError,
+              trailing: AuthEyeButton(
+                visible: _confirmVisible,
+                onPressed: () =>
+                    setState(() => _confirmVisible = !_confirmVisible),
+                showTooltip: l10n.accShowPassword,
+                hideTooltip: l10n.accHidePassword,
+              ),
+            ),
+          ),
+          if (_mismatchError)
+            Padding(
+              padding: const EdgeInsets.only(top: 8, left: 23),
+              child: AuthErrorText(text: l10n.accPasswordMismatchReconfirm),
+            ),
+          const SizedBox(height: 28),
+          SizedBox(
+            height: 56,
+            child: AuthPrimaryButton(
+              label: l10n.accRegisterButton,
+              onPressed: _submitting ? null : _register,
+              loading: _submitting,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Center(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onBackToLogin ?? () => Navigator.maybePop(context),
+              child: Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(text: l10n.accHaveAccount),
+                    TextSpan(
+                      text: l10n.accGoLogin,
+                      style: const TextStyle(color: Color(0xFFFF5B1F)),
+                    ),
+                  ],
+                ),
+                style: AuthTextStyles.register,
+              ),
+            ),
+          ),
+          const Spacer(flex: 3),
+          Center(
+            child: AuthAgreementRow(
+              agreed: _agreed,
+              onChanged: () => setState(() => _agreed = !_agreed),
+              onUserAgreement: _openUserAgreement,
+              onPrivacyPolicy: _openPrivacyPolicy,
+              prefixText: l10n.accAgreementPrefix,
+              userAgreementText: l10n.accUserAgreementLink,
+              andText: l10n.accAnd,
+              privacyPolicyText: l10n.accPrivacyPolicyLink,
+            ),
+          ),
+          const SizedBox(height: 16),
         ],
+      ),
+    );
+  }
+}
+
+/// 验证码行尾部的「获取验证码 / 60s后重发」文字按钮：橙字可点，倒计时置灰。
+class _CodeButton extends StatelessWidget {
+  const _CodeButton({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: enabled ? onTap : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: enabled ? const Color(0xFFFF5F1F) : const Color(0x992A2B2B),
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            height: 1.2,
+          ),
+        ),
       ),
     );
   }

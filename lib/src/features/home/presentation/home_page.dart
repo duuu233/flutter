@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../shared/l10n/app_l10n.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/permission_gate.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../state.dart';
@@ -310,6 +311,10 @@ class _HomePageState extends State<HomePage> {
     if (_updatingAvatar) {
       return;
     }
+    // 进相册前先过照片权限（拒绝弹「去设置」引导并中止）。
+    if (!await PermissionGate.ensurePhotoAccess(context) || !mounted) {
+      return;
+    }
     XFile? file;
     try {
       file = await ImagePicker().pickImage(source: ImageSource.gallery);
@@ -398,7 +403,7 @@ class _HomePageState extends State<HomePage> {
       // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
       imagePaths = (source == ImageSourceType.camera)
           ? await CastPhotoPicker.takePhoto()
-          : await CastPhotoPicker.pickFromAlbum();
+          : await CastPhotoPicker.pickFromAlbum(context);
     } catch (_) {
       if (mounted) {
         _showFeedback(AppL10n.of(context).homeReadPhotoFailed);
@@ -437,6 +442,11 @@ class _HomePageState extends State<HomePage> {
   /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），
   /// 连上返回 true；失败弹提示并返回 false。供投屏入口在未连接时自动重连。
   Future<bool> _ensureConnected(String deviceId) async {
+    // 先单独走授权框（蓝牙/附近设备，部分系统为定位），全就绪才弹「连接中」loading——
+    // 授权框不与设备操作同屏出现；拒绝时 ensureBleReady 内部已弹「去设置」引导。
+    if (!await PermissionGate.ensureBleReady(context) || !mounted) {
+      return false;
+    }
     AppLoadingDialog.show(context, AppL10n.of(context).homeConnectingDevice);
     final feedback = await widget.state.connectDevice(deviceId);
     if (!mounted) {
