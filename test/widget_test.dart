@@ -13,4 +13,19 @@ void main() {
     expect(find.text('登 录'), findsOneWidget);
     expect(find.bySemanticsLabel('微信授权登录'), findsOneWidget);
   });
+
+  testWidgets('app restores a persisted session and renders home safely', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({
+      'boltstar.userToken': 'widget-test-token',
+    });
+
+    await tester.pumpWidget(const BoltStarApp());
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    expect(find.text('首页'), findsWidgets);
+    expect(tester.takeException(), isNull);
+  });
 }

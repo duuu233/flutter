@@ -67,12 +67,22 @@ class MainActivity : FlutterActivity() {
             }
             // BLE 连接保活前台服务：与连接同生命周期，见 BleConnectionService。
             "startConnectionService" -> {
-                BleConnectionService.start(
+                val started = BleConnectionService.start(
                     this,
                     call.argument<String>("title") ?: "BoltStar",
                     call.argument<String>("text") ?: "正在保持相框连接",
                 )
-                result.success(null)
+                if (started) {
+                    result.success(null)
+                } else {
+                    // Dart 侧把保活当 best-effort 并会吞掉此 PlatformException；
+                    // 关键是异常不能越过 MethodChannel 杀掉 Android 主进程。
+                    result.error(
+                        "foreground_service_start_failed",
+                        "Unable to start BLE keep-alive service.",
+                        null,
+                    )
+                }
             }
             "stopConnectionService" -> {
                 BleConnectionService.stop(this)

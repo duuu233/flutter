@@ -936,9 +936,20 @@ class PhotoFrameState extends ChangeNotifier {
         password: password,
       );
       final token = _readToken(data);
-      if (token != null && token.isNotEmpty) {
-        ApiSession.instance.setToken(token);
+      // 登录成功必须同时拿到会话凭证。原来 token 缺失时仍把本地状态切成
+      // “已登录”，首页随即并发请求设备列表并收到 401/406，再触发回登录页与
+      // BLE 清理；在真机上表现为刚进首页就退出/崩溃。与微信登录保持同一门槛。
+      if (token == null || token.isEmpty) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '登录响应缺少登录凭证，请稍后重试。',
+            en: 'The login response did not contain a session token.',
+            ja: 'ログイン応答にセッショントークンがありません。',
+          ),
+        );
       }
+      ApiSession.instance.setToken(token);
       _isLoggedIn = true;
       _currentUser.email = target;
       // 登录响应就是完整的用户信息（swagger: `UserInfoDetailApiOut` = UserInfoApiOut + userToken，

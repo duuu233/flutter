@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.util.Log
 
 /**
  * BLE 连接保活前台服务。
@@ -28,17 +29,29 @@ class BleConnectionService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val title = intent?.getStringExtra(EXTRA_TITLE) ?: "BoltStar"
-        val text = intent?.getStringExtra(EXTRA_TEXT) ?: "正在保持相框连接"
-        val notification = buildNotification(title, text)
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(
-                NOTIFICATION_ID,
-                notification,
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
-            )
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        try {
+            val title = intent?.getStringExtra(EXTRA_TITLE) ?: "BoltStar"
+            val text = intent?.getStringExtra(EXTRA_TEXT) ?: "正在保持相框连接"
+            val notification = buildNotification(title, text)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification,
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
+                )
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (error: RuntimeException) {
+            // Android 12+ may reject a foreground-service start during a
+            // lifecycle race; Android 14+ also throws when a connected-device
+            // prerequisite is not currently met. An exception escaping this
+            // callback terminates the whole app process, so fail closed: the
+            // BLE link can keep working while the app is visible, only the
+            // optional background keep-alive is skipped.
+            Log.e(TAG, "Unable to promote BLE keep-alive service", error)
+            stopSelf(startId)
+            return START_NOT_STICKY
         }
         // 连接断开即由 Dart 侧显式 stop；进程被杀后无连接可保，不自我复活。
         return START_NOT_STICKY
@@ -63,7 +76,11 @@ class BleConnectionService : Service() {
         return builder
             .setContentTitle(title)
             .setContentText(text)
-            .setSmallIcon(applicationInfo.icon)
+            // Notification small icons must be monochrome status-bar
+            // drawables. The adaptive launcher icon is not a valid substitute
+            // on every Android skin and can make startForeground reject the
+            // notification.
+            .setSmallIcon(R.drawable.ic_stat_bluetooth)
             .setContentIntent(contentIntent)
             .setOngoing(true)
             .build()
@@ -88,18 +105,29 @@ class BleConnectionService : Service() {
         private const val NOTIFICATION_ID = 4301
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_TEXT = "text"
+        private const val TAG = "BleConnectionService"
 
-        fun start(context: Context, title: String, text: String) {
+        fun start(context: Context, title: String, text: String): Boolean {
             val intent = Intent(context, BleConnectionService::class.java)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_TEXT, text)
             // 调用点在 Activity 前台期间（连接只可能发生在前台），普通 startService
             // 会因目标 O+ 的后台服务限制抛 IllegalStateException 于极端时序，
             // 统一走 startForegroundService 最稳。
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                context.startForegroundService(intent)
-            } else {
-                context.startService(intent)
+            return try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    context.startForegroundService(intent)
+                } else {
+                    context.startService(intent)
+                }
+                true
+            } catch (error: RuntimeException) {
+                // ForegroundServiceStartNotAllowedException and
+                // SecurityException are RuntimeExceptions. Keep them on the
+                // platform side instead of letting MethodChannel dispatch kill
+                // the Activity/main process.
+                Log.e(TAG, "Unable to start BLE keep-alive service", error)
+                false
             }
         }
 
