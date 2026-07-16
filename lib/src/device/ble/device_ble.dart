@@ -88,6 +88,14 @@ class FrameBleClient {
   /// 收发监听回调（可选）。
   void Function(BleMonitorRecord record)? onMonitor;
 
+  /// Session-lifecycle observers owned by [BleController]. They only expose
+  /// transport activity; they do not change scan/connect/reconnect behavior.
+  void Function()? onActivity;
+  void Function(bool connected)? onLinkStateChanged;
+  void Function(bool active)? onTransferSessionChanged;
+
+  int _transferSessionDepth = 0;
+
   // 物理链路是否存活：连接成功置 true，收到断开事件/主动断开置 false。
   // 若只看 _device/_writeChar 非空，设备侧断开（重启/超距/后台被系统挂起）后 connected
   // 仍会谎报 true——上层会复用这条死会话导致写失败/超时（对齐小程序「连接体检」治理的问题）。
@@ -219,9 +227,11 @@ class FrameBleClient {
       if (state == BluetoothConnectionState.disconnected) {
         _linkAlive = false;
         _failAllPending('连接已断开');
+        onLinkStateChanged?.call(false);
       }
     });
     _linkAlive = true;
+    onLinkStateChanged?.call(true);
 
     // 协商 MTU：Android 顶到 512；iOS 由系统协商，读 mtuNow。
     if (Platform.isAndroid) {
@@ -271,6 +281,7 @@ class FrameBleClient {
 
   Future<void> disconnect() async {
     _linkAlive = false;
+    _finishAllTransferSessions();
     await _notifySub?.cancel();
     _notifySub = null;
     await _connSub?.cancel();
@@ -423,16 +434,48 @@ class FrameBleClient {
   /// requestPowerSaveConnection —— 批量投屏时每两张之间链路都会掉回 LOW_POWER
   /// （安卓约 100~125ms 间隔），下一张开头还要在这个慢间隔上重新协商回高优先级，
   /// 白白拖慢每一张的前半段。现在把「设快 / 恢复省电」提到整批的首尾各一次。
-  Future<void> beginTransferSession() =>
-      optimizeConnectionIntervalForTransfer();
+  Future<void> beginTransferSession() async {
+    _transferSessionDepth++;
+    if (_transferSessionDepth == 1) {
+      onTransferSessionChanged?.call(true);
+    }
+    try {
+      await optimizeConnectionIntervalForTransfer();
+    } catch (_) {
+      _finishTransferSession();
+      rethrow;
+    }
+  }
 
   /// 图传会话结束：恢复省电长间隔。
   /// 两条一起做：① Android 系统侧优先级回落 LOW_POWER；② 下发 0x13 把连接间隔回落到空闲档(100ms)。
   /// 注意：批量投屏(manageConnection=false)时最后一张会异步刷屏(0x24)，调用方须等刷屏跑完再调本方法，
   /// 否则 0x13 会撞上设备忙(0x0B)白白失败（见 projection_service 收尾对 lastRefresh 的链式处理）。
   Future<void> endTransferSession() async {
-    await requestPowerSaveConnection();
-    await applyIdleConnectionInterval();
+    try {
+      await requestPowerSaveConnection();
+      await applyIdleConnectionInterval();
+    } finally {
+      _finishTransferSession();
+    }
+  }
+
+  void _finishTransferSession() {
+    if (_transferSessionDepth == 0) {
+      return;
+    }
+    _transferSessionDepth--;
+    if (_transferSessionDepth == 0) {
+      onTransferSessionChanged?.call(false);
+    }
+  }
+
+  void _finishAllTransferSessions() {
+    if (_transferSessionDepth == 0) {
+      return;
+    }
+    _transferSessionDepth = 0;
+    onTransferSessionChanged?.call(false);
   }
 
   // ── 通知接收 / 解帧派发 ───────────────────────────────────
@@ -554,6 +597,7 @@ class FrameBleClient {
 
     final frame = FrameProtocol.buildFrame(cmd, payload);
     _report('TX', cmd, frame);
+    onActivity?.call();
     try {
       await chr.write(frame, withoutResponse: _writeWithoutResponse);
     } catch (e) {

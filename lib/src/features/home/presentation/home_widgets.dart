@@ -605,11 +605,11 @@ class _ConnectedDeviceCard extends StatelessWidget {
             fit: BoxFit.cover,
           ),
           boxShadow: const [
-            BoxShadow(
-              color: Color.fromRGBO(60, 53, 16, 0.12),
-              blurRadius: 16,
-              offset: Offset(0, 4),
-            ),
+            // BoxShadow(
+            //   color: Color.fromRGBO(60, 53, 16, 0.12),
+            //   blurRadius: 16,
+            //   offset: Offset(0, 4),
+            // ),
           ],
         ),
         child: Padding(

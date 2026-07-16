@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../device/ble_controller.dart';
@@ -22,6 +24,7 @@ class BoltStarApp extends StatefulWidget {
 
 class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   final PhotoFrameState _state = PhotoFrameState.seeded();
+  final BleController _ble = BleController.instance;
   int _currentIndex = 0;
 
   /// 冷启动闪屏：先展示一小段时间的启动页（LOGO + 背景图），再切到业务首页。
@@ -39,6 +42,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _state.addListener(_handleAuthChanged);
+    _ble.addListener(_handleBleStateChanged);
     // 冷启动闪屏：到时后切走。语言等异步初始化在这段时间内并行完成。
     Future.delayed(_splashDuration, () {
       if (mounted) {
@@ -56,9 +60,15 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   @override
   void dispose() {
     _state.removeListener(_handleAuthChanged);
+    _ble.removeListener(_handleBleStateChanged);
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_ble.disconnect());
     _state.dispose();
     super.dispose();
+  }
+
+  void _handleBleStateChanged() {
+    _state.reconcileConnectionFlags();
   }
 
   /// 掉登录态时把导航栈弹回根路由，让强制登录门控真正生效。
@@ -85,13 +95,27 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   // 不主动重连——连接保持「按需手动」（用户点「连接」按钮时才连）。冷启动/无连接时零开销。
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) {
-      return;
+    switch (state) {
+      case AppLifecycleState.resumed:
+        unawaited(_resumeBleSession());
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+        unawaited(_ble.setAppInBackground(true));
+      case AppLifecycleState.detached:
+        unawaited(_ble.disconnect());
+      case AppLifecycleState.inactive:
+        // Transient interruptions (permission sheets, app switcher, native
+        // picker/cropper transitions) must not immediately release BLE.
+        break;
     }
-    BleController.instance
-        .reconcileConnections()
-        .then((_) => _state.reconcileConnectionFlags())
-        .catchError((_) {});
+  }
+
+  Future<void> _resumeBleSession() async {
+    try {
+      await _ble.setAppInBackground(false);
+      await _ble.reconcileConnections();
+      _state.reconcileConnectionFlags();
+    } catch (_) {}
   }
 
   @override

@@ -6,6 +6,7 @@ import '../network/boltfox_api.dart';
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
 import 'ble/ota_ble.dart';
+import 'ble_connection_lease.dart';
 import 'device_interaction_trace.dart';
 import 'serial_match.dart';
 
@@ -18,11 +19,22 @@ import 'serial_match.dart';
 /// 权限 → 扫描 → 连接 → 读设备信息 → 图传。UI 页面只读这里的状态并触发动作，
 /// 不直接持有 [FrameBleClient]。
 class BleController extends ChangeNotifier {
-  BleController._();
+  BleController._() {
+    _connectionLease = BleConnectionLease(
+      isConnected: () => connected,
+      isBusy: () => _hasActiveTask,
+      disconnect: disconnect,
+    );
+    _client.onActivity = _connectionLease.noteActivity;
+    _client.onLinkStateChanged = _handleLinkStateChanged;
+    _client.onTransferSessionChanged = _handleTransferSessionChanged;
+  }
 
   static final BleController instance = BleController._();
 
   final FrameBleClient _client = FrameBleClient();
+  late final BleConnectionLease _connectionLease;
+  bool _transferInProgress = false;
 
   FrameBleClient get client => _client;
 
@@ -47,6 +59,45 @@ class BleController extends ChangeNotifier {
   String uploadStatus = '';
 
   bool get connected => _client.connected;
+
+  bool get _hasActiveTask => connecting || _transferInProgress || otaInProgress;
+
+  /// Applies only the outer session lease. Scan, connect, reconnect, MTU,
+  /// connection interval, and protocol behavior remain owned by FrameBleClient.
+  Future<void> setAppInBackground(bool value) =>
+      _connectionLease.setInBackground(value);
+
+  void _handleLinkStateChanged(bool alive) {
+    if (alive) {
+      _connectionLease.noteActivity();
+      return;
+    }
+    _transferInProgress = false;
+    _connectionLease.linkEnded();
+    _clearConnectionState();
+    notifyListeners();
+  }
+
+  void _handleTransferSessionChanged(bool active) {
+    _transferInProgress = active;
+    uploading = active;
+    if (active) {
+      _connectionLease.taskStarted();
+    } else {
+      _connectionLease.taskFinished();
+    }
+    notifyListeners();
+  }
+
+  void _clearConnectionState() {
+    info = null;
+    deviceName = '';
+    broadcastDeviceId = '';
+    broadcastScreenType = 0;
+    uploading = false;
+    uploadPercent = 0;
+    uploadStatus = '';
+  }
 
   /// 当前会话登记的序列号（广播 4 字节 + 固件 6 字节，可能只有其一）。
   List<String> get sessionSerials => [
@@ -258,6 +309,7 @@ class BleController extends ChangeNotifier {
   Future<String?> connect(ScanResult result) async {
     final trace = DeviceInteractionTrace('connect-device');
     connecting = true;
+    _connectionLease.taskStarted();
     deviceName = displayName(result);
     // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
     broadcastDeviceId = advertisingOf(result)?.deviceId ?? '';
@@ -288,6 +340,7 @@ class BleController extends ChangeNotifier {
       return error.toString();
     } finally {
       connecting = false;
+      _connectionLease.taskFinished(afterTransfer: false);
       notifyListeners();
     }
   }
@@ -301,14 +354,10 @@ class BleController extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    _connectionLease.linkEnded();
     await _client.disconnect();
-    info = null;
-    deviceName = '';
-    broadcastDeviceId = '';
-    broadcastScreenType = 0;
-    uploading = false;
-    uploadPercent = 0;
-    uploadStatus = '';
+    _transferInProgress = false;
+    _clearConnectionState();
     notifyListeners();
   }
 
@@ -324,6 +373,7 @@ class BleController extends ChangeNotifier {
   }) async {
     final trace = DeviceInteractionTrace('connect-bound-device');
     if (sessionMatchesSerial(serial, screenCode: screenCode)) {
+      _connectionLease.noteActivity();
       trace.mark('reuse-active-session');
       trace.finish(success: true);
       return null;
@@ -425,6 +475,7 @@ class BleController extends ChangeNotifier {
 
     final ota = FrameOtaClient(dev)..onMonitor = onMonitor;
     otaInProgress = true;
+    _connectionLease.taskStarted();
     notifyListeners();
     try {
       return await ota.upgradeFirmware(
@@ -437,6 +488,7 @@ class BleController extends ChangeNotifier {
       // 只取消 OTA 自身的 FF11 通知订阅；物理连接由 _client 持有（升级后设备多半已重启断开）。
       await ota.disconnect();
       otaInProgress = false;
+      _connectionLease.taskFinished();
       notifyListeners();
     }
   }

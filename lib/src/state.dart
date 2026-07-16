@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'device/ble_controller.dart';
@@ -2496,6 +2498,12 @@ class PhotoFrameState extends ChangeNotifier {
   /// 接口失败也照常清除本地态，保证用户能回到登录页。
   Future<void> logout() async {
     try {
+      await BleController.instance.disconnect();
+    } catch (_) {
+      // Local account cleanup must continue even if the platform BLE stack is
+      // already unavailable.
+    }
+    try {
       await BoltFoxApi.loginOut();
     } catch (_) {
       // 退出登录接口失败时仍清除本地态。
@@ -2524,6 +2532,11 @@ class PhotoFrameState extends ChangeNotifier {
       await BoltFoxApi.userOff();
     } catch (error) {
       return _apiFailure(error);
+    }
+    try {
+      await BleController.instance.disconnect();
+    } catch (_) {
+      // The backend account has already been deleted; continue local cleanup.
     }
     ApiSession.instance.clear();
     // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
@@ -3024,6 +3037,7 @@ class PhotoFrameState extends ChangeNotifier {
     if (!_isLoggedIn) {
       return;
     }
+    unawaited(BleController.instance.disconnect());
     ApiSession.instance.clear();
     _devices.clear();
     _albumPhotos.clear();
