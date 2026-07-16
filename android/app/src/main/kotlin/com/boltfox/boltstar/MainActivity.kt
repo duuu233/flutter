@@ -97,6 +97,21 @@ class MainActivity : FlutterActivity() {
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri))
                 result.success(null)
             }
+            // ── 崩溃日志（见 CrashLogger）：上次崩溃现场的读取/清除 + Dart 侧异常写入 ──
+            "getLastCrashLog" -> result.success(CrashLogger.read(this))
+            "clearCrashLog" -> {
+                CrashLogger.clear(this)
+                result.success(null)
+            }
+            "logDartError" -> {
+                CrashLogger.append(
+                    this,
+                    "=== DART ${call.argument<String>("kind") ?: "error"} ===\n" +
+                        (call.argument<String>("error") ?: "") + "\n" +
+                        (call.argument<String>("stack") ?: ""),
+                )
+                result.success(null)
+            }
             else -> result.notImplemented()
         }
     }

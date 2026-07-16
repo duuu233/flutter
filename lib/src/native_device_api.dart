@@ -182,4 +182,40 @@ class NativeDeviceApi {
       await _channel.invokeMethod<void>('openAppSettings');
     } catch (_) {}
   }
+
+  // ── 崩溃日志（原生 CrashLogger）─────────────────────────────
+  // 定位「应用因自身原因导致崩溃」这类进程级崩溃：JVM 未捕获异常由原生落盘，
+  // Dart 未捕获异常经 [logDartError] 写入同一文件；下次启动读取展示。
+
+  /// 读取上次崩溃日志；无记录/通道不可用返回 null。
+  static Future<String?> getLastCrashLog() async {
+    try {
+      return await _channel.invokeMethod<String>('getLastCrashLog');
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 清除崩溃日志（展示后调用，避免每次启动重复弹）。
+  static Future<void> clearCrashLog() async {
+    try {
+      await _channel.invokeMethod<void>('clearCrashLog');
+    } catch (_) {}
+  }
+
+  /// Dart 侧未捕获异常写入崩溃日志文件（main.dart 的全局错误钩子调用）。
+  /// 本方法自身绝不能抛错——它就跑在错误处理路径上。
+  static Future<void> logDartError({
+    required String kind,
+    required String error,
+    required String stack,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>('logDartError', {
+        'kind': kind,
+        'error': error,
+        'stack': stack,
+      });
+    } catch (_) {}
+  }
 }

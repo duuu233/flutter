@@ -22,9 +22,11 @@
          仅通知不可见（系统「活跃应用」面板仍可见）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
+    <!-- 自定义 Application：进程创建即安装崩溃日志处理器（CrashLogger），
+         「应用因自身原因导致崩溃」这类进程级崩溃才有现场可查。 -->
     <application
         android:label="BoltStar"
-        android:name="${applicationName}"
+        android:name=".BoltStarApplication"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher">
         <activity
@@ -61,6 +63,20 @@
             android:name=".BleConnectionService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <!-- ⚠️ 渲染后端兼容（修「登录后加载首页即崩，系统弹"应用因自身原因导致崩溃"」）：
+             Flutter 3.4x 默认用 Impeller(Vulkan) 渲染，华为/荣耀等机型（Maleoon/部分 Mali GPU）
+             的 Vulkan 驱动有缺陷，会在首个重渲染页面（登录后的首页：轮播+阴影+网络图）直接
+             崩掉整个进程——JVM 崩溃日志里不会有记录（GPU 驱动层信号崩溃），正是"代码查不出
+             毛病、真机必现"的特征。这两条把渲染退回兼容路径：
+             ① EnableImpeller=false：回退 Skia（引擎已移除 Skia 的版本会忽略此条）；
+             ② ImpellerBackend=opengles：①被忽略时退而求其次，Impeller 走 GLES 不走 Vulkan。
+             若之后 last_crash.txt / adb logcat 证实崩溃与渲染无关，可移除这两条再回归验证。 -->
+        <meta-data
+            android:name="io.flutter.embedding.android.EnableImpeller"
+            android:value="false" />
+        <meta-data
+            android:name="io.flutter.embedding.android.ImpellerBackend"
+            android:value="opengles" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

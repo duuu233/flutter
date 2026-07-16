@@ -9,3 +9,8 @@
 # uCrop（image_cropper Android 侧）。
 -keep class com.yalantis.ucrop.** { *; }
 -dontwarn com.yalantis.ucrop.**
+
+# fluwx 5.x 经 package:jni（dart JNI 绑定）反射调用 Java 类，
+# R8 误裁会在运行时 ClassNotFound/NoSuchMethod 直接崩进程。
+-keep class com.github.dart_lang.jni.** { *; }
+-dontwarn com.github.dart_lang.jni.**

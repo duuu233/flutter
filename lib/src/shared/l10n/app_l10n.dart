@@ -703,6 +703,17 @@ class AppL10n {
   );
   String get bindGoOpenBt =>
       _pick('去打开蓝牙', 'Turn On Bluetooth', 'Bluetoothをオンにする');
+  // ── 崩溃报告弹窗（上次异常退出的日志展示，见 bolt_star_app.dart）──
+  String get crashReportTitle =>
+      _pick('检测到上次异常退出', 'Previous Crash Detected', '前回の異常終了を検出しました');
+  String get crashReportHint => _pick(
+    '以下是崩溃日志，请「复制日志」后发给开发者定位问题。',
+    'Below is the crash log. Please tap "Copy Log" and send it to the developer.',
+    '以下はクラッシュログです。「ログをコピー」して開発者へお送りください。',
+  );
+  String get crashReportCopy => _pick('复制日志', 'Copy Log', 'ログをコピー');
+  String get crashReportCopied => _pick('日志已复制', 'Log copied', 'ログをコピーしました');
+  String get crashReportClose => _pick('清除并关闭', 'Clear & Close', '消去して閉じる');
   // ── 运行时权限引导（进相册 / 连接设备前的前置授权，见 PermissionGate）──
   String get permPhotoTitle =>
       _pick('需要相册权限', 'Photos Permission Required', '写真へのアクセス権限が必要です');
