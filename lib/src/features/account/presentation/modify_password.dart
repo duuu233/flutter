@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
@@ -29,6 +30,8 @@ class _ModifyPasswordState extends State<ModifyPassword> {
 
   int _countdown = 0;
   bool _submitting = false;
+  // 验证码请求在途标记：服务器响应前连点会发多封验证码邮件。
+  bool _sendingCode = false;
   Timer? _timer;
 
   @override
@@ -96,15 +99,23 @@ class _ModifyPasswordState extends State<ModifyPassword> {
   }
 
   Future<void> _getCode() async {
-    if (_countdown > 0) {
+    if (_countdown > 0 || _sendingCode) {
       return;
     }
+    _sendingCode = true;
+    // 点击立刻弹蒙层 loading：后端同步发信可能数秒才响应，期间阻断重复点击
+    //（否则连点会发多封验证码邮件），也让用户立刻感知「已在发送」。
+    AppLoadingDialog.show(context, AppL10n.of(context).accSendingCode);
     // 已登录用户改密，验证码统一走 sendEmail，sendType:2。
     final feedback = await widget.state.sendEmailCode(
       email: _emailController.text,
       sendType: 2,
       loggedIn: true,
     );
+    _sendingCode = false;
+    if (mounted) {
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
       return;
     }
@@ -115,7 +126,7 @@ class _ModifyPasswordState extends State<ModifyPassword> {
   }
 
   void _startCountdown() {
-    setState(() => _countdown = 30);
+    setState(() => _countdown = 60);
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (_countdown <= 1) {

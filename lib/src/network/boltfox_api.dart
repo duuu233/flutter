@@ -152,49 +152,58 @@ class BoltFoxApi {
   }
 
   /// 邮箱注册。[emailCode] 为 `sendEmail(sendType:1)` 收到的验证码。
+  ///
+  /// 字段名以 swagger `UserRegisterApiIn` 为准：`userEmail / verifyCode / password /
+  /// confirmPassword`（原来发 email/emailCode 且缺 confirmPassword，后端收不到邮箱，
+  /// 恒报 “Please enter the correct email address”，注册从未成功过）。
+  /// UI 已校验两次密码一致，confirmPassword 与 password 同值；DTO 无 nickName 字段。
   static Future<dynamic> userRegister({
     required String email,
     required String password,
     required String emailCode,
-    String? nickName,
   }) {
+    final md5Password = md5Hex(password);
     return _http.postJson(
       '/Client/User/userRegister',
       body: {
-        'email': email,
-        'password': md5Hex(password),
-        'emailCode': emailCode,
-        'nickName': ?nickName,
+        'userEmail': email,
+        'password': md5Password,
+        'confirmPassword': md5Password,
+        'verifyCode': emailCode,
       },
       auth: false,
     );
   }
 
   /// 忘记密码-重置密码（未登录）。[emailCode] 为 `sendEmail(sendType:2)` 验证码。
+  /// 字段名以 swagger `ResetPasswordApiIn` 为准（同注册：userEmail/verifyCode/confirmPassword）。
   static Future<dynamic> resetPassword({
     required String email,
     required String password,
     required String emailCode,
   }) {
+    final md5Password = md5Hex(password);
     return _http.postJson(
       '/Client/User/resetPassword',
       body: {
-        'email': email,
-        'password': md5Hex(password),
-        'emailCode': emailCode,
+        'userEmail': email,
+        'password': md5Password,
+        'confirmPassword': md5Password,
+        'verifyCode': emailCode,
       },
       auth: false,
     );
   }
 
   /// 校验邮箱是否不存在（注册前置校验，邮箱已存在则后端返回异常码）。
+  /// 字段名以 swagger `SetUserEmailApiIn` 为准（userEmail/verifyCode）。
   static Future<dynamic> chkUserEmailNotExist({
     required String email,
     String? emailCode,
   }) {
     return _http.postJson(
       '/Client/User/chkUserEmailNotExist',
-      body: {'email': email, 'emailCode': ?emailCode},
+      body: {'userEmail': email, 'verifyCode': ?emailCode},
       auth: false,
     );
   }

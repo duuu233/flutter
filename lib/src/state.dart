@@ -1050,7 +1050,6 @@ class PhotoFrameState extends ChangeNotifier {
     required String email,
     required String password,
     required String emailCode,
-    String? nickName,
   }) async {
     final target = email.trim();
     if (!_isValidEmail(target)) {
@@ -1084,11 +1083,11 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     try {
+      // 注册接口（UserRegisterApiIn）无 nickName 字段；昵称注册后经 changeNickName 修改。
       await BoltFoxApi.userRegister(
         email: target,
         password: password,
         emailCode: emailCode.trim(),
-        nickName: nickName?.trim().isEmpty ?? true ? null : nickName!.trim(),
       );
       return ActionFeedback(
         success: true,

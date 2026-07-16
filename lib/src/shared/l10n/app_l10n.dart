@@ -56,6 +56,73 @@ class AppL10n {
     }
   }
 
+  // ── 后端 retMsg 兜底本地化 ─────────────────────────────────────────────
+  /// 已知的后端 retMsg 原文 → (zh, en, ja)。BoltFox 后端**忽略** language 参数，
+  /// retMsg 以英文为主（个别中文，如「请重新登录！」），简中/繁中/日文用户会直接
+  /// 看到英文提示。已知文案在这里查表按当前语言重译；没命中的原样透传。
+  /// 均为 2026-07 实测各错误分支收集（另含少量同族猜测条目，未命中无副作用）。
+  static const Map<String, (String, String, String)> _serverMessages = {
+    // —— 实测确认 ——
+    'Please enter the correct email address': (
+      '请输入正确的邮箱地址',
+      'Please enter the correct email address',
+      '正しいメールアドレスを入力してください',
+    ),
+    'Email does not exist': (
+      '邮箱不存在或密码错误',
+      'Email does not exist or the password is incorrect',
+      'メールアドレスが存在しないか、パスワードが正しくありません',
+    ),
+    'Please enter the confirmation password': (
+      '请输入确认密码',
+      'Please enter the confirmation password',
+      '確認用パスワードを入力してください',
+    ),
+    'Please input a password': (
+      '请输入密码',
+      'Please input a password',
+      'パスワードを入力してください',
+    ),
+    'Verification code error': (
+      '验证码错误',
+      'Verification code error',
+      '認証コードが正しくありません',
+    ),
+    '请重新登录！': ('请重新登录', 'Please log in again.', '再度ログインしてください'),
+    // —— 同族猜测（未实测，命中即译） ——
+    'Password error': ('密码错误', 'Password error', 'パスワードが正しくありません'),
+    'Incorrect password': ('密码错误', 'Incorrect password', 'パスワードが正しくありません'),
+    'Verification code expired': (
+      '验证码已过期',
+      'Verification code expired',
+      '認証コードの有効期限が切れました',
+    ),
+    'The verification code has expired': (
+      '验证码已过期',
+      'The verification code has expired',
+      '認証コードの有効期限が切れました',
+    ),
+    'Email already exists': (
+      '该邮箱已被注册',
+      'Email already exists',
+      'このメールアドレスは既に登録されています',
+    ),
+    'The email already exists': (
+      '该邮箱已被注册',
+      'The email already exists',
+      'このメールアドレスは既に登録されています',
+    ),
+  };
+
+  /// 把后端 retMsg 按当前语言重译；未知文案原样返回。
+  String localizeServerMessage(String raw) {
+    final entry = _serverMessages[raw.trim()];
+    if (entry == null) {
+      return raw;
+    }
+    return _pick(entry.$1, entry.$2, entry.$3);
+  }
+
   // ── 通用 ────────────────────────────────────────────────────────────────
   String get cancel => _pick('取消', 'Cancel', 'キャンセル');
   String get confirm => _pick('确定', 'OK', '確定');
@@ -262,6 +329,7 @@ class AppL10n {
   String get accVerifyCodeHint =>
       _pick('请输入验证码', 'Enter the code', '認証コードを入力');
   String get accGetVerifyCode => _pick('获取验证码', 'Get Code', 'コードを取得');
+  String get accSendingCode => _pick('发送中…', 'Sending…', '送信中…');
 
   String get accModifyEmailTitle => _pick('修改邮箱', 'Change Email', 'メールアドレス変更');
   String get accCurrentEmail => _pick('当前邮箱', 'Current Email', '現在のメールアドレス');
@@ -1029,7 +1097,6 @@ class AppL10n {
     'You can cast photos to the device again',
     '写真をデバイスに再度キャストできます',
   );
-  String get galCastAgain => _pick('重新投屏', 'Cast Again', '再度キャスト');
 
   // ── 引导 ──
   String get guideTitle => _pick('操作指南', 'User Guide', '操作ガイド');
