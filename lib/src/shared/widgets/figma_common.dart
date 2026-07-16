@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../l10n/app_l10n.dart';
+
 // 居中吐司：从这里 re-export，凡 import 本文件的页面可直接用 AppToast，无需再单独 import。
 export 'app_toast.dart';
 
@@ -147,7 +149,8 @@ class FigmaTopBar extends StatelessWidget {
             Align(
               alignment: Alignment.centerLeft,
               child: Padding(
-                padding: const EdgeInsets.only(left: 16),
+                // 9 + (44-30)/2 = 16：命中区扩到 44 后保持圆钮视觉位置不变。
+                padding: const EdgeInsets.only(left: 9),
                 child: FigmaBackButton(
                   onTap: onBack ?? () => Navigator.maybePop(context),
                 ),
@@ -176,41 +179,57 @@ class FigmaBackButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: SizedBox(
-        width: 30,
-        height: 30,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Image.asset(
-              'assets/images/return-round-icon.png',
+    // 视觉仍是 30×30 圆钮，但命中区扩到 44×44（无障碍最小触达），
+    // 并补语义标签让读屏器可识别（此前全 App 顶栏返回键对读屏器不可见）。
+    return Semantics(
+      button: true,
+      label: MaterialLocalizations.of(context).backButtonTooltip,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: SizedBox(
               width: 30,
               height: 30,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.78),
-                  shape: BoxShape.circle,
-                ),
-              ),
+              child: _backButtonArt(),
             ),
-            Image.asset(
-              'assets/images/return-arrow-icon.png',
-              width: 13,
-              height: 13,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) => const Icon(
-                Icons.chevron_left_rounded,
-                color: Color(0xFF565D67),
-                size: 20,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
+    );
+  }
+
+  Widget _backButtonArt() {
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Image.asset(
+          'assets/images/return-round-icon.png',
+          width: 30,
+          height: 30,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.78),
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+        Image.asset(
+          'assets/images/return-arrow-icon.png',
+          width: 13,
+          height: 13,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => const Icon(
+            Icons.chevron_left_rounded,
+            color: Color(0xFF565D67),
+            size: 20,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -241,15 +260,20 @@ class FigmaPrimaryButton extends StatelessWidget {
     required this.label,
     this.onPressed,
     this.height = 56,
+    this.loading = false,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final double height;
 
+  /// 提交中：显示白色转圈代替文字（调用方一般同时把 onPressed 置 null 防重复提交）。
+  final bool loading;
+
   @override
   Widget build(BuildContext context) {
-    final enabled = onPressed != null;
+    // loading 时保持渐变底色（否则灰底 + 白转圈几乎看不见）。
+    final enabled = onPressed != null || loading;
     // .settings-primary：胶囊（圆角全圆）+ 渐变 #ff8b3d→#ff641f + 柔和投影。
     final radius = BorderRadius.circular(height / 2);
     return SizedBox(
@@ -282,12 +306,20 @@ class FigmaPrimaryButton extends StatelessWidget {
             borderRadius: radius,
             onTap: onPressed,
             child: Center(
-              child: Text(
-                label,
-                style: FigmaTextStyles.primaryButton.copyWith(
-                  color: enabled ? Colors.white : const Color(0x992A2B2B),
-                ),
-              ),
+              child: loading
+                  ? const SizedBox.square(
+                      dimension: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : Text(
+                      label,
+                      style: FigmaTextStyles.primaryButton.copyWith(
+                        color: enabled ? Colors.white : const Color(0x992A2B2B),
+                      ),
+                    ),
             ),
           ),
         ),
@@ -381,7 +413,7 @@ class FigmaAccountFormCard extends StatelessWidget {
   }
 }
 
-class FigmaAccountField extends StatelessWidget {
+class FigmaAccountField extends StatefulWidget {
   const FigmaAccountField({
     super.key,
     required this.label,
@@ -392,6 +424,7 @@ class FigmaAccountField extends StatelessWidget {
     this.readOnly = false,
     this.errorText,
     this.trailing,
+    this.autofillHints,
   });
 
   final String label;
@@ -405,73 +438,106 @@ class FigmaAccountField extends StatelessWidget {
   /// 输入框右侧附加控件（如昵称行的编辑图标）。
   final Widget? trailing;
 
+  /// 密码管理器自动填充提示（AutofillHints.email / .newPassword 等）。
+  final List<String>? autofillHints;
+
+  @override
+  State<FigmaAccountField> createState() => _FigmaAccountFieldState();
+}
+
+class _FigmaAccountFieldState extends State<FigmaAccountField> {
+  /// 密码字段的当前可见性（obscureText=true 时自动附带眼睛切换，与登录页一致）。
+  late bool _obscured = widget.obscureText;
+
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: errorText == null ? 61 : 78,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 18, 0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Row(
-              children: [
-                Text(label, style: FigmaTextStyles.formLabel),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    textAlign: TextAlign.right,
-                    readOnly: readOnly,
-                    keyboardType: keyboardType,
-                    obscureText: obscureText,
-                    cursorColor: const Color(0xFFEB5F1B),
-                    // 只读值（如当前邮箱）用小程序的灰色 #777e88，可编辑值用深色。
-                    style: readOnly
-                        ? FigmaTextStyles.formValue.copyWith(
-                            color: const Color(0xFF777E88),
-                          )
-                        : FigmaTextStyles.formValue,
-                    decoration: const InputDecoration(
-                      isCollapsed: true,
-                      filled: false,
-                      fillColor: Colors.transparent,
-                      hoverColor: Colors.transparent,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      errorBorder: InputBorder.none,
-                      focusedErrorBorder: InputBorder.none,
-                    ).copyWith(
-                      hintText: hintText,
-                      hintStyle: FigmaTextStyles.formHint,
-                    ),
+    final l10n = AppL10n.of(context);
+    // 密码行自动补眼睛按钮（调用方没自定义 trailing 时）。
+    final trailing =
+        widget.trailing ??
+        (widget.obscureText
+            ? IconButton(
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints.tightFor(
+                  width: 36,
+                  height: 36,
+                ),
+                onPressed: () => setState(() => _obscured = !_obscured),
+                tooltip: _obscured ? l10n.accShowPassword : l10n.accHidePassword,
+                icon: Icon(
+                  _obscured
+                      ? Icons.visibility_off_outlined
+                      : Icons.visibility_outlined,
+                  color: const Color(0xFF8C9092),
+                  size: 20,
+                ),
+              )
+            : null);
+    // minHeight 而非固定高：系统大字号（1.3x+）时固定 SizedBox 会被内容挤爆。
+    return Container(
+      constraints: BoxConstraints(
+        minHeight: widget.errorText == null ? 61 : 78,
+      ),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.fromLTRB(20, 8, 18, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Text(widget.label, style: FigmaTextStyles.formLabel),
+              const SizedBox(width: 16),
+              Expanded(
+                child: TextField(
+                  controller: widget.controller,
+                  textAlign: TextAlign.right,
+                  readOnly: widget.readOnly,
+                  keyboardType: widget.keyboardType,
+                  obscureText: _obscured,
+                  autofillHints: widget.autofillHints,
+                  cursorColor: const Color(0xFFEB5F1B),
+                  // 只读值（如当前邮箱）用小程序的灰色 #777e88，可编辑值用深色。
+                  style: widget.readOnly
+                      ? FigmaTextStyles.formValue.copyWith(
+                          color: const Color(0xFF777E88),
+                        )
+                      : FigmaTextStyles.formValue,
+                  decoration: const InputDecoration(
+                    isCollapsed: true,
+                    filled: false,
+                    fillColor: Colors.transparent,
+                    hoverColor: Colors.transparent,
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                    disabledBorder: InputBorder.none,
+                    errorBorder: InputBorder.none,
+                    focusedErrorBorder: InputBorder.none,
+                  ).copyWith(
+                    hintText: widget.hintText,
+                    hintStyle: FigmaTextStyles.formHint,
                   ),
                 ),
-                if (trailing != null) ...[
-                  const SizedBox(width: 9),
-                  trailing!,
-                ],
+              ),
+              if (trailing != null) ...[const SizedBox(width: 9), trailing],
+            ],
+          ),
+          if (widget.errorText != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                const Icon(
+                  Icons.error_outline_rounded,
+                  size: 14,
+                  color: Color(0xFFFF5C35),
+                ),
+                const SizedBox(width: 5),
+                Text(widget.errorText!, style: FigmaTextStyles.formError),
               ],
             ),
-            if (errorText != null) ...[
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  const Icon(
-                    Icons.error_outline_rounded,
-                    size: 14,
-                    color: Color(0xFFFF5C35),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(errorText!, style: FigmaTextStyles.formError),
-                ],
-              ),
-            ],
           ],
-        ),
+        ],
       ),
     );
   }
@@ -491,7 +557,8 @@ class FigmaVerificationField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final label = countdownLabel ?? '获取验证码';
+    final l10n = AppL10n.of(context);
+    final label = countdownLabel ?? l10n.accGetVerifyCode;
     final disabled = countdownLabel != null;
 
     return SizedBox(
@@ -500,7 +567,7 @@ class FigmaVerificationField extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(20, 0, 18, 0),
         child: Row(
           children: [
-            Text('验证码', style: FigmaTextStyles.formLabel),
+            Text(l10n.accVerifyCodeLabel, style: FigmaTextStyles.formLabel),
             const SizedBox(width: 16),
             Expanded(
               child: TextField(
@@ -509,7 +576,7 @@ class FigmaVerificationField extends StatelessWidget {
                 keyboardType: TextInputType.number,
                 cursorColor: const Color(0xFFEB5F1B),
                 style: FigmaTextStyles.formValue,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                   isCollapsed: true,
                   filled: false,
                   fillColor: Colors.transparent,
@@ -520,8 +587,8 @@ class FigmaVerificationField extends StatelessWidget {
                   disabledBorder: InputBorder.none,
                   errorBorder: InputBorder.none,
                   focusedErrorBorder: InputBorder.none,
-                  hintText: '请输入验证码',
-                  hintStyle: TextStyle(
+                  hintText: l10n.accVerifyCodeHint,
+                  hintStyle: const TextStyle(
                     color: Color(0xFF8B9098),
                     fontSize: 14,
                     height: 1.2,
@@ -801,7 +868,8 @@ class FigmaDeviceListCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        width: 327,
+        // 撑满父容器（页面自带边距）：写死 327 在 ≤320dp 宽屏/分屏会横向溢出。
+        width: double.infinity,
         height: 64,
         padding: const EdgeInsets.symmetric(horizontal: 20),
         decoration: BoxDecoration(

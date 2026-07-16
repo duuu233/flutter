@@ -18,12 +18,17 @@ class ApiSession {
   /// 语言码：en=1、zh-Hans=2、zh-Hant=3、ja=4。默认简体中文。
   int _languageCode = 2;
 
+  /// 当前应用语言（枚举形态）：供无 BuildContext 的网络层取本地化兜底文案。
+  AppLanguage _language = AppLanguage.zh;
+
   /// 设备型号，用于 `device` header，可选。
   String device = '';
 
   String get userToken => _userToken;
 
   int get languageCode => _languageCode;
+
+  AppLanguage get language => _language;
 
   bool get isLoggedIn => _userToken.isNotEmpty;
 
@@ -37,6 +42,7 @@ class ApiSession {
 
   /// 跟随应用语言切换更新 `language` header 取值。
   void setLanguage(AppLanguage language) {
+    _language = language;
     switch (language) {
       case AppLanguage.en:
         _languageCode = 1;

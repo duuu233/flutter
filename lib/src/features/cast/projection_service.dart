@@ -15,13 +15,13 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show compute;
-import 'package:http/http.dart' as http;
 import 'package:image/image.dart' as img;
 
 import '../../device/ble/device_ble.dart';
 import '../../device/ble/frame_protocol.dart';
 import '../../device/ble_controller.dart';
 import '../../device/device_interaction_trace.dart';
+import '../../network/api_client.dart';
 import '../../network/boltfox_api.dart';
 import '../../shared/l10n/app_l10n.dart';
 
@@ -782,7 +782,11 @@ class ServerImageProjectionService {
     Object? lastError;
     for (int i = 0; i < attempts; i++) {
       try {
-        final resp = await http.get(Uri.parse(url));
+        // 共用 ApiClient 的连接池（省一次 TLS 握手）；加超时——之前没有超时，
+        // 弱网半途挂起会让投屏永远卡在「图片处理中」（重试只在抛错后才触发）。
+        final resp = await ApiClient.instance.httpClient
+            .get(Uri.parse(url))
+            .timeout(const Duration(seconds: 20));
         if (resp.statusCode == 200) {
           return resp.bodyBytes;
         }

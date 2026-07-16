@@ -296,6 +296,66 @@ extension FrameProtocolResultDetails on FrameProtocolResultCode {
         return '设备忙';
     }
   }
+
+  /// 英文档位（供 en 语言的用户文案；此前 EN/JA 句子里拼的是 labelZh，英文夹中文词）。
+  String get labelEn {
+    switch (this) {
+      case FrameProtocolResultCode.success:
+        return 'Success';
+      case FrameProtocolResultCode.parameterError:
+        return 'Parameter error';
+      case FrameProtocolResultCode.lengthError:
+        return 'Length error';
+      case FrameProtocolResultCode.crcError:
+        return 'CRC error';
+      case FrameProtocolResultCode.flashWriteFailed:
+        return 'Flash write failed';
+      case FrameProtocolResultCode.imageMissing:
+        return 'Image missing';
+      case FrameProtocolResultCode.storageFull:
+        return 'Storage full';
+      case FrameProtocolResultCode.maskMismatch:
+        return 'Mask mismatch';
+      case FrameProtocolResultCode.unsupportedCommand:
+        return 'Unsupported command';
+      case FrameProtocolResultCode.transferInterrupted:
+        return 'Transfer interrupted';
+      case FrameProtocolResultCode.checksumFailed:
+        return 'Checksum failed';
+      case FrameProtocolResultCode.busy:
+        return 'Device busy';
+    }
+  }
+
+  /// 日文档位。
+  String get labelJa {
+    switch (this) {
+      case FrameProtocolResultCode.success:
+        return '成功';
+      case FrameProtocolResultCode.parameterError:
+        return 'パラメータエラー';
+      case FrameProtocolResultCode.lengthError:
+        return '長さエラー';
+      case FrameProtocolResultCode.crcError:
+        return 'CRCエラー';
+      case FrameProtocolResultCode.flashWriteFailed:
+        return 'Flash書き込み失敗';
+      case FrameProtocolResultCode.imageMissing:
+        return '画像がありません';
+      case FrameProtocolResultCode.storageFull:
+        return '空き容量不足';
+      case FrameProtocolResultCode.maskMismatch:
+        return 'マスク不一致';
+      case FrameProtocolResultCode.unsupportedCommand:
+        return '未対応のコマンド';
+      case FrameProtocolResultCode.transferInterrupted:
+        return '転送中断';
+      case FrameProtocolResultCode.checksumFailed:
+        return 'チェックサム失敗';
+      case FrameProtocolResultCode.busy:
+        return 'デバイスビジー';
+    }
+  }
 }
 
 class FrameDeviceProtocol {

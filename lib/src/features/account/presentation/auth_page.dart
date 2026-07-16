@@ -35,7 +35,10 @@ class _AuthPageState extends State<AuthPage> {
 
   bool _passwordVisible = false;
   bool _agreed = false;
-  bool _showErrors = false;
+  // 每个字段独立的校验错误：只填错邮箱不该提示「密码为空」，反之亦然；
+  // 输入一变就清除对应错误（之前是单一 _showErrors，置 true 后永不复位）。
+  bool _emailError = false;
+  bool _passwordError = false;
   bool _weChatSubmitting = false;
 
   @override
@@ -44,6 +47,17 @@ class _AuthPageState extends State<AuthPage> {
     _emailController = TextEditingController(
       text: widget.state.currentUser.email,
     );
+    // 输入即清除对应字段的错误提示。
+    _emailController.addListener(() {
+      if (_emailError && mounted) {
+        setState(() => _emailError = false);
+      }
+    });
+    _passwordController.addListener(() {
+      if (_passwordError && mounted) {
+        setState(() => _passwordError = false);
+      }
+    });
     _weChatAuthorizationClient =
         widget.weChatAuthorizationClient ?? defaultWeChatAuthorizationClient;
     // 未登录邮箱时，自动填充上次输入过的邮箱（本地缓存），回访用户免于重复输入。
@@ -73,7 +87,9 @@ class _AuthPageState extends State<AuthPage> {
         systemNavigationBarColor: Colors.white,
       ),
       child: Scaffold(
-        resizeToAvoidBottomInset: false,
+        // 键盘弹起时压缩视口并允许滚动（配合 _AuthCanvas 的 SingleChildScrollView），
+        // 否则小屏上登录按钮被键盘盖住，用户必须先收起键盘。
+        resizeToAvoidBottomInset: true,
         backgroundColor: const Color(0xFFF7FAFF),
         body: Stack(
           fit: StackFit.expand,
@@ -85,7 +101,8 @@ class _AuthPageState extends State<AuthPage> {
                 passwordController: _passwordController,
                 passwordVisible: _passwordVisible,
                 agreed: _agreed,
-                showErrors: _showErrors,
+                emailError: _emailError,
+                passwordError: _passwordError,
                 onPasswordVisibilityChanged: () {
                   setState(() {
                     _passwordVisible = !_passwordVisible;
@@ -124,7 +141,8 @@ class _AuthPageState extends State<AuthPage> {
 
     if (!emailValid || password.trim().isEmpty) {
       setState(() {
-        _showErrors = true;
+        _emailError = !emailValid;
+        _passwordError = password.trim().isEmpty;
       });
       return;
     }
@@ -173,7 +191,19 @@ class _AuthPageState extends State<AuthPage> {
       _showFeedback(feedback.message);
     } on WeChatAuthorizationException catch (error) {
       if (mounted) {
-        _showFeedback(error.message);
+        // 按错误类别取当前语言文案；exception.message 是中文详情，只进日志。
+        debugPrint('[WeChatAuth] ${error.code}: ${error.message}');
+        final l10n = AppL10n.of(context);
+        _showFeedback(switch (error.code) {
+          WeChatAuthErrorCode.notInstalled => l10n.accWechatNotInstalled,
+          WeChatAuthErrorCode.canceled => l10n.accWechatCanceled,
+          WeChatAuthErrorCode.denied => l10n.accWechatDenied,
+          WeChatAuthErrorCode.versionUnsupported =>
+            l10n.accWechatVersionUnsupported,
+          WeChatAuthErrorCode.timeout => l10n.accWechatTimeout,
+          WeChatAuthErrorCode.config ||
+          WeChatAuthErrorCode.generic => l10n.accWechatAuthFailed,
+        });
       }
     } catch (_) {
       if (mounted) {
@@ -216,7 +246,8 @@ class _AuthCanvas extends StatelessWidget {
     required this.passwordController,
     required this.passwordVisible,
     required this.agreed,
-    required this.showErrors,
+    required this.emailError,
+    required this.passwordError,
     required this.onPasswordVisibilityChanged,
     required this.onAgreementChanged,
     required this.onForgotPassword,
@@ -233,7 +264,8 @@ class _AuthCanvas extends StatelessWidget {
   final TextEditingController passwordController;
   final bool passwordVisible;
   final bool agreed;
-  final bool showErrors;
+  final bool emailError;
+  final bool passwordError;
   final VoidCallback onPasswordVisibilityChanged;
   final VoidCallback onAgreementChanged;
   final VoidCallback onForgotPassword;
@@ -247,8 +279,22 @@ class _AuthCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 26),
+    // 键盘弹起（resizeToAvoidBottomInset: true 压缩视口）时可滚动；
+    // 键盘收起时 ConstrainedBox(minHeight) + IntrinsicHeight 让 Spacer 布局与原来一致。
+    return LayoutBuilder(
+      builder: (context, constraints) => SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 26),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(minHeight: constraints.maxHeight),
+          child: IntrinsicHeight(child: _buildColumn(context)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildColumn(BuildContext context) {
+    // AutofillGroup：让系统密码管理器识别「邮箱+密码」组合并支持自动填充。
+    return AutofillGroup(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -263,10 +309,11 @@ class _AuthCanvas extends StatelessWidget {
               iconAsset: 'assets/images/email_icon.png',
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
-              showError: showErrors,
+              showError: emailError,
+              autofillHints: const [AutofillHints.email],
             ),
           ),
-          if (showErrors)
+          if (emailError)
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 23),
               child: _ErrorText(text: AppL10n.of(context).accEmailInvalid),
@@ -281,7 +328,8 @@ class _AuthCanvas extends StatelessWidget {
               keyboardType: TextInputType.visiblePassword,
               textInputAction: TextInputAction.done,
               obscureText: !passwordVisible,
-              showError: showErrors,
+              showError: passwordError,
+              autofillHints: const [AutofillHints.password],
               onSubmitted: (_) => onLogin(),
               trailing: IconButton(
                 padding: EdgeInsets.zero,
@@ -290,6 +338,9 @@ class _AuthCanvas extends StatelessWidget {
                   height: 36,
                 ),
                 onPressed: onPasswordVisibilityChanged,
+                tooltip: passwordVisible
+                    ? AppL10n.of(context).accHidePassword
+                    : AppL10n.of(context).accShowPassword,
                 icon: Icon(
                   passwordVisible
                       ? Icons.visibility_outlined
@@ -300,7 +351,7 @@ class _AuthCanvas extends StatelessWidget {
               ),
             ),
           ),
-          if (showErrors)
+          if (passwordError)
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 23),
               child: _ErrorText(text: AppL10n.of(context).accPasswordEmpty),
@@ -543,6 +594,7 @@ class _PillTextField extends StatelessWidget {
     this.obscureText = false,
     this.trailing,
     this.onSubmitted,
+    this.autofillHints,
   });
 
   final TextEditingController controller;
@@ -554,6 +606,9 @@ class _PillTextField extends StatelessWidget {
   final bool obscureText;
   final Widget? trailing;
   final ValueChanged<String>? onSubmitted;
+
+  /// 密码管理器自动填充提示（AutofillHints.email / .password）。
+  final List<String>? autofillHints;
 
   @override
   Widget build(BuildContext context) {
@@ -578,6 +633,7 @@ class _PillTextField extends StatelessWidget {
                 textInputAction: textInputAction,
                 obscureText: obscureText,
                 onSubmitted: onSubmitted,
+                autofillHints: autofillHints,
                 cursorColor: const Color(0xFFEB5F1B),
                 style: _AuthTextStyles.input,
                 decoration:
@@ -773,8 +829,11 @@ class _AgreementRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
+    // Wrap 而非 Row：EN 文案 "I have read and agree to ..." 在 ≤375dp 宽屏上
+    // 会超出一行，Row 直接横向溢出，Wrap 允许换行居中。
+    return Wrap(
+      alignment: WrapAlignment.center,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         GestureDetector(
           behavior: HitTestBehavior.opaque,

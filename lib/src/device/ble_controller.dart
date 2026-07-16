@@ -3,12 +3,17 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../native_device_api.dart';
 import '../network/boltfox_api.dart';
+import '../shared/l10n/app_l10n.dart';
+import '../state.dart' show AppLanguage;
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
 import 'ble/ota_ble.dart';
 import 'ble_connection_lease.dart';
 import 'device_interaction_trace.dart';
 import 'serial_match.dart';
+
+/// 蓝牙信号档位（由 UI 层按当前语言渲染文字，见 [BleController.rssiToSignalLevel]）。
+enum BleSignalLevel { veryStrong, strong, normal, weak, veryWeak }
 
 /// 全局 BLE 会话控制器（单例）。
 ///
@@ -31,6 +36,13 @@ class BleController extends ChangeNotifier {
   }
 
   static final BleController instance = BleController._();
+
+  /// 由状态层注入的语言解析器：BLE 层没有 BuildContext，用户可见文案经此本地化。
+  /// PhotoFrameState 构造时赋值；未注入时兜底简体中文。
+  AppLanguage Function()? languageResolver;
+
+  /// 用户可见文案按当前语言取（connectBySerial 的错误提示等直达 toast）。
+  AppL10n get _l10n => AppL10n(languageResolver?.call() ?? AppLanguage.zh);
 
   final FrameBleClient _client = FrameBleClient();
   late final BleConnectionLease _connectionLease;
@@ -134,26 +146,27 @@ class BleController extends ChangeNotifier {
     return result.device.remoteId.str;
   }
 
-  /// 把蓝牙信号强度(RSSI，单位 dBm，越接近 0 越强)翻译成用户能看懂的档位文字，
-  /// 对齐小程序 `utils/bluetooth.js rssiToSignalText`：极强/强/正常/偏弱/弱。
-  /// RSSI 缺省(0)或非法(≥0)时返回空串，由页面兜底成「--」。
-  static String rssiToSignalText(int rssi) {
+  /// 把蓝牙信号强度(RSSI，单位 dBm，越接近 0 越强)归到用户能看懂的档位，
+  /// 对齐小程序 `utils/bluetooth.js rssiToSignalText` 的五档划分。
+  /// 文字由 UI 层按当前语言渲染（见 bind_device_flow 的 signal 映射）；
+  /// RSSI 缺省(0)或非法(≥0)时返回 null，由页面兜底成「--」。
+  static BleSignalLevel? rssiToSignalLevel(int rssi) {
     if (rssi == 0 || rssi >= 0) {
-      return '';
+      return null;
     }
     if (rssi >= -55) {
-      return '极强';
+      return BleSignalLevel.veryStrong;
     }
     if (rssi >= -67) {
-      return '强';
+      return BleSignalLevel.strong;
     }
     if (rssi >= -78) {
-      return '正常';
+      return BleSignalLevel.normal;
     }
     if (rssi >= -88) {
-      return '偏弱';
+      return BleSignalLevel.weak;
     }
-    return '弱';
+    return BleSignalLevel.veryWeak;
   }
 
   /// 扫描结果广播里解析到的屏幕尺寸文字（如 `3.7寸`/`5.89寸`）；无广播厂商数据时返回空串。
@@ -381,7 +394,7 @@ class BleController extends ChangeNotifier {
     final permitted = await trace.measure('permission', ensurePermission);
     if (!permitted) {
       trace.finish(success: false, stage: 'permission-denied');
-      return '蓝牙不可用：请开启蓝牙并授予“附近的设备”权限';
+      return _l10n.bleUnavailable;
     }
     // 单连接模型：正连着别的设备时先断开，避免底层双连接互相干扰。
     if (connected) {
@@ -409,7 +422,7 @@ class BleController extends ChangeNotifier {
     );
     if (target == null) {
       trace.finish(success: false, stage: 'target-not-found');
-      return '未搜索到该设备，请确认设备已开机并在附近';
+      return _l10n.bleDeviceNotFound;
     }
     final error = await trace.measure(
       'connect-and-read-info',
@@ -458,7 +471,7 @@ class BleController extends ChangeNotifier {
     bool Function()? shouldAbort,
     void Function(String dir, String hex)? onMonitor,
     bool dryRun = false,
-    int pace = 20,
+    int pace = 3,
   }) async {
     if (dryRun) {
       return FrameOtaClient.dryRunUpgrade(
@@ -478,6 +491,10 @@ class BleController extends ChangeNotifier {
     _connectionLease.taskStarted();
     notifyListeners();
     try {
+      // OTA 与图传共用同一物理连接：升级前同样切到极速连接间隔（0x13 + HIGH 优先级），
+      // 结束后回落空闲档。否则整轮 OTA 跑在 100ms 空闲间隔上，PRN=3 的停等每次
+      // ACK 往返最多白等 ~100ms，240KB 固件要多花约 1 分钟。
+      await _client.beginTransferSession();
       return await ota.upgradeFirmware(
         pkg,
         onProgress: onProgress,
@@ -487,6 +504,9 @@ class BleController extends ChangeNotifier {
     } finally {
       // 只取消 OTA 自身的 FF11 通知订阅；物理连接由 _client 持有（升级后设备多半已重启断开）。
       await ota.disconnect();
+      // 回落空闲连接间隔。升级成功设备会复位重启断开连接——endTransferSession
+      // 对已断链是安全的 best-effort（内部检查 _linkAlive 并吞掉 0x13 失败）。
+      await _client.endTransferSession();
       otaInProgress = false;
       _connectionLease.taskFinished();
       notifyListeners();

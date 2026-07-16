@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../device/frame_device_protocol.dart';
-import '../../state.dart';
+import '../l10n/app_l10n.dart';
 
 /// 通用半透明内容面板。
 ///
@@ -231,248 +230,6 @@ class DeviceIllustration extends StatelessWidget {
   }
 }
 
-/// 照片缩略图占位组件。
-///
-/// 业务列表只依赖颜色和来源，不直接绑定真实图片资源，便于演示数据复用。
-class PhotoArtwork extends StatelessWidget {
-  const PhotoArtwork({
-    super.key,
-    required this.color,
-    required this.source,
-    this.width = 76,
-    this.height = 92,
-    this.imageUrl,
-  });
-
-  final Color color;
-  final ImageSourceType source;
-  final double width;
-  final double height;
-
-  /// 后端图片地址；存在时优先展示真实图，加载失败回退占位色块。
-  final String? imageUrl;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: height,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(24),
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            color.withValues(alpha: 0.96),
-            color.withValues(alpha: 0.56),
-            const Color(0xFFF8F2EA),
-          ],
-        ),
-      ),
-      child: Stack(
-        children: [
-          if (imageUrl != null)
-            Positioned.fill(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(24),
-                child: Image.network(
-                  imageUrl!,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const SizedBox.shrink(),
-                ),
-              ),
-            ),
-          Align(
-            alignment: Alignment.topRight,
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Icon(
-                source == ImageSourceType.camera
-                    ? Icons.photo_camera_outlined
-                    : Icons.collections_outlined,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Container(
-                height: height * 0.32,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(18),
-                  color: Colors.white.withValues(alpha: 0.24),
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 设置页、个人页等列表入口通用行。
-///
-/// 保持图标容器、标题、副标题和右箭头布局一致，减少各页面重复实现。
-class MenuTile extends StatelessWidget {
-  const MenuTile({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(24),
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: Row(
-          children: [
-            Container(
-              width: 46,
-              height: 46,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                color: Theme.of(
-                  context,
-                ).colorScheme.primary.withValues(alpha: 0.10),
-              ),
-              child: Icon(icon, color: Theme.of(context).colorScheme.primary),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title, style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-                ],
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right_rounded),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 投屏记录卡片。
-///
-/// 同一个组件支持普通列表和 compact 模式，避免首页摘要与记录页维护两套展示逻辑。
-class RecordCard extends StatelessWidget {
-  const RecordCard({
-    super.key,
-    required this.state,
-    required this.record,
-    required this.onRecast,
-    required this.onDelete,
-    this.compact = false,
-  });
-
-  final PhotoFrameState state;
-  final CastRecord record;
-  final VoidCallback onRecast;
-  final VoidCallback onDelete;
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    return AppPanel(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          PhotoArtwork(
-            color: record.color,
-            source: record.source,
-            width: compact ? 68 : 80,
-            height: compact ? 84 : 98,
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        record.title,
-                        style: Theme.of(context).textTheme.titleLarge,
-                      ),
-                    ),
-                    StatusPill(
-                      label: state.statusLabel(record.status),
-                      active: record.status == CastStatus.success,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${state.deviceName(record.deviceId)} · ${state.formatDateTime(record.createdAt)}',
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 6),
-                Text(record.message),
-                if (record.command != null ||
-                    record.imageIndex != null ||
-                    record.imageMask != null) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    [
-                      if (record.command != null)
-                        'CMD=${state.formatCommand(record.command)}',
-                      if (record.imageIndex != null)
-                        'slot=${record.imageIndex}',
-                      if (record.resultCode != null)
-                        'result=${record.resultCode!.labelZh}',
-                      if (record.imageMask != null)
-                        'mask=${FrameDeviceProtocol.maskHex(record.imageMask!)}',
-                    ].join(' · '),
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ],
-                if (!compact) ...[
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      FilledButton.tonal(
-                        onPressed: onRecast,
-                        child: Text(state.tr(zh: '投屏', en: 'Cast', ja: '投映')),
-                      ),
-                      TextButton(
-                        onPressed: onDelete,
-                        child: Text(state.tr(zh: '删除', en: 'Delete', ja: '削除')),
-                      ),
-                    ],
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// 通用空状态组件，用于列表无数据或权限未准备好的兜底展示。
 /// 首屏加载态（对应小程序 app.wxss 的全局 `.page-loading`：转圈 + 「加载中…」）。
 ///
@@ -513,7 +270,7 @@ class PageLoading extends StatelessWidget {
           ),
           const SizedBox(height: 12), // .page-loading__text margin-top 24rpx
           Text(
-            label ?? '加载中…',
+            label ?? AppL10n.of(context).loading,
             // .page-loading__text → 26rpx(=13) / #8b9098。
             // 原来写的是**白色**文字 —— 而页面背景 bg01 是浅色的，等于隐形。
             style: const TextStyle(
@@ -521,6 +278,63 @@ class PageLoading extends StatelessWidget {
               fontSize: 13,
               fontWeight: FontWeight.w400,
               decoration: TextDecoration.none,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 首屏加载失败态（断网/接口失败且本地无数据可显示时）：
+/// 提示 + 「重试」按钮。**不要**在这种场景下显示「暂无数据」空态——
+/// 那是误导（用户会以为数据没了），空态只在确认成功且确实为空时用。
+class PageLoadError extends StatelessWidget {
+  const PageLoadError({super.key, required this.onRetry, this.message});
+
+  /// 点「重试」重新发起加载。
+  final VoidCallback onRetry;
+
+  /// 提示文案，缺省「网络异常，请检查网络后重试」。
+  final String? message;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(
+            Icons.wifi_off_rounded,
+            size: 44,
+            color: Color(0xFFB9C0CA),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            message ?? l10n.loadFailedDesc,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF8B9098),
+              fontSize: 13,
+              fontWeight: FontWeight.w400,
+              decoration: TextDecoration.none,
+            ),
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            height: 36,
+            child: OutlinedButton(
+              onPressed: onRetry,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFEB5F1B),
+                side: const BorderSide(color: Color(0xFFEB5F1B)),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+              ),
+              child: Text(l10n.retry),
             ),
           ),
         ],
@@ -541,7 +355,7 @@ class PageLoading extends StatelessWidget {
 class AppLoadingDialog {
   AppLoadingDialog._();
 
-  static void show(BuildContext context, [String text = '加载中…']) {
+  static void show(BuildContext context, [String? text]) {
     showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -561,7 +375,8 @@ class AppLoadingDialog {
 class _LoadingBox extends StatelessWidget {
   const _LoadingBox({required this.text});
 
-  final String text;
+  /// 加载文案；null 时在 build 里按当前语言取默认「加载中…」。
+  final String? text;
 
   @override
   Widget build(BuildContext context) {
@@ -595,7 +410,7 @@ class _LoadingBox extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  text,
+                  text ?? AppL10n.of(context).loading,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                     color: Colors.white,

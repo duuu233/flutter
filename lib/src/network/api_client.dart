@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../shared/l10n/app_l10n.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
 import 'api_session.dart';
@@ -20,6 +21,19 @@ class ApiClient {
   ApiClient._();
 
   static final ApiClient instance = ApiClient._();
+
+  /// 全局共享的 HTTP 客户端：keep-alive 复用 TCP+TLS 连接。
+  /// 之前用顶层 http.get/post（每个请求新建一次性 Client），每次都重付
+  /// TLS 握手（LTE 上 ~100–300ms）；投屏一批 5 张是「上传+下载 .bin」×5
+  /// 共 10 次握手，白白多花 1~3s。设备帧/固件下载也共用此客户端。
+  final http.Client _http = http.Client();
+
+  /// 供网络层之外的裸下载（投屏 .bin、OTA 固件）复用同一连接池。
+  http.Client get httpClient => _http;
+
+  /// 网络层兜底文案按当前语言取（无 BuildContext，经 ApiSession 拿语言）。
+  /// 之前是硬编码中文，英/日用户断网/超时时高频看到中文 toast。
+  AppL10n get _l10n => AppL10n(ApiSession.instance.language);
 
   /// 组装公共请求头。[auth] 为 false 时不携带登录态（如登录/注册/发验证码）。
   Map<String, String> _headers({bool auth = true, Map<String, String>? extra}) {
@@ -98,7 +112,7 @@ class ApiClient {
     return _sendWithRetry(
       'GET',
       uri,
-      () => http
+      () => _http
           .get(uri, headers: _headers(auth: auth))
           .timeout(ApiConfig.timeout),
     );
@@ -117,7 +131,7 @@ class ApiClient {
     return _sendWithRetry(
       'POST',
       uri,
-      () => http
+      () => _http
           .post(
             uri,
             headers: _headers(
@@ -155,14 +169,14 @@ class ApiClient {
           await Future<void>.delayed(ApiConfig.networkRetryDelay);
           continue;
         }
-        throw ApiException('NETWORK_ERROR', '网络超时，请稍后再试');
+        throw ApiException('NETWORK_ERROR', _l10n.netTimeout);
       } catch (_) {
         if (attempt < ApiConfig.networkRetryMax) {
           attempt++;
           await Future<void>.delayed(ApiConfig.networkRetryDelay);
           continue;
         }
-        throw ApiException('NETWORK_ERROR', '网络连接失败，请稍后再试');
+        throw ApiException('NETWORK_ERROR', _l10n.netConnectFailed);
       }
     }
   }
@@ -177,7 +191,7 @@ class ApiClient {
     bool auth = true,
   }) async {
     if (filePaths.isEmpty) {
-      throw ApiException('UPLOAD_FILE_REQUIRED', '请选择上传文件');
+      throw ApiException('UPLOAD_FILE_REQUIRED', _l10n.netUploadFileRequired);
     }
     final results = <dynamic>[];
     for (final filePath in filePaths) {
@@ -198,16 +212,18 @@ class ApiClient {
         });
         request.files.add(await http.MultipartFile.fromPath(field, filePath));
         // 上传用更长的 uploadTimeout（不受普通请求 10s 影响），且不做自动重试（避免重复上传/重复投屏记录）
-        final streamed = await request.send().timeout(ApiConfig.uploadTimeout);
+        final streamed = await _http
+            .send(request)
+            .timeout(ApiConfig.uploadTimeout);
         final response = await http.Response.fromStream(streamed);
         _logResponse('POST multipart', uri, response);
         results.add(_parse(response));
       } on ApiException {
         rethrow;
       } on TimeoutException {
-        throw ApiException('NETWORK_ERROR', '网络超时，请稍后再试');
+        throw ApiException('NETWORK_ERROR', _l10n.netTimeout);
       } catch (_) {
-        throw ApiException('NETWORK_ERROR', '网络连接失败，请稍后再试');
+        throw ApiException('NETWORK_ERROR', _l10n.netConnectFailed);
       }
     }
     return results.length == 1 ? results.first : results;
@@ -234,13 +250,16 @@ class ApiClient {
       ApiSession.instance.clear();
       throw ApiException(
         retCode is int ? retCode : 401,
-        retMsg?.toString() ?? '登录已过期',
+        retMsg?.toString() ?? _l10n.netSessionExpired,
       );
     }
 
     // 非 2xx 视为服务器异常
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw ApiException(response.statusCode, retMsg?.toString() ?? '服务器异常');
+      throw ApiException(
+        response.statusCode,
+        retMsg?.toString() ?? _l10n.netServerError,
+      );
     }
 
     // BoltFox 约定 retCode=200 表示成功
@@ -248,7 +267,7 @@ class ApiClient {
       if (retCode != 200) {
         throw ApiException(
           retCode is int ? retCode : -1,
-          retMsg?.toString() ?? '业务处理失败',
+          retMsg?.toString() ?? _l10n.netRequestFailed,
           data: body['retData'],
         );
       }
@@ -260,7 +279,7 @@ class ApiClient {
 
   void _logRequest(String method, Uri uri, {Object? data}) {
     if (!kDebugMode) return;
-    debugPrint('[HTTP] --> $method $uri');
+    debugPrint('[HTTP] --> $method ${_redactUri(uri)}');
     if (data != null) {
       debugPrint('[HTTP] request: ${jsonEncode(_redact(data))}');
     }
@@ -271,8 +290,17 @@ class ApiClient {
     final text = response.bodyBytes.isEmpty
         ? ''
         : utf8.decode(response.bodyBytes, allowMalformed: true);
-    debugPrint('[HTTP] <-- ${response.statusCode} $method $uri');
+    debugPrint('[HTTP] <-- ${response.statusCode} $method ${_redactUri(uri)}');
     debugPrint('[HTTP] response: ${jsonEncode(_redactJson(text))}');
+  }
+
+  /// 日志里的 URL 同样要脱敏：/Client/ 公共参数把 userToken 拼进了 query，
+  /// 直接打印 $uri 会让 body 脱敏（_redact）形同虚设。
+  Uri _redactUri(Uri uri) {
+    if (!uri.queryParameters.containsKey('userToken')) return uri;
+    return uri.replace(
+      queryParameters: {...uri.queryParameters, 'userToken': '***'},
+    );
   }
 
   Object? _redactJson(String text) {

@@ -18,11 +18,40 @@ abstract interface class WeChatAuthorizationClient {
 final WeChatAuthorizationClient defaultWeChatAuthorizationClient =
     FluwxWeChatAuthorizationClient.instance;
 
-/// 微信授权失败时可直接展示给用户的错误。
+/// 微信授权错误类别：UI 层据此映射当前语言的用户文案（见 auth_page 的 code→l10n 映射）。
+/// [message] 保留中文细节仅供日志排查，**不要**直接展示给非中文用户。
+enum WeChatAuthErrorCode {
+  /// 平台不支持 / AppID·UniversalLink 未配置 / SDK 注册失败等开发期配置错误。
+  config,
+
+  /// 手机上未安装微信。
+  notInstalled,
+
+  /// 用户主动取消授权。
+  canceled,
+
+  /// 用户拒绝授权。
+  denied,
+
+  /// 微信版本过旧不支持授权登录。
+  versionUnsupported,
+
+  /// 授权等待超时。
+  timeout,
+
+  /// 其余失败（SDK 调用失败、state 校验失败、未返回凭证、拉起失败等）。
+  generic,
+}
+
+/// 微信授权失败错误。[code] 供 UI 层本地化，[message] 为中文详情（日志用）。
 class WeChatAuthorizationException implements Exception {
-  const WeChatAuthorizationException(this.message);
+  const WeChatAuthorizationException(
+    this.message, [
+    this.code = WeChatAuthErrorCode.generic,
+  ]);
 
   final String message;
+  final WeChatAuthErrorCode code;
 
   @override
   String toString() => message;
@@ -93,22 +122,32 @@ class FluwxWeChatAuthorizationClient implements WeChatAuthorizationClient {
     if (kIsWeb ||
         (defaultTargetPlatform != TargetPlatform.android &&
             defaultTargetPlatform != TargetPlatform.iOS)) {
-      throw const WeChatAuthorizationException('微信授权登录仅支持 Android 和 iOS。');
+      throw const WeChatAuthorizationException(
+        '微信授权登录仅支持 Android 和 iOS。',
+        WeChatAuthErrorCode.config,
+      );
     }
     if (_config.appId.trim().isEmpty) {
       throw const WeChatAuthorizationException(
         '微信登录尚未配置 AppID，请设置 WECHAT_APP_ID。',
+        WeChatAuthErrorCode.config,
       );
     }
     if (defaultTargetPlatform == TargetPlatform.iOS &&
         _config.universalLink.trim().isEmpty) {
-      throw const WeChatAuthorizationException('iOS 微信登录尚未配置 Universal Link。');
+      throw const WeChatAuthorizationException(
+        'iOS 微信登录尚未配置 Universal Link。',
+        WeChatAuthErrorCode.config,
+      );
     }
 
     try {
       await _ensureRegistered();
       if (!await _sdk.isWeChatInstalled) {
-        throw const WeChatAuthorizationException('请先安装微信后再使用微信授权登录。');
+        throw const WeChatAuthorizationException(
+          '请先安装微信后再使用微信授权登录。',
+          WeChatAuthErrorCode.notInstalled,
+        );
       }
       return await _requestAuthorizationCode();
     } on WeChatAuthorizationException {
@@ -137,6 +176,7 @@ class FluwxWeChatAuthorizationClient implements WeChatAuthorizationClient {
     if (!success) {
       throw const WeChatAuthorizationException(
         '微信 SDK 注册失败，请检查 AppID、应用签名和 Universal Link。',
+        WeChatAuthErrorCode.config,
       );
     }
     _registered = true;
@@ -184,8 +224,10 @@ class FluwxWeChatAuthorizationClient implements WeChatAuthorizationClient {
       }
       return await responseCompleter.future.timeout(
         _authorizationTimeout,
-        onTimeout: () =>
-            throw const WeChatAuthorizationException('微信授权已超时，请重新登录。'),
+        onTimeout: () => throw const WeChatAuthorizationException(
+          '微信授权已超时，请重新登录。',
+          WeChatAuthErrorCode.timeout,
+        ),
       );
     } finally {
       subscriber.cancel();
@@ -196,9 +238,18 @@ class FluwxWeChatAuthorizationClient implements WeChatAuthorizationClient {
     WeChatAuthResponse response,
   ) {
     return switch (response.errCode) {
-      -2 => const WeChatAuthorizationException('已取消微信授权。'),
-      -4 => const WeChatAuthorizationException('微信授权被拒绝。'),
-      -5 => const WeChatAuthorizationException('当前微信版本不支持授权登录。'),
+      -2 => const WeChatAuthorizationException(
+        '已取消微信授权。',
+        WeChatAuthErrorCode.canceled,
+      ),
+      -4 => const WeChatAuthorizationException(
+        '微信授权被拒绝。',
+        WeChatAuthErrorCode.denied,
+      ),
+      -5 => const WeChatAuthorizationException(
+        '当前微信版本不支持授权登录。',
+        WeChatAuthErrorCode.versionUnsupported,
+      ),
       -6 => const WeChatAuthorizationException('微信授权功能暂不可用。'),
       _ => WeChatAuthorizationException(
         response.errStr?.trim().isNotEmpty == true

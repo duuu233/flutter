@@ -13,6 +13,8 @@ class MyDevicesPage extends StatefulWidget {
     super.key,
     this.devices,
     this.loading = false,
+    this.loadError = false,
+    this.onRefresh,
     this.onAddDevice,
     this.onOpenDetail,
     this.onCast,
@@ -26,6 +28,13 @@ class MyDevicesPage extends StatefulWidget {
   /// 设备列表首屏是否仍在加载。true 时显示 loading，不显示「暂无设备」空态——
   /// 否则接口返回前必然先闪一次空列表（对齐小程序 device/list 的 `loading:true` 门控）。
   final bool loading;
+
+  /// 最近一次刷新是否失败：为 true 且列表为空时显示「加载失败 + 重试」，
+  /// 而非误导性的「暂无设备」空态。
+  final bool loadError;
+
+  /// 下拉刷新 / 失败重试的回调（由上层接 `state.refreshDevices`）。
+  final Future<void> Function()? onRefresh;
   final VoidCallback? onAddDevice;
   final ValueChanged<String>? onOpenDetail;
   final ValueChanged<String>? onCast;
@@ -82,27 +91,37 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
             ),
           const SizedBox(height: 12),
           Expanded(
-            // 三分支互斥链（loading 优先）：加载中 → 设备列表 → 空态。
-            // 原来只有列表一支，没设备时是一片空白（连「暂无设备」都没有）。
+            // 四分支互斥链（loading 优先）：加载中 → 失败重试 → 空态 → 设备列表。
+            // 失败且无本地数据时显示「加载失败 + 重试」——断网时不能误显示「暂无设备」。
             child: widget.loading
                 ? const PageLoading()
+                : _devices.isEmpty && widget.loadError
+                ? PageLoadError(
+                    onRetry: () => widget.onRefresh?.call(),
+                  )
                 : _devices.isEmpty
                 ? _EmptyDevices(onAddDevice: widget.onAddDevice)
-                : ListView.separated(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    itemCount: _devices.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final device = _devices[index];
-                      return _DeviceCard(
-                        device: device,
-                        onOpenDetail: () =>
-                            widget.onOpenDetail?.call(device.id),
-                        onCast: () => widget.onCast?.call(device.id),
-                        onRename: () => _rename(device),
-                        onToggleConnection: () => _toggleConnection(device),
-                      );
-                    },
+                : RefreshIndicator(
+                    // 下拉刷新：此前数据只在进页时刷新，无手动恢复手段。
+                    onRefresh: () async => widget.onRefresh?.call(),
+                    color: const Color(0xFFEB5F1B),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      itemCount: _devices.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final device = _devices[index];
+                        return _DeviceCard(
+                          device: device,
+                          onOpenDetail: () =>
+                              widget.onOpenDetail?.call(device.id),
+                          onCast: () => widget.onCast?.call(device.id),
+                          onRename: () => _rename(device),
+                          onToggleConnection: () => _toggleConnection(device),
+                        );
+                      },
+                    ),
                   ),
           ),
         ],

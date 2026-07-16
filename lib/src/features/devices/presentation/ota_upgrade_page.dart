@@ -1,4 +1,6 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
@@ -111,11 +113,13 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   _OtaStage _stage = _OtaStage.checking;
   bool _aborted = false;
 
-  String _deviceName = '智能相框';
+  // 设备名/状态文案初值留空，展示时在 build 里按当前语言兜底
+  //（字段初始化处没有 context，硬编码中文会绕过 i18n）。
+  String _deviceName = '';
   String _currentVersion = '--';
   String _latestVersion = '--';
   String _packageSizeText = '--';
-  String _statusText = '检查中';
+  String _statusText = '';
   String _errorMessage = '';
   List<String> _releaseNotes = const [];
 
@@ -129,7 +133,13 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   @override
   void initState() {
     super.initState();
-    _load();
+    // 推迟到首帧后：_load 的同步前段会用 AppL10n.of(context)（InheritedWidget 依赖），
+    // initState 里同步调用会抛「dependOnInheritedWidget in initState」。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _load();
+      }
+    });
   }
 
   @override
@@ -171,17 +181,18 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   Future<void> _load() async {
     final id = _deviceId;
     if (id == null) {
+      final l10n = AppL10n.of(context);
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = '设备不存在';
-        _errorMessage = '缺少设备ID，无法检查固件版本。';
+        _statusText = l10n.otaDeviceNotFound;
+        _errorMessage = l10n.otaMissingDeviceId;
       });
       return;
     }
 
     setState(() {
       _stage = _OtaStage.checking;
-      _statusText = '检查中';
+      _statusText = AppL10n.of(context).otaChecking;
       _errorMessage = '';
       _progress = 0;
       _progressText = '';
@@ -332,10 +343,12 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       final result = await _ble.upgradeFirmware(
         _buildPackage(dryRun: dryRun),
         dryRun: dryRun,
-        pace: 20,
+        pace: 3,
         onProgress: _onProgress,
         shouldAbort: () => _aborted,
-        onMonitor: dryRun ? null : monitor,
+        // 逐帧 hex 日志仅 debug 输出：release 下 debugPrint 仍会写 logcat，
+        // 会把 OTA 帧协议细节暴露给任何可读日志的调试者。
+        onMonitor: (dryRun || !kDebugMode) ? null : monitor,
       );
 
       if (!mounted) return;
@@ -369,6 +382,8 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       final unconfirmed = !result.confirmed;
       final doneText =
           unconfirmed ? l10n.otaUnconfirmedRetry : l10n.otaUpgradeComplete;
+      // 升级结束触觉反馈：整轮要几十秒，用户多半没盯着屏幕。
+      HapticFeedback.mediumImpact();
       setState(() {
         _stage = _OtaStage.success;
         _statusText = doneText;
@@ -397,10 +412,17 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     } catch (error) {
       if (!mounted) return;
       final aborted = _aborted;
+      // 原始异常进日志；用户只看 OtaException 的协议文案或通用「升级失败」，
+      // 不把 PlatformException 之类的技术堆栈文本原样糊到界面上。
+      debugPrint('[OTA] 升级失败: $error');
       setState(() {
         _stage = _OtaStage.failed;
         _statusText = dryRun ? l10n.otaDryRunFailed : l10n.otaUpgradeFailed;
-        _errorMessage = aborted ? l10n.otaInterrupted : error.toString();
+        _errorMessage = aborted
+            ? l10n.otaInterrupted
+            : error is OtaException
+            ? error.message
+            : l10n.otaGenericFailure;
       });
     }
   }
@@ -465,10 +487,8 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         title: l10n.otaTitle,
         body: Padding(
           padding: const EdgeInsets.only(top: 120),
-          child: Center(
-            child: Text(l10n.otaCheckingFirmware,
-                style: const TextStyle(color: Color(0xFF808690))),
-          ),
+          // 与其他页一致的转圈 loading（原来只有一行静态文字，没有加载指示）。
+          child: PageLoading(label: l10n.otaCheckingFirmware),
         ),
       );
     }
@@ -476,6 +496,45 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     // 无真实升级包/未连接时，展示「干跑测试」入口，方便无硬件时验证编码链路。
     final showDryRun = _canDryRun && (!_hasPackage || !_connected);
 
+    // 升级中拦截返回：之前无任何拦截，误触返回/侧滑会静默中止固件传输
+    // （dispose 打 _aborted），且中断提示只在页内可见，用户毫无感知。
+    return PopScope(
+      canPop: _stage != _OtaStage.upgrading,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final leave = await _confirmExitWhileUpgrading();
+        if (leave && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: _buildScreen(context, l10n, showDryRun),
+    );
+  }
+
+  /// 升级中确认退出：返回 true 表示用户坚持退出（将中断固件传输）。
+  Future<bool> _confirmExitWhileUpgrading() async {
+    final l10n = AppL10n.of(context);
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.otaExitConfirmTitle),
+        content: Text(l10n.otaExitConfirmContent),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.otaExitConfirmStay),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.otaExitConfirmLeave),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
+  Widget _buildScreen(BuildContext context, AppL10n l10n, bool showDryRun) {
     return FigmaScreen(
       title: l10n.otaTitle,
       body: Column(

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../device/ble_controller.dart';
 import '../features/account/presentation/auth_page.dart';
@@ -36,6 +37,10 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
 
   /// 上一帧的登录态，用来识别「已登录 → 未登录」这一跳变。
   late bool _wasLoggedIn = _state.isLoggedIn;
+
+  /// 上一帧的语言：MaterialApp 本体已收窄为只随 setState 重建（见 build 注释），
+  /// 语言变化需要显式 setState 才能更新 MaterialApp.locale（系统组件文案跟随切换）。
+  late AppLanguage _lastLanguage = _state.language;
 
   @override
   void initState() {
@@ -87,7 +92,25 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       });
     }
     _wasLoggedIn = loggedIn;
+    // 语言切换（低频）：重建 MaterialApp 让 locale/系统组件文案跟随。
+    if (_lastLanguage != _state.language) {
+      _lastLanguage = _state.language;
+      if (mounted) {
+        setState(() {});
+      }
+    }
   }
+
+  /// AppLanguage → Flutter Locale（Material 内建组件文案的语言）。
+  Locale get _locale => switch (_state.language) {
+    AppLanguage.zh => const Locale('zh'),
+    AppLanguage.zhHant => const Locale.fromSubtags(
+      languageCode: 'zh',
+      scriptCode: 'Hant',
+    ),
+    AppLanguage.en => const Locale('en'),
+    AppLanguage.ja => const Locale('ja'),
+  };
 
   // 回前台做一次「连接体检」（对齐小程序 app.onShow → deviceBle.reconcileConnections）：
   // 系统在后台挂起蓝牙可能已断开却没补发断开回调，内存会话会假报「已连接」。
@@ -118,52 +141,84 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// 主题在 App 生命周期内不变：缓存一份实例。之前写在 build 里的
+  /// `buildAppTheme()` 会在每次 state notify（全局 42 处）时重跑
+  /// `ColorScheme.fromSeed` 的调色板推导并让 MaterialApp 全量重建，纯属浪费。
+  final ThemeData _theme = buildAppTheme();
+
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _state,
-      builder: (context, _) {
-        return MaterialApp(
-          navigatorKey: _navigatorKey,
-          debugShowCheckedModeBanner: false,
-          title: 'BoltStar',
-          theme: buildAppTheme(),
-          // 强制登录：未登录时根页面就是登录页，登录成功前进不到任何业务页面。
-          // 这是 App 与小程序的**有意差异**——小程序有游客模式（未登录也能逛首页），
-          // App 不做游客态。登录态变化会经由外层 AnimatedBuilder 重建，自动在
-          // 登录页 / 主壳层之间切换，所以登录成功、退出登录都**不需要**手动导航。
-          //
-          // 注意：登出/注销时只能 `popUntil(isFirst)` 回到根，不要用
-          // `pushNamedAndRemoveUntil(auth, (route) => false)` —— 那会把根路由一起清掉，
-          // 栈里只剩一个 /auth，登录成功后根节点即便换成主壳层也已不在栈中，用户会卡在登录页。
-          home: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 350),
-            child: _showSplash
-                ? const SplashPage()
-                : _state.isLoggedIn
-                ? AppShell(
-                    state: _state,
-                    currentIndex: _currentIndex,
-                    onIndexChanged: (index) {
-                      setState(() {
-                        _currentIndex = index;
-                      });
-                    },
-                  )
-                : AuthPage(state: _state),
-          ),
-          // 全局路由观察者：让图库/投屏记录等页在被覆盖页 pop 回来时重入刷新。
-          navigatorObservers: [appRouteObserver],
-          // 命名路由仍复用同一个 `_state`，避免页面之间出现两份业务数据。
-          onGenerateRoute: (settings) =>
-              AppRoutes.onGenerateRoute(settings: settings, state: _state),
-          // 语言作用域置于 Navigator 之上：切换语言时所有路由（含 push 出来的业务页）随之重译。
-          builder: (context, child) => AppLocalizationsScope(
+    // 重建收窄：MaterialApp 本体只随 setState（闪屏结束/切 tab）重建；
+    // state 的高频 notify 只驱动两处局部 AnimatedBuilder——
+    //   ① home: 可见 tab 子树（HomePage/MinePage 自身不监听 state，数据新鲜度
+    //      依赖这里的重建，不能收得更窄）；
+    //   ② builder: 语言作用域（InheritedWidget，child 实例不变时语言不变则零开销）。
+    return MaterialApp(
+      navigatorKey: _navigatorKey,
+      debugShowCheckedModeBanner: false,
+      title: 'BoltStar',
+      theme: _theme,
+      // Material 内建组件文案（文本选择菜单/返回键无障碍标签等）跟随 App 语言，
+      // 否则中文/日文界面下长按菜单永远是英文 Copy/Paste。
+      locale: _locale,
+      supportedLocales: const [
+        Locale('zh'),
+        Locale.fromSubtags(languageCode: 'zh', scriptCode: 'Hant'),
+        Locale('en'),
+        Locale('ja'),
+      ],
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+      ],
+      // 强制登录：未登录时根页面就是登录页，登录成功前进不到任何业务页面。
+      // 这是 App 与小程序的**有意差异**——小程序有游客模式（未登录也能逛首页），
+      // App 不做游客态。登录态变化会经由 home 的 AnimatedBuilder 重建，自动在
+      // 登录页 / 主壳层之间切换，所以登录成功、退出登录都**不需要**手动导航。
+      //
+      // 注意：登出/注销时只能 `popUntil(isFirst)` 回到根，不要用
+      // `pushNamedAndRemoveUntil(auth, (route) => false)` —— 那会把根路由一起清掉，
+      // 栈里只剩一个 /auth，登录成功后根节点即便换成主壳层也已不在栈中，用户会卡在登录页。
+      home: AnimatedBuilder(
+        animation: _state,
+        builder: (context, _) => AnimatedSwitcher(
+          duration: const Duration(milliseconds: 350),
+          child: _showSplash
+              ? const SplashPage()
+              : _state.isLoggedIn
+              ? AppShell(
+                  state: _state,
+                  currentIndex: _currentIndex,
+                  onIndexChanged: (index) {
+                    setState(() {
+                      _currentIndex = index;
+                    });
+                  },
+                )
+              : AuthPage(state: _state),
+        ),
+      ),
+      // 全局路由观察者：让图库/投屏记录等页在被覆盖页 pop 回来时重入刷新。
+      navigatorObservers: [appRouteObserver],
+      // 命名路由仍复用同一个 `_state`，避免页面之间出现两份业务数据。
+      onGenerateRoute: (settings) =>
+          AppRoutes.onGenerateRoute(settings: settings, state: _state),
+      // 语言作用域置于 Navigator 之上：切换语言时所有路由（含 push 出来的业务页）随之重译。
+      // child（Navigator）实例稳定，这层 AnimatedBuilder 每次 notify 只重建
+      // AppLocalizationsScope 一个 InheritedWidget；语言没变时不通知任何依赖者。
+      // withClampedTextScaling：全 App 大量 Figma 定宽定高排版，系统字号 >1.3x
+      // 会挤爆固定容器，钳制到 1.3x 作为止血（长期应把固定高改 minHeight）。
+      builder: (context, child) => MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: AnimatedBuilder(
+          animation: _state,
+          builder: (context, _) => AppLocalizationsScope(
             language: _state.language,
             child: child ?? const SizedBox.shrink(),
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }

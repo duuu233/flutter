@@ -43,6 +43,10 @@ class _DevicesPageState extends State<DevicesPage> {
         return MyDevicesPage(
           // 首屏未出结果前显示 loading，不先闪空列表。
           loading: !state.devicesLoaded,
+          loadError: state.devicesLoadError,
+          onRefresh: () async {
+            await state.refreshDevices();
+          },
           devices: state.devices
               .map(
                 (device) => MyDeviceOverview(
@@ -74,7 +78,7 @@ class _DevicesPageState extends State<DevicesPage> {
           },
           onConnect: (deviceId) async {
             // 真实 BLE 连接：复用活动会话或扫描匹配（只认序列号，改名不影响连接）。
-            AppLoadingDialog.show(context, '连接设备中');
+            AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
             final feedback = await state.connectDevice(deviceId);
             if (!context.mounted) {
               return;

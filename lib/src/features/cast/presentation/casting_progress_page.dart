@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
@@ -30,7 +31,8 @@ class CastingProgressPage extends StatefulWidget {
     this.progressLabel = '10/12',
     this.userProductId,
     this.device,
-    this.deviceName = '相框',
+    // 空串占位：展示时在 build 里按当前语言兜底成「相框」（此处无 context 不能本地化）。
+    this.deviceName = '',
     this.imagePaths = const [],
     this.recastImgBle,
     this.recastUpirId,
@@ -156,6 +158,8 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       if (!mounted) return;
     }
     final l10n = AppL10n.of(context);
+    // 关键节点触觉反馈（iOS 惯例）：投屏结束时轻震一下，用户不用盯着屏幕等。
+    HapticFeedback.mediumImpact();
     setState(() {
       _successCount = result.uploaded;
       _selectedTotal = result.total;
@@ -303,10 +307,49 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   String get _title =>
       _status == _CastStatus.progress ? _stageTitle : _resultTitle;
 
+  /// 传输中确认退出：返回 true 表示用户坚持退出（将中断本次投屏）。
+  Future<bool> _confirmExitWhileCasting() async {
+    final l10n = AppL10n.of(context);
+    final leave = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.castExitConfirmTitle),
+        content: Text(l10n.castExitConfirmContent),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: Text(l10n.castExitConfirmStay),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: Text(l10n.castExitConfirmLeave),
+          ),
+        ],
+      ),
+    );
+    return leave ?? false;
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
     final inProgress = _status == _CastStatus.progress;
+    // 真实投屏传输中拦截返回（顶栏返回键走 maybePop、系统返回/侧滑同样经过 PopScope）：
+    // 之前无任何拦截，误触返回会静默掐断 BLE 图传（dispose 里 _aborted=true），整单投屏作废。
+    return PopScope(
+      canPop: !(inProgress && widget._live),
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        final leave = await _confirmExitWhileCasting();
+        if (leave && mounted) {
+          Navigator.of(context).pop();
+        }
+      },
+      child: _buildScreen(context, l10n, inProgress),
+    );
+  }
+
+  Widget _buildScreen(BuildContext context, AppL10n l10n, bool inProgress) {
     return FigmaScreen(
       title: _title,
       body: Column(
@@ -357,7 +400,9 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
           if (!inProgress && widget._live) ...[
             const SizedBox(height: 30), // .info-card margin-top 60rpx
             ProjectionResultInfoCard(
-              deviceName: widget.deviceName,
+              deviceName: widget.deviceName.isEmpty
+                  ? l10n.castDefaultDeviceName
+                  : widget.deviceName,
               successCount: _successCount,
               failCount: _failCount,
               total: _selectedTotal,

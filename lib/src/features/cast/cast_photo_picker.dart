@@ -116,6 +116,7 @@ class _CastMethodSheet extends StatelessWidget {
               _CastSheetRow(
                 title: l10n.cresMethodCamera,
                 subtitle: l10n.cresMethodCameraDesc,
+                isCamera: true,
                 artAsset: 'assets/images/home-media-mini01.png',
                 arrowAsset: 'assets/images/home-camera-card-right-icon.png',
                 onTap: () => Navigator.of(context).pop(ImageSourceType.camera),
@@ -125,6 +126,7 @@ class _CastMethodSheet extends StatelessWidget {
               _CastSheetRow(
                 title: l10n.cresMethodAlbum,
                 subtitle: l10n.cresMethodAlbumDesc,
+                isCamera: false,
                 artAsset: 'assets/images/home-media-mini02.png',
                 arrowAsset: 'assets/images/home-album-card-right-icon.png',
                 onTap: () => Navigator.of(context).pop(ImageSourceType.album),
@@ -166,6 +168,7 @@ class _CastSheetRow extends StatelessWidget {
   const _CastSheetRow({
     required this.title,
     required this.subtitle,
+    required this.isCamera,
     required this.artAsset,
     required this.arrowAsset,
     required this.onTap,
@@ -173,14 +176,13 @@ class _CastSheetRow extends StatelessWidget {
 
   final String title;
   final String subtitle;
+  final bool isCamera;
   final String artAsset;
   final String arrowAsset;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final isCamera = title == '拍照';
-    final l10n = AppL10n.of(context);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
@@ -216,7 +218,7 @@ class _CastSheetRow extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    isCamera ? l10n.cresMethodCamera : l10n.cresMethodAlbum,
+                    title,
                     style: const TextStyle(
                       color: Color(0xFF2A2D32),
                       fontSize: 16,

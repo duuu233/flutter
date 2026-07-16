@@ -22,15 +22,23 @@ class AppShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (currentIndex == 1) {
-      return Scaffold(
-        backgroundColor: Colors.white,
-        body: MinePage(state: state, onOpenHome: () => onIndexChanged(0)),
-      );
-    }
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: HomePage(state: state, onOpenMine: () => onIndexChanged(1)),
+    // Android 返回键惯例：在「我的」tab 按返回先切回首页 tab，而不是直接退出 App。
+    return PopScope(
+      canPop: currentIndex == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && currentIndex != 0) {
+          onIndexChanged(0);
+        }
+      },
+      child: currentIndex == 1
+          ? Scaffold(
+              backgroundColor: Colors.white,
+              body: MinePage(state: state, onOpenHome: () => onIndexChanged(0)),
+            )
+          : Scaffold(
+              backgroundColor: Colors.white,
+              body: HomePage(state: state, onOpenMine: () => onIndexChanged(1)),
+            ),
     );
   }
 }

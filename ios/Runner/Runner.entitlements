@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- 微信 Universal Link 回调必需：把 example.boltfox.cn 替换为你的真实域名，
+	     该域名根目录需部署 /.well-known/apple-app-site-association（含 TeamID+BundleID），
+	     并与微信开放平台后台、--dart-define=WECHAT_UNIVERSAL_LINK 三处完全一致。 -->
+	<key>com.apple.developer.associated-domains</key>
+	<array>
+		<string>applinks:example.boltfox.cn</string>
+	</array>
+</dict>
+</plist>

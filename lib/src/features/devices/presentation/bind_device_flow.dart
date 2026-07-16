@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../../../device/ble_controller.dart';
@@ -59,7 +60,9 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         return;
       }
       setState(() => _stage = _Stage.notFound);
-      _toast(AppL10n.of(context).bindBtUnsupported(error));
+      // 异常详情进日志，不进 toast（用户读不完也看不懂技术文本）。
+      debugPrint('[Bind] 蓝牙权限通道异常: $error');
+      _toast(AppL10n.of(context).bindBtUnsupported);
       return;
     }
     if (!mounted) {
@@ -97,7 +100,8 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       if (!mounted) {
         return;
       }
-      _toast(AppL10n.of(context).bindScanFailed(error));
+      debugPrint('[Bind] 扫描失败: $error');
+      _toast(AppL10n.of(context).bindScanFailed);
       setState(() => _stage = _Stage.notFound);
       return;
     }
@@ -115,12 +119,20 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   BindDeviceEntry _entryOf(ScanResult result) {
     final screen = BleController.screenLabelOf(result);
     final battery = BleController.batteryOf(result);
-    final signal = BleController.rssiToSignalText(result.rssi);
+    final level = BleController.rssiToSignalLevel(result.rssi);
     final l10n = AppL10n.of(context);
+    final signal = switch (level) {
+      BleSignalLevel.veryStrong => l10n.signalVeryStrong,
+      BleSignalLevel.strong => l10n.signalStrong,
+      BleSignalLevel.normal => l10n.signalNormal,
+      BleSignalLevel.weak => l10n.signalWeak,
+      BleSignalLevel.veryWeak => l10n.signalVeryWeak,
+      null => '--',
+    };
     final parts = <String>[
       if (screen.isNotEmpty) screen,
       if (battery != null) l10n.bindBatteryLabel(battery),
-      l10n.bindSignalLabel(signal.isEmpty ? '--' : signal),
+      l10n.bindSignalLabel(signal),
     ];
     return BindDeviceEntry(
       id: result.device.remoteId.str,
@@ -268,6 +280,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     widget.state.reconcileConnectionFlags();
     // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时；_binding 保持 true 到本页销毁，防重复点击）。
     AppLoadingDialog.hide(context);
+    HapticFeedback.mediumImpact(); // 绑定成功触觉反馈
     _toast(AppL10n.of(context).bindSuccess);
     Navigator.of(context).maybePop();
   }

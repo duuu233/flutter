@@ -205,73 +205,6 @@ class FigmaHomePrimaryButton extends StatelessWidget {
   }
 }
 
-class FigmaHomeBottomNav extends StatelessWidget {
-  const FigmaHomeBottomNav({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 327,
-      height: 56,
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.74),
-        borderRadius: BorderRadius.circular(35),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
-      ),
-      child: const Row(
-        children: [
-          Expanded(
-            child: _BottomNavItem(
-              icon: Icons.home_rounded,
-              label: '首页',
-              color: Color(0xFFFF6A24),
-            ),
-          ),
-          Expanded(
-            child: _BottomNavItem(
-              icon: Icons.person_outline_rounded,
-              label: '我的',
-              color: Color(0xFF7A7D80),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _BottomNavItem extends StatelessWidget {
-  const _BottomNavItem({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
-
-  final IconData icon;
-  final String label;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Icon(icon, color: color, size: 28),
-        const SizedBox(height: 1),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w400,
-            height: 1.2,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class FigmaCastMethodCard extends StatelessWidget {
   const FigmaCastMethodCard({
     super.key,
@@ -366,7 +299,8 @@ class FigmaCastMethodRow extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        width: 327,
+        // 撑满父容器（页面自带边距）：写死 327 在 ≤320dp 宽屏/分屏会横向溢出。
+        width: double.infinity,
         height: 61,
         padding: const EdgeInsets.fromLTRB(12, 8, 18, 8),
         decoration: BoxDecoration(
@@ -582,7 +516,8 @@ class FigmaBindDeviceCard extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Container(
-        width: 327,
+        // 撑满父容器（页面自带边距）：写死 327 在 ≤320dp 宽屏/分屏会横向溢出。
+        width: double.infinity,
         height: 64,
         padding: const EdgeInsets.fromLTRB(20, 8, 18, 8),
         decoration: BoxDecoration(

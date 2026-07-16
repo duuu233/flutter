@@ -1,7 +1,8 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../../../network/api_client.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
@@ -85,6 +86,14 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     }
   }
 
+  /// 下拉刷新用的静默重拉：不切 _loading（切了会把列表换成整页 loading，打断刷新手势）。
+  Future<void> _silentReload() async {
+    await state.refreshCastRecords(deviceUploadState: _uploadStateOf(_tab));
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
   // 后端已按状态过滤；仍按 tab 再筛一层作兜底（后端忽略过滤参数时也不串档）。
   List<CastRecord> get _records =>
       state.castRecords.where((record) => record.status == _tab).toList();
@@ -150,7 +159,10 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   /// 把记录原图下载到本地临时文件，供投屏预览页（裁剪流程）使用；失败返回 null。
   Future<String?> _downloadToTemp(String url) async {
     try {
-      final resp = await http.get(Uri.parse(url));
+      // 共用 ApiClient 的连接池，并加超时（无超时弱网会永久挂起）。
+      final resp = await ApiClient.instance.httpClient
+          .get(Uri.parse(url))
+          .timeout(const Duration(seconds: 20));
       if (resp.statusCode != 200) {
         return null;
       }
@@ -237,30 +249,40 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
             ),
           const SizedBox(height: 12),
           Expanded(
-            // 三分支互斥链（loading 优先）：接口没回来之前不渲染「暂无记录」空态。
+            // 四分支互斥链（loading 优先）：接口没回来之前不渲染「暂无记录」空态；
+            // 刷新失败且无本地数据 → 「加载失败 + 重试」（断网不能误显示「暂无记录」）。
             child: _loading
                 ? const PageLoading()
+                : records.isEmpty && state.castRecordsLoadError
+                ? PageLoadError(onRetry: _loadTab)
                 : records.isEmpty
                 ? _EmptyRecords(success: success)
-                : ListView.separated(
-                    padding: const EdgeInsets.only(bottom: 12),
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: records.length,
-                    separatorBuilder: (_, _) => const SizedBox(height: 12),
-                    itemBuilder: (context, index) {
-                      final record = records[index];
-                      return _RecordCard(
-                        // 设备名直接用记录自带的 productName（后端逐行下发）。
-                        // 原来按 deviceId 反查设备列表，设备列表没加载好就会显示成原始数字 id。
-                        deviceName: record.deviceName.isNotEmpty
-                            ? record.deviceName
-                            : state.deviceName(record.deviceId),
-                        dateText: state.formatDateTime(record.createdAt),
-                        record: record,
-                        onRecast: () => _recast(record),
-                        onDelete: () => _delete(record),
-                      );
-                    },
+                : RefreshIndicator(
+                    // 下拉刷新：此前数据只在进页/切 tab/回页时刷新。
+                    onRefresh: _silentReload,
+                    color: const Color(0xFFEB5F1B),
+                    child: ListView.separated(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      physics: const BouncingScrollPhysics(
+                        parent: AlwaysScrollableScrollPhysics(),
+                      ),
+                      itemCount: records.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 12),
+                      itemBuilder: (context, index) {
+                        final record = records[index];
+                        return _RecordCard(
+                          // 设备名直接用记录自带的 productName（后端逐行下发）。
+                          // 原来按 deviceId 反查设备列表，设备列表没加载好就会显示成原始数字 id。
+                          deviceName: record.deviceName.isNotEmpty
+                              ? record.deviceName
+                              : state.deviceName(record.deviceId),
+                          dateText: state.formatDateTime(record.createdAt),
+                          record: record,
+                          onRecast: () => _recast(record),
+                          onDelete: () => _delete(record),
+                        );
+                      },
+                    ),
                   ),
           ),
         ],
@@ -417,12 +439,15 @@ class _RecordCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   if (record.imageUrl != null)
-                    Image.network(
-                      record.imageUrl!,
+                    CachedNetworkImage(
+                      imageUrl: record.imageUrl!,
                       // aspectFit：与我的图库一致，保持比例不裁切不拉伸，按后端记录 img 原样展示
                       // （对齐小程序 records.wxml mode=aspectFit）；留白落在下方色块渐变上。
                       fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) =>
+                      // 72lp 缩略图，按物理像素解码，避免原图全尺寸位图进内存。
+                      memCacheWidth:
+                          (72 * MediaQuery.devicePixelRatioOf(context)).round(),
+                      errorWidget: (context, url, error) =>
                           const SizedBox.shrink(),
                     ),
                   Center(

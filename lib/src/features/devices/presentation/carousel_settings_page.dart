@@ -52,7 +52,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
       return;
     }
     setState(() => _busy = true);
-    AppLoadingDialog.show(context, '保存中');
+    AppLoadingDialog.show(context, AppL10n.of(context).saving);
     final feedback = await widget.state.setDeviceCarousel(
       widget.state.selectedDevice.id,
       enabled: enabled,

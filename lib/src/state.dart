@@ -359,7 +359,10 @@ class PhotoFrameState extends ChangeNotifier {
       _selectedDeviceId = '',
       _draftLibrary = const [],
       _albumPhotos = [],
-      _castRecords = [];
+      _castRecords = [] {
+    // BLE 层没有 BuildContext，用户可见错误文案（连接失败等）经此按当前语言取。
+    BleController.instance.languageResolver = () => _language;
+  }
 
   AppLanguage _language;
   int _cameraCounter;
@@ -387,6 +390,13 @@ class PhotoFrameState extends ChangeNotifier {
   bool _castRecordsLoaded = false;
   bool _userLoaded = false;
 
+  // 「最近一次刷新是否失败」：与 loaded 标记配合，列表页据此把断网等失败
+  // 渲染成「加载失败 + 重试」，而不是误导性的「暂无数据」空态
+  // （空态文案只在确认成功且确实为空时出现）。成功刷新会清掉。
+  bool _devicesLoadError = false;
+  bool _albumLoadError = false;
+  bool _castRecordsLoadError = false;
+
   /// 设备列表首屏是否已出结果（false=仍在首次加载，页面应显示 loading 而非「未绑定」空态）。
   bool get devicesLoaded => _devicesLoaded;
 
@@ -395,6 +405,15 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 投屏记录首屏是否已出结果。
   bool get castRecordsLoaded => _castRecordsLoaded;
+
+  /// 最近一次设备列表刷新是否失败（配合 [devicesLoaded]：列表为空时显示失败重试态）。
+  bool get devicesLoadError => _devicesLoadError;
+
+  /// 最近一次相册刷新是否失败。
+  bool get albumLoadError => _albumLoadError;
+
+  /// 最近一次投屏记录刷新是否失败。
+  bool get castRecordsLoadError => _castRecordsLoadError;
 
   /// 用户资料首屏是否已出结果（「我的」页据此决定显示真实统计还是占位 `--`）。
   bool get userLoaded => _userLoaded;
@@ -1450,8 +1469,8 @@ class PhotoFrameState extends ChangeNotifier {
     if (!transfer.success) {
       final message = tr(
         zh: '投屏失败：${transfer.resultCode.labelZh}。',
-        en: 'Casting failed: ${transfer.resultCode.labelZh}.',
-        ja: '投映に失敗しました: ${transfer.resultCode.labelZh}。',
+        en: 'Casting failed: ${transfer.resultCode.labelEn}.',
+        ja: '投映に失敗しました: ${transfer.resultCode.labelJa}。',
       );
       _castRecords.insert(
         0,
@@ -1561,15 +1580,18 @@ class PhotoFrameState extends ChangeNotifier {
         ..addAll(mapped);
       // 数据与首屏加载态同帧提交：先置 loaded 再 notify，页面不会出现「loading 已结束但列表还没写入」的空态中间帧。
       _albumLoaded = true;
+      _albumLoadError = false;
       notifyListeners();
       return ActionFeedback(
         success: true,
         message: tr(zh: '相册已更新。', en: 'Album refreshed.', ja: 'アルバムを更新しました。'),
       );
     } catch (error) {
-      // 失败也结束首屏 loading，落到空态（对齐小程序 catch 里的 `setData({loading:false})`；
+      // 失败也结束首屏 loading（对齐小程序 catch 里的 `setData({loading:false})`；
       // 错误提示由调用方按返回的 ActionFeedback 弹，不在这里重复弹）。
+      // 记下失败标记：图库页在列表为空时据此显示「加载失败 + 重试」而非空态。
       _albumLoaded = true;
+      _albumLoadError = true;
       notifyListeners();
       return _apiFailure(error);
     }
@@ -1917,6 +1939,7 @@ class PhotoFrameState extends ChangeNotifier {
         ..clear()
         ..addAll(mapped);
       _castRecordsLoaded = true;
+      _castRecordsLoadError = false;
       notifyListeners();
       return ActionFeedback(
         success: true,
@@ -1927,8 +1950,9 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     } catch (error) {
-      // 失败也结束首屏 loading，落到空态（同 refreshAlbum）。
+      // 失败也结束首屏 loading，并记失败标记（同 refreshAlbum）。
       _castRecordsLoaded = true;
+      _castRecordsLoadError = true;
       notifyListeners();
       return _apiFailure(error);
     }
@@ -2028,6 +2052,7 @@ class PhotoFrameState extends ChangeNotifier {
         _selectedDeviceId = _devices.first.id;
       }
       _devicesLoaded = true;
+      _devicesLoadError = false;
       notifyListeners();
       return ActionFeedback(
         success: true,
@@ -2038,8 +2063,9 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     } catch (error) {
-      // 失败也结束首屏 loading，落到空态（同 refreshAlbum）。
+      // 失败也结束首屏 loading，并记失败标记（同 refreshAlbum）。
       _devicesLoaded = true;
+      _devicesLoadError = true;
       notifyListeners();
       return _apiFailure(error);
     }
@@ -2517,6 +2543,9 @@ class PhotoFrameState extends ChangeNotifier {
     _devicesLoaded = false;
     _albumLoaded = false;
     _castRecordsLoaded = false;
+    _devicesLoadError = false;
+    _albumLoadError = false;
+    _castRecordsLoadError = false;
     _userLoaded = false;
     _isLoggedIn = false;
     _currentUser.email = '';
@@ -2548,6 +2577,9 @@ class PhotoFrameState extends ChangeNotifier {
     _devicesLoaded = false;
     _albumLoaded = false;
     _castRecordsLoaded = false;
+    _devicesLoadError = false;
+    _albumLoadError = false;
+    _castRecordsLoadError = false;
     _userLoaded = false;
     _isLoggedIn = false;
     _currentUser = UserProfile(
@@ -3046,6 +3078,9 @@ class PhotoFrameState extends ChangeNotifier {
     _devicesLoaded = false;
     _albumLoaded = false;
     _castRecordsLoaded = false;
+    _devicesLoadError = false;
+    _albumLoadError = false;
+    _castRecordsLoadError = false;
     _userLoaded = false;
     _isLoggedIn = false;
     notifyListeners();

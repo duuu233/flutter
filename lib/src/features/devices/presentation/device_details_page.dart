@@ -132,7 +132,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     final device = state.selectedDevice;
     final wasConnected = device.connected;
     if (!wasConnected) {
-      AppLoadingDialog.show(context, '连接设备中');
+      AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
     }
     final feedback = wasConnected
         ? await state.disconnectDevice(device.id)
