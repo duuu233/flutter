@@ -127,6 +127,41 @@ class NativeDeviceApi {
     });
   }
 
+  /// 屏幕是否处于亮屏可交互状态。用于在 App 进入 paused 时区分
+  /// 「切出 App」（亮屏，BLE 宽限 15 分钟）与「息屏未切出」（灭屏，宽限 30 分钟）。
+  /// 通道不可用（iOS/异常）时按亮屏处理——宁可用更短的宽限，不给更长的。
+  static Future<bool> isScreenInteractive() async {
+    try {
+      final result = await _channel.invokeMethod<bool>('isScreenInteractive');
+      return result ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// 启动 BLE 连接保活前台服务（Android）。连接建立时调用，挂常驻通知把进程
+  /// 优先级提到前台服务档，防止切出后进程被 ROM 秒杀连带断开 BLE。
+  /// iOS 无此机制，通道未实现时静默跳过。
+  static Future<void> startConnectionKeepAliveService({
+    required String title,
+    required String text,
+  }) async {
+    try {
+      await _channel.invokeMethod<void>('startConnectionService', {
+        'title': title,
+        'text': text,
+      });
+    } catch (_) {}
+  }
+
+  /// 停止 BLE 连接保活前台服务：连接断开（含租约到期主动断开）时调用，
+  /// 让进程回到可回收状态。
+  static Future<void> stopConnectionKeepAliveService() async {
+    try {
+      await _channel.invokeMethod<void>('stopConnectionService');
+    } catch (_) {}
+  }
+
   static Future<void> openBluetoothSettings() async {
     await _channel.invokeMethod<void>('openBluetoothSettings');
   }

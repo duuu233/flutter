@@ -3,8 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
+import '../device/ble_connection_lease.dart';
 import '../device/ble_controller.dart';
 import '../features/account/presentation/auth_page.dart';
+import '../native_device_api.dart';
 import '../features/shell/presentation/shell_page.dart';
 import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
@@ -48,8 +50,14 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     _state.addListener(_handleAuthChanged);
     _ble.addListener(_handleBleStateChanged);
-    // 冷启动闪屏：到时后切走。语言等异步初始化在这段时间内并行完成。
-    Future.delayed(_splashDuration, () {
+    // 冷启动闪屏：到时且登录态恢复完成后再切走——闪屏期间并行恢复持久化的
+    // 登录 token（进程被后台回收后重启的场景），保证闪屏结束那一刻「登录页 or
+    // 主壳层」的判定已经尘埃落定，不会先闪一下登录页再跳首页。
+    // restoreSession 内部全程吞错（读不到按未登录），不会卡住闪屏。
+    Future.wait<void>([
+      Future<void>.delayed(_splashDuration),
+      _state.restoreSession(),
+    ]).whenComplete(() {
       if (mounted) {
         setState(() => _showSplash = false);
       }
@@ -123,7 +131,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
         unawaited(_resumeBleSession());
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
-        unawaited(_ble.setAppInBackground(true));
+        unawaited(_enterBackgroundLeasePhase());
       case AppLifecycleState.detached:
         unawaited(_ble.disconnect());
       case AppLifecycleState.inactive:
@@ -133,9 +141,24 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     }
   }
 
+  /// paused 分不清「切出 App」和「按电源键息屏（App 仍在栈顶）」，
+  /// 由原生查屏幕亮灭判定：亮屏=切出（BLE 宽限 15 分钟）、灭屏=息屏（30 分钟）。
+  /// hidden 与 paused 会连续触发，setPhase 幂等，重复调用无副作用。
+  Future<void> _enterBackgroundLeasePhase() async {
+    final interactive = await NativeDeviceApi.isScreenInteractive();
+    // 查询是异步的：若期间用户已经切回前台（resumed 先落地），这个迟到的结果
+    // 不能再把相位改回后台，否则前台会错误地挂在 15/30 分钟的宽限档上。
+    if (WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      return;
+    }
+    await _ble.setLifecyclePhase(
+      interactive ? BleLeasePhase.background : BleLeasePhase.screenOff,
+    );
+  }
+
   Future<void> _resumeBleSession() async {
     try {
-      await _ble.setAppInBackground(false);
+      await _ble.setLifecyclePhase(BleLeasePhase.foreground);
       await _ble.reconcileConnections();
       _state.reconcileConnectionFlags();
     } catch (_) {}

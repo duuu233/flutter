@@ -581,10 +581,14 @@ class FrameBleClient {
 
   // ── 请求-应答 ─────────────────────────────────────────────
 
+  /// [countsAsActivity]=false 供保活心跳使用：心跳只为在链路上制造流量，
+  /// 不代表用户操作，不应刷新空闲租约——否则租约永远不会到期，
+  /// 「前台空闲 10 分钟可断开」的策略会被心跳自己架空。
   Future<ParsedAck> request(
     int cmd, {
     List<int> payload = const [],
     Duration timeout = const Duration(seconds: 6),
+    bool countsAsActivity = true,
   }) async {
     final chr = _writeChar;
     if (chr == null) throw FrameBleException('未连接或未发现写特征');
@@ -604,7 +608,9 @@ class FrameBleClient {
 
     final frame = FrameProtocol.buildFrame(cmd, payload);
     _report('TX', cmd, frame);
-    onActivity?.call();
+    if (countsAsActivity) {
+      onActivity?.call();
+    }
     try {
       await chr.write(frame, withoutResponse: _writeWithoutResponse);
     } catch (e) {
@@ -638,6 +644,26 @@ class FrameBleClient {
   Future<int> readBattery() async {
     final ack = await request(FrameProtocol.cmdGetBattery);
     return FrameProtocol.parseBattery(ack.data);
+  }
+
+  /// 空闲保活心跳：发一条最轻的读电量(0x04)在链路上制造流量。
+  ///
+  /// 相框是电池供电设备，固件对空闲链路有自己的断链超时（实测 1~2 分钟无流量
+  /// 就被设备侧断开），App 侧「前台保持 10 分钟」的租约策略必须靠周期心跳兜住，
+  /// 否则策略形同虚设。心跳不算用户活动（countsAsActivity=false，不刷新租约）；
+  /// 全程吞错——设备正忙回 0x0B、老固件超时都无妨，写出去的帧本身就是保活流量；
+  /// 有指令在飞时直接跳过，绝不与业务请求抢 0x04 槽位。
+  Future<void> keepAlivePing() async {
+    if (!_linkAlive || _pending.isNotEmpty) {
+      return;
+    }
+    try {
+      await request(
+        FrameProtocol.cmdGetBattery,
+        timeout: const Duration(seconds: 2),
+        countsAsActivity: false,
+      );
+    } catch (_) {}
   }
 
   Future<FramePlayConfig> getPlayConfig() async {

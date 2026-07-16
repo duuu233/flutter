@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
@@ -76,18 +78,58 @@ class BleController extends ChangeNotifier {
 
   /// Applies only the outer session lease. Scan, connect, reconnect, MTU,
   /// connection interval, and protocol behavior remain owned by FrameBleClient.
-  Future<void> setAppInBackground(bool value) =>
-      _connectionLease.setInBackground(value);
+  /// 相位由 App 生命周期层判定：前台 / 切出（宽限 15 分钟）/ 息屏未切出（30 分钟）。
+  Future<void> setLifecyclePhase(BleLeasePhase phase) =>
+      _connectionLease.setPhase(phase);
 
   void _handleLinkStateChanged(bool alive) {
     if (alive) {
       _connectionLease.noteActivity();
+      _startKeepAlive();
+      // 连接保活前台服务与连接同生命周期（连接必然发生在 App 前台，
+      // 不触碰 Android 12+ 的后台启动前台服务限制）。进程优先级提到前台服务档，
+      // 切出/息屏后进程才能活到租约到期（15/30 分钟），而不是被 ROM 秒杀。
+      unawaited(
+        NativeDeviceApi.startConnectionKeepAliveService(
+          title: 'BoltStar',
+          text: _l10n.bleKeepAliveNotification,
+        ),
+      );
       return;
     }
+    _stopKeepAlive();
+    // 断开（含租约到期主动断开）即撤前台服务，进程回到可回收状态。
+    unawaited(NativeDeviceApi.stopConnectionKeepAliveService());
     _transferInProgress = false;
     _connectionLease.linkEnded();
     _clearConnectionState();
     notifyListeners();
+  }
+
+  // ── 空闲保活心跳 ─────────────────────────────────────────
+  //
+  // 相框固件对空闲链路有自己的断链超时（1~2 分钟无流量即设备侧断开），
+  // 「场景策略」里的前台 10 分钟/后台宽限 3 分钟只有靠心跳把链路喂活才成立。
+  // 心跳只在连接存活期间跑：链路建立启动、断开即停；租约到期断开后自然停止。
+  // 图传/OTA 期间跳过（本就有持续流量，且不能往停等协议里插帧）。
+  // 心跳不刷新租约（countsAsActivity=false），空闲满时长照常断开。
+
+  Timer? _keepAliveTimer;
+  static const Duration _keepAlivePeriod = Duration(seconds: 25);
+
+  void _startKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = Timer.periodic(_keepAlivePeriod, (_) {
+      if (!connected || _hasActiveTask) {
+        return;
+      }
+      unawaited(_client.keepAlivePing());
+    });
+  }
+
+  void _stopKeepAlive() {
+    _keepAliveTimer?.cancel();
+    _keepAliveTimer = null;
   }
 
   void _handleTransferSessionChanged(bool active) {
@@ -367,6 +409,8 @@ class BleController extends ChangeNotifier {
   }
 
   Future<void> disconnect() async {
+    _stopKeepAlive();
+    unawaited(NativeDeviceApi.stopConnectionKeepAliveService());
     _connectionLease.linkEnded();
     await _client.disconnect();
     _transferInProgress = false;

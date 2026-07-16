@@ -62,9 +62,35 @@ void main() {
     addTearDown(lease.dispose);
 
     lease.noteActivity();
-    await lease.setInBackground(true);
+    await lease.setPhase(BleLeasePhase.background);
     await Future<void>.delayed(const Duration(milliseconds: 80));
 
+    expect(disconnects, 1);
+  });
+
+  test('screen-off phase uses its own longer grace period', () async {
+    var connected = true;
+    var disconnects = 0;
+    final lease = BleConnectionLease(
+      isConnected: () => connected,
+      isBusy: () => false,
+      disconnect: () async {
+        disconnects++;
+        connected = false;
+      },
+      foregroundIdleTimeout: const Duration(seconds: 1),
+      backgroundGracePeriod: const Duration(milliseconds: 20),
+      screenOffGracePeriod: const Duration(milliseconds: 60),
+    );
+    addTearDown(lease.dispose);
+
+    lease.noteActivity();
+    await lease.setPhase(BleLeasePhase.screenOff);
+    // 息屏宽限尚未到期：比 background 的 20ms 长，40ms 时必须仍在连接。
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    expect(disconnects, 0);
+
+    await Future<void>.delayed(const Duration(milliseconds: 60));
     expect(disconnects, 1);
   });
 
@@ -114,9 +140,9 @@ void main() {
       addTearDown(lease.dispose);
 
       lease.noteActivity();
-      await lease.setInBackground(true);
+      await lease.setPhase(BleLeasePhase.background);
       now = now.add(const Duration(minutes: 4));
-      await lease.setInBackground(false);
+      await lease.setPhase(BleLeasePhase.foreground);
 
       expect(disconnects, 1);
     },

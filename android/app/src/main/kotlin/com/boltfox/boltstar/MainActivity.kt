@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -12,6 +13,7 @@ import android.graphics.Matrix
 import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
 import io.flutter.embedding.android.FlutterActivity
@@ -57,6 +59,25 @@ class MainActivity : FlutterActivity() {
             )
             "openGallery" -> openGallery(result)
             "decodeImageRgba" -> decodeImageRgba(call, result)
+            // 屏幕是否处于亮屏可交互状态：Flutter 的 paused 分不清「切出 App」和
+            // 「息屏未切出」，两者的 BLE 空闲宽限时长不同（15 分钟 vs 30 分钟）。
+            "isScreenInteractive" -> {
+                val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+                result.success(pm?.isInteractive ?: true)
+            }
+            // BLE 连接保活前台服务：与连接同生命周期，见 BleConnectionService。
+            "startConnectionService" -> {
+                BleConnectionService.start(
+                    this,
+                    call.argument<String>("title") ?: "BoltStar",
+                    call.argument<String>("text") ?: "正在保持相框连接",
+                )
+                result.success(null)
+            }
+            "stopConnectionService" -> {
+                BleConnectionService.stop(this)
+                result.success(null)
+            }
             "openBluetoothSettings" -> {
                 startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
                 result.success(null)

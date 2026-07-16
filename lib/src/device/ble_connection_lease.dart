@@ -1,5 +1,13 @@
 import 'dart:async';
 
+/// App 生命周期相位（决定空闲租约的宽限时长）。
+///
+/// [background] 与 [screenOff] 的区分在进入 paused 那一刻由原生查询屏幕亮灭
+/// 判定（见 bolt_star_app）：亮屏时 paused = 用户切出 App；灭屏时 paused =
+/// 按电源键息屏、App 仍在前台栈顶。产品要求两者宽限不同：切出 15 分钟、
+/// 息屏 30 分钟。
+enum BleLeasePhase { foreground, background, screenOff }
+
 /// Manages when an existing BLE session may be released.
 ///
 /// This class deliberately knows nothing about scanning, connecting, GATT, or
@@ -11,7 +19,8 @@ class BleConnectionLease {
     required bool Function() isBusy,
     required Future<void> Function() disconnect,
     this.foregroundIdleTimeout = const Duration(minutes: 10),
-    this.backgroundGracePeriod = const Duration(minutes: 3),
+    this.backgroundGracePeriod = const Duration(minutes: 15),
+    this.screenOffGracePeriod = const Duration(minutes: 30),
     this.postTransferGracePeriod = const Duration(minutes: 5),
     DateTime Function()? now,
   }) : _isConnected = isConnected,
@@ -26,11 +35,12 @@ class BleConnectionLease {
 
   final Duration foregroundIdleTimeout;
   final Duration backgroundGracePeriod;
+  final Duration screenOffGracePeriod;
   final Duration postTransferGracePeriod;
 
   Timer? _timer;
   DateTime? _deadline;
-  bool _inBackground = false;
+  BleLeasePhase _phase = BleLeasePhase.foreground;
   bool _disconnecting = false;
 
   /// Starts or refreshes the lease after a successful BLE interaction.
@@ -54,14 +64,15 @@ class BleConnectionLease {
     noteActivity(afterTransfer: afterTransfer);
   }
 
-  /// Applies the foreground/background lease without relying on a timer firing
-  /// while the app is suspended. On resume, an elapsed background deadline is
-  /// checked against wall-clock time before a new foreground lease is granted.
-  Future<void> setInBackground(bool value) async {
-    if (_inBackground == value) {
+  /// Applies the phase-specific lease without relying on a timer firing
+  /// while the app is suspended. On resume, an elapsed background/screen-off
+  /// deadline is checked against wall-clock time before a new foreground
+  /// lease is granted.
+  Future<void> setPhase(BleLeasePhase phase) async {
+    if (_phase == phase) {
       return;
     }
-    _inBackground = value;
+    _phase = phase;
 
     if (!_isConnected()) {
       linkEnded();
@@ -73,7 +84,9 @@ class BleConnectionLease {
     }
 
     final deadline = _deadline;
-    if (!value && deadline != null && !_now().isBefore(deadline)) {
+    if (phase == BleLeasePhase.foreground &&
+        deadline != null &&
+        !_now().isBefore(deadline)) {
       await _expire();
       return;
     }
@@ -101,10 +114,14 @@ class BleConnectionLease {
   void dispose() => _cancelTimer(clearDeadline: true);
 
   Duration _timeout({required bool afterTransfer}) {
-    if (_inBackground) {
-      return backgroundGracePeriod;
+    switch (_phase) {
+      case BleLeasePhase.background:
+        return backgroundGracePeriod;
+      case BleLeasePhase.screenOff:
+        return screenOffGracePeriod;
+      case BleLeasePhase.foreground:
+        return afterTransfer ? postTransferGracePeriod : foregroundIdleTimeout;
     }
-    return afterTransfer ? postTransferGracePeriod : foregroundIdleTimeout;
   }
 
   void _schedule({required bool afterTransfer}) {

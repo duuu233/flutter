@@ -13,6 +13,14 @@
     <!-- 仅 Android ≤11（API ≤30）BLE 扫描需要定位；12+ 已由 BLUETOOTH_SCAN(neverForLocation) 覆盖，
          限定 maxSdkVersion 避免新系统上多声明一个商店审核会追问的敏感权限。 -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:maxSdkVersion="30"/>
+    <!-- BLE 连接保活前台服务（BleConnectionService）：连接期间挂通知提升进程优先级，
+         否则国产 ROM 切出 App 一分钟内就杀进程，「切出 15 分钟 / 息屏 30 分钟才断开」无从谈起。
+         API 34+ 强制要求按类型声明；connectedDevice 类型的前置权限由 BLUETOOTH_CONNECT 满足。 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <!-- Android 13+ 通知运行时权限：不主动弹窗索要——未授权时前台服务照常运行，
+         仅通知不可见（系统「活跃应用」面板仍可见）。 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
 
     <application
         android:label="BoltStar"
@@ -48,6 +56,11 @@
             android:name="com.yalantis.ucrop.UCropActivity"
             android:screenOrientation="portrait"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
+        <!-- BLE 连接保活前台服务：与相框连接同生命周期（连接建立启动、断开即停）。 -->
+        <service
+            android:name=".BleConnectionService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

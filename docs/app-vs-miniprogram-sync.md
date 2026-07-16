@@ -93,7 +93,47 @@
 ## 四、平台差异与剩余确认项
 
 1. ⚠️ **真机 BLE 回归**：静态分析和单元/组件测试无法替代两种屏型真机。发布前仍应分别验证绑定、连接、单张/五张投屏、轮播、清空、删除和 OTA。
-2. ⚠️ **App 忘记密码接口**：小程序没有可执行的对应流程。App 当前使用 `/Client/User/resetPassword`；路径和 `email/userEmail` 字段仍需后端最终确认。
+2. ✅（2026-07-16 已确认并修复）**App 忘记密码/注册接口字段**：经 swagger `/v2/api-docs` + 线上实测确认，`userRegister` / `resetPassword` / `chkUserEmailNotExist` 的字段为 `userEmail / verifyCode / password / confirmPassword`（原来发 `email/emailCode` 且缺 `confirmPassword`，后端收不到邮箱，注册/重置从未成功过）。已按 swagger 修正，详见「五」。
 3. 🔶 **繁体中文资源**：页面选项与小程序一致；Flutter 状态层尚无独立 `zh-Hant` 文案包，目前复用简体中文。小程序当前也只保存视觉选中态、未实际切换全局文案。
 4. 🔶 **原生裁剪器**：小程序使用 canvas 裁剪框，App 使用 `image_cropper`。宽高比、旋转、还原、中心裁切和 JPEG 输出一致，不复制小程序受沙箱限制的具体实现。
 5. 低优先级：`photo_preview_adjust_image_page.dart`、`photo_preview_saved_page.dart`、旧 `cast_management_page.dart` 等仅供 `/figma/...` 演示路由或历史调试使用，不在真实用户链路中，可在后续单独做死代码收敛。
+
+## 五、2026-07-16 同步日志
+
+- **图库空态对齐小程序**
+  - 空态改为小程序 `.album-empty` 同款：`album-bg01.png` 插图（350×342rpx→175×171）+ 标题 + 描述，顶部对齐（250rpx→125）。
+  - **移除「重新投屏」按钮**（小程序 wxml 无按钮，`.empty-action` 样式已废弃）；`galCastAgain` 文案键随之删除。
+- **登录页键盘交互**（App 特有页，小程序无对应）
+  - 点击「登录」/微信登录先 `unfocus` 收起键盘，再做校验/弹协议提示。
+  - 移除密码框键盘「完成」触发登录的绑定：未勾选协议时按「完成」不再重复弹协议提示，只收起键盘。
+- **验证码发送（注册/忘记密码/修改密码/修改邮箱/绑定邮箱 共 5 页）**
+  - 倒计时 30s → **60s**（⚠️ 与小程序差异：小程序为 30s，本次按产品要求改 60s）。
+  - 点击发送**立即**弹蒙层 loading（`AppLoadingDialog`，「发送中…」），后端响应前无法再次点击；响应后关闭并 toast 结果（小程序无此防护，属 App 增强——后端 `sendEmail` 同步发信、响应可达数秒，此前可连发多封）。
+  - 5 页补齐 `_sendingCode` 在途防重入标记（原来仅注册/忘记密码有）。
+  - 卡顿排查结论：客户端无任何延时/前置耗时（keep-alive 连接、点击即发请求），数秒无响应来自后端 `sendEmail` 同步发信的耗时，非 App 代码问题。
+- **接口字段修正（swagger `/v2/api-docs` 为权威，线上实测验证）**
+  - `userRegister`：`email/emailCode` → `userEmail/verifyCode`，补发 `confirmPassword`（=password 的 md5）；DTO 无 `nickName`，移除该参数。原载荷后端恒报 “Please enter the correct email address”，**注册从未成功过**。
+  - `resetPassword`：同上修正（`ResetPasswordApiIn`）。
+  - `chkUserEmailNotExist`：`email` → `userEmail`（`SetUserEmailApiIn`）；实测该接口需登录态。
+- **后端 retMsg 客户端兜底翻译（提示语语种问题的根因）**
+  - 实测确认：后端**忽略** `language` 参数，`retMsg` 以英文为主（个别中文如「请重新登录！」），导致简中环境弹英文提示。
+  - `ApiClient._parse` 统一走 `AppL10n.localizeServerMessage`：已知 retMsg 按当前语言（zh/zh-Hant/en/ja）重译，未知文案原样透传；映射表见 `app_l10n.dart _serverMessages`（实测收集 6 条 + 同族猜测 6 条）。
+  - 后续实测遇到新的英文 retMsg，直接往 `_serverMessages` 表加条目即可。
+- **登录态持久化（修「切出 App 后进程被杀，回来要重新登录」）**
+  - 根因：`ApiSession` 原为纯内存 token，Android 后台进程被系统回收（国产 ROM 切出后 1 分钟内就可能杀）→ 冷启动即掉登录。小程序一直是 `wx.getStorageSync('token')` 持久化，App 才是偏差方，本次对齐。
+  - `ApiSession.setToken/clear` 同步落盘 shared_preferences（串行队列防乱序）；冷启动 `restore()` 读回。
+  - 启动闪屏改为「时长到 **且** 登录态恢复完成」才切页（`bolt_star_app.dart`），避免先闪登录页再跳首页。
+  - 恢复出的 token 若已在服务端失效：`_refreshUserInfo` 收到 401/406 走 `_handleSessionExpired` 清态回登录页（先乐观进门，失效再请出去）。
+  - 登出/注销/鉴权失效均经 `ApiSession.clear()`，持久化 token 随之清除，无残留。
+- **BLE 空闲保活心跳（修「前台 1~2 分钟不操作就断连」，落实 docs/场景.png 策略）**
+  - 根因：相框固件对空闲链路有设备侧断链超时（实测 1~2 分钟无流量即断），App 租约层的「前台 10 分钟」策略此前无流量支撑，形同虚设。
+  - 连接存活期间每 25s 发一条最轻的读电量 0x04 喂活链路（`keepAlivePing`）；图传/OTA 期间跳过（本就有流量，且不能往停等协议插帧）；有指令在飞时跳过。
+  - 心跳**不刷新**空闲租约（`request(countsAsActivity: false)`）：前台空闲满 10 分钟/后台宽限满 3 分钟照常按策略断开，心跳只负责「策略说保持时真的保持得住」。
+  - ⚠️ 与小程序差异（App 特有增强）：小程序无心跳——微信主进程常驻、其连接生命周期与 App 不同；App 按「原生最优解」原则自持心跳。附带收益：投屏中途固件假死时心跳超时可更早暴露死链。
+- **连接/进程存活时长按产品要求定版（2026-07-16 口头需求，覆盖 docs/场景.png 的参考值）**
+  - 产品要求：① 前台蓝牙无活动 10 分钟断开；② 切出 App 后连接保持 15 分钟、只息屏不切出保持 30 分钟，到期断开（断开即允许进程被回收，重启不丢登录态所以无感）。
+  - ⚠️ 与场景.png 差异：图中「后台宽限 2~5 分钟」被产品新要求取代为 15/30 分钟，图仅作场景清单参考。
+  - 租约层 `BleLeasePhase{foreground/background/screenOff}`：前台空闲 10 分钟、切出 15 分钟、息屏 30 分钟（`ble_connection_lease.dart`）。「切出」vs「息屏」在进入 paused 那一刻由原生 `PowerManager.isInteractive` 判定（`isScreenInteractive` 通道方法）。
+  - **Android 前台服务 `BleConnectionService`**（connectedDevice 类型）与连接同生命周期：连接建立启动（必在前台，避开 12+ 后台启服限制）、断开即停。这是「切出后进程活满 15/30 分钟」的唯一正规手段；国产 ROM 极端白名单策略仍可能提前杀，属系统行为。
+  - 通知常驻文案 `bleKeepAliveNotification`（zh/en/ja），通道 IMPORTANCE_LOW 静默。Manifest 新增 FOREGROUND_SERVICE / FOREGROUND_SERVICE_CONNECTED_DEVICE / POST_NOTIFICATIONS（不运行时索要，未授权仅通知不可见、服务照跑）。
+  - iOS 无对应机制：通道方法静默跳过，退后台由系统挂起，回前台走 reconcile 体检，属平台差异。

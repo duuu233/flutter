@@ -135,6 +135,9 @@ class _AuthPageState extends State<AuthPage> {
     if (_submitting) {
       return;
     }
+    // 点击登录先收起键盘：未勾选协议弹提示时键盘若还开着，
+    // 用户看不全提示、还可能通过键盘继续操作。
+    FocusManager.instance.primaryFocus?.unfocus();
     final email = _emailController.text.trim();
     final password = _passwordController.text;
     final emailValid = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
@@ -173,6 +176,8 @@ class _AuthPageState extends State<AuthPage> {
     if (_submitting) {
       return;
     }
+    // 同 _login：先收起键盘再弹提示/拉起微信。
+    FocusManager.instance.primaryFocus?.unfocus();
     if (!_agreed) {
       _showFeedback(AppL10n.of(context).accAgreementRequired);
       return;
@@ -330,7 +335,8 @@ class _AuthCanvas extends StatelessWidget {
               obscureText: !passwordVisible,
               showError: passwordError,
               autofillHints: const [AutofillHints.password],
-              onSubmitted: (_) => onLogin(),
+              // 不绑定 onSubmitted 触发登录：键盘「完成」只收起键盘，
+              // 否则未勾选协议时按「完成」会再次弹出协议提示。
               trailing: IconButton(
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints.tightFor(

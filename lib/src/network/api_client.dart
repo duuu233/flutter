@@ -243,14 +243,19 @@ class ApiClient {
     }
 
     final retCode = body['retCode'];
-    final retMsg = body['retMsg'];
+    // 后端忽略 language 参数、retMsg 以英文为主：已知文案先按当前语言重译
+    // （见 AppL10n.localizeServerMessage），否则简中/日文用户会看到英文提示。
+    final rawMsg = body['retMsg'];
+    final retMsg = rawMsg == null
+        ? null
+        : _l10n.localizeServerMessage(rawMsg.toString());
 
     // 登录过期：HTTP 401 或业务 code 401/406
     if (response.statusCode == 401 || retCode == 401 || retCode == 406) {
       ApiSession.instance.clear();
       throw ApiException(
         retCode is int ? retCode : 401,
-        retMsg?.toString() ?? _l10n.netSessionExpired,
+        retMsg ?? _l10n.netSessionExpired,
       );
     }
 
@@ -258,7 +263,7 @@ class ApiClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(
         response.statusCode,
-        retMsg?.toString() ?? _l10n.netServerError,
+        retMsg ?? _l10n.netServerError,
       );
     }
 
@@ -267,7 +272,7 @@ class ApiClient {
       if (retCode != 200) {
         throw ApiException(
           retCode is int ? retCode : -1,
-          retMsg?.toString() ?? _l10n.netRequestFailed,
+          retMsg ?? _l10n.netRequestFailed,
           data: body['retData'],
         );
       }

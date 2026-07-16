@@ -1050,7 +1050,6 @@ class PhotoFrameState extends ChangeNotifier {
     required String email,
     required String password,
     required String emailCode,
-    String? nickName,
   }) async {
     final target = email.trim();
     if (!_isValidEmail(target)) {
@@ -1084,11 +1083,11 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     try {
+      // 注册接口（UserRegisterApiIn）无 nickName 字段；昵称注册后经 changeNickName 修改。
       await BoltFoxApi.userRegister(
         email: target,
         password: password,
         emailCode: emailCode.trim(),
-        nickName: nickName?.trim().isEmpty ?? true ? null : nickName!.trim(),
       );
       return ActionFeedback(
         success: true,
@@ -2733,6 +2732,23 @@ class PhotoFrameState extends ChangeNotifier {
     return null;
   }
 
+  /// 冷启动恢复本地持久化的登录态（进程被系统回收后重启的场景）。
+  ///
+  /// 恢复出 token 即先进已登录首页（资料后台刷新补齐），不让用户重新登录；
+  /// 若 token 已在服务端失效，[_refreshUserInfo] 收到 401/406 会走
+  /// [_handleSessionExpired] 清态回登录页——即「先乐观进门，失效再请出去」。
+  /// 返回是否恢复出了登录态；无持久化 token 时不产生任何副作用。
+  Future<bool> restoreSession() async {
+    final restored = await ApiSession.instance.restore();
+    if (!restored) {
+      return false;
+    }
+    _isLoggedIn = true;
+    notifyListeners();
+    unawaited(refreshCurrentUser());
+    return true;
+  }
+
   /// 供页面主动刷新一次用户资料（对齐小程序 `mine.onShow` / `home.loadUserAvatar`）。
   /// 未登录直接跳过；成功后 `notifyListeners` 让「我的」等页面同步真实昵称/头像。
   Future<void> refreshCurrentUser() async {
@@ -2752,8 +2768,13 @@ class PhotoFrameState extends ChangeNotifier {
     try {
       final data = await BoltFoxApi.getUserInfo();
       _applyUserInfo(data);
-    } catch (_) {
-      // 用户信息拉取失败时保留本地占位资料。
+    } catch (error) {
+      // 鉴权失效必须立刻清态回登录页：冷启动 restoreSession 恢复出过期 token 时，
+      // 这里是第一个发现者——吞掉的话用户会停留在一个每个接口都报错的「假登录」壳里。
+      if (error is ApiException && error.isAuthError) {
+        _handleSessionExpired();
+      }
+      // 其余失败（网络抖动等）保留本地占位资料。
     } finally {
       // 成功/失败都结束首屏加载态：「我的」页据此从占位 `--` 切到真实统计。
       _userLoaded = true;

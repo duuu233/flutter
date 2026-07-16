@@ -859,38 +859,35 @@ class _DialogButton extends StatelessWidget {
   }
 }
 
-/// 空态（小程序 `.album-empty`）：插画 + 标题 + 说明 + 重新投屏。
+/// 图库空态，对照小程序 `.album-empty`：插图 + 标题 + 描述，**无按钮**
+/// （wxml 只有 image/title/desc 三个元素；`.empty-action` 样式已废弃不渲染）。
+/// rpx→dp 按 0.5 折算：padding-top 250rpx→125、插图 350x342rpx→175x171、
+/// 标题 margin 54rpx→27、描述 margin 20rpx→10。
 class _GalleryEmptyState extends StatelessWidget {
   const _GalleryEmptyState();
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 23),
+    // 小程序为固定顶距顶部对齐（非垂直居中）；SingleChildScrollView 兜底小屏溢出。
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(23, 125, 23, 24),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 130,
-            height: 130,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFF8FBFF), Color(0xFFDBE8FF)],
-              ),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(color: const Color(0xFFEDF3FF), width: 4),
-            ),
-            child: const Icon(
+          Image.asset(
+            'assets/images/album-bg01.png',
+            width: 175,
+            height: 171,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => const Icon(
               Icons.image_outlined,
               color: Color(0xFFB9CCF0),
-              size: 56,
+              size: 88,
             ),
           ),
           const SizedBox(height: 27),
           Text(
             AppL10n.of(context).galEmptyTitle,
+            textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF25282D),
               fontSize: 19,
@@ -901,21 +898,11 @@ class _GalleryEmptyState extends StatelessWidget {
           const SizedBox(height: 10),
           Text(
             AppL10n.of(context).galEmptySubtitle,
+            textAlign: TextAlign.center,
             style: const TextStyle(
               color: Color(0xFF777E88),
               fontSize: 13,
               height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 40),
-          SizedBox(
-            width: double.infinity,
-            child: FigmaPrimaryButton(
-              label: AppL10n.of(context).galCastAgain,
-              // 文案承诺「重新投屏」，行为就回到首页（投屏入口所在地），
-              // 而不是只 pop 回上一页（通常是「我的」，引导断裂）。
-              onPressed: () =>
-                  Navigator.of(context).popUntil((route) => route.isFirst),
             ),
           ),
         ],
