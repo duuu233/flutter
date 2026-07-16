@@ -699,6 +699,12 @@ class AppL10n {
     'Device not found. Make sure it is powered on and nearby.',
     'デバイスが見つかりません。電源が入っていて近くにあることを確認してください。',
   );
+  // 连接保活前台服务的常驻通知文案（Android 通知栏，连接期间可见）。
+  String get bleKeepAliveNotification => _pick(
+    '正在保持相框连接',
+    'Keeping the photo frame connected',
+    'フォトフレームとの接続を維持しています',
+  );
 
   // 蓝牙信号五档（对齐小程序 rssiToSignalText：极强/强/正常/偏弱/弱）。
   String get signalVeryStrong => _pick('极强', 'Excellent', '非常に強い');
