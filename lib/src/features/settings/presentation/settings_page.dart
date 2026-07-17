@@ -38,9 +38,7 @@ class SettingsPage extends StatelessWidget {
       debugPrint('[Settings] 检查更新失败: $error');
       AppToast.show(
         context,
-        error is ApiException
-            ? error.message
-            : l10n.checkUpdateFailedGeneric,
+        error is ApiException ? error.message : l10n.checkUpdateFailedGeneric,
       );
       return;
     }
@@ -170,7 +168,7 @@ class SettingsPage extends StatelessWidget {
                 ),
                 const _SettingsDivider(),
                 _SettingsRow(
-                  iconAsset: 'assets/images/set-icon04.png',
+                  iconAsset: 'assets/images/set-icon05.png',
                   iconBg: const Color(0x1A287DFF),
                   title: l10n.checkUpdate,
                   onTap: () => _checkUpdate(context),
@@ -331,7 +329,10 @@ class _SettingsRow extends StatelessWidget {
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  shape: BoxShape.circle,
+                ),
                 child: Center(
                   child: Image.asset(
                     iconAsset,
@@ -384,8 +385,11 @@ class _SettingsRow extends StatelessWidget {
                   width: 16,
                   height: 16,
                   fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) =>
-                      const Icon(Icons.copy, size: 16, color: Color(0xFF777E88)),
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.copy,
+                    size: 16,
+                    color: Color(0xFF777E88),
+                  ),
                 ),
             ],
           ),
