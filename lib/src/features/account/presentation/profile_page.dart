@@ -187,6 +187,8 @@ class _ProfilePageState extends State<ProfilePage> {
     final user = widget.state.currentUser;
     setState(() => _saving = true);
     AppLoadingDialog.show(context, AppL10n.of(context).saving);
+    // 提前取出：末尾 setState 也要用，不能声明在 try 块内。
+    final avatarPath = _pendingAvatarPath;
     // 整段包 try/finally（hide 幂等、不依赖 context）：mounted 早退路径不再把
     // canPop:false 的蒙层留在 root 栈上。
     try {
@@ -206,7 +208,6 @@ class _ProfilePageState extends State<ProfilePage> {
         return;
       }
 
-      final avatarPath = _pendingAvatarPath;
       if (avatarPath != null) {
         final avatarFeedback = await widget.state.updateAvatar(avatarPath);
         if (!mounted) {

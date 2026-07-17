@@ -154,12 +154,14 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     if (!mounted) {
       return;
     }
-    if (localPath != null) {
+    // 复制到新局部变量再判空：在 try 块内赋值的变量，流分析在 try 之后不做
+    // 类型提升，直接用 localPath 会在闭包里报 String? 不能赋给 String。
+    final path = localPath;
+    if (path != null) {
       // 原图可用：进入裁剪/预览流程（与小程序一致），确认后由预览页走投屏。
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) =>
-              CastPreviewPage(device: device, imagePaths: [localPath]),
+          builder: (_) => CastPreviewPage(device: device, imagePaths: [path]),
         ),
       );
     } else {
