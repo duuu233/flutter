@@ -636,24 +636,25 @@ class _DetailRow extends StatelessWidget {
                   Icon(fallbackIcon, size: 20, color: labelColor),
             ),
             const SizedBox(width: 15),
-            // 左侧标题占弹性宽度、超长才省略（对齐小程序 .row-left flex:1）。
-            Expanded(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: labelColor,
-                  fontSize: 14,
-                  fontWeight: labelWeight,
-                  height: 1.2,
-                ),
+            // 左侧标题按内容宽度（短标签），纯 Text 不占弹性——把中间空间全部让给右侧
+            // 取值。原来 label 用 Expanded 会强占一大块，value 再硬限 maxWidth:193，
+            // 中间空着也不给 value，长内容一直 `...`（用户反馈问题，2026-07-17）。
+            Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: labelColor,
+                fontSize: 14,
+                fontWeight: labelWeight,
+                height: 1.2,
               ),
             ),
             const SizedBox(width: 11),
-            // 右侧取值：不收缩、最多 ~193（对齐小程序 .row-right flex-shrink:0 / max-width:386rpx）。
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 193),
+            // 右侧取值右对齐、占据 label 之外的全部剩余空间：中间够宽就多显示，
+            // 真超出剩余宽度才 `...`（不再硬限 193）。
+            Expanded(
               child: Text(
                 value,
                 maxLines: 1,

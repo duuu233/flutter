@@ -21,15 +21,15 @@ class _HomeBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Stack(
-      fit: StackFit.expand,
-      children: [
-        const ColoredBox(color: Color(0xFFF5F9FF)),
-        _AssetImage(
-          path: asset,
-          fallback: const _SoftBackgroundPainterWidget(),
-        ),
-      ],
-    );
+    fit: StackFit.expand,
+    children: [
+      const ColoredBox(color: Color(0xFFF5F9FF)),
+      _AssetImage(
+        path: asset,
+        fallback: const _SoftBackgroundPainterWidget(),
+      ),
+    ],
+  );
   }
 }
 
@@ -616,10 +616,10 @@ class _ConnectedDeviceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onOpenDevices,
-      child: Stack(
+    // 「进设备列表」的透明手势层压在内容**下方**，卡内「连接蓝牙」按钮(opaque)自己拦截点击。
+    // 不再用「整卡 GestureDetector 外层包裹」——那样与按钮的 GestureDetector 嵌套竞争，
+    // 某些布局/裁剪下整卡手势会盖过按钮，点「连接蓝牙」反而跳进设备列表（用户反馈的 bug）。
+    return Stack(
         clipBehavior: Clip.none,
         fit: StackFit.expand,
         children: [
@@ -639,6 +639,14 @@ class _ConnectedDeviceCard extends StatelessWidget {
                 'assets/images/home-bg01.png',
                 fit: BoxFit.cover,
               ),
+            ),
+          ),
+          // 整卡点击（非按钮区域）进设备列表：透明手势层，压在内容之下、背景之上。
+          // 上方的连接按钮(opaque)会拦截落在自己身上的点击，不会漏到这层。
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onOpenDevices,
             ),
           ),
           Padding(
@@ -740,8 +748,7 @@ class _ConnectedDeviceCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
+      );
   }
 }
 
