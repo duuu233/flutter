@@ -6,6 +6,7 @@ import '../../../network/api_exception.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
+import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 设置页面，对照微信小程序 `subpackages/settings/index` 精准还原。
@@ -103,7 +104,16 @@ class SettingsPage extends StatelessWidget {
       }
       return;
     }
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (error) {
+      // market:// 在没有应用商店的 ROM 上无处理者会抛 PlatformException
+      //（ActivityNotFoundException），不能让它冒泡崩掉 App。
+      debugPrint('[Settings] 打开下载地址失败: $error');
+      if (context.mounted) {
+        AppToast.show(context, l10n.openDownloadFailed);
+      }
+    }
   }
 
   @override
@@ -219,7 +229,15 @@ class SettingsPage extends StatelessWidget {
     if (confirmed != true || !context.mounted) {
       return;
     }
-    await state.logout();
+    // 蒙层 loading：登出要打后端接口，弱网下有可感延迟，期间阻断重复点击。
+    AppLoadingDialog.show(context);
+    try {
+      await state.logout();
+    } finally {
+      if (context.mounted) {
+        AppLoadingDialog.hide(context);
+      }
+    }
     if (!context.mounted) {
       return;
     }
@@ -250,7 +268,16 @@ class SettingsPage extends StatelessWidget {
     if (step2 != true || !context.mounted) {
       return;
     }
-    final result = await state.deleteAccount();
+    // 蒙层 loading：注销接口 + 本地资产清理耗时可感，期间阻断重复点击。
+    final ActionFeedback result;
+    AppLoadingDialog.show(context);
+    try {
+      result = await state.deleteAccount();
+    } finally {
+      if (context.mounted) {
+        AppLoadingDialog.hide(context);
+      }
+    }
     if (!context.mounted) {
       return;
     }

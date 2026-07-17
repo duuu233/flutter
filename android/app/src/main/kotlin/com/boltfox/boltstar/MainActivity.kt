@@ -67,12 +67,22 @@ class MainActivity : FlutterActivity() {
             }
             // BLE 连接保活前台服务：与连接同生命周期，见 BleConnectionService。
             "startConnectionService" -> {
-                BleConnectionService.start(
+                val started = BleConnectionService.start(
                     this,
                     call.argument<String>("title") ?: "BoltStar",
                     call.argument<String>("text") ?: "正在保持相框连接",
                 )
-                result.success(null)
+                if (started) {
+                    result.success(null)
+                } else {
+                    // Dart 侧把保活当 best-effort 并会吞掉此 PlatformException；
+                    // 关键是异常不能越过 MethodChannel 杀掉 Android 主进程。
+                    result.error(
+                        "foreground_service_start_failed",
+                        "Unable to start BLE keep-alive service.",
+                        null,
+                    )
+                }
             }
             "stopConnectionService" -> {
                 BleConnectionService.stop(this)
@@ -85,6 +95,21 @@ class MainActivity : FlutterActivity() {
             "openAppSettings" -> {
                 val uri = Uri.fromParts("package", packageName, null)
                 startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, uri))
+                result.success(null)
+            }
+            // ── 崩溃日志（见 CrashLogger）：上次崩溃现场的读取/清除 + Dart 侧异常写入 ──
+            "getLastCrashLog" -> result.success(CrashLogger.read(this))
+            "clearCrashLog" -> {
+                CrashLogger.clear(this)
+                result.success(null)
+            }
+            "logDartError" -> {
+                CrashLogger.append(
+                    this,
+                    "=== DART ${call.argument<String>("kind") ?: "error"} ===\n" +
+                        (call.argument<String>("error") ?: "") + "\n" +
+                        (call.argument<String>("stack") ?: ""),
+                )
                 result.success(null)
             }
             else -> result.notImplemented()

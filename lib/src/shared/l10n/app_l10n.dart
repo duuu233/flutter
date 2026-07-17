@@ -56,6 +56,11 @@ class AppL10n {
     }
   }
 
+  /// 供页面侧的长文（法务文档等）按当前语言取文案：与 [_pick] 同规则，
+  /// 繁中缺省时由简中自动转换。短文案仍应集中在本目录里加 getter。
+  String pick(String zh, String en, String ja, [String? zhHant]) =>
+      _pick(zh, en, ja, zhHant);
+
   // ── 后端 retMsg 兜底本地化 ─────────────────────────────────────────────
   /// 已知的后端 retMsg 原文 → (zh, en, ja)。BoltFox 后端**忽略** language 参数，
   /// retMsg 以英文为主（个别中文，如「请重新登录！」），简中/繁中/日文用户会直接
@@ -207,6 +212,11 @@ class AppL10n {
     'No download link. Please update via the website or app store.',
     'ダウンロードリンクがありません。公式サイトまたはストアから更新してください。',
   );
+  String get openDownloadFailed => _pick(
+    '无法打开下载地址，请前往官网或应用商店更新。',
+    'Could not open the download link. Please update via the website or app store.',
+    'ダウンロードリンクを開けませんでした。公式サイトまたはストアから更新してください。',
+  );
   String get contactCopied => _pick('已复制联系方式', 'Contact copied', '連絡先をコピーしました');
 
   String get logoutConfirmMessage => _pick(
@@ -278,6 +288,17 @@ class AppL10n {
   );
   String get accPasswordHint => _pick('请输入密码', 'Enter your password', 'パスワードを入力してください');
   String get accPasswordEmpty => _pick('密码不能为空', 'Password cannot be empty', 'パスワードは空にできません');
+  // 密码规则（注册 / 忘记密码 / 修改密码设置新密码时用；登录页不校验规则）。
+  String get accPasswordRuleHint => _pick(
+    '请输入6-12位数字加英文密码',
+    '6-12 characters, letters & digits',
+    '6〜12桁の英字と数字を入力',
+  );
+  String get accPasswordRuleError => _pick(
+    '密码需为6-12位数字和英文字母组合',
+    'Password must be 6-12 characters and contain both letters and digits.',
+    'パスワードは英字と数字を含む6〜12桁で入力してください',
+  );
   String get accForgotPasswordLink => _pick('忘记密码?', 'Forgot password?', 'パスワードをお忘れですか？');
   String get accWelcome => _pick('欢迎使用', 'Welcome to', 'ようこそ');
   String get accLoginSubtitle => _pick(
@@ -324,12 +345,18 @@ class AppL10n {
     'The two passwords do not match',
     '入力した2つのパスワードが一致しません',
   );
-  // 验证码组件（注册 / 忘记密码 / 修改邮箱三条流程共用，见 FigmaVerificationField）。
+  // 验证码组件（忘记密码 / 修改密码 / 修改邮箱共用 FigmaVerificationField；注册页为登录风格胶囊行）。
   String get accVerifyCodeLabel => _pick('验证码', 'Code', '認証コード');
   String get accVerifyCodeHint =>
       _pick('请输入验证码', 'Enter the code', '認証コードを入力');
   String get accGetVerifyCode => _pick('获取验证码', 'Get Code', 'コードを取得');
   String get accSendingCode => _pick('发送中…', 'Sending…', '送信中…');
+  // 注册页副标题（注册页与登录页共用标题组风格，见 auth_widgets.dart）。
+  String get accRegisterSubtitle => _pick(
+    '注册 BoltStar 账户，开启你的智能相框',
+    'Create your BoltStar account to get started',
+    'BoltStarアカウントを作成して始めましょう',
+  );
 
   String get accModifyEmailTitle => _pick('修改邮箱', 'Change Email', 'メールアドレス変更');
   String get accCurrentEmail => _pick('当前邮箱', 'Current Email', '現在のメールアドレス');
@@ -676,6 +703,35 @@ class AppL10n {
   );
   String get bindGoOpenBt =>
       _pick('去打开蓝牙', 'Turn On Bluetooth', 'Bluetoothをオンにする');
+  // ── 崩溃报告弹窗（上次异常退出的日志展示，见 bolt_star_app.dart）──
+  String get crashReportTitle =>
+      _pick('检测到上次异常退出', 'Previous Crash Detected', '前回の異常終了を検出しました');
+  String get crashReportHint => _pick(
+    '以下是崩溃日志，请「复制日志」后发给开发者定位问题。',
+    'Below is the crash log. Please tap "Copy Log" and send it to the developer.',
+    '以下はクラッシュログです。「ログをコピー」して開発者へお送りください。',
+  );
+  String get crashReportCopy => _pick('复制日志', 'Copy Log', 'ログをコピー');
+  String get crashReportCopied => _pick('日志已复制', 'Log copied', 'ログをコピーしました');
+  String get crashReportClose => _pick('清除并关闭', 'Clear & Close', '消去して閉じる');
+  // ── 运行时权限引导（进相册 / 连接设备前的前置授权，见 PermissionGate）──
+  String get permPhotoTitle =>
+      _pick('需要相册权限', 'Photos Permission Required', '写真へのアクセス権限が必要です');
+  String get permPhotoMessage => _pick(
+    '访问相册需要「照片/媒体」权限。请允许后重试，或点「去设置」在系统设置中开启。',
+    'Accessing the album requires the photos/media permission. Please allow it and retry, or tap "Open Settings" to enable it in system settings.',
+    'アルバムへのアクセスには写真/メディアの権限が必要です。許可してから再試行するか、「設定を開く」からシステム設定で有効にしてください。',
+  );
+  String get permBleConnectMessage => _pick(
+    '连接相框需要「蓝牙」与「附近设备」权限（部分系统显示为「位置信息」）。请允许后重试，或点「去设置」在系统设置中开启。',
+    'Connecting to the frame requires the "Bluetooth" and "Nearby devices" permissions (shown as "Location" on some systems). Please allow them and retry, or tap "Open Settings" to enable them in system settings.',
+    'フォトフレームへの接続には「Bluetooth」と「付近のデバイス」の権限（一部のシステムでは「位置情報」）が必要です。許可してから再試行するか、「設定を開く」からシステム設定で有効にしてください。',
+  );
+  String get permBtOffConnectMessage => _pick(
+    '手机蓝牙未开启，无法连接相框。请打开蓝牙后重试。',
+    'Bluetooth is off, so the frame cannot be connected. Please turn on Bluetooth and try again.',
+    'Bluetoothがオフのため、フォトフレームに接続できません。Bluetoothをオンにしてから再試行してください。',
+  );
   String get bindConnecting =>
       _pick('连接设备中', 'Connecting to device', 'デバイスに接続中');
   String get bindConnectSuccess => _pick('连接成功', 'Connected', '接続しました');

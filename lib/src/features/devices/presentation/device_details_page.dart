@@ -4,6 +4,7 @@ import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
+import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
@@ -127,10 +128,15 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
   }
 
-  /// 顶部操作栏「连接蓝牙 / 断开连接」（对齐小程序 detail.js `toggleConnection`）。
+  /// 顶部操作栏「连接 / 断开」（对齐小程序 detail.js `toggleConnection`）。
   Future<void> _toggleConnection(BuildContext context) async {
     final device = state.selectedDevice;
     final wasConnected = device.connected;
+    // 连接方向先单独走授权框，全就绪才弹「连接中」loading（断开无需权限）。
+    if (!wasConnected &&
+        (!await PermissionGate.ensureBleReady(context) || !context.mounted)) {
+      return;
+    }
     if (!wasConnected) {
       AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
     }
@@ -151,6 +157,10 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   /// 未连接则蒙层 loading 自动扫连（对齐小程序 detail.js startProjection→connectDevice）；
   /// 连上返回 true，失败提示并返回 false。
   Future<bool> _ensureConnected(BuildContext context, String deviceId) async {
+    // 授权框先单独出现，全就绪才弹「连接中」loading。
+    if (!await PermissionGate.ensureBleReady(context) || !context.mounted) {
+      return false;
+    }
     AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
     final feedback = await state.connectDevice(deviceId);
     if (!context.mounted) {
@@ -187,7 +197,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
       imagePaths = (source == ImageSourceType.camera)
           ? await CastPhotoPicker.takePhoto()
-          : await CastPhotoPicker.pickFromAlbum();
+          : await CastPhotoPicker.pickFromAlbum(context);
     } catch (_) {
       if (context.mounted) {
         _snack(context, AppL10n.of(context).devPhotoReadFailed);
@@ -395,31 +405,69 @@ class DeviceDetailsBody extends StatelessWidget {
           ),
         ),
         // 顶部操作栏：投屏 / 连接·断开（仅详情页渲染；清空/删除确认页复用正文时无这些回调，不渲染）。
+        // 样式对齐小程序 detail.wxss `.device-actions glass-panel`（与「我的设备」列表卡同款）：
+        // 一条玻璃面板（84rpx=42 高 / 28rpx=14 圆角）内两个等宽图文按钮，中间 38rpx=19 高竖分割线；
+        // 投屏恒橙色 #eb5f1b，连接蓝 #2079fc / 断开橙 #eb5f1b。
         if (onConnectToggle != null || onCast != null) ...[
           const SizedBox(height: 12),
-          Row(
-            children: [
-              if (onCast != null)
-                Expanded(
-                  child: _DeviceActionButton(
-                    label: AppL10n.of(context).devCast,
-                    primary: true,
-                    onTap: onCast,
-                  ),
+          Container(
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.86)),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF7991B2).withValues(alpha: 0.13),
+                  blurRadius: 27,
+                  offset: const Offset(0, 12),
                 ),
-              if (onCast != null && onConnectToggle != null)
-                const SizedBox(width: 12),
-              if (onConnectToggle != null)
-                Expanded(
-                  child: _DeviceActionButton(
-                    label: device.connected
-                        ? AppL10n.of(context).devDisconnect
-                        : AppL10n.of(context).devConnectBluetooth,
-                    primary: false,
-                    onTap: onConnectToggle,
+              ],
+            ),
+            // stretch：让按钮铺满 42 高度，点击区覆盖整颗按钮。
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (onCast != null)
+                  Expanded(
+                    child: _DeviceActionButton(
+                      iconAsset: 'assets/images/screen-casting-icon01.png',
+                      fallbackIcon: Icons.cast_rounded,
+                      iconSize: 20,
+                      label: AppL10n.of(context).devCast,
+                      color: const Color(0xFFEB5F1B),
+                      onTap: onCast,
+                    ),
                   ),
-                ),
-            ],
+                if (onCast != null && onConnectToggle != null)
+                  const Center(
+                    child: SizedBox(
+                      width: 1,
+                      height: 19,
+                      child: ColoredBox(color: Color(0xFFDADDDF)),
+                    ),
+                  ),
+                if (onConnectToggle != null)
+                  Expanded(
+                    child: _DeviceActionButton(
+                      iconAsset: device.connected
+                          ? 'assets/images/disconnect-icon01.png'
+                          : 'assets/images/bluetooth-connection.png',
+                      fallbackIcon: device.connected
+                          ? Icons.link_off_rounded
+                          : Icons.bluetooth_rounded,
+                      iconSize: 16,
+                      label: device.connected
+                          ? AppL10n.of(context).devDisconnectShort
+                          : AppL10n.of(context).devConnectShort,
+                      color: device.connected
+                          ? const Color(0xFFEB5F1B)
+                          : const Color(0xFF2079FC),
+                      onTap: onConnectToggle,
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
         const SizedBox(height: 12),
@@ -441,9 +489,12 @@ class DeviceDetailsBody extends StatelessWidget {
                 iconAsset: 'assets/images/device-detail-icon02.png',
                 fallbackIcon: Icons.tag_rounded,
                 label: AppL10n.of(context).devDeviceId,
-                value: device.serialNumber.isEmpty
-                    ? device.id
-                    : device.serialNumber,
+                // 设备ID只在已连接时展示（用户定版：未连接一律 -- 占位）。
+                // 也**不再回退 device.id**——那是后端记录主键 userProductId，
+                // 不是设备ID，回退显示会让用户以为设备有个「默认ID」。
+                value: device.connected && device.serialNumber.isNotEmpty
+                    ? device.serialNumber
+                    : '--',
               ),
               const _ThinDivider(),
               _DetailRow(
@@ -607,16 +658,23 @@ class _ThinDivider extends StatelessWidget {
   }
 }
 
-/// 详情页顶部操作按钮：投屏=橙色渐变主按钮，连接/断开=白底橙描边次按钮。
+/// 详情页顶部操作条内的图文按钮（小程序 `.device-action`）：图标 + 文案居中，
+/// 文字 28rpx=14 / w500，颜色随按钮语义（投屏橙 / 连接蓝 / 断开橙）。
 class _DeviceActionButton extends StatelessWidget {
   const _DeviceActionButton({
+    required this.iconAsset,
+    required this.fallbackIcon,
+    required this.iconSize,
     required this.label,
-    required this.primary,
+    required this.color,
     this.onTap,
   });
 
+  final String iconAsset;
+  final IconData fallbackIcon;
+  final double iconSize;
   final String label;
-  final bool primary;
+  final Color color;
   final VoidCallback? onTap;
 
   @override
@@ -624,30 +682,28 @@ class _DeviceActionButton extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Container(
-        height: 44,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          gradient: primary
-              ? const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-                )
-              : null,
-          color: primary ? null : Colors.white.withValues(alpha: 0.86),
-          borderRadius: BorderRadius.circular(22),
-          border: primary ? null : Border.all(color: const Color(0xFFFF6A20)),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: primary ? Colors.white : const Color(0xFFFF6A20),
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            height: 1,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Image.asset(
+            iconAsset,
+            width: iconSize,
+            height: iconSize,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) =>
+                Icon(fallbackIcon, size: 16, color: color),
           ),
-        ),
+          const SizedBox(width: 5),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1,
+            ),
+          ),
+        ],
       ),
     );
   }

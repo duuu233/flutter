@@ -137,3 +137,27 @@
   - **Android 前台服务 `BleConnectionService`**（connectedDevice 类型）与连接同生命周期：连接建立启动（必在前台，避开 12+ 后台启服限制）、断开即停。这是「切出后进程活满 15/30 分钟」的唯一正规手段；国产 ROM 极端白名单策略仍可能提前杀，属系统行为。
   - 通知常驻文案 `bleKeepAliveNotification`（zh/en/ja），通道 IMPORTANCE_LOW 静默。Manifest 新增 FOREGROUND_SERVICE / FOREGROUND_SERVICE_CONNECTED_DEVICE / POST_NOTIFICATIONS（不运行时索要，未授权仅通知不可见、服务照跑）。
   - iOS 无对应机制：通道方法静默跳过，退后台由系统挂起，回前台走 reconcile 体检，属平台差异。
+
+## 六、2026-07-17 同步日志（六项反馈）
+
+- **设备详情「投屏 / 连接」操作栏样式同步小程序**（`device_details_page.dart`）
+  - 原为「橙色渐变大按钮 + 白底橙描边按钮」，与小程序不符。现对齐 `detail.wxss .device-actions glass-panel`：一条玻璃面板（高 42 / 圆角 14 / 白 0.4 底 + 白 0.86 描边 + 柔和投影）内两个等宽图文按钮，中间 1×19 竖分割线（#dadddf）。
+  - 配色/字号同小程序：文字 14/w500；投屏恒橙 #eb5f1b（图标 20）；连接蓝 #2079fc / 断开橙 #eb5f1b（图标 16）。文案由「连接蓝牙/断开连接」改为与小程序一致的短词「连接/断开」（devConnectShort/devDisconnectShort）。
+- **「我的设备」暂无设备空态对齐小程序**（`my_devices_page.dart`）
+  - 面板改为**全宽**玻璃卡（原 Align 收缩包裹，卡片只有文字宽）。
+  - 空态插图复刻小程序 CSS 画法 `.frame-logo`（app.wxss）：橙色描边「相框 + U 形底座」CustomPaint 绘制，非图片资源（原来误用 device-list-icon04.png）。文案/间距/CTA 尺寸沿用（已与 list.wxss 一致）。
+- **注册页 UI 重做（App 原生设计，非小程序复刻）**（`register_page.dart` 重写 + 新增 `auth_widgets.dart`）
+  - 与登录页共用同一套视觉组件（从 auth_page.dart 抽出）：AuthBackground(bg01)、BoltStarWordmark(LOGO)、AuthPillTextField 胶囊输入框、AuthPrimaryButton 渐变主按钮、AuthAgreementRow 协议确认行、AuthTextStyles。改组件 = 登录注册一起变。
+  - 新版结构：返回钮 → LOGO + 「创建账户」大标题 + 副标题（accRegisterSubtitle）→ 邮箱/验证码/密码/确认密码四个胶囊行 → 渐变「注 册」→「已有账户？去登录」→ 底部协议确认行。
+  - **注册新增协议确认**：未勾选点注册 toast 提示（同登录页 accAgreementRequired）。
+  - 校验时机与登录页统一：点「注册」时统一判定、错误就地显示在对应行下方、重新输入即清除；键盘「完成」不触发校验。验证码按钮从表单卡样式改为胶囊行尾部橙字（倒计时置灰），发送在途蒙层 loading 逻辑保留。
+  - ⚠️ 与小程序差异：小程序无邮箱注册页，本页为 App 原生设计（按登录页风格），修改/忘记密码页保持原表单卡风格不共用。
+- **loading 补充**（`settings_page.dart`）
+  - 退出登录、用户注销确认后增加蒙层 loading（接口在途阻断重复点击）；注册按钮/各验证码按钮此前已有 loading，本轮核对无缺口。
+- **照片权限前置授权（产品要求：必须先授权再进相册）**（新增 `shared/permission_gate.dart`）
+  - `PermissionGate.ensurePhotoAccess`：进相册前先走系统授权框（原生通道 requestPhotoPermission，Android 13+ 系统选择器本不要求权限也照样先授权）；拒绝弹「去设置」引导框（openAppSettings）；设置中手动关闭后再次使用会重新弹系统框（每次按真实状态请求，同拍照行为）。
+  - 覆盖入口：投屏相册（CastPhotoPicker.pickFromAlbum 内统一门禁，首页底部照片/投屏方式弹层/设备列表/设备详情/继续投屏全走它）、首页头像、个人信息头像。拍照走 image_picker 自带 CAMERA 授权（产品确认 OK），不改。
+  - iOS/通道缺失平台不拦截（catch 后放行，交给系统选择器自身权限机制）。
+- **位置（蓝牙）权限时序：先授权框、后设备操作，二者不同屏**
+  - 绑定流程页（`bind_device_flow.dart`）新增 `_Stage.permission` 初始安静占位态（只有导航栏+背景）：系统授权框先单独出现，权限/蓝牙开关全就绪才切入「正在搜索」雷达动画并开扫；拒绝弹「去设置」引导（原有 guide 保留）。
+  - 连接类操作（首页自动连、设备列表连接/投屏自动连、详情连接/投屏自动连）统一在弹「连接中」loading **之前**先过 `PermissionGate.ensureBleReady`（蓝牙权限 + 蓝牙开关，Android 11- 含定位）；拒绝/未开蓝牙分别弹「去设置/去打开蓝牙」引导框（permBleConnectMessage/permBtOffConnectMessage）。

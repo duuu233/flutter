@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../shared/l10n/app_l10n.dart';
+import '../../shared/permission_gate.dart';
 import '../../state.dart';
 
 /// 投屏选图的统一入口：**在选图阶段就把原图降采样**，再交给投屏链路上传。
@@ -57,8 +58,15 @@ class CastPhotoPicker {
     return file == null ? const [] : [file.path];
   }
 
-  /// 从相册多选（最多 [maxBatch] 张）。返回本地文件路径（用户取消返回空列表）。
-  static Future<List<String>> pickFromAlbum() async {
+  /// 从相册多选（最多 [maxBatch] 张）。返回本地文件路径（用户取消/未授权返回空列表）。
+  ///
+  /// 进相册前先过 [PermissionGate.ensurePhotoAccess]：Android 13+ 的系统选择器
+  /// 本身不要求权限也能打开相册，但产品要求必须先经用户授权（拒绝弹「去设置」引导）。
+  /// 全部投屏选图入口统一走这里，权限门槛只需守这一处。
+  static Future<List<String>> pickFromAlbum(BuildContext context) async {
+    if (!await PermissionGate.ensurePhotoAccess(context)) {
+      return const [];
+    }
     final files = await _picker.pickMultiImage(
       limit: maxBatch,
       maxWidth: _maxLongEdge,

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/permission_gate.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../cast/cast_photo_picker.dart';
@@ -77,6 +78,11 @@ class _DevicesPageState extends State<DevicesPage> {
             }
           },
           onConnect: (deviceId) async {
+            // 授权框先单独出现，全就绪才弹「连接中」loading（拒绝时内部已弹「去设置」引导）。
+            if (!await PermissionGate.ensureBleReady(context) ||
+                !context.mounted) {
+              return;
+            }
             // 真实 BLE 连接：复用活动会话或扫描匹配（只认序列号，改名不影响连接）。
             AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
             final feedback = await state.connectDevice(deviceId);
@@ -130,7 +136,7 @@ class _DevicesPageState extends State<DevicesPage> {
       // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
       imagePaths = (source == ImageSourceType.camera)
           ? await CastPhotoPicker.takePhoto()
-          : await CastPhotoPicker.pickFromAlbum();
+          : await CastPhotoPicker.pickFromAlbum(context);
     } catch (_) {
       if (context.mounted) {
         _showMessage(context, AppL10n.of(context).devicesReadPhotoFailed);
@@ -156,6 +162,10 @@ class _DevicesPageState extends State<DevicesPage> {
 
   /// 未连接则蒙层 loading 自动扫连（对齐小程序 ensureConnectedForAction）；连上 true，失败提示 false。
   Future<bool> _ensureConnected(BuildContext context, String deviceId) async {
+    // 授权框先单独出现，全就绪才弹「连接中」loading。
+    if (!await PermissionGate.ensureBleReady(context) || !context.mounted) {
+      return false;
+    }
     AppLoadingDialog.show(context, AppL10n.of(context).bindConnecting);
     final feedback = await widget.state.connectDevice(deviceId);
     if (!context.mounted) {

@@ -19,6 +19,18 @@
 - 微信开放平台后台填写同一 Universal Link；
 - **Android**：开放平台登记的必须是 `boltstar-release.jks`（release 签名）的 MD5，不是 debug 签名——否则 release 包授权静默失败。
 
+## 〇.5、国内网络前置：pub.dev 镜像（不配则 pub get 报 socket error）
+
+打包机在国内访问 pub.dev 不通（报 `Got socket error trying to find package xxx at https://pub.dev`），
+先配 Flutter 官方中国镜像（一次性，`setx` 后**新开终端**生效）：
+
+```bat
+setx PUB_HOSTED_URL "https://pub.flutter-io.cn"
+setx FLUTTER_STORAGE_BASE_URL "https://storage.flutter-io.cn"
+```
+
+已开系统代理的机器可改用 `HTTPS_PROXY` 环境变量，二选一，别混用。
+
 ## 一、Android（Windows 打包机，keystore 在 `D:/application/AndroidKeys/`）
 
 ```bash
@@ -39,6 +51,21 @@ flutter build apk --release --split-per-abi ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk 等
 ```
+
+### Debug 包（排错用，不分发）
+
+```bash
+flutter build apk --debug ^
+  --dart-define=WECHAT_APP_ID=wx你的AppID ^
+  --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
+# 产物: build/app/outputs/flutter-apk/app-debug.apk（含全部 ABI，直接安装）
+```
+
+- debug 包自动用 debug keystore，不需要 `key.properties`；不做 R8 混淆/资源裁剪。
+- 微信登录在 debug 包必然静默失败（开放平台登记的是 release 签名 MD5），用邮箱登录测试。
+- 崩溃二分：debug 不崩 + release 崩 → 查 R8/proguard；两者都崩 → 查渲染驱动（Impeller）或代码，
+  看 App 启动弹窗的崩溃日志或 `adb logcat -b crash -d`。
+- 手机连电脑时优先 `flutter run`（debug 模式 + 终端实时堆栈 + 热重载），比打包快。
 
 说明：
 - 签名已接线 `android/key.properties`，缺配置会主动构建失败（不会静默用 debug 签名）。

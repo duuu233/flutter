@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../device/ble_connection_lease.dart';
@@ -11,6 +12,7 @@ import '../features/shell/presentation/shell_page.dart';
 import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
 import '../shared/l10n/app_l10n.dart';
+import '../shared/widgets/app_toast.dart';
 import '../state.dart';
 import 'app_theme.dart';
 
@@ -60,6 +62,9 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     ]).whenComplete(() {
       if (mounted) {
         setState(() => _showSplash = false);
+        // 闪屏结束后检查上次是否异常退出：有崩溃日志则弹窗展示（可复制），
+        // 用于定位「应用因自身原因导致崩溃」这类进程级崩溃（见 CrashLogger）。
+        unawaited(_maybeShowCrashReport());
       }
     });
     // 恢复上次选择的语言（持久化在本地）。异步读取，读到后 switchLanguage 会 notify 触发整树重译。
@@ -164,6 +169,70 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     } catch (_) {}
   }
 
+  /// 上次异常退出的崩溃日志弹窗：读原生 CrashLogger 落盘的现场，展示 + 一键复制。
+  /// 「清除并关闭」后不再弹；日志留在弹窗里未清除时下次启动会再次提示。
+  Future<void> _maybeShowCrashReport() async {
+    final log = await NativeDeviceApi.getLastCrashLog();
+    if (log == null || log.trim().isEmpty || !mounted) {
+      return;
+    }
+    // 等 MaterialApp/Navigator 就绪后再弹（闪屏刚切走的同帧 Navigator 可能还没挂上）。
+    await WidgetsBinding.instance.endOfFrame;
+    final context = _navigatorKey.currentState?.overlay?.context;
+    if (context == null || !mounted) {
+      return;
+    }
+    final l10n = AppL10n.of(context);
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.crashReportTitle),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(l10n.crashReportHint, style: const TextStyle(fontSize: 12)),
+              const SizedBox(height: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 300),
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    log,
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontFamily: 'monospace',
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: log));
+              if (dialogContext.mounted) {
+                AppToast.show(dialogContext, l10n.crashReportCopied);
+              }
+            },
+            child: Text(l10n.crashReportCopy),
+          ),
+          TextButton(
+            onPressed: () {
+              unawaited(NativeDeviceApi.clearCrashLog());
+              Navigator.of(dialogContext).pop();
+            },
+            child: Text(l10n.crashReportClose),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// 主题在 App 生命周期内不变：缓存一份实例。之前写在 build 里的
   /// `buildAppTheme()` 会在每次 state notify（全局 42 处）时重跑
   /// `ColorScheme.fromSeed` 的调色板推导并让 MaterialApp 全量重建，纯属浪费。
@@ -234,11 +303,18 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       // 会挤爆固定容器，钳制到 1.3x 作为止血（长期应把固定高改 minHeight）。
       builder: (context, child) => MediaQuery.withClampedTextScaling(
         maxScaleFactor: 1.3,
-        child: AnimatedBuilder(
-          animation: _state,
-          builder: (context, _) => AppLocalizationsScope(
-            language: _state.language,
-            child: child ?? const SizedBox.shrink(),
+        // 全局「点空白处收起键盘」：置于 Navigator 之上，覆盖所有页面（含对话框/弹层）。
+        // 手势竞技场里可交互组件（按钮/输入框/列表项）总是赢家，只有无人认领的
+        // 空白点击才会落到这层 onTap —— 不会拦截或延迟任何现有交互。
+        child: GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+          child: AnimatedBuilder(
+            animation: _state,
+            builder: (context, _) => AppLocalizationsScope(
+              language: _state.language,
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
       ),

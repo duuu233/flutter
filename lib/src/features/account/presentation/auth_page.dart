@@ -7,11 +7,13 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
 import '../data/wechat_authorization_client.dart';
+import 'auth_widgets.dart';
 
 /// 邮箱密码 / 微信授权登录页（应用唯一登录页，路由 `/auth`）。
 ///
 /// 退出登录 / 用户注销后进入；按 375x812 设计稿还原，背景图全屏铺满、表单等比适配。
 /// 微信入口走微信开放平台「移动应用微信登录」取得 code，再由业务后端换取 userToken。
+/// 背景 / 胶囊输入框 / 主按钮 / 协议行等视觉组件抽在 `auth_widgets.dart`，与注册页共用。
 class AuthPage extends StatefulWidget {
   const AuthPage({
     super.key,
@@ -94,7 +96,7 @@ class _AuthPageState extends State<AuthPage> {
         body: Stack(
           fit: StackFit.expand,
           children: [
-            const _LoginBackground(),
+            const AuthBackground(),
             SafeArea(
               child: _AuthCanvas(
                 emailController: _emailController,
@@ -166,8 +168,11 @@ class _AuthPageState extends State<AuthPage> {
     setState(() => _submitting = false);
     if (feedback.success) {
       await EmailHistory.add(email); // 记住成功登录过的邮箱，下次自动填充
+    } else {
+      // 只在失败时提示。登录成功不弹「登录成功，已同步个人资料」——
+      // 根节点随即切到主壳层，界面变化本身就是反馈（用户要求去掉）。
+      _showFeedback(feedback.message);
     }
-    _showFeedback(feedback.message);
     // 登录成功后**不需要**在这里导航：本页是强制登录门控下的根页面（见 bolt_star_app.dart），
     // `loginWithPassword` 置好登录态并 notifyListeners 后，根节点会自动把自己换成主壳层。
   }
@@ -193,7 +198,10 @@ class _AuthPageState extends State<AuthPage> {
       if (!mounted) {
         return;
       }
-      _showFeedback(feedback.message);
+      if (!feedback.success) {
+        // 同邮箱登录：成功不弹提示，失败才提示。
+        _showFeedback(feedback.message);
+      }
     } on WeChatAuthorizationException catch (error) {
       if (mounted) {
         // 按错误类别取当前语言文案；exception.message 是中文详情，只进日志。
@@ -308,10 +316,14 @@ class _AuthCanvas extends StatelessWidget {
           const SizedBox(height: 36),
           SizedBox(
             height: 56,
-            child: _PillTextField(
+            child: AuthPillTextField(
               controller: emailController,
               hintText: AppL10n.of(context).accEmailHint,
-              iconAsset: 'assets/images/email_icon.png',
+              icon: Image.asset(
+                'assets/images/email_icon.png',
+                width: 24,
+                height: 24,
+              ),
               keyboardType: TextInputType.emailAddress,
               textInputAction: TextInputAction.next,
               showError: emailError,
@@ -321,15 +333,19 @@ class _AuthCanvas extends StatelessWidget {
           if (emailError)
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 23),
-              child: _ErrorText(text: AppL10n.of(context).accEmailInvalid),
+              child: AuthErrorText(text: AppL10n.of(context).accEmailInvalid),
             ),
           const SizedBox(height: 16),
           SizedBox(
             height: 56,
-            child: _PillTextField(
+            child: AuthPillTextField(
               controller: passwordController,
               hintText: AppL10n.of(context).accPasswordHint,
-              iconAsset: 'assets/images/password_icon.png',
+              icon: Image.asset(
+                'assets/images/password_icon.png',
+                width: 24,
+                height: 24,
+              ),
               keyboardType: TextInputType.visiblePassword,
               textInputAction: TextInputAction.done,
               obscureText: !passwordVisible,
@@ -337,30 +353,18 @@ class _AuthCanvas extends StatelessWidget {
               autofillHints: const [AutofillHints.password],
               // 不绑定 onSubmitted 触发登录：键盘「完成」只收起键盘，
               // 否则未勾选协议时按「完成」会再次弹出协议提示。
-              trailing: IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 36,
-                  height: 36,
-                ),
+              trailing: AuthEyeButton(
+                visible: passwordVisible,
                 onPressed: onPasswordVisibilityChanged,
-                tooltip: passwordVisible
-                    ? AppL10n.of(context).accHidePassword
-                    : AppL10n.of(context).accShowPassword,
-                icon: Icon(
-                  passwordVisible
-                      ? Icons.visibility_outlined
-                      : Icons.visibility_off_outlined,
-                  color: const Color(0xFF8C9092),
-                  size: 20,
-                ),
+                showTooltip: AppL10n.of(context).accShowPassword,
+                hideTooltip: AppL10n.of(context).accHidePassword,
               ),
             ),
           ),
           if (passwordError)
             Padding(
               padding: const EdgeInsets.only(top: 8, left: 23),
-              child: _ErrorText(text: AppL10n.of(context).accPasswordEmpty),
+              child: AuthErrorText(text: AppL10n.of(context).accPasswordEmpty),
             ),
           const SizedBox(height: 12),
           Align(
@@ -370,14 +374,15 @@ class _AuthCanvas extends StatelessWidget {
               onTap: onForgotPassword,
               child: Text(
                 AppL10n.of(context).accForgotPasswordLink,
-                style: _AuthTextStyles.linkMuted,
+                style: AuthTextStyles.linkMuted,
               ),
             ),
           ),
           const SizedBox(height: 24),
           SizedBox(
             height: 56,
-            child: _PrimaryButton(
+            child: AuthPrimaryButton(
+              label: AppL10n.of(context).accLoginButton,
               onPressed: submitting ? null : onLogin,
               loading: submitting && !weChatSubmitting,
             ),
@@ -393,11 +398,15 @@ class _AuthCanvas extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           Center(
-            child: _AgreementRow(
+            child: AuthAgreementRow(
               agreed: agreed,
               onChanged: onAgreementChanged,
               onUserAgreement: onUserAgreement,
               onPrivacyPolicy: onPrivacyPolicy,
+              prefixText: AppL10n.of(context).accAgreementPrefix,
+              userAgreementText: AppL10n.of(context).accUserAgreementLink,
+              andText: AppL10n.of(context).accAnd,
+              privacyPolicyText: AppL10n.of(context).accPrivacyPolicyLink,
             ),
           ),
           const SizedBox(height: 16),
@@ -405,109 +414,6 @@ class _AuthCanvas extends StatelessWidget {
       ),
     );
   }
-}
-
-class _LoginBackground extends StatelessWidget {
-  const _LoginBackground();
-
-  @override
-  Widget build(BuildContext context) {
-    return const ColoredBox(
-      color: Color(0xFFF7FAFF),
-      child: _AssetImageWithFallback(
-        assetPath: 'assets/images/bg01.png',
-        fallback: _LoginBackgroundFallback(),
-      ),
-    );
-  }
-}
-
-class _AssetImageWithFallback extends StatelessWidget {
-  const _AssetImageWithFallback({
-    required this.assetPath,
-    required this.fallback,
-  });
-
-  final String assetPath;
-  final Widget fallback;
-
-  @override
-  Widget build(BuildContext context) {
-    return Image.asset(
-      assetPath,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) => fallback,
-    );
-  }
-}
-
-class _LoginBackgroundFallback extends StatelessWidget {
-  const _LoginBackgroundFallback();
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(painter: _LoginBackgroundPainter());
-  }
-}
-
-class _LoginBackgroundPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFEAF4FF), Color(0xFFF9FBFF), Color(0xFFFFF7F1)],
-          stops: [0, 0.56, 1],
-        ).createShader(rect),
-    );
-
-    final haze = Paint()
-      ..color = Colors.white.withValues(alpha: 0.42)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 18);
-    canvas.drawCircle(const Offset(120, 20), 118, haze);
-    canvas.drawCircle(const Offset(55, 270), 170, haze);
-
-    canvas.drawCircle(
-      const Offset(372, 180),
-      125,
-      Paint()
-        ..shader =
-            RadialGradient(
-              colors: [
-                const Color(0xFFFFC9A7).withValues(alpha: 0.68),
-                const Color(0x00FFC9A7),
-              ],
-            ).createShader(
-              Rect.fromCircle(center: const Offset(372, 180), radius: 125),
-            ),
-    );
-
-    final curvePaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.62)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-    canvas.drawArc(
-      const Rect.fromLTWH(-82, -205, 335, 335),
-      0.08,
-      2.12,
-      false,
-      curvePaint,
-    );
-    canvas.drawArc(
-      const Rect.fromLTWH(-130, 112, 418, 220),
-      3.66,
-      1.72,
-      false,
-      curvePaint,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _TitleGroup extends StatelessWidget {
@@ -523,219 +429,21 @@ class _TitleGroup extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Text(AppL10n.of(context).accWelcome, style: _AuthTextStyles.title),
+            Text(AppL10n.of(context).accWelcome, style: AuthTextStyles.title),
             const SizedBox(width: 6),
-            const _PositionedBoltStarWordmark(),
+            // 相对基线微调 4，让 logo 与「欢迎使用」文字垂直对齐。
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: BoltStarWordmark(),
+            ),
           ],
         ),
         const SizedBox(height: 12),
         Text(
           AppL10n.of(context).accLoginSubtitle,
-          style: _AuthTextStyles.subtitle,
+          style: AuthTextStyles.subtitle,
         ),
       ],
-    );
-  }
-}
-
-class _PositionedBoltStarWordmark extends StatelessWidget {
-  const _PositionedBoltStarWordmark();
-
-  // 相对基线的微调偏移，让 logo 与「欢迎使用」文字垂直对齐。
-  static const double _logoTop = 4;
-
-  @override
-  Widget build(BuildContext context) {
-    return const Padding(
-      padding: EdgeInsets.only(top: _logoTop),
-      child: _BoltStarWordmark(),
-    );
-  }
-}
-
-class _BoltStarWordmark extends StatelessWidget {
-  const _BoltStarWordmark();
-
-  static const double logoWidth = 130;
-  static const double logoHeight = 32;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: logoWidth,
-      height: logoHeight,
-      child: Image.asset(
-        'assets/images/logo.png',
-        width: logoWidth,
-        height: logoHeight,
-        fit: BoxFit.contain,
-        alignment: Alignment.centerLeft,
-        errorBuilder: (context, error, stackTrace) {
-          return ShaderMask(
-            blendMode: BlendMode.srcIn,
-            shaderCallback: (bounds) {
-              return const LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [Color(0xFFFEA24C), Color(0xFFFF5B1F)],
-              ).createShader(bounds);
-            },
-            child: const Text('BoltStar', style: _AuthTextStyles.brandFallback),
-          );
-        },
-      ),
-    );
-  }
-}
-
-class _PillTextField extends StatelessWidget {
-  const _PillTextField({
-    required this.controller,
-    required this.hintText,
-    required this.iconAsset,
-    required this.keyboardType,
-    required this.textInputAction,
-    required this.showError,
-
-    this.obscureText = false,
-    this.trailing,
-    this.onSubmitted,
-    this.autofillHints,
-  });
-
-  final TextEditingController controller;
-  final String hintText;
-  final String iconAsset;
-  final TextInputType keyboardType;
-  final TextInputAction textInputAction;
-  final bool showError;
-  final bool obscureText;
-  final Widget? trailing;
-  final ValueChanged<String>? onSubmitted;
-
-  /// 密码管理器自动填充提示（AutofillHints.email / .password）。
-  final List<String>? autofillHints;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: const Color(0xCCFEFEFE),
-        borderRadius: BorderRadius.circular(71),
-        border: Border.all(
-          color: showError ? const Color(0xFFFF3B3B) : Colors.transparent,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.only(left: 24, right: 25),
-        child: Row(
-          children: [
-            Image.asset(iconAsset, width: 24, height: 24),
-            const SizedBox(width: 14),
-            Expanded(
-              child: TextField(
-                controller: controller,
-                keyboardType: keyboardType,
-                textInputAction: textInputAction,
-                obscureText: obscureText,
-                onSubmitted: onSubmitted,
-                autofillHints: autofillHints,
-                cursorColor: const Color(0xFFEB5F1B),
-                style: _AuthTextStyles.input,
-                decoration:
-                    const InputDecoration(
-                      isCollapsed: true,
-                      filled: false,
-                      fillColor: Colors.transparent,
-                      hoverColor: Colors.transparent,
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      errorBorder: InputBorder.none,
-                      focusedErrorBorder: InputBorder.none,
-                    ).copyWith(
-                      hintText: hintText,
-                      hintStyle: _AuthTextStyles.inputHint,
-                    ),
-              ),
-            ),
-            if (trailing != null) ...[const SizedBox(width: 8), trailing!],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorText extends StatelessWidget {
-  const _ErrorText({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(
-          Icons.info_outline_rounded,
-          color: Color(0xFFFF3B3B),
-          size: 16,
-        ),
-        const SizedBox(width: 6),
-        Text(text, style: _AuthTextStyles.error),
-      ],
-    );
-  }
-}
-
-class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.onPressed, required this.loading});
-
-  final VoidCallback? onPressed;
-  final bool loading;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(71),
-        gradient: const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFFF7D36), Color(0xFFFF621F)],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFEB5F1B).withValues(alpha: 0.31),
-            blurRadius: 7.3,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(71),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(71),
-          onTap: onPressed,
-          child: Center(
-            child: loading
-                ? const SizedBox.square(
-                    dimension: 22,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : Text(
-                    AppL10n.of(context).accLoginButton,
-                    style: _AuthTextStyles.button,
-                  ),
-          ),
-        ),
-      ),
     );
   }
 }
@@ -813,163 +521,9 @@ class _RegisterPrompt extends StatelessWidget {
               ),
             ],
           ),
-          style: _AuthTextStyles.register,
+          style: AuthTextStyles.register,
         ),
       ),
     );
   }
-}
-
-class _AgreementRow extends StatelessWidget {
-  const _AgreementRow({
-    required this.agreed,
-    required this.onChanged,
-    required this.onUserAgreement,
-    required this.onPrivacyPolicy,
-  });
-
-  final bool agreed;
-  final VoidCallback onChanged;
-  final VoidCallback onUserAgreement;
-  final VoidCallback onPrivacyPolicy;
-
-  @override
-  Widget build(BuildContext context) {
-    // Wrap 而非 Row：EN 文案 "I have read and agree to ..." 在 ≤375dp 宽屏上
-    // 会超出一行，Row 直接横向溢出，Wrap 允许换行居中。
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onChanged,
-          child: Container(
-            width: 16,
-            height: 16,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: agreed ? const Color(0xFFEB5F1B) : Colors.transparent,
-              border: Border.all(
-                color: agreed
-                    ? const Color(0xFFEB5F1B)
-                    : const Color(0xFF8C9092),
-              ),
-            ),
-            child: agreed
-                ? const Icon(Icons.check_rounded, size: 12, color: Colors.white)
-                : null,
-          ),
-        ),
-        const SizedBox(width: 7),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onChanged,
-          child: Text(
-            AppL10n.of(context).accAgreementPrefix,
-            style: _AuthTextStyles.agreement,
-          ),
-        ),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onUserAgreement,
-          child: Text(
-            AppL10n.of(context).accUserAgreementLink,
-            style: _AuthTextStyles.agreementLink,
-          ),
-        ),
-        Text(AppL10n.of(context).accAnd, style: _AuthTextStyles.agreement),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onPrivacyPolicy,
-          child: Text(
-            AppL10n.of(context).accPrivacyPolicyLink,
-            style: _AuthTextStyles.agreementLink,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _AuthTextStyles {
-  const _AuthTextStyles._();
-
-  static const title = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 33,
-    fontWeight: FontWeight.w500,
-    height: 1.18,
-  );
-
-  static const brandFallback = TextStyle(
-    fontSize: 30,
-    fontStyle: FontStyle.italic,
-    fontWeight: FontWeight.w800,
-    height: 1,
-  );
-
-  static const subtitle = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 15,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const inputHint = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 14,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const input = TextStyle(
-    color: Color(0xFF2A2B2B),
-    fontSize: 14,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const error = TextStyle(
-    color: Color(0xFFFF3B3B),
-    fontSize: 13,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const linkMuted = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 15,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const button = TextStyle(
-    color: Colors.white,
-    fontSize: 18,
-    fontWeight: FontWeight.w500,
-    height: 1.2,
-    letterSpacing: 2,
-  );
-
-  static const register = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 16,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const agreement = TextStyle(
-    color: Color(0x992A2B2B),
-    fontSize: 12,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const agreementLink = TextStyle(
-    color: Color(0xFFFF5B1F),
-    fontSize: 12,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
 }
