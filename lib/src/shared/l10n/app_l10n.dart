@@ -1180,14 +1180,6 @@ class AppL10n {
 
   // ── 引导 ──
   String get guideTitle => _pick('操作指南', 'User Guide', '操作ガイド');
-  // 搜索无匹配时的空态提示（原来玻璃卡内一片空白，像页面坏了）。
-  String get guideNoResult => _pick(
-    '没有找到相关问题，换个关键词试试',
-    'No matching questions. Try a different keyword.',
-    '該当する質問が見つかりません。別のキーワードでお試しください。',
-  );
-  String get guideSearchHint =>
-      _pick('搜索帮助文档', 'Search help docs', 'ヘルプを検索');
 
   // ── 我的 ──
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');

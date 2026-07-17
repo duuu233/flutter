@@ -747,21 +747,25 @@ class FigmaInfoRow extends StatelessWidget {
                   ),
                 ),
               ),
-              Flexible(
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: FigmaTextStyles.formHint.copyWith(
-                    color: danger
-                        ? const Color(0xFFEB5F1B)
-                        : const Color(0x992A2B2B),
+              // value 为空（如个人信息页「修改密码」纯入口行）时不渲染取值文本
+              // 与其前置间距：空 Text + 固定 6px 间隙仍会参与布局，让右侧箭头
+              // 相对上面「头像/邮箱」等行发生可见偏移（对齐问题，2026-07-17）。
+              if (value.isNotEmpty)
+                Flexible(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: FigmaTextStyles.formHint.copyWith(
+                      color: danger
+                          ? const Color(0xFFEB5F1B)
+                          : const Color(0x992A2B2B),
+                    ),
                   ),
                 ),
-              ),
               if (onTap != null) ...[
-                const SizedBox(width: 6),
+                if (value.isNotEmpty) const SizedBox(width: 6),
                 const Icon(
                   Icons.chevron_right_rounded,
                   color: Color(0x992A2B2B),

@@ -1,8 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Android 8+ 自适应图标：没有它，桌面会把方形 PNG 缩进白色圆片，观感差。
-     背景取图标同款品牌橙（#ED6315，采样自 ic_launcher.png），前景是原图标
-     inset 22%——图标自身的橙色圆角与橙色背景无缝融合，各种遮罩形状下
-     都呈现「橙底 + 白色星形」的品牌观感。 -->
+     背景为白色（对齐 iOS 图标观感：白底 + 橙色 LOGO）。前景 PNG 的星形/十字缝
+     是透明的（alpha=0）——之前背景用品牌橙 #ED6315 时，白色星形被橙底“吃掉”，
+     桌面上呈现一整块橙色（2026-07-17 修复）；白底下透明缝隙即显白，
+     各种遮罩形状下都与 iOS 的「白底橙标」一致。 -->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
     <background android:drawable="@color/ic_launcher_background"/>
     <foreground>

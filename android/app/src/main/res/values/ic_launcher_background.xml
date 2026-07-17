@@ -1,5 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 自适应图标背景：与 ic_launcher.png 的品牌橙一致（像素采样值）。 -->
-    <color name="ic_launcher_background">#ED6315</color>
+    <!-- 自适应图标背景：白色，对齐 iOS 的「白底 + 橙色 LOGO」观感。
+         不要改回品牌橙：前景 PNG 的白色星形区域是透明的，橙底会把它吃掉，
+         桌面图标会变成一整块橙色（见 mipmap-anydpi-v26/ic_launcher.xml）。 -->
+    <color name="ic_launcher_background">#FFFFFF</color>
 </resources>
