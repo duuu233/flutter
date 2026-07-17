@@ -286,7 +286,7 @@ class AppL10n {
     'WeChat authorization failed, please try again later',
     'WeChat認証に失敗しました。後ほど再試行してください',
   );
-  String get accEmailHint => _pick('请输入邮箱', 'Enter your email', 'メールアドレスを入力してください');
+  String get accEmailHint => _pick('请输入邮箱', 'Enter email', 'メールアドレスを入力');
   String get accEmailInvalid => _pick(
     '请输入正确的邮箱地址',
     'Please enter a valid email address',
@@ -297,8 +297,8 @@ class AppL10n {
   // 密码规则（注册 / 忘记密码 / 修改密码设置新密码时用；登录页不校验规则）。
   String get accPasswordRuleHint => _pick(
     '请输入6-12位数字加英文密码',
-    '6-12 characters, letters & digits',
-    '6〜12桁の英字と数字を入力',
+    '6-12 chars, letters/numbers',
+    '6〜12桁の英数字',
   );
   String get accPasswordRuleError => _pick(
     '密码需为6-12位数字和英文字母组合',
@@ -328,11 +328,11 @@ class AppL10n {
     'メールアドレスを入力してください',
   );
   String get accPassword => _pick('密码', 'Password', 'パスワード');
-  String get accConfirmPassword => _pick('确认密码', 'Confirm Password', 'パスワード確認');
+  String get accConfirmPassword => _pick('确认密码', 'Confirm Pwd', 'パスワード確認');
   String get accConfirmPasswordHint => _pick(
     '请确认密码',
-    'Confirm your password',
-    'パスワードを再入力してください',
+    'Re-enter password',
+    'パスワードを再入力',
   );
   String get accPasswordMismatchReconfirm => _pick(
     '密码不一致，请重新确认密码',
@@ -352,10 +352,10 @@ class AppL10n {
     '入力した2つのパスワードが一致しません',
   );
   // 验证码组件（忘记密码 / 修改密码 / 修改邮箱共用 FigmaVerificationField；注册页为登录风格胶囊行）。
-  String get accVerifyCodeLabel => _pick('验证码', 'Code', '認証コード');
+  String get accVerifyCodeLabel => _pick('验证码', 'Code', 'コード');
   String get accVerifyCodeHint =>
-      _pick('请输入验证码', 'Enter the code', '認証コードを入力');
-  String get accGetVerifyCode => _pick('获取验证码', 'Get Code', 'コードを取得');
+      _pick('请输入验证码', 'Enter code', 'コードを入力');
+  String get accGetVerifyCode => _pick('获取验证码', 'Send', '送信');
   String get accSendingCode => _pick('发送中…', 'Sending…', '送信中…');
   // 注册页副标题（注册页与登录页共用标题组风格，见 auth_widgets.dart）。
   String get accRegisterSubtitle => _pick(
@@ -385,7 +385,7 @@ class AppL10n {
     'Bind an email before changing your password.',
     'パスワード変更の前にメールアドレスを連携してください。',
   );
-  String get accNewPassword => _pick('新密码', 'New Password', '新しいパスワード');
+  String get accNewPassword => _pick('新密码', 'New Pwd', '新パスワード');
   String get accProfileTitle => _pick('个人信息', 'Profile', '個人情報');
   String get accNickname => _pick('昵称', 'Nickname', 'ニックネーム');
   String get accNicknameHint => _pick('请输入昵称', 'Enter your nickname', 'ニックネームを入力してください');
@@ -420,7 +420,7 @@ class AppL10n {
     'アプリログイン用のパスワードを設定してください。',
   );
   String accResendIn(int seconds) =>
-      _pick('$seconds秒后重新获取', 'Resend in ${seconds}s', '$seconds秒後に再取得');
+      _pick('$seconds秒后重新获取', '${seconds}s', '$seconds秒');
 
   // ── 投屏 ──
   String get castStageTranscoding =>
