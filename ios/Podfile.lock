@@ -3,10 +3,7 @@ PODS:
   - flutter_blue_plus_darwin (0.0.2):
     - Flutter
     - FlutterMacOS
-  - fluwx (0.0.1):
-    - Flutter
-    - fluwx/pay (= 0.0.1)
-  - fluwx/pay (0.0.1):
+  - fluwx (2.0.5):
     - Flutter
     - WechatOpenSDK-XCFramework (~> 2.0.5)
   - image_cropper (0.0.5):
@@ -66,7 +63,7 @@ EXTERNAL SOURCES:
 SPEC CHECKSUMS:
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
   flutter_blue_plus_darwin: ee2377ea51a6c9e481f2ed76ec597717ef5d287d
-  fluwx: 2ef787502fccb3f3596b380509001a8ea71cbbff
+  fluwx: 3fc75ea9a5796bd90d53fd9657ff88b3dd9fca70
   image_cropper: fca51f94982730acae168c4b5d691e0f11aeb259
   image_picker_ios: e0ece4aa2a75771a7de3fa735d26d90817041326
   package_info_plus: af8e2ca6888548050f16fa2f1938db7b5a5df499
