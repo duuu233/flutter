@@ -1,5 +1,8 @@
 # App ↔ 小程序逐页对比与同步日志
 
+> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
+
+
 > 基准项目：`D:\Work\learn\photo-album`（微信小程序当前工作区）。
 >
 > 目标：共同拥有的页面、功能、接口参数、BLE 行为、UI 样式和交互反馈以小程序为准；登录、App 安装包升级等平台专属能力保留 App 实现。
@@ -26,7 +29,7 @@
 | 设备调试 | `subpackages/device/debug` | `features/devices/presentation/ble_debug_page.dart` | 🔶 | 两端均保留硬件调试能力；App 使用 Flutter BLE 调试实现 |
 | 轮播设置 | `subpackages/device/slideshow` | `features/devices/presentation/carousel_settings_page.dart` | ✅ | 设置时断线自动重连、`0x10` 播放模式/间隔、失败回滚一致；成功不弹提示 |
 | OTA 升级 | `subpackages/device/ota` | `features/devices/presentation/ota_upgrade_page.dart` | ✅ | 入口连接门控、版本检查、确认弹窗及 DFU 协议一致 |
-| 投屏预览 | `subpackages/projection/preview` | `features/cast/presentation/cast_preview_page.dart` | ✅🔶 | 左右预览、裁剪、旋转、还原原图、设备比例中心裁切、JPEG 92% 一致；App 用原生裁剪器，交互更适合原生平台 |
+| 投屏预览 | `subpackages/projection/preview` | `features/cast/presentation/cast_preview_page.dart` | ✅🔶 | 左右预览、裁剪、旋转、还原原图、**按设备分辨率中心裁切+缩放**（`coverCropToSize`，非仅比例裁切）、JPEG 92% 一致；App 用原生裁剪器，交互更适合原生平台 |
 | 投屏过程/结果 | `subpackages/projection/result` | `casting_progress_page.dart` + `projection_service.dart` | ✅ | 后端转六色帧、部分成功、设备空间、记录回写、失败回滚、连接间隔优化、BLE 图传一致 |
 | 投屏记录 | `subpackages/projection/records` | `cast_management_figma_page.dart` | ✅ | 成功/失败分页拉取、再次投屏、删除与页面重入刷新一致 |
 | 图库 | `subpackages/album/list` | `features/gallery/presentation/gallery_page.dart` | ✅ | 单设备图库、筛选、批量删除、清空状态提示、刷屏 `0x24`、跨设备保护与删后对账一致 |
@@ -50,7 +53,7 @@
 | 设备列表接口 | ✅ | `pageSize=100`，按设备序列号去重；增删改查字段一致 |
 | BLE 主协议 | ✅ | 帧头、CRC16-Modbus、CRC32-MPEG2、236 字节分包、ACK、屏型/格式一致 |
 | 图传连接间隔 | ✅ | 每批投屏前无条件下发 `0x13`，再回读实际连接间隔，不再因旧值看似相同而跳过 |
-| 投屏图片预处理 | ✅🔶 | 编辑产物 JPEG 92%；上传源超过 400KB 时按当前设备长边 2 倍、JPEG 80 兜底压缩；App 在 isolate 中处理避免卡 UI |
+| 投屏图片预处理 | ✅🔶 | 编辑产物 JPEG 92%；**上传源先经 `coverCropToSize` 恒缩到设备分辨率（480×720 / 680×960）**，后端转码零缩放不变形；`_prepareUploadSource` 的「>400KB 按设备长边 2 倍、JPEG 80」仅为极端兜底（几乎不触发）；App 在 isolate 中处理避免卡 UI |
 | `isCompress` | ✅ | 用户开关已移除，上传接口固定 `isCompress=1`；该参数只影响后端存储图 |
 | 投屏链路 | ✅ | 原图/编辑图上传后端转 `.raw/.bin`，App 不做自研六色调色，只把后端帧传给设备 |
 | 自动重连 | ✅ | 首页/列表/详情投屏、图库动作、轮播保存按小程序规则连接目标设备；一键清空仍保持小程序的“需先连接”规则 |
@@ -78,7 +81,8 @@
 - **投屏模块**
   - 确认当前小程序仍有完整预览、裁剪、旋转、原图还原和中心裁切流程，修正文档中“无预览/选图直投”的过时结论。
   - 移除“是否压缩”状态、路由参数和开关；API 固定 `isCompress=1`。
-  - 编辑导出 JPEG 92%；新增超过 400KB 后按设备长边 2 倍、质量 80 的上传前兜底压缩。
+  - 编辑导出 JPEG 92%；上传源先 `coverCropToSize` 恒缩到设备分辨率（480×720 / 680×960），
+    「>400KB 按设备长边 2 倍、质量 80」仅为极端兜底。
   - 保留 App 原生裁剪器 + isolate 图片处理，实现不同但结果、比例和导出质量与小程序一致。
 - **设置与文案**
   - 语言保存提示改为“已保存”，保存后不自动返回。
@@ -161,3 +165,9 @@
 - **位置（蓝牙）权限时序：先授权框、后设备操作，二者不同屏**
   - 绑定流程页（`bind_device_flow.dart`）新增 `_Stage.permission` 初始安静占位态（只有导航栏+背景）：系统授权框先单独出现，权限/蓝牙开关全就绪才切入「正在搜索」雷达动画并开扫；拒绝弹「去设置」引导（原有 guide 保留）。
   - 连接类操作（首页自动连、设备列表连接/投屏自动连、详情连接/投屏自动连）统一在弹「连接中」loading **之前**先过 `PermissionGate.ensureBleReady`（蓝牙权限 + 蓝牙开关，Android 11- 含定位）；拒绝/未开蓝牙分别弹「去设置/去打开蓝牙」引导框（permBleConnectMessage/permBtOffConnectMessage）。
+
+---
+
+## 操作日志
+
+- 2026-07（本轮）：投屏预览/预处理改为 `coverCropToSize` 恒缩到设备分辨率(480×720/680×960)，非仅"设备比例中心裁切"；400KB 长边2倍仅为极端兜底。

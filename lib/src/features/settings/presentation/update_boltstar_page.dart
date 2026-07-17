@@ -80,14 +80,21 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
     if (state == null) {
       return;
     }
-    final info = await state.checkAppVersion();
-    if (!mounted) {
-      return;
-    }
-    if (info == null) {
-      // 检查失败（网络异常等）：提示后返回，不停在空白页。
+    // checkAppVersion 失败时**抛异常**（返回非空 AppVersionInfo，不返回 null），
+    // 必须 try/catch：否则网络异常会成为未捕获异步错误，页面永远停在「检查更新中…」
+    // 并污染崩溃日志。
+    final AppVersionInfo info;
+    try {
+      info = await state.checkAppVersion();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
       AppToast.warn(context, AppL10n.of(context).setCheckUpdateFailed);
       Navigator.of(context).maybePop();
+      return;
+    }
+    if (!mounted) {
       return;
     }
     setState(() {

@@ -1,5 +1,8 @@
 # 项目目录结构说明（BoltStar）
 
+> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
+
+
 BoltStar 是一个 Flutter 智能相框 App。整体采用 **按业务领域分模块（feature-first）** 的结构：
 每个业务模块放在 `lib/src/features/<feature>/presentation/` 下，公共能力（状态、设备协议、
 通用组件、主题、路由）集中在 `lib/src/` 顶层目录。包名为 `BoltStar`。
@@ -123,7 +126,7 @@ lib/
 | --- | --- | --- |
 | `cast_management_page.dart` | `CastManagementPage` | 投屏管理（接入真实数据版） |
 | `cast_management_figma_page.dart` | `CastManagementFigmaPage` | 投屏管理（图库样式 Figma 版，当前 `/我的` 入口使用） |
-| `cast_preview_page.dart` | `CastPreviewPage` | 真实投屏预览：多图、裁剪、旋转、原图还原、设备比例中心裁切 |
+| `cast_preview_page.dart` | `CastPreviewPage` | 真实投屏预览：多图、裁剪、旋转、原图还原、按设备分辨率裁切+缩放（`coverCropToSize`，480×720/680×960） |
 | `photo_preview_adjust_image_page.dart` | `PhotoPreviewAdjustImagePage` | 照片预览-裁剪调整 |
 | `photo_preview_saved_page.dart` | `PhotoPreviewSavedPage` | 照片预览-已保存 |
 | `casting_progress_page.dart` | `CastingProgressPage` | 投屏进行中 |
@@ -175,9 +178,12 @@ lib/
 ## 待办 / 可继续优化
 
 - **未接入导航的“孤儿”页面**（路由已定义但应用内无入口，多为早期原型，可评估删除或接入）：
-  `AlbumPage`(`/album`)、`DevicesPage`(`/devices`)、`CastManagementPage`(`/cast-management`)、
+  `AlbumPage`(`/album`)、`CastManagementPage`(`/cast-management`)、
   `ProfileBound/UnboundEmailPage`、各 `PhotoPreview*` 与
-  `Casting/CastSuccess/CastFailed`、`ModifyPassword` 等。
+  `Casting/CastSuccess/CastFailed` 等。
+  （已过时项已剔除：`/devices` 死路由 2026-07 已删除，`DevicesPage` 类仍经 `figmaMyDevices` 使用、非孤儿；
+  `ModifyPassword` 已由个人信息页「修改密码」入口接入、非孤儿；`UpdateBoltStarPage` 已由设置页
+  「检测更新」入口接入、非孤儿。）
 - **同领域的“真实数据版 vs Figma 版”**仍并存（如 `DevicesPage` vs `MyDevicesPage`、
   `CastManagementPage` vs `CastManagementFigmaPage`），建议后续各保留一个。
 
@@ -354,7 +360,10 @@ lib/
     用户协议」（蓝圈 `set-icon02/03/04.png`，圈底 orange 8% / blue 10%）；行高 62、图标圈 32、
     标题 #2a2d32/14/w600、取值 #808690/14、右箭头改「›」(#777e88/21)；卡内分隔线 #cfd6e0/0.72 内缩 18；
   - 「联系方式」右侧改 `copy-icon01.png`，点按复制并提示「已复制联系方式」（原为弹窗，改 `Clipboard`）；
-  - 「更新BoltStar」入口删除（小程序中该行被注释）；
+  - **「检测更新」入口**（第二张卡末行，`set-icon02.png`）：点击**跳转 `UpdateBoltStarPage`**
+    （路由 `figmaUpdateBoltStar`，传 `state`），进入即真实检查版本。⚠️ 2026-07 已按需求接入,
+    **不要再删**（历史上曾因"小程序该行被注释"而删除,现产品要求保留）；
+    页面内保留的 `_checkUpdate` 弹窗式方法已无调用方,是可清理的死代码,与本入口无关。
   - 「退出登录」改胶囊（浅橙底 #fbf2ee/0.8 + 橙描边 #eb5f1b + 橙字 17/w700）、「用户注销」改
     #808690/15，两者移入底部固定区；确认弹窗按 `shared.wxss` 版式（标题 18/w700、说明 12/#636a74、
     取消 #eee / 确定橙渐变胶囊）。
@@ -365,13 +374,17 @@ lib/
 - **操作指南 `guide`**（`guide_page.dart`）：搜索框改胶囊 + `search-icon01.png`；FAQ 改单张玻璃卡内堆叠，
   问号图标用 `why-icon01.png`、标题 #4a505a/14；答案面板浅灰底(rgba(42,43,43,0.03))圆角 6、缩进 19、
   文案 rgba(42,43,43,0.6)/12/行高 1.66；补回「如何进行照片投屏?」一项（共 5 项，默认展开首/末）。
-- **更新BoltStar `update`**（`update_boltstar_page.dart`）：Logo 改 `logo.png`（123×31）；版本行 #808690/13；
-  关于文案 #2a2d32/15/行高 1.58；进度环改小程序饼图样式（外圈灰 #dfe5ee + 橙 #ff762f 进度带 8px、
+- **更新BoltStar `update`**（`update_boltstar_page.dart`）：Logo 用 `logo.png`（123×31）；版本行 #808690/13；
+  关于文案 #2a2d32/15/行高 1.58；进度环小程序饼图样式（外圈灰 #dfe5ee + 橙 #ff762f 进度带 8px、
   内圈 #edf6ff 实心盘 180、数字 #ff6421/37 + 小号「%」、说明 #808690/12）。
-- **校验**：本机未安装 Flutter/Dart SDK，无法运行 `flutter analyze`；改动经人工逐文件复核（导入、未用符号、
-  资源声明均已确认）。建议在有 SDK 的环境补跑一次 `flutter analyze lib`。
-- **说明**：删除设置首页的更新入口后，`UpdateBoltStarPage`（`/figma/settings/update*` 路由仍在）
-  成为未接入导航的孤儿页，与小程序一致（小程序 update 仅可经直接跳转到达）。
+  **2026-07 已接真实功能**：进入即调 `state.checkAppVersion`（当前版本 `package_info`，
+  最新版本/下载地址来自 `getLastVersion`），四态 `checking / upToDate / updateAvailable / downloading`；
+  「立即更新」用 `url_launcher` 打开真实下载地址（对齐 pubspec 里 url_launcher 的用途）。
+  入参 `previewStage` 仅供两个演示路由(`figmaUpdateBoltStar{Available,Progress}`)占位展示。
+  ⚠️ 原"硬编码 1.0.0/1.2.0 + 本地假动画(伪逻辑)"版本已废弃,别照旧描述复原。
+- **校验**：本机未安装 Flutter/Dart SDK，无法运行 `flutter analyze`；改动经人工逐文件复核。
+  建议在有 SDK 的环境补跑一次 `flutter analyze lib`。
+- **说明**：`UpdateBoltStarPage` **已由设置页「检测更新」入口接入导航**（不再是孤儿页）。
 
 > ✅ **设置模块（index / language / guide / update / privacy / agreement）整体完成。**
 
@@ -446,3 +459,9 @@ lib/
     才能根治，属另一方向，本次不做。
   - **据此结案**：保持现状、不推广 Flex，本条作为「已评估」留档。若将来要彻底解决宽度等比缩放，
     再单列任务评估引入 `flutter_screenutil`。
+
+---
+
+## 操作日志
+
+- 2026-07（本轮）：① 设置页「检测更新」入口已接回并跳转 UpdateBoltStarPage（真实检查），文档原"入口删除/孤儿页"说法已更正；② 孤儿页清单剔除 `/devices`(死路由已删)、`ModifyPassword`、`UpdateBoltStarPage`(均已接入)；③ FigmaInfoRow/_DetailRow 的 value 已去掉 193px 硬限（label 纯 Text + value Expanded）。
