@@ -183,6 +183,13 @@ class AppRoutes {
             if (deleteFlowBusy) {
               return;
             }
+            // 快照进入流程时的设备 id：断开/删除全程只认它，不再实时读全局
+            // selectedDevice——弹窗等待期间后台 refreshDevices / 首页轮播联动可能
+            // 改写选中项，实时读会把「断开/删除」落到另一台设备。
+            final deviceId = state.selectedDeviceId;
+            if (deviceId.isEmpty) {
+              return;
+            }
             deleteFlowBusy = true;
             try {
               // 对齐小程序 detail.js showDeleteConfirm：删除全程走浮层「二次确认弹窗」，不再用系统弹框/整页。
@@ -190,7 +197,7 @@ class AppRoutes {
               //   · 未连接：直接弹删除确认弹窗。
               const deleteIcon = 'assets/images/device-detail-icon06.png';
               const deleteAccent = Color(0xFFFF3045);
-              if (state.selectedDevice.connected) {
+              if (state.deviceById(deviceId).connected) {
                 final proceed = await showDeviceConfirmDialog(
                   context,
                   iconAsset: deleteIcon,
@@ -209,9 +216,7 @@ class AppRoutes {
                 );
                 late final ActionFeedback feedback;
                 try {
-                  feedback = await state.disconnectDevice(
-                    state.selectedDevice.id,
-                  );
+                  feedback = await state.disconnectDevice(deviceId);
                 } finally {
                   if (context.mounted) {
                     AppLoadingDialog.hide(context);
@@ -241,9 +246,7 @@ class AppRoutes {
               }
               AppLoadingDialog.show(context, AppL10n.of(context).devDeleting);
               final navigator = Navigator.of(context);
-              final feedback = await state.deleteDevice(
-                state.selectedDevice.id,
-              );
+              final feedback = await state.deleteDevice(deviceId);
               if (!context.mounted) {
                 return;
               }

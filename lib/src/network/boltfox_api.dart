@@ -195,6 +195,27 @@ class BoltFoxApi {
     );
   }
 
+  /// 修改密码（**已登录**）。[emailCode] 为 `sendEmail(sendType:2)` 验证码
+  /// （swagger sendType 描述：2=找回密码邮件/修改密码，两者共用同一验证码类型）。
+  ///
+  /// 字段名以 swagger `SetPasswordApiIn` 为准：`verifyCode / password / confirmPassword`
+  /// （均 md5 32 位小写）。**没有 userEmail 字段**——后端按公共参数里的 userToken 定位
+  /// 账号，验证码须发到该账号绑定的邮箱。未登录的忘记密码走 [resetPassword]，勿混用。
+  static Future<dynamic> changePassword({
+    required String password,
+    required String emailCode,
+  }) {
+    final md5Password = md5Hex(password);
+    return _http.postJson(
+      '/Client/User/changePassword',
+      body: {
+        'password': md5Password,
+        'confirmPassword': md5Password,
+        'verifyCode': emailCode,
+      },
+    );
+  }
+
   /// 校验邮箱是否不存在（注册前置校验，邮箱已存在则后端返回异常码）。
   /// 字段名以 swagger `SetUserEmailApiIn` 为准（userEmail/verifyCode）。
   static Future<dynamic> chkUserEmailNotExist({

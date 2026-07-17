@@ -1161,6 +1161,47 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 修改密码（**已登录**）：走 `/Client/User/changePassword`，后端按 userToken 定位
+  /// 账号，无需（也没有）邮箱字段；验证码须先经 sendEmail(sendType:2) 发到账号绑定邮箱。
+  /// 未登录的忘记密码请用 [resetPasswordByEmail]。
+  Future<ActionFeedback> changePasswordLoggedIn({
+    required String password,
+    required String emailCode,
+  }) async {
+    if (password.isEmpty) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '密码不能为空。',
+          en: 'Password cannot be empty.',
+          ja: 'パスワードは必須です。',
+        ),
+      );
+    }
+    if (emailCode.trim().isEmpty) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '请输入验证码。',
+          en: 'Enter the verification code.',
+          ja: '認証コードを入力してください。',
+        ),
+      );
+    }
+    try {
+      await BoltFoxApi.changePassword(
+        password: password,
+        emailCode: emailCode.trim(),
+      );
+      return ActionFeedback(
+        success: true,
+        message: tr(zh: '密码已修改。', en: 'Password changed.', ja: 'パスワードを変更しました。'),
+      );
+    } catch (error) {
+      return _apiFailure(error);
+    }
+  }
+
   /// 绑定 / 修改已登录用户的邮箱。
   Future<ActionFeedback> changeBoundEmail({
     required String email,
@@ -2065,7 +2106,7 @@ class PhotoFrameState extends ChangeNotifier {
   /// 拉取设备列表：`/Client/UserProduct/getUserProductList`，映射为 [DeviceItem]。
   ///
   /// 蓝牙相关字段（电量 / IMG_MASK / 连接态）后端不下发，先给默认值，连接后由 BLE 更新。
-  /// 仅当后端返回非空列表时替换本地列表，避免首页 [selectedDevice] 落空；失败保留当前列表。
+  /// 后端返回为准整体替换本地列表（含空列表）；请求失败保留当前列表。
   Future<ActionFeedback> refreshDevices() async {
     try {
       final data = await BoltFoxApi.getUserProductList({
@@ -2085,10 +2126,13 @@ class PhotoFrameState extends ChangeNotifier {
       _devices
         ..clear()
         ..addAll(mapped);
-      if (_devices.isEmpty) {
+      if (!_devices.any((device) => device.id == _selectedDeviceId)) {
+        // 选中项已不在最新列表（另一端解绑 / 接口偶发返回不全）：**置空，而不是静默切到
+        // 第一台**。刷新可能在详情/清空/删除页停留期间由其它页面并发触发，静默换台会让
+        // 这些页面上的破坏性操作（一键清空、删除设备）落到另一台设备。置空对首页无影响
+        // （_activeDevice 自带「选中→已连接→第一台」推导），详情页由 _findDevice 的
+        // 占位设备兜底渲染。
         _selectedDeviceId = '';
-      } else if (!_devices.any((device) => device.id == _selectedDeviceId)) {
-        _selectedDeviceId = _devices.first.id;
       }
       _devicesLoaded = true;
       _devicesLoadError = false;

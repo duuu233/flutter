@@ -16,6 +16,17 @@
 6. [建议执行批次](#六建议执行批次)
 7. [明确建议保持现状、不要动的部分](#七明确建议保持现状不要动的部分)
 
+## 修复进度
+
+| 日期 | 编号 | 状态 | 实施摘要 |
+|---|---|---|---|
+| 2026-07-17 | S1 | ✅ 已修复 | ① `state.dart` refreshDevices：选中项落空改**置空**不切首台；② `app_routes.dart` onDeleteDevice：流程开头快照 `deviceId`，断开/删除全用快照（快照为空直接返回）；③ `device_clear_confirm_page.dart`：`_deviceId` 进页快照，清空用快照。轮播设置入口的连接检查（app_routes.dart onCarouselSettings）为非破坏性、有意保留实时读；路由传参化留待长期项。 |
+| 2026-07-17 | S8 | ✅ 已修复 | 新增 `lib/src/shared/avatar_upload.dart`（`AvatarUpload.maxBytes/maxEdge/ensureUnderLimit`，自 profile 页原样迁移）；首页 `_changeAvatar` 补 `pickImage(512/512/q85)` + 兜底压缩 ≤100KB；profile 页改用共享实现（行为不变）；首页 36lp / 资料页 32lp 两处本地回显 `Image.file` 补 `cacheWidth`。 |
+| 2026-07-17 | S9 | ✅ 已修复 | `home_widgets.dart` `_DeviceCarousel.didUpdateWidget` 的 `jumpToPage` 包进 `addPostFrameCallback`（mounted + hasClients 守卫），构建期不再可能触发 notifyListeners。 |
+| 2026-07-17 | S10 | ✅ 已修复 | `projection_service.dart` `startPrefetch` 赋值后 `prefetch[idx]!.ignore()`（主循环 await 仍照常拿到错误）；复投路径 `frameFuture` 创建后无异步间隙即被 await，确认无需改动。 |
+
+> 以上均为静态修改，本机无 SDK 未编译；**需在开发机跑 `flutter analyze` + `flutter test`**，手测回归点：删除设备/一键清空全流程、多设备时首页轮播切换与刷新、首页与资料页换头像、弱网连投多张（含中途断网）后重启看是否误弹崩溃报告。
+
 **优先级定义**：
 - **P0**：存在数据破坏或严重误操作的现实窗口，应尽快修。
 - **P1**：已知崩溃同源 / 确定性资源泄漏 / 用户可复现的功能性缺陷 / 发布质量问题，改动小、收益确定。
@@ -50,16 +61,16 @@
 
 | 编号 | 优先级 | 问题 | 主要位置 | 改动量 |
 |---|---|---|---|---|
-| S1 | **P0** | 详情/清空页依赖全局 `selectedDeviceId`，并发刷新可静默切换选中设备 → "一键清空"可能落到**错误设备** | state.dart:2088；app_routes.dart:162-275 | 小 |
+| S1 ✅已修 | **P0** | 详情/清空页依赖全局 `selectedDeviceId`，并发刷新可静默切换选中设备 → "一键清空"可能落到**错误设备** | state.dart:2088；app_routes.dart:162-275 | 小 |
 | S2 | P1 | BLE `connect()` 失败路径不回收物理连接 → 僵尸会话、设备搜不到、前台服务/心跳空转耗电 | device_ble.dart:220-283 | 小 |
 | S3 | P1 | 远端断开后 `_notifySub`/`_connSub` 泄漏，重连后每条通知被重复处理 N+1 次 | device_ble.dart:229-235, 277-278 | 小 |
 | S4 | P1 | 4 处残留"loading 盲 pop"（与历史闪退同根因） | home_page.dart:455 等 4 处 | 极小 |
 | S5 | P2 | 约 9 处 `!mounted` 早退跳过 hide → 全屏模态 loading 永久滞留锁死 App | home_page/gallery/cast_preview 等 | 小 |
 | S6 | P1 | 上传响应体读取无超时，弱网可永久挂起（loading 无限转圈） | api_client.dart:215-218 | 极小 |
 | S7 | P1 | 非幂等 POST 超时后静默重试 → 验证码双发、投屏记录重复 | api_client.dart:153-182 | 小 |
-| S8 | P1 | 首页换头像用原图：~48MB 位图进内存 + 原图直传（与 profile 页行为不一致） | home_page.dart:320；home_widgets.dart:355 | 小 |
-| S9 | P2 | 首页轮播 `didUpdateWidget`→`jumpToPage` 同步触发构建期 notify | home_widgets.dart:515-534, 561-565 | 小 |
-| S10 | P2 | 投屏预取 Future 无错误监听 → 弱网失败污染崩溃日志与启动弹窗 | projection_service.dart:192-207 | 极小 |
+| S8 ✅已修 | P1 | 首页换头像用原图：~48MB 位图进内存 + 原图直传（与 profile 页行为不一致） | home_page.dart:320；home_widgets.dart:355 | 小 |
+| S9 ✅已修 | P2 | 首页轮播 `didUpdateWidget`→`jumpToPage` 同步触发构建期 notify | home_widgets.dart:515-534, 561-565 | 小 |
+| S10 ✅已修 | P2 | 投屏预取 Future 无错误监听 → 弱网失败污染崩溃日志与启动弹窗 | projection_service.dart:192-207 | 极小 |
 | S11 | P2 | `reconcileConnections` 用 FBP 内存镜像对账，查不出它想查的死会话 | ble_controller.dart:487-504 | 小 |
 | S12 | P2 | `connect`/`connectBoundDevice` 无重入护栏，并发连接互相踩状态 | ble_controller.dart:364-401 | 极小 |
 | S13 | P2 | 登出/换号后在途响应回填旧账号数据（跨账号串屏窗口） | state.dart:1581-1601, 2564 | 小 |
@@ -92,7 +103,7 @@
 
 ## 三、稳定性与缺陷类发现（S 系列）
 
-### S1 【P0】"一键清空"可能落到错误设备：全局 `selectedDeviceId` 隐式传参 + 后台刷新静默改选
+### S1 【P0】✅已修复（2026-07-17，见「修复进度」）"一键清空"可能落到错误设备：全局 `selectedDeviceId` 隐式传参 + 后台刷新静默改选
 
 - **位置**：`lib/src/routes/app_routes.dart:162-275`（figmaDeviceDetails / figmaDeviceClearConfirm / figmaCarouselSettings 路由均**零参数**，页面内部读 `state.selectedDevice`）；`lib/src/state.dart:2088-2091`（`refreshDevices` 中：选中 id 不在新列表时 `_selectedDeviceId = _devices.first.id` **静默切换成第一台**）。
 - **问题**："当前操作哪台设备"完全依赖全局 `_selectedDeviceId`。而 `refreshDevices` 可能在详情页打开期间被任何页面并发触发（`gallery_page.dart:41` 就在并发调用）；一旦后端返回里没有当前选中设备（另一端解绑、接口抖动返回不全），选中项被静默切成第一台——用户停留的详情页、即将执行的"一键清空"（`clearDeviceMemory` 按 `selectedDevice.id` 执行）就指向了**另一台设备**。
@@ -160,7 +171,7 @@
 - **改后变化**：弱网下不再重复发验证码/重复记录；连接不上时的重试体验不变。
 - **回归面**：3 个接口的超时重试行为。
 
-### S8 【P1】首页换头像走原图：~48MB 位图瞬间进内存 + 原图直传后端
+### S8 【P1】✅已修复（2026-07-17，见「修复进度」）首页换头像走原图：~48MB 位图瞬间进内存 + 原图直传后端
 
 - **位置**：`home_page.dart:320`（`pickImage` 未给 `maxWidth/maxHeight/imageQuality`）；`home_widgets.dart:355-360`（`Image.file` 渲染 36lp 圆头像**无 `cacheWidth`**，按原始像素解码）。
 - **问题**：相机原图常见 4000×3000，解码后 ≈ 48MB 位图瞬间进 ImageCache——华为等设备上最典型的 OOM/GC 卡顿来源，与已知"华为系崩溃"画像吻合（大位图 + Vulkan 驱动）；且 `updateAvatar` 直接把原图（4~12MB）上传，弱网十几秒无进度。**同功能的 `profile_page.dart:167-168` 已做了 `maxWidth: 512` + `_compressAvatar ≤100KB`**，两个入口行为不一致。
@@ -168,7 +179,7 @@
 - **改后变化**：换头像内存峰值从 ~48MB 降到 <1MB；上传体积从数 MB 降到 ≤100KB；两入口行为一致。
 - **回归面**：仅首页换头像入口；profile 页逻辑已验证过（2026-07-16 修复轮）。
 
-### S9 【P2】首页轮播 `didUpdateWidget` → `jumpToPage` 可触发构建期 `notifyListeners`
+### S9 【P2】✅已修复（2026-07-17，见「修复进度」）首页轮播 `didUpdateWidget` → `jumpToPage` 可触发构建期 `notifyListeners`
 
 - **位置**：`home_widgets.dart:515-534`（`didUpdateWidget` → `_controller.jumpToPage`）、`561-565`（`onPageChanged` → `selectDevice` → `notifyListeners`）。
 - **问题**：`didUpdateWidget` 处于 build/element 更新阶段；`jumpToPage` **同步**派发 ScrollNotification → `onPageChanged` → `selectDevice` → `notifyListeners()`，而根部 `AnimatedBuilder(animation: _state)` 是正在构建子树的祖先——debug 下抛 `markNeedsBuild() called during build`，release 下产生不一致帧。触发条件真实存在（`selectedDeviceId` 为空而推导出已连接设备时，`selectDevice` 不会被短路）。这是排查中发现的**唯一真实框架级异常路径**，且在曾发生崩溃的首页。
@@ -176,7 +187,7 @@
 - **改后变化**：设备列表刷新/连接完成瞬间首页不再可能出现构建期异常帧。
 - **回归面**：轮播翻页与设备选中联动，需手测轮播切换。
 
-### S10 【P2】投屏预取 Future 无错误监听：弱网失败被写入崩溃日志、下次启动弹"崩溃报告"
+### S10 【P2】✅已修复（2026-07-17，见「修复进度」）投屏预取 Future 无错误监听：弱网失败被写入崩溃日志、下次启动弹"崩溃报告"
 
 - **位置**：`projection_service.dart:192-207`（`prefetch[idx] = trace.measure(...)`）；`main.dart:48-60`。
 - **问题**：预取流水线把 Future 存进数组，主循环要等上一张 BLE 图传完（数十秒）才 `await`；Dart 对"完成出错且暂无监听器"的 Future 会先上报未处理异步错误 → `PlatformDispatcher.onError` 把它写入 CrashLogger 的 `last_crash.txt` 并消耗错误预算。一次普通弱网下载失败会在**下次启动弹"上次崩溃报告"对话框**，直接污染正在进行的首页崩溃排查的信噪比。
@@ -410,19 +421,19 @@
 > 每批做完是一个可独立回归、可独立发版的安全点。批内条目多为 <20 行的机械修改，建议一批一个 PR。
 
 ### 批次一：高危小修（P0 + P1 缺陷，预计总改动 <200 行）
-1. **S1** 设备 id 快照防护（先做，数据破坏风险）
+1. **S1** 设备 id 快照防护（先做，数据破坏风险）✅已修（2026-07-17）
 2. **S4 + S5** loading 盲 pop ×4 替换 + 9 处改 try/finally（同一模式，一起修一起测）
 3. **S6** 上传 body 超时（1 行）
 4. **S7** 三个非幂等 POST 关超时重试
 5. **S2 + S3 + S12** BLE 连接失败回收 + 重连订阅取消 + 重入护栏（同文件同主题，一起修）
-6. **S8** 首页换头像对齐 profile 页压缩（含 cacheWidth）
+6. **S8** 首页换头像对齐 profile 页压缩（含 cacheWidth）✅已修（2026-07-17）
 7. **S18** 调试台 release 门禁（~5 行）
 
 **回归点**：连接/断开/重连、投屏全流程、换头像、注册发验证码、绑定流程。
 
 ### 批次二：排障信噪（配合首页崩溃排查，在下一轮崩溃归因前完成）
-1. **S10** 预取 Future `.ignore()`（1 行）
-2. **S9** 轮播 jumpToPage 移出构建期
+1. **S10** 预取 Future `.ignore()`（1 行）✅已修（2026-07-17）
+2. **S9** 轮播 jumpToPage 移出构建期 ✅已修（2026-07-17）
 3. **S11** reconcileConnections 改 systemDevices/主动探活
 
 **回归点**：首页轮播切换、投屏弱网失败路径、回前台连接体检。

@@ -356,6 +356,10 @@ class _Avatar extends StatelessWidget {
             ? Image.file(
                 File(localPath!),
                 fit: BoxFit.cover,
+                // 36lp 圆形头像，按物理像素解码（与下方网络头像 memCacheWidth 同理），
+                // 避免本地回显把整张原尺寸位图解进内存。
+                cacheWidth: (36 * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 errorBuilder: (context, error, stackTrace) => _fallback(),
               )
             : url.isEmpty
@@ -528,7 +532,16 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
           ? _initialPage(next)
           : _nearestPage(next, widget.devices.length);
       if (_controller.hasClients) {
-        _controller.jumpToPage(_page);
+        // didUpdateWidget 处于 build/element 更新阶段，而 jumpToPage 会**同步**派发
+        // onPageChanged → onChanged(selectDevice) → notifyListeners，等于在构建期给
+        // 根部 AnimatedBuilder 这个祖先 markNeedsBuild（debug 直接断言红屏、release
+        // 产生不一致帧）。推迟到本帧结束后再跳，语义不变。
+        final page = _page;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.hasClients) {
+            _controller.jumpToPage(page);
+          }
+        });
       }
     }
   }

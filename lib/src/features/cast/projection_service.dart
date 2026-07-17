@@ -202,6 +202,12 @@ class ServerImageProjectionService {
             height: info.height,
           ),
         );
+        // 预取失败的错误仍留到主循环 await 时按原流程抛出（ignore 只是挂一个丢弃
+        // 监听器，不吞后续 await 拿到的错误）。不挂的话：主循环要等上一张 BLE 图传完
+        // （数十秒）才 await 到它，期间「完成出错但无监听者」的 Future 会被
+        // PlatformDispatcher.onError 当成未处理异步错误写入 last_crash.txt，
+        // 一次普通弱网下载失败就会在下次启动误弹「崩溃报告」。
+        prefetch[idx]!.ignore();
       }
 
       startPrefetch(0);

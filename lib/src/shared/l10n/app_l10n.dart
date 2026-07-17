@@ -373,6 +373,12 @@ class AppL10n {
     '入力した2つのパスワードが一致しません。もう一度入力してください。',
   );
   String get accModifyPasswordTitle => _pick('修改密码', 'Change Password', 'パスワード変更');
+  // 已登录改密走 changePassword：验证码只能发到账号绑定邮箱，未绑定时引导先绑定。
+  String get accModifyPasswordNeedEmail => _pick(
+    '请先绑定邮箱后再修改密码。',
+    'Bind an email before changing your password.',
+    'パスワード変更の前にメールアドレスを連携してください。',
+  );
   String get accNewPassword => _pick('新密码', 'New Password', '新しいパスワード');
   String get accProfileTitle => _pick('个人信息', 'Profile', '個人情報');
   String get accNickname => _pick('昵称', 'Nickname', 'ニックネーム');

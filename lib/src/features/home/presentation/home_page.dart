@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../shared/l10n/app_l10n.dart';
 
 import '../../../routes/app_routes.dart';
+import '../../../shared/avatar_upload.dart';
 import '../../../shared/permission_gate.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
@@ -317,7 +318,15 @@ class _HomePageState extends State<HomePage> {
     }
     XFile? file;
     try {
-      file = await ImagePicker().pickImage(source: ImageSource.gallery);
+      // 与「账户资料」页同参数（AvatarUpload）：原生降采样到 512px/JPEG85。
+      // 原来不带参数直接取相机原图（4~12MB），解码后是 ~48MB 位图瞬间进内存，
+      // 且原图整个上传——头像只在 36lp 圆圈里展示，两个入口必须同一行为。
+      file = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        maxWidth: AvatarUpload.maxEdge,
+        maxHeight: AvatarUpload.maxEdge,
+        imageQuality: 85,
+      );
     } catch (_) {
       if (mounted) {
         AppToast.warn(context, AppL10n.of(context).accAvatarUpdateFailed);
@@ -327,10 +336,15 @@ class _HomePageState extends State<HomePage> {
     if (file == null || !mounted) {
       return;
     }
+    // 兜底压缩到 ≤100KB（与「账户资料」页同一逻辑），再本地回显并上传。
+    final path = await AvatarUpload.ensureUnderLimit(file.path);
+    if (!mounted) {
+      return;
+    }
 
     _updatingAvatar = true;
-    setState(() => _pendingAvatarPath = file!.path);
-    final feedback = await widget.state.updateAvatar(file.path);
+    setState(() => _pendingAvatarPath = path);
+    final feedback = await widget.state.updateAvatar(path);
     if (!mounted) {
       return;
     }
