@@ -513,11 +513,12 @@ class _GalleryTile extends StatelessWidget {
                 ),
               ),
             ),
-            if (photo.imageUrl != null)
+            if (photo.thumbUrl != null)
               Positioned.fill(
                 child: CachedNetworkImage(
-                  imageUrl: photo.imageUrl!,
-                  // aspectFit：完整显示原图、保持比例不裁切不拉伸（对齐小程序 list.wxml mode=aspectFit），
+                  // 列表只取缩略图 imgThumb（无则回退 img），对齐小程序 list.wxml 的 item.imgThumb。
+                  imageUrl: photo.thumbUrl!,
+                  // aspectFit：完整显示、保持比例不裁切不拉伸（对齐小程序 list.wxml mode=aspectFit），
                   // 留白落在下方色块渐变上；避免 cover 中心裁切与后端记录 img 比例不一致。
                   fit: BoxFit.contain,
                   // 3 列网格瓦片约 120lp，按物理像素解码：原图(≤1920 长边)解码位图

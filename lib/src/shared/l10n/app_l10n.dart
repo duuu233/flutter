@@ -773,6 +773,12 @@ class AppL10n {
     'Connecting to the device, please wait.',
     'デバイスに接続中です。しばらくお待ちください。',
   );
+  // 物理连接失败的用户可见文案（含安卓 android-code:133 等）：只给可操作建议，不暴露原始异常。
+  String get bleConnectFailed => _pick(
+    '连接失败，请靠近设备后重试',
+    'Connection failed. Move closer to the device and try again.',
+    '接続に失敗しました。デバイスに近づいてもう一度お試しください。',
+  );
   // 连接保活前台服务的常驻通知文案（Android 通知栏，连接期间可见）。
   String get bleKeepAliveNotification => _pick(
     '正在保持相框连接',

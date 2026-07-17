@@ -193,6 +193,7 @@ class AlbumPhoto {
     required this.uploadedAt,
     this.isOnDevice = true,
     this.imageUrl,
+    this.thumbUrl,
     this.deviceName = '',
     this.imgBle,
   });
@@ -215,8 +216,13 @@ class AlbumPhoto {
   final DateTime uploadedAt;
   bool isOnDevice;
 
-  /// 后端图片地址（来自 `getUserProductImgList.img`）；为空时回退占位色块。
+  /// 后端图片地址（来自 `getUserProductImgList.img`，原图）；为空时回退占位色块。
+  /// 大图预览 / 再次投屏裁剪用原图。
   final String? imageUrl;
+
+  /// 网格缩略图地址（来自 `getUserProductImgList.imgThumb`，无则回退 `img`）。
+  /// 对齐小程序 list.wxml 的 `item.imgThumb`：列表只加载缩略图省流量/内存。
+  final String? thumbUrl;
 
   /// 所属设备名（`getUserProductImgList.productName`）。后端逐行下发，
   /// 不必反查设备列表——设备列表还没加载时也能正确显示。
@@ -245,6 +251,7 @@ class CastRecord {
     this.imageMask,
     this.photoId,
     this.imageUrl,
+    this.thumbUrl,
     this.imgBle,
     this.deviceName = '',
   });
@@ -266,8 +273,13 @@ class CastRecord {
   final int? imageMask;
   final String? photoId;
 
-  /// 后端投屏图片地址（来自 `getUserProductImgRecordList`）；为空时回退占位色块。
+  /// 后端投屏图片地址（来自 `getUserProductImgRecordList.img`，原图）；为空时回退占位色块。
+  /// 再次投屏会下载它到本地重新裁剪（见 cast_management 的 recastImgUrl）。
   final String? imageUrl;
+
+  /// 记录列表缩略图地址（来自 `getUserProductImgRecordList.imgThumb`，无则回退 `img`）。
+  /// 对齐小程序 records.wxml 的 `item.imgThumb`：列表只加载缩略图。
+  final String? thumbUrl;
 
   /// 后端转换好的设备帧文件地址(.bin，来自 `getUserProductImgRecordList` 的 imgBle)。
   /// 再次/重新投屏时直接下载它走 BLE 图传，不再走后端上传/转码；为空则该记录无法直接再次投屏。
@@ -2666,6 +2678,8 @@ class PhotoFrameState extends ChangeNotifier {
     final deviceId = (data['userProductId'] ?? '').toString();
     final deviceName = (data['productName'] ?? '').toString();
     final url = (data['img'] ?? '').toString();
+    // 缩略图优先取后端新字段 imgThumb，旧数据回退 img（对齐小程序 normalizePhoto 的 imgThumb）。
+    final thumb = (data['imgThumb'] ?? data['img'] ?? '').toString();
     final imgBle = (data['imgBle'] ?? '').toString();
     return AlbumPhoto(
       id: id,
@@ -2689,6 +2703,7 @@ class PhotoFrameState extends ChangeNotifier {
       // 避免 myAlbum 里按 uploadedAt 排序时全部相等而打乱后端顺序。
       uploadedAt: DateTime.now().subtract(Duration(microseconds: index)),
       imageUrl: url.isEmpty ? null : url,
+      thumbUrl: thumb.isEmpty ? null : thumb,
       imgBle: imgBle.isEmpty ? null : imgBle,
     );
   }
@@ -2707,6 +2722,8 @@ class PhotoFrameState extends ChangeNotifier {
     final deviceId = (data['userProductId'] ?? '').toString();
     final deviceName = (data['productName'] ?? '').toString();
     final url = (data['img'] ?? '').toString();
+    // 缩略图优先取后端新字段 imgThumb，旧数据回退 img（对齐小程序 normalizeProjectionRecord 的 imgThumb）。
+    final thumb = (data['imgThumb'] ?? data['img'] ?? '').toString();
     // 设备帧文件地址：再次投屏直传设备用（不走后端转码）。
     final imgBle = (data['imgBle'] ?? '').toString();
     final status = _castStatusFromJson(data);
@@ -2728,6 +2745,7 @@ class PhotoFrameState extends ChangeNotifier {
       // upTime=最近修改时间，joinTime=添加时间（小程序 normalizeProjectionRecord 同序）。
       createdAt: _parseDate(data['upTime'] ?? data['joinTime']),
       imageUrl: url.isEmpty ? null : url,
+      thumbUrl: thumb.isEmpty ? null : thumb,
       imgBle: imgBle.isEmpty ? null : imgBle,
     );
   }

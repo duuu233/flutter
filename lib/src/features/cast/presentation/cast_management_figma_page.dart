@@ -469,10 +469,11 @@ class _RecordCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (record.imageUrl != null)
+                  if (record.thumbUrl != null)
                     CachedNetworkImage(
-                      imageUrl: record.imageUrl!,
-                      // aspectFit：与我的图库一致，保持比例不裁切不拉伸，按后端记录 img 原样展示
+                      // 列表只取缩略图 imgThumb（无则回退 img），对齐小程序 records.wxml 的 item.imgThumb。
+                      imageUrl: record.thumbUrl!,
+                      // aspectFit：与我的图库一致，保持比例不裁切不拉伸
                       // （对齐小程序 records.wxml mode=aspectFit）；留白落在下方色块渐变上。
                       fit: BoxFit.contain,
                       // 72lp 缩略图，按物理像素解码，避免原图全尺寸位图进内存。

@@ -212,7 +212,9 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       if (error != null) {
         AppLoadingDialog.hide(context);
         setState(() => _binding = false);
-        _toast(AppL10n.of(context).bindConnectFailed(error));
+        // error 已是 BleController 本地化好的友好文案（如「连接失败，请靠近设备后重试」），
+        // 直接展示——不再套「设备连接失败：」前缀，也不把 android-code:133 等原始异常抛给用户。
+        _toast(error);
         return;
       }
       // 连接读信息成功：不再 hide、也不再 800ms 停留，直接进入绑定（loading 继续覆盖）。
@@ -249,8 +251,8 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         widget.state.selectDevice(existed.id);
         widget.state.reconcileConnectionFlags();
         // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时）。
+        // 不再弹「该设备已绑定，已为你连接」：按反馈去掉已绑定/已连接/直接连接这类成功提示，静默返回列表。
         AppLoadingDialog.hide(context);
-        _toast(AppL10n.of(context).bindAlreadyBoundConnected);
         Navigator.of(context).maybePop();
         return;
       }

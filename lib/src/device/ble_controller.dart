@@ -398,7 +398,10 @@ class BleController extends ChangeNotifier {
       info = null;
       notifyListeners();
       trace.finish(success: false);
-      return error.toString();
+      // 原始异常（含 android-code:133 / ANDROID_SPECIFIC_ERROR 等）只写日志，
+      // 返回给 UI 的是本地化友好文案——避免把技术异常串直接弹进 toast，也让提示跟随语种。
+      debugPrint('BLE connect failed: $error');
+      return _l10n.bleConnectFailed;
     } finally {
       connecting = false;
       _connectionLease.taskFinished(afterTransfer: false);

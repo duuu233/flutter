@@ -61,6 +61,9 @@ enum FrameBleErrorKind {
   /// 该型号不支持此操作（如 0x03 屏型不支持图传）。
   unsupported,
 
+  /// 物理连接失败（GATT connect 失败，如安卓 android-code:133）——通常靠近设备重试即可。
+  connectFailed,
+
   /// 未细分（默认）。
   unknown,
 }
@@ -350,7 +353,12 @@ class FrameBleClient {
     }
     throw lastError is FrameBleException
         ? lastError
-        : FrameBleException('连接设备失败：${lastError ?? '未知错误'}');
+        : FrameBleException(
+            // 原始异常（如 FlutterBluePlusException | connect | android-code:133）只进日志，
+            // 不进 message 给用户看；上层按 kind=connectFailed 映射本地化友好文案。
+            '连接设备失败：${lastError ?? '未知错误'}',
+            kind: FrameBleErrorKind.connectFailed,
+          );
   }
 
   /// 发现 FF00 主服务下的写(FF01)/通知(FF02)特征（带轮询重试，对齐小程序

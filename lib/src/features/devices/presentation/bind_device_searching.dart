@@ -38,7 +38,10 @@ class BindDeviceSearching extends StatelessWidget {
           Text(
             AppL10n.of(context).bindSearchingTitle,
             textAlign: TextAlign.center,
-            style: FigmaTextStyles.pageHeading,
+            // 标题加粗对齐小程序 bind.wxss 的 .scan-title(font-weight:700)。
+            style: FigmaTextStyles.pageHeading.copyWith(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           Text(

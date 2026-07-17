@@ -145,6 +145,7 @@ class FigmaHomePrimaryButton extends StatelessWidget {
     this.onPressed,
     this.height = 56,
     this.fontSize = 18,
+    this.fontWeight = FontWeight.w500,
   });
 
   final String label;
@@ -152,6 +153,7 @@ class FigmaHomePrimaryButton extends StatelessWidget {
   final VoidCallback? onPressed;
   final double height;
   final double fontSize;
+  final FontWeight fontWeight;
 
   @override
   Widget build(BuildContext context) {
@@ -165,7 +167,7 @@ class FigmaHomePrimaryButton extends StatelessWidget {
           style: TextStyle(
             color: Colors.white,
             fontSize: fontSize,
-            fontWeight: FontWeight.w500,
+            fontWeight: fontWeight,
             height: 1.2,
             letterSpacing: label.length <= 4 ? 2 : 1,
           ),

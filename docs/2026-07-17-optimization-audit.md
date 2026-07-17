@@ -146,3 +146,11 @@
 ## 操作日志
 
 - 2026-07（本轮文档核对）：本审查文档的"已修/未修"标记经复核与代码一致；S17(Doze 心跳)/服务层完整 i18n/M1(state 拆分) 三项确属仍未做，其余标记为已修的均已落地。另本轮修复了 BleConnectionService start/stop 竞态("屡次停止运行"进程崩溃)与更新页 _check() 的失败兜底。
+
+- 2026-07-17（六项用户反馈修复，App + 小程序同步）：
+  1. **「扫描不到怎么办」弹窗去掉底部按钮**：Flutter 删 `bind_device_scan_help.dart` 底部 `FigmaHomePrimaryButton`(重新扫描) 及已无人传入的 `onRetry` 字段（3 处实例化都不传，按钮本就是禁用态）；小程序同步删 `subpackages/device/bind/bind.wxml`(弹窗内 `bindtap="scan"` 那条) 与 `pages/home/home.wxml`(弹窗内 `bindtap="rescanDevices"` 那条)。注意：搜索页/未发现页底部的「重新扫描」是另一个按钮，保留。
+  2. **绑定流程提示精简**：删 `bind_device_flow.dart` 已绑定分支的 `_toast(bindAlreadyBoundConnected)`(该设备已绑定/已为你连接)，改为静默返回列表；保留全部失败提示与新绑定成功的 `bindSuccess`(绑定成功)。`bindAlreadyBoundConnected` 键退化为死键（保留定义）。
+  3. **字体加粗（以小程序 bind.wxss 为准，.scan-title/.primary-action=700）**：`bind_device_searching.dart`/`bind_device_not_found.dart` 页标题 `pageHeading.copyWith(w700)`；`FigmaHomePrimaryButton` 新增可选 `fontWeight`(默认 w500 不影响别处)，`bind_device_found.dart`「立即绑定」传 w700。
+  4. **toast 跟随语种**：排查确认生产面 `AppToast.show/warn` 无硬编码中文实参；唯一残留是开发者调试页 `ble_debug_page.dart`(非用户可见，有意不译)。核心漏点即第 5 项的 BLE 原始异常，一并修复。
+  5. **蓝牙连接报错不再裸奔原始异常**：`FrameBleErrorKind` 加 `connectFailed`；`device_ble.dart _connectWithRetry` 失败异常打该 kind（原始 `FlutterBluePlusException | connect | android-code:133 | ANDROID_SPECIFIC_ERROR` 仅进日志）；`ble_controller.dart connect()` catch 改为 `debugPrint` 记原始错误 + 返回本地化 `bleConnectFailed`（新 l10n：连接失败，请靠近设备后重试 / EN / JA）；`bind_device_flow.dart:215` 改 `_toast(error)` 去掉双重「设备连接失败：」前缀。此修复级联到设备列表/首页/详情的连接失败路径（均经 `state.connectDevice` 透传该文案），提示同时变友好且跟随语种。`bindConnectFailed` 模板退化为死键。
+  6. **图库/投屏管理列表取 imgThumb（对齐小程序 list.wxml/records.wxml 的 `item.imgThumb`）**：`AlbumPhoto`/`CastRecord` 新增 `thumbUrl` 字段（映射 `imgThumb ?? img`，对齐小程序 api.js `normalizePhoto`/`normalizeProjectionRecord`）；`gallery_page.dart`/`cast_management_figma_page.dart` 列表缩略图改绑 `thumbUrl`。**`imageUrl` 保留为原图**——投屏管理「再次投屏」仍用它下载原图重裁剪(`recastImgUrl: record.imageUrl`)，不能改指缩略图否则再投拿到低清图。
