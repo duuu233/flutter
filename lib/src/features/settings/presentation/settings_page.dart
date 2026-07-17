@@ -168,10 +168,14 @@ class SettingsPage extends StatelessWidget {
                 ),
                 const _SettingsDivider(),
                 _SettingsRow(
-                  iconAsset: 'assets/images/set-icon05.png',
+                  iconAsset: 'assets/images/set-icon02.png',
                   iconBg: const Color(0x1A287DFF),
                   title: l10n.checkUpdate,
-                  onTap: () => _checkUpdate(context),
+                  // 检测更新：跳转「更新 BoltStar」页，进入即真实检查版本（三态 UI），
+                  // 不再走原来的弹窗式检查。
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed<void>(AppRoutes.figmaUpdateBoltStar),
                 ),
               ],
             ),

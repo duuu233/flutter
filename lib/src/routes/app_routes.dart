@@ -208,16 +208,19 @@ class AppRoutes {
         builder = (_) => const UserAgreementPage();
         break;
       case AppRoutes.figmaUpdateBoltStar:
-        builder = (_) => const UpdateBoltStarPage();
+        // 正常入口（设置页「检测更新」）：传 state，进入即真实检查版本（三态 UI）。
+        builder = (_) => UpdateBoltStarPage(state: state);
         break;
       case AppRoutes.figmaUpdateBoltStarAvailable:
+        // 演示路由（未接入导航）：强制展示某一态，用占位版本号。
         builder = (_) => const UpdateBoltStarPage(
-          stage: BoltStarUpdateStage.updateAvailable,
+          previewStage: BoltStarUpdateStage.updateAvailable,
         );
         break;
       case AppRoutes.figmaUpdateBoltStarProgress:
-        builder = (_) =>
-            const UpdateBoltStarPage(stage: BoltStarUpdateStage.downloading);
+        builder = (_) => const UpdateBoltStarPage(
+          previewStage: BoltStarUpdateStage.downloading,
+        );
         break;
       default:
         builder = (_) => _UnknownRoutePage(routeName: settings.name);

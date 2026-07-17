@@ -1215,6 +1215,18 @@ class AppL10n {
     'Updated to the latest version',
     '最新バージョンに更新しました',
   );
+  String get setCheckingUpdate =>
+      _pick('正在检查更新…', 'Checking for updates…', '更新を確認中…');
+  String get setCheckUpdateFailed => _pick(
+    '检查更新失败，请稍后重试',
+    'Failed to check for updates. Please try again later.',
+    '更新の確認に失敗しました。しばらくしてから再試行してください。',
+  );
+  String get setDownloadOpenFailed => _pick(
+    '无法打开下载页面，请稍后重试',
+    'Could not open the download page. Please try again later.',
+    'ダウンロードページを開けませんでした。しばらくしてから再試行してください。',
+  );
   String get setAppIntro => _pick(
     'BoltStar是一款帮助你轻松管理和分享照片的应用，连接设备，珍藏生活每一刻。',
     'BoltStar helps you easily manage and share photos, connect your devices, and treasure every moment of life.',
