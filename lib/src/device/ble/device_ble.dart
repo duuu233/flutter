@@ -266,11 +266,10 @@ class FrameBleClient {
     _device = device;
     _rxBuffer.clear();
     try {
-      await device.connect(
-        license: License.nonprofit,
-        timeout: const Duration(seconds: 12),
-        mtu: null,
-      );
+      // ① 连接带重试（对齐小程序 device-ble.createConnectionWithRetry）：安卓 GATT 首次连接
+      //    易抖动/超时，失败先物理断开清掉半连状态、等 400ms 再试，最多 2 次——单次失败即报错
+      //    会让用户手动再点一次，体感明显不如小程序「一次就连上」。
+      await _connectWithRetry(device);
 
       _connSub = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
@@ -291,28 +290,12 @@ class FrameBleClient {
         _mtu = device.mtuNow;
       }
 
-      final services = await device.discoverServices();
-      BluetoothService? svc;
-      for (final s in services) {
-        if (_short16(s.uuid.str) == FrameProtocol.serviceUuid) {
-          svc = s;
-          break;
-        }
-      }
-      if (svc == null) {
-        throw FrameBleException('未找到相框主服务(FF00)，请确认是相框设备');
-      }
-
-      BluetoothCharacteristic? wc;
-      BluetoothCharacteristic? nc;
-      for (final c in svc.characteristics) {
-        final code = _short16(c.uuid.str);
-        if (code == FrameProtocol.charWriteUuid) wc = c;
-        if (code == FrameProtocol.charNotifyUuid) nc = c;
-      }
-      if (wc == null || nc == null) {
-        throw FrameBleException('未找到读写特征(FF01/FF02)');
-      }
+      // ② 服务/特征发现带重试（对齐小程序 discoverMainService/discoverCharacteristics）：
+      //    安卓 discoverServices 首次常返回不全，轮询到 FF00 下 FF01(写)/FF02(通知) 齐了再继续，
+      //    最多 5 次 / 每次间隔 250ms，用尽仍不全才判失败。
+      final chars = await _discoverFrameChars(device);
+      final wc = chars[0];
+      final nc = chars[1];
       _writeChar = wc;
       // FF01 多为「无应答写」；若不支持无应答写则退回有应答。
       _writeWithoutResponse =
@@ -336,6 +319,82 @@ class FrameBleClient {
       await disconnect();
       rethrow;
     }
+  }
+
+  /// 建立物理连接（带重试，对齐小程序 device-ble.createConnectionWithRetry）：
+  /// 失败先断开清半连状态、等 400ms 再试，最多 [attempts] 次；全部失败抛最后一次错误。
+  Future<void> _connectWithRetry(
+    BluetoothDevice device, {
+    int attempts = 2,
+  }) async {
+    Object? lastError;
+    for (int i = 0; i < attempts; i++) {
+      try {
+        await device.connect(
+          license: License.nonprofit,
+          timeout: const Duration(seconds: 12),
+          mtu: null,
+        );
+        return;
+      } catch (error) {
+        lastError = error;
+        // 失败先物理断开：清掉半连状态、让设备恢复广播，否则下次扫描/连接更难成功
+        //（对齐小程序 closeBLEConnection + sleep(400) 再重试）。
+        try {
+          await device.disconnect();
+        } catch (_) {}
+        if (i < attempts - 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        }
+      }
+    }
+    throw lastError is FrameBleException
+        ? lastError
+        : FrameBleException('连接设备失败：${lastError ?? '未知错误'}');
+  }
+
+  /// 发现 FF00 主服务下的写(FF01)/通知(FF02)特征（带轮询重试，对齐小程序
+  /// discoverMainService/discoverCharacteristics）：安卓首次 discoverServices 常返回不全，
+  /// 轮询到齐再返回 `[write, notify]`；[attempts] 次 / 每次 250ms 用尽仍不全则抛错。
+  Future<List<BluetoothCharacteristic>> _discoverFrameChars(
+    BluetoothDevice device, {
+    int attempts = 5,
+  }) async {
+    Object? lastError;
+    for (int i = 0; i < attempts; i++) {
+      try {
+        final services = await device.discoverServices();
+        BluetoothService? svc;
+        for (final s in services) {
+          if (_short16(s.uuid.str) == FrameProtocol.serviceUuid) {
+            svc = s;
+            break;
+          }
+        }
+        if (svc != null) {
+          BluetoothCharacteristic? wc;
+          BluetoothCharacteristic? nc;
+          for (final c in svc.characteristics) {
+            final code = _short16(c.uuid.str);
+            if (code == FrameProtocol.charWriteUuid) wc = c;
+            if (code == FrameProtocol.charNotifyUuid) nc = c;
+          }
+          if (wc != null && nc != null) {
+            return [wc, nc];
+          }
+        }
+      } catch (error) {
+        lastError = error;
+      }
+      if (i < attempts - 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
+    }
+    throw FrameBleException(
+      lastError == null
+          ? '未找到相框主服务(FF00)或读写特征(FF01/FF02)，请确认是相框设备'
+          : '发现相框服务失败：$lastError',
+    );
   }
 
   Future<void> disconnect() async {

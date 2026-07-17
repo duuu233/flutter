@@ -763,8 +763,10 @@ class ServerImageProjectionService {
     );
   }
 
-  /// 上传前兜底压缩，对齐小程序 2026-07-13 的 `compressForUpload`：
-  /// 源文件大于 400KB 才处理，长边最多保留设备长边的 2 倍，JPEG 质量 80；
+  /// 上传前兜底压缩，对齐小程序 2026-07-16 的 `compressForUpload`：
+  /// 源文件大于 400KB 才处理，长边压到**当前设备长边（1 倍 = 设备分辨率）**、JPEG 质量 90；
+  /// 后端反正会把图缩到设备分辨率再做六色抖动，上传超过设备长边的像素纯属浪费流量与后端转码时间
+  /// （原来传设备长边的 2 倍 ≈ 4 倍字节，正是「上传/后端转码慢」的主因，2026-07-17 对齐小程序修正）。
   /// 压缩失败或结果反而更大时继续用原文件，绝不阻断投屏。
   Future<String> _prepareUploadSource({
     required String filePath,
@@ -846,8 +848,11 @@ class _ConvertResult {
 }
 
 const int _uploadCompressTriggerBytes = 400 * 1024;
-const int _uploadLongEdgeScale = 2;
-const int _uploadCompressQuality = 80;
+// 上传图片的目标长边 = 当前设备长边 × 此系数。对齐小程序 compressForUpload（2026-07-16）：取 1
+//（= 设备分辨率）。后端只吐设备分辨率的六色帧，传更大的原图纯属浪费上传流量与后端转码时间。
+const int _uploadLongEdgeScale = 1;
+// JPEG 重编码质量，对齐小程序 UPLOAD_COMPRESS_QUALITY = 90。
+const int _uploadCompressQuality = 90;
 
 class _UploadCompressRequest {
   const _UploadCompressRequest({
