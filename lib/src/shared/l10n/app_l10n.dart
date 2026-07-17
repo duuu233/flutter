@@ -1185,10 +1185,12 @@ class AppL10n {
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
   String get mineServiceHelp =>
       _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
-  String get mineMyGallery => _pick('我的图库', 'My Gallery', 'マイギャラリー');
+  // 日语「マイギャラリー」在「我的」宫格卡（102 宽）里过长换行，缩为「ギャラリー」。
+  String get mineMyGallery => _pick('我的图库', 'My Gallery', 'ギャラリー');
   String get mineMyDevices => _pick('我的设备', 'My Devices', 'マイデバイス');
+  // 英语「Cast Management」在「我的」宫格卡（102 宽）里过长换行，缩为单词「Casting」。
   String get mineCastManagement =>
-      _pick('投屏管理', 'Cast Management', 'キャスト管理');
+      _pick('投屏管理', 'Casting', 'キャスト管理');
   String get mineGuide => _pick('操作指南', 'User Guide', '操作ガイド');
   String get mineSettings => _pick('设置', 'Settings', '設定');
   String mineUserId(String id) => _pick('ID：$id', 'ID: $id', 'ID：$id');
