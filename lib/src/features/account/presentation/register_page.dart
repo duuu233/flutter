@@ -183,12 +183,30 @@ class _RegisterPageState extends State<RegisterPage> {
     if (!mounted) {
       return;
     }
-    setState(() => _submitting = false);
-    if (feedback.success) {
-      await EmailHistory.add(_emailController.text); // 记住注册邮箱，登录页自动填充
+    if (!feedback.success) {
+      setState(() => _submitting = false);
+      _showSnack(feedback.message);
+      return;
     }
-    _showSnack(feedback.message);
-    if (feedback.success) {
+    // 注册成功：记住邮箱 + **自动登录**（产品要求：注册后直接进首页，不再回登录页）。
+    // registerWithEmail 只调注册接口、不置登录态，必须再走一次 loginWithPassword 拿 token。
+    await EmailHistory.add(_emailController.text);
+    final loginFb = await widget.state.loginWithPassword(
+      _emailController.text.trim(),
+      _passwordController.text,
+    );
+    if (!mounted) {
+      return;
+    }
+    setState(() => _submitting = false);
+    if (loginFb.success) {
+      // loginWithPassword 已置登录态并 notifyListeners，根组件（bolt_star_app）会把
+      // 根页面切成主壳层；弹回栈底即露出首页（注册页/登录页均在其上被弹掉）。
+      _showSnack(feedback.message); // 「注册成功。」
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } else {
+      // 极少数：注册成功但自动登录失败，退回登录页并提示，用户手动登录。
+      _showSnack(loginFb.message);
       widget.onRegistered?.call();
     }
   }
@@ -254,10 +272,20 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
           ),
           const Spacer(flex: 2),
-          // LOGO + 标题（同登录页的标题组风格）。
-          const BoltStarWordmark(),
-          const SizedBox(height: 14),
-          Text(l10n.accCreateAccount, style: AuthTextStyles.title),
+          // 顶部与登录页一致：「欢迎使用 [BoltStar 字标]」，去掉单独的「创建账户」标题。
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(l10n.accWelcome, style: AuthTextStyles.title),
+              const SizedBox(width: 6),
+              // 相对基线微调 4，让 logo 与「欢迎使用」文字垂直对齐（同登录页 _TitleGroup）。
+              const Padding(
+                padding: EdgeInsets.only(top: 4),
+                child: BoltStarWordmark(),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           Text(l10n.accRegisterSubtitle, style: AuthTextStyles.subtitle),
           const SizedBox(height: 30),

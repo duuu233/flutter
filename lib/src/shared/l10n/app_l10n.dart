@@ -359,9 +359,9 @@ class AppL10n {
   String get accSendingCode => _pick('发送中…', 'Sending…', '送信中…');
   // 注册页副标题（注册页与登录页共用标题组风格，见 auth_widgets.dart）。
   String get accRegisterSubtitle => _pick(
-    '注册 BoltStar 账户，开启你的智能相框',
-    'Create your BoltStar account to get started',
-    'BoltStarアカウントを作成して始めましょう',
+    '注册BoltStar账号，把美好，留在一张纸上',
+    'Sign up for BoltStar — keep every beautiful moment on paper',
+    'BoltStarに登録して、大切な瞬間を一枚の紙に残しましょう',
   );
 
   String get accModifyEmailTitle => _pick('修改邮箱', 'Change Email', 'メールアドレス変更');
