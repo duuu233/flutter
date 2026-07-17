@@ -2,241 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../l10n/app_l10n.dart';
 
-/// 通用半透明内容面板。
-///
-/// 用于承载普通页面的主要信息区，保持圆角、描边和阴影一致。
-class AppPanel extends StatelessWidget {
-  const AppPanel({super.key, required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(28),
-        color: Colors.white.withValues(alpha: 0.76),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.86)),
-        boxShadow: [
-          BoxShadow(
-            blurRadius: 22,
-            offset: const Offset(0, 12),
-            color: Colors.black.withValues(alpha: 0.06),
-          ),
-        ],
-      ),
-      child: child,
-    );
-  }
-}
-
-class SectionHeader extends StatelessWidget {
-  const SectionHeader({super.key, required this.title, required this.subtitle});
-
-  final String title;
-  final String subtitle;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(title, style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 4),
-        Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-      ],
-    );
-  }
-}
-
-/// 带图标和说明文案的入口卡片。
-///
-/// 适合用于首页快捷操作或功能入口，点击行为由调用方传入。
-class ActionCard extends StatelessWidget {
-  const ActionCard({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.accent,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final Color accent;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(28),
-      onTap: onTap,
-      child: Ink(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(28),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              accent.withValues(alpha: 0.18),
-              accent.withValues(alpha: 0.06),
-            ],
-          ),
-          border: Border.all(color: accent.withValues(alpha: 0.18)),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Icon(icon, color: accent),
-            const SizedBox(height: 16),
-            Text(title, style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 6),
-            Text(subtitle, style: Theme.of(context).textTheme.bodyMedium),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class HeroMetric extends StatelessWidget {
-  const HeroMetric({super.key, required this.label, required this.value});
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 132,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(22),
-        color: Colors.white.withValues(alpha: 0.10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Colors.white.withValues(alpha: 0.76),
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(color: Colors.white),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StatTag extends StatelessWidget {
-  const StatTag({
-    super.key,
-    required this.label,
-    required this.icon,
-    required this.foreground,
-    required this.background,
-  });
-
-  final String label;
-  final IconData icon;
-  final Color foreground;
-  final Color background;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: background,
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 18, color: foreground),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: TextStyle(color: foreground, fontWeight: FontWeight.w700),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class StatusPill extends StatelessWidget {
-  const StatusPill({super.key, required this.label, required this.active});
-
-  final String label;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = active ? const Color(0xFF2A9D8F) : const Color(0xFF6C757D);
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(999),
-        color: color.withValues(alpha: 0.12),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(color: color, fontWeight: FontWeight.w700),
-      ),
-    );
-  }
-}
-
-/// 设备缩略图占位组件。
-///
-/// 当前项目还没有真实设备渲染图时，用主题色渐变保持列表视觉一致。
-class DeviceIllustration extends StatelessWidget {
-  const DeviceIllustration({super.key, required this.color});
-
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 56,
-      height: 56,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            color.withValues(alpha: 0.95),
-            color.withValues(alpha: 0.72),
-          ],
-        ),
-      ),
-      child: const Icon(Icons.desktop_windows_rounded, color: Colors.white),
-    );
-  }
-}
-
-/// 通用空状态组件，用于列表无数据或权限未准备好的兜底展示。
 /// 首屏加载态（对应小程序 app.wxss 的全局 `.page-loading`：转圈 + 「加载中…」）。
 ///
 /// 用法是**三分支互斥链**，loading 分支必须排他优先、写在最前：
 /// ```dart
 /// if (!state.albumLoaded) const PageLoading()
-/// else if (photos.isEmpty) const EmptyState(...)
+/// else if (photos.isEmpty) ...页内空态
 /// else ...列表
 /// ```
 /// 不要写成「空态 if」和「loading 遮罩 if」两条独立分支——那样首帧会同时命中空态。
@@ -349,8 +120,11 @@ class PageLoadError extends StatelessWidget {
 ///
 /// ```dart
 /// AppLoadingDialog.show(context, '连接设备中');
-/// final result = await doSomething();
-/// if (context.mounted) AppLoadingDialog.hide(context);
+/// try {
+///   result = await doSomething();
+/// } finally {
+///   AppLoadingDialog.hide(context); // 不做 mounted 门控，见 hide 的说明
+/// }
 /// ```
 class AppLoadingDialog {
   AppLoadingDialog._();
@@ -382,9 +156,18 @@ class AppLoadingDialog {
     });
   }
 
-  /// 关闭 loading。务必与 [show] 成对调用。
+  /// 关闭 loading。务必与 [show] 成对调用（推荐 try/finally，见下方说明）。
   /// 只移除自己的对话框路由：重复调用 / loading 不在时静默返回，绝不误弹页面。
-  static void hide(BuildContext context) {
+  ///
+  /// ⚠️ 调用侧不要用 `if (mounted)` 门控 hide：loading 在 root navigator 上且
+  /// canPop:false，页面在 await 期间被卸载（会话过期 popUntil / Tab 切换换 child）
+  /// 时若跳过 hide，蒙层会永久滞留、整个 App 假死只能杀进程。本方法实际不依赖
+  /// 传入的 context（经 route.navigator 出栈），unmounted 时调用也安全——
+  /// 统一写成 `try { await ... } finally { AppLoadingDialog.hide(context); }`。
+  static void hide(BuildContext context) => hideIfAny();
+
+  /// 无 context 版收口：供会话过期等全局导航前兜底关掉可能在展示的 loading。
+  static void hideIfAny() {
     final route = _route;
     _route = null;
     if (route == null || !route.isActive) {
@@ -444,42 +227,6 @@ class _LoadingBox extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class EmptyState extends StatelessWidget {
-  const EmptyState({super.key, required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: AppPanel(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.inbox_outlined,
-                size: 48,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-              const SizedBox(height: 16),
-              Text(title, style: Theme.of(context).textTheme.headlineSmall),
-              const SizedBox(height: 8),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.bodyMedium,
-              ),
-            ],
           ),
         ),
       ),

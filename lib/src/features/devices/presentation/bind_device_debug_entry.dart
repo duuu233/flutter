@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
@@ -6,14 +7,19 @@ import '../../../routes/app_routes.dart';
 ///
 /// 开发对接 / 硬件联调用：点进去可逐条测试 BLE 指令、看收发的 16 进制原始字节，
 /// 也是「搜索不到设备」时的排查工具（放开过滤扫描核对广播名、断开被占用连接释放设备）。
-/// 常驻显示在绑定流程三态（搜索中 / 已发现 / 未发现）顶部。
+/// 显示在绑定流程三态（搜索中 / 已发现 / 未发现）顶部。
 ///
-/// 需要屏蔽时，把三个绑定视图里引用本组件的两行删掉即可，不影响其余绑定逻辑。
+/// **仅 debug 构建可见**：调试台能对设备发任意指令（含删除图片类操作）且整页
+/// 未接 i18n，不能暴露给最终用户；release 下本组件渲染为空、路由亦被拦截
+/// （见 app_routes.dart）。debug 联调流程不受影响。
 class BindDebugEntryCard extends StatelessWidget {
   const BindDebugEntryCard({super.key});
 
   @override
   Widget build(BuildContext context) {
+    if (!kDebugMode) {
+      return const SizedBox.shrink();
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () =>

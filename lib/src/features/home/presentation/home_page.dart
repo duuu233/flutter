@@ -60,7 +60,6 @@ enum _DebugScene {
 /// | 首页-已绑定设备-拍照or相册 | 已绑定时点「选择投屏方式」→ [_CastMethodSheet] |
 /// | 首页-未绑定设备-立即绑定 | 未绑定时点拍照/相册 → [_DeviceNoticeSheet] |
 /// | 首页-未绑定设备-重新连接 | 设备未连接时点拍照/相册 → [_DeviceNoticeSheet] |
-/// | 首页-离线断网模式 | `state.isOffline == true` → [_DeviceNoticeSheet]（我知道了） |
 /// | 绑定设备-搜索设备 | `_bindMode == searching` |
 /// | 绑定设备-未搜索到设备 | `_bindMode == notFound` |
 /// | 绑定设备-已搜索到设备 | `_bindMode == found` |
@@ -68,7 +67,7 @@ enum _DebugScene {
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.state, required this.onOpenMine});
 
-  /// 全局业务状态（设备、权限、离线标记等），由根组件统一注入。
+  /// 全局业务状态（设备、权限、登录态等），由根组件统一注入。
   final PhotoFrameState state;
 
   /// 切换到底部「我的」Tab 的回调。
@@ -105,8 +104,6 @@ class _HomePageState extends State<HomePage> {
   /// 是否在绑定流程上叠加「扫描不到怎么办?」帮助弹层。
   bool _showScanHelp = false;
 
-  /// 离线提示是否已弹出，避免同一次离线状态重复弹层。
-  bool _offlineNoticeShown = false;
 
   /// 模拟扫描耗时的计时器。
   Timer? _scanTimer;
@@ -145,10 +142,9 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    widget.state.addListener(_handleStateChanged);
-    if (widget.state.isOffline) {
-      _scheduleOfflineNotice();
-    }
+    // 不再 addListener：首页在根部 AnimatedBuilder（bolt_star_app `home:`）之下，
+    // 任何 state 通知本就会重建本页；原监听只服务于已删除的「离线弹层」死路径
+    //（setOffline 从无调用方，isOffline 永 false）。
     // 进入首页即回后端刷新设备列表（对齐小程序 home.js onShow→loadHomeState）：
     // 否则登录后直接落到首页、其它 tab 尚未刷新时，已绑定设备会误显示「未绑定」空态。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -160,33 +156,8 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
-    widget.state.removeListener(_handleStateChanged);
     _scanTimer?.cancel();
     super.dispose();
-  }
-
-  /// 监听全局状态：进入离线时弹出离线提示，恢复在线时复位标记。
-  void _handleStateChanged() {
-    if (!mounted) {
-      return;
-    }
-    if (widget.state.isOffline) {
-      _scheduleOfflineNotice();
-    } else {
-      _offlineNoticeShown = false;
-    }
-  }
-
-  void _scheduleOfflineNotice() {
-    if (_offlineNoticeShown) {
-      return;
-    }
-    _offlineNoticeShown = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.state.isOffline) {
-        _showOfflineNotice();
-      }
-    });
   }
 
   @override
@@ -462,11 +433,18 @@ class _HomePageState extends State<HomePage> {
       return false;
     }
     AppLoadingDialog.show(context, AppL10n.of(context).homeConnectingDevice);
-    final feedback = await widget.state.connectDevice(deviceId);
+    // 收口统一走 hide（精确移除自己的路由）且不做 mounted 门控：
+    // 盲 pop 在并发 show 被静默忽略时会弹掉底下的业务页（历史闪退根源）；
+    // mounted 门控则在页面被外力卸载时把 canPop:false 的蒙层永久留在 root 栈上。
+    final ActionFeedback feedback;
+    try {
+      feedback = await widget.state.connectDevice(deviceId);
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
       return false;
     }
-    Navigator.of(context, rootNavigator: true).pop(); // 关闭连接中 loading
     if (!feedback.success) {
       _showFeedback(feedback.message);
     }
@@ -495,17 +473,6 @@ class _HomePageState extends State<HomePage> {
           },
         );
       },
-    );
-  }
-
-  /// 「首页-离线断网模式」提示。
-  Future<void> _showOfflineNotice() async {
-    final l10n = AppL10n.of(context);
-    await _showDeviceNotice(
-      title: l10n.homeOfflineTitle,
-      message: l10n.homeOfflineMessage,
-      buttonLabel: l10n.gotIt,
-      onPressed: () {},
     );
   }
 

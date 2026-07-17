@@ -362,6 +362,12 @@ class BleController extends ChangeNotifier {
 
   /// 连接设备并读取设备信息。成功返回 null，失败返回错误文案。
   Future<String?> connect(ScanResult result) async {
+    // 重入护栏：并发连接（列表快速双击 / 自动重连撞上手动点连接）会让两次
+    // _client.connect 交错覆盖 _device/订阅/_writeChar，且 broadcastDeviceId 与
+    // 实际连上的设备错位——这正是序列号交叉认领最怕的输入。第二路直接拒绝。
+    if (connecting) {
+      return _l10n.bleBusyConnecting;
+    }
     final trace = DeviceInteractionTrace('connect-device');
     connecting = true;
     _connectionLease.taskStarted();
@@ -428,6 +434,10 @@ class BleController extends ChangeNotifier {
     String name = '',
     int screenCode = 0,
   }) async {
+    // 同 [connect] 的重入护栏：连接编排进行中不接受第二路。
+    if (connecting) {
+      return _l10n.bleBusyConnecting;
+    }
     final trace = DeviceInteractionTrace('connect-bound-device');
     if (sessionMatchesSerial(serial, screenCode: screenCode)) {
       _connectionLease.noteActivity();
@@ -490,15 +500,21 @@ class BleController extends ChangeNotifier {
       return false; // 没有会话，零开销
     }
     try {
-      final alive = FlutterBluePlus.connectedDevices.any(
-        (d) => d.remoteId == dev.remoteId,
-      );
+      // 问 **OS** 的真实已连接表（systemDevices），而不是 FlutterBluePlus 自己的
+      // 内存镜像（connectedDevices）——后者恰恰由「可能没补发的断开事件」驱动更新，
+      // 本方法要治理的死会话场景下它会和 _client.connected 一起谎报 true，
+      // 体检就成了恒 false 的空转。iOS 要求按服务过滤，传相框主服务 FF00。
+      final sys = await FlutterBluePlus.systemDevices([
+        Guid(FrameProtocol.serviceUuid),
+      ]);
+      final alive = sys.any((d) => d.remoteId == dev.remoteId);
       if (alive) {
         return false;
       }
       await disconnect();
       return true;
     } catch (_) {
+      // 查询异常保守不动（维持原语义），留待下次操作时真实校验。
       return false;
     }
   }

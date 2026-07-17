@@ -23,6 +23,14 @@ import android.util.Log
  *
  * 始终在 App 前台（Activity 可见）时启动——Android 12+ 禁止后台启动前台服务，
  * 连接必然发生在前台，因此这里不会触发该限制。
+ *
+ * TODO(真机验证后决策，2026-07-17 审查 S17)：本服务**不持 wakelock**，只提升进程
+ * 优先级、不保证 CPU 不挂起。息屏进 Doze/厂商深度省电后 Dart 侧 25s 心跳 Timer
+ * 可能停发，固件对空闲链路 1~2 分钟无流量即主动断开——「息屏 30 分钟」租约在
+ * 激进 ROM 上可能达不到（表现为息屏几分钟回来已断开；断开事件恢复后能正确清理，
+ * 不泄漏不崩溃，纯策略达成率问题）。先真机实测息屏存活时长：若确认达不到，在
+ * onStartCommand 持 PARTIAL_WAKE_LOCK（onDestroy 释放，与连接同生命周期、最长
+ * 30 分钟有界，代价是连接期间额外耗电）；若可接受则记入 App vs 小程序差异台账。
  */
 class BleConnectionService : Service() {
 

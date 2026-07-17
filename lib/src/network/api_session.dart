@@ -54,6 +54,10 @@ class ApiSession {
   /// 冷启动恢复持久化的登录 token。返回是否恢复出了有效（非空）token。
   /// 读失败按未登录处理——宁可让用户重登一次，不能让启动流程卡死。
   Future<bool> restore() async {
+    // 先排空落盘队列：若 restore 前已有 setToken/clear 在途，直接读磁盘会拿到旧值
+    // 并覆盖内存新 token。当前 UI 时序（登录页在 restore 完成后才可达）恰好保护了
+    // 这一点，但不应依赖 UI 时序。
+    await _persistQueue;
     try {
       final prefs = await SharedPreferences.getInstance();
       _userToken = prefs.getString(_tokenPrefsKey) ?? '';

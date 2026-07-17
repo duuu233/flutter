@@ -20,6 +20,9 @@ class BoltFoxApi {
   // ==================== 基础功能接口 ====================
 
   /// 发送邮箱验证码（未登录）。[sendType]：1=注册、2=找回密码/改密、3=改邮箱。
+  ///
+  /// 关闭超时重试：超时时服务端可能已发信，静默重试会连发多封；若后端「新码作废旧码」，
+  /// 用户输入先到的那封就恒报验证码错误。连接失败（未送达）仍会自动重试。
   static Future<dynamic> sendEmail({
     required String userEmail,
     required int sendType,
@@ -28,6 +31,7 @@ class BoltFoxApi {
       '/Client/Basic/sendEmail',
       body: {'userEmail': userEmail, 'sendType': sendType},
       auth: false,
+      retryOnTimeout: false,
     );
   }
 
@@ -287,6 +291,8 @@ class BoltFoxApi {
   // ==================== 设备接口（UserProduct）====================
 
   /// 添加 / 绑定用户设备。
+  ///
+  /// 关闭超时重试：超时时后端可能已建绑定记录，重试是否重复绑定取决于后端去重，不赌。
   static Future<dynamic> addUserProduct({
     required int productId,
     required String productName,
@@ -300,6 +306,7 @@ class BoltFoxApi {
         // 硬件序列号：完全对齐已通过测试的小程序 `api.bindDevice` —— 用字段名 `deviceId` 提交（同一后端）。
         'deviceId': productSerialNo,
       },
+      retryOnTimeout: false,
     );
   }
 
@@ -448,6 +455,8 @@ class BoltFoxApi {
         'taskId': ?taskId,
         'deviceUploadState': deviceUploadState,
       },
+      // 关闭超时重试：超时时记录可能已写入，重试会产生重复投屏记录。
+      retryOnTimeout: false,
     );
   }
 }

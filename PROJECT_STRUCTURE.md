@@ -47,15 +47,13 @@ lib/
     │   └── frame_device_protocol.dart  # 相框设备 BLE 通信协议（屏型、播放模式、指令/结果码）
     │
     ├── shared/                    # 跨模块复用的通用组件与工具
-    │   ├── shared.dart            # 统一导出
-    │   ├── dialogs/
-    │   │   └── prompt_text.dart   # 文本输入对话框 promptText()
     │   └── widgets/
-    │       ├── app_widgets.dart       # 通用面板 AppPanel 等
-    │       ├── background.dart        # 氛围渐变背景 AtmosphereBackground
-    │       ├── scaffolds.dart         # 通用子页脚手架 SubPageScaffold
+    │       ├── app_widgets.dart       # PageLoading / PageLoadError / AppLoadingDialog（加载三件套）
+    │       ├── app_toast.dart         # 全局 toast
     │       ├── figma_common.dart      # Figma 还原页面公共控件（手机外框/状态栏/按钮/输入框…）
     │       └── home_figma_common.dart # Figma 首页 & 绑定设备流程的公共控件
+    │   （2026-07-17 清理：shared.dart 桶文件、dialogs/prompt_text、background、
+    │     scaffolds 及 app_widgets 内 8 个旧首页组件均为 0 引用死代码，已删除）
     │
     └── features/                  # 业务模块（按领域划分，见下文）
 ```

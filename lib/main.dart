@@ -10,6 +10,10 @@ import 'package:BoltStar/src/native_device_api.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _installCrashHandlers();
+  // 热重启/异常退出残留清扫（best-effort）：Dart 侧单例重建后 connected=false，
+  // 但原生侧的连接保活前台服务可能仍在跑——表现为热重启后通知栏保活常驻、
+  // 设备被残留 GATT 占线搜不到。冷启动时本就没有服务在跑，停一次是无害空调用。
+  unawaited(NativeDeviceApi.stopConnectionKeepAliveService());
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Color(0xFFF7EDE2),

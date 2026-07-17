@@ -587,6 +587,7 @@ class FrameOtaClient {
     int size, {
     int? objType,
     Duration? startTimeout,
+    void Function(OtaProgress)? onProgress,
   }) async {
     // 依次尝试：控制特征 FF11 →（若独立）数据特征 FF12 →（若独立）备用控制 FF13；每条按其写类型。
     final targets = <BluetoothCharacteristic>[];
@@ -616,8 +617,22 @@ class FrameOtaClient {
             : const Duration(milliseconds: 5000));
 
     OtaException? lastError;
+    final totalAttempts = targets.length * objTypes.length;
+    var attempt = 0;
     for (final target in targets) {
       for (final ot in objTypes) {
+        attempt++;
+        // 兜底穷举最坏 ~15s（3 特征 × 2 objType × 2.5s），每换一个组合报一次进度，
+        // 否则 UI 停在「握手中」十几秒无变化，用户会误判卡死（纯提示，不改流程）。
+        if (totalAttempts > 1) {
+          onProgress?.call(
+            OtaProgress(
+              phase: 'starting',
+              percent: 14,
+              message: '握手中（尝试 $attempt/$totalAttempts）',
+            ),
+          );
+        }
         final frame = _buildStartFrame(size, ot);
         // 每次尝试新建一个应答等待者：先写 START 帧，成功后再对「应答 future」套超时，
         // 避免写失败时超时 future 变成悬空的未处理异常（对齐小程序 createStartAckWaiter/cancel）。
@@ -1044,7 +1059,7 @@ class FrameOtaClient {
       OtaProgress(phase: 'starting', percent: 14, message: '握手中（MTU $_mtu）'),
     );
     // START 携带 FW_SIZE = bin payload 大小（文件大小 - 128 头，见 _computeFwSize）。
-    await _doStart(prepared.payloadSize, objType: objType);
+    await _doStart(prepared.payloadSize, objType: objType, onProgress: onProgress);
 
     return _transferData(
       prepared.bytes,

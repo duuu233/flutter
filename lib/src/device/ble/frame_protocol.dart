@@ -528,7 +528,9 @@ class FrameProtocol {
     frame[4] = seq & 0xFF;
     frame[5] = (seq >> 8) & 0xFF;
     frame.setRange(6, 6 + dataLen, data, start);
-    final crc = crc16Modbus(frame.sublist(0, frame.length - 2));
+    // sublistView（零拷贝视图）而非 sublist：这是图传唯一的热路径，一张 5.89 寸图
+    // ~1340 帧，每帧为算 CRC 复制 ~250B 就是每张 ~340KB 纯垃圾分配与 GC 抖动。
+    final crc = crc16Modbus(Uint8List.sublistView(frame, 0, frame.length - 2));
     frame[frame.length - 2] = crc & 0xFF;
     frame[frame.length - 1] = (crc >> 8) & 0xFF;
     return frame;

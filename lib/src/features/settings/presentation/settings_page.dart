@@ -234,9 +234,7 @@ class SettingsPage extends StatelessWidget {
     try {
       await state.logout();
     } finally {
-      if (context.mounted) {
-        AppLoadingDialog.hide(context);
-      }
+      AppLoadingDialog.hide(context);
     }
     if (!context.mounted) {
       return;
@@ -274,9 +272,7 @@ class SettingsPage extends StatelessWidget {
     try {
       result = await state.deleteAccount();
     } finally {
-      if (context.mounted) {
-        AppLoadingDialog.hide(context);
-      }
+      AppLoadingDialog.hide(context);
     }
     if (!context.mounted) {
       return;
@@ -342,6 +338,9 @@ class _SettingsRow extends StatelessWidget {
                     width: 20,
                     height: 20,
                     fit: BoxFit.contain,
+                    // 资源缺失兜底（全项目 Image.asset 均带 errorBuilder，此处曾漏）。
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox(width: 20, height: 20),
                   ),
                 ),
               ),
@@ -385,6 +384,8 @@ class _SettingsRow extends StatelessWidget {
                   width: 16,
                   height: 16,
                   fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const Icon(Icons.copy, size: 16, color: Color(0xFF777E88)),
                 ),
             ],
           ),

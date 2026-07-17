@@ -7,8 +7,12 @@ import 'dart:io' show Platform;
 class ApiConfig {
   ApiConfig._();
 
-  /// 后端基础地址。
-  static const String baseUrl = 'https://api.boltfox.cn';
+  /// 后端基础地址。默认生产环境；不传 define 时产物与原硬编码完全一致。
+  /// 切测试/预发环境无需改源码：`flutter build apk --dart-define=API_BASE_URL=https://...`
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://api.boltfox.cn',
+  );
 
   /// 普通请求单次超时时间。网络失败会静默重试（见 [ApiClient]），用户端最长约 30s 才看到超时提示。
   static const Duration timeout = Duration(seconds: 10);

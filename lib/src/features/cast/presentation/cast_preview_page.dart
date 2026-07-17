@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -245,10 +246,15 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
   /// 读图片像素尺寸。用 Flutter 自带的解码器（原生、快），不必为这点事再动 image 包。
   Future<({int width, int height})?> _readImageSize(String path) async {
     try {
+      // 只读图片头信息拿宽高（ImageDescriptor），不解码像素：原来
+      // decodeImageFromList 会把整张位图解出来（1920 长边 ≈ 8~16MB 瞬时分配）
+      // 又立刻 dispose，纯浪费。
       final bytes = await File(path).readAsBytes();
-      final decoded = await decodeImageFromList(bytes);
-      final result = (width: decoded.width, height: decoded.height);
-      decoded.dispose();
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final result = (width: descriptor.width, height: descriptor.height);
+      descriptor.dispose();
+      buffer.dispose();
       return result;
     } catch (_) {
       return null;
@@ -286,11 +292,13 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
       result = await CastImageEditor.rotate(path: _active.path, degrees: angle);
     } catch (_) {
       result = null;
+    } finally {
+      // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
+      AppLoadingDialog.hide(context);
     }
     if (!mounted) {
       return false;
     }
-    AppLoadingDialog.hide(context);
     if (result == null) {
       AppToast.show(context, AppL10n.of(context).castRotateFailed);
       return false;
@@ -365,26 +373,30 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
     AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
     final paths = <String>[];
     final ratio = _deviceRatio;
-    for (final photo in directRecast ? const <_PreviewPhoto>[] : _photos) {
-      if (photo.matchesRatio(ratio)) {
-        paths.add(photo.path); // 裁剪产物：比例已是设备比例，原样投
-        continue;
+    try {
+      for (final photo in directRecast ? const <_PreviewPhoto>[] : _photos) {
+        if (photo.matchesRatio(ratio)) {
+          paths.add(photo.path); // 裁剪产物：比例已是设备比例，原样投
+          continue;
+        }
+        try {
+          final result = await CastImageEditor.coverCropToRatio(
+            path: photo.path,
+            ratio: ratio,
+          );
+          // 裁切失败不阻断投屏，回退原图（对齐小程序：任一张失败都 resolve 原图）。
+          paths.add(result?.path ?? photo.path);
+        } catch (_) {
+          paths.add(photo.path);
+        }
       }
-      try {
-        final result = await CastImageEditor.coverCropToRatio(
-          path: photo.path,
-          ratio: ratio,
-        );
-        // 裁切失败不阻断投屏，回退原图（对齐小程序：任一张失败都 resolve 原图）。
-        paths.add(result?.path ?? photo.path);
-      } catch (_) {
-        paths.add(photo.path);
-      }
+    } finally {
+      // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
+      AppLoadingDialog.hide(context);
     }
     if (!mounted) {
       return;
     }
-    AppLoadingDialog.hide(context);
 
     // pushReplacement：投屏页返回时直接回到上一页（首页/设备页），
     // 不要退回这个已经用过的预览页（对齐小程序 redirectTo）。
@@ -504,6 +516,13 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
                     key: ValueKey(photo.path),
                     File(photo.path),
                     fit: BoxFit.cover, // aspectFill
+                    // 预览区≈屏宽，按物理像素解码：源图长边虽已限 1920，仍能省约一半
+                    // 位图内存（PageView 预热相邻页时最多 3 张同驻）；裁剪走原生裁剪器
+                    // 读原文件，不受此影响。
+                    cacheWidth:
+                        (MediaQuery.sizeOf(context).width *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round(),
                     errorBuilder: (context, error, stackTrace) => ColoredBox(
                       color: const Color(0x11000000),
                       child: Center(

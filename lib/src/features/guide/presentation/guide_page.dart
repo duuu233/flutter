@@ -100,6 +100,20 @@ class _GuidePageState extends State<GuidePage> {
                 padding: const EdgeInsets.fromLTRB(12, 10, 12, 5),
                 child: Column(
                   children: [
+                    // 搜索无匹配给出空态文案，不要留一张空白玻璃卡（像页面坏了）。
+                    if (items.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 28),
+                        child: Text(
+                          AppL10n.of(context).guideNoResult,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: Color(0xFF777E88),
+                            fontSize: 13,
+                            height: 1.5,
+                          ),
+                        ),
+                      ),
                     for (final faq in items)
                       _GuideItem(
                         item: faq,

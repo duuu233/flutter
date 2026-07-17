@@ -113,9 +113,7 @@ class _BindEmailIncompletePageState extends State<BindEmailIncompletePage> {
       loggedIn: true,
     );
     _sendingCode = false;
-    if (mounted) {
-      AppLoadingDialog.hide(context);
-    }
+    AppLoadingDialog.hide(context);
     if (!mounted) {
       return;
     }

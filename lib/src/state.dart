@@ -30,16 +30,6 @@ class ActionFeedback {
   final String message;
 }
 
-class CastAttemptResult extends ActionFeedback {
-  const CastAttemptResult({
-    required super.success,
-    required super.message,
-    this.deviceFull = false,
-  });
-
-  final bool deviceFull;
-}
-
 /// App 版本检查结果（见 [PhotoFrameState.checkAppVersion]）。
 class AppVersionInfo {
   const AppVersionInfo({
@@ -103,7 +93,13 @@ class DeviceItem {
     this.newVersionNo = '',
     this.downloadPath = '',
     this.firmwareSize = 0,
+    this.isPlaceholder = false,
   });
+
+  /// 是否 `_findDevice` 兜底生成的占位设备（id 已不在列表）。
+  /// 占位设备仅用于让当前帧安全渲染；破坏性/写后端的操作（清空、改名、轮播设置）
+  /// 执行前应检查此标记并中止，防止对着一台已删除/已解绑的设备发真实请求。
+  final bool isPlaceholder;
 
   final String id;
   String name;
@@ -175,26 +171,6 @@ class DeviceItem {
       currentImageIndex: currentImageIndex,
     );
   }
-}
-
-class DraftPhoto {
-  const DraftPhoto({
-    required this.id,
-    required this.title,
-    required this.source,
-    required this.width,
-    required this.height,
-    required this.color,
-    required this.note,
-  });
-
-  final String id;
-  final String title;
-  final ImageSourceType source;
-  final double width;
-  final double height;
-  final Color color;
-  final String note;
 }
 
 class AlbumPhoto {
@@ -303,26 +279,6 @@ class CastRecord {
   final String deviceName;
 }
 
-class GuideArticle {
-  const GuideArticle({
-    required this.category,
-    required this.titleZh,
-    required this.titleEn,
-    required this.titleJa,
-    required this.summaryZh,
-    required this.summaryEn,
-    required this.summaryJa,
-  });
-
-  final String category;
-  final String titleZh;
-  final String titleEn;
-  final String titleJa;
-  final List<String> summaryZh;
-  final List<String> summaryEn;
-  final List<String> summaryJa;
-}
-
 /// 常见问题（操作指南）条目。[answer] 可懒加载（列表只给标题、展开时再取详情）。
 class FaqArticle {
   FaqArticle({required this.id, required this.question, this.answer = ''});
@@ -339,9 +295,7 @@ class FaqArticle {
 class PhotoFrameState extends ChangeNotifier {
   PhotoFrameState.seeded()
     : _language = AppLanguage.zh,
-      _cameraCounter = 0,
       _isLoggedIn = false,
-      _isOffline = false,
       _currentUser = UserProfile(
         id: '',
         nickname: '',
@@ -357,7 +311,6 @@ class PhotoFrameState extends ChangeNotifier {
       },
       _devices = [],
       _selectedDeviceId = '',
-      _draftLibrary = const [],
       _albumPhotos = [],
       _castRecords = [] {
     // BLE 层没有 BuildContext，用户可见错误文案（连接失败等）经此按当前语言取。
@@ -365,13 +318,16 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   AppLanguage _language;
-  int _cameraCounter;
   bool _isLoggedIn;
-  bool _isOffline;
+
+  /// 会话代际：登录成功/登出/注销/会话过期时 +1。
+  /// 各 refresh* 在 await 前捕获、写回前比对——登出前发出的在途请求（headers 里
+  /// 是发起时固化的旧 token）返回时代际已变，直接丢弃，防止 A 账号的响应回填进
+  /// B 账号的首屏（跨账号串屏窗口 ≤ 请求超时上限）。
+  int _sessionEpoch = 0;
   UserProfile _currentUser;
   final Map<PermissionKind, bool> _permissions;
   final List<DeviceItem> _devices;
-  final List<DraftPhoto> _draftLibrary;
   final List<AlbumPhoto> _albumPhotos;
   final List<CastRecord> _castRecords;
   final List<FaqArticle> _faqArticles = _seedFaqArticles();
@@ -422,14 +378,9 @@ class PhotoFrameState extends ChangeNotifier {
 
   bool get isLoggedIn => _isLoggedIn;
 
-  /// 是否处于离线模式。接入真实网络监测后，在网络异常时调用 [setOffline]。
-  bool get isOffline => _isOffline;
-
   UserProfile get currentUser => _currentUser;
 
   List<DeviceItem> get devices => List.unmodifiable(_devices);
-
-  List<DraftPhoto> get draftLibrary => List.unmodifiable(_draftLibrary);
 
   List<AlbumPhoto> get myAlbum {
     // 不再按 ownerUserId 过滤：后端 getUserProductImgList 已按 userToken 只返回本人图片，
@@ -445,12 +396,11 @@ class PhotoFrameState extends ChangeNotifier {
 
   List<FaqArticle> get faqArticles => List.unmodifiable(_faqArticles);
 
-  Map<PermissionKind, bool> get permissions => Map.unmodifiable(_permissions);
-
   DeviceItem get selectedDevice => _findDevice(_selectedDeviceId);
 
-  /// 当前选中设备的 id（可能为空串 / 不在列表中；[selectedDevice] 找不到会抛异常，
-  /// 只想知道「选了哪台」时用这个，不要用 `selectedDevice.id`）。
+  /// 当前选中设备的 id（可能为空串 / 不在列表中；[selectedDevice] 找不到时返回
+  /// `isPlaceholder` 的占位设备而**不是抛异常**——只想知道「选了哪台」时用这个，
+  /// 不要用 `selectedDevice.id`）。
   String get selectedDeviceId => _selectedDeviceId;
 
   String tr({required String zh, String? en, String? ja}) {
@@ -533,35 +483,6 @@ class PhotoFrameState extends ChangeNotifier {
     return '${value.year}-$month-$day $hour:$minute';
   }
 
-  int deviceUsage(String deviceId) {
-    return _findDevice(deviceId).imageCount;
-  }
-
-  int? nextImageIndex(String deviceId) {
-    return FrameDeviceProtocol.firstFreeIndex(_findDevice(deviceId).imageMask);
-  }
-
-  String deviceMaskLabel(String deviceId) => _findDevice(deviceId).maskLabel;
-
-  String formatBytes(int value) {
-    if (value >= 1024 * 1024) {
-      return '${(value / (1024 * 1024)).toStringAsFixed(1)} MB';
-    }
-    if (value >= 1024) {
-      return '${(value / 1024).toStringAsFixed(1)} KB';
-    }
-    return '$value B';
-  }
-
-  String formatCommand(int? command) {
-    if (command == null) {
-      return '-';
-    }
-    return '0x${command.toRadixString(16).padLeft(2, '0').toUpperCase()}';
-  }
-
-  int get totalPhotoCount => myAlbum.length;
-
   /// 「我的」页的照片数 / 设备数：优先后端统计（getUserInfo 的 `imgCount` / `productCount`），
   /// 未下发（0）时回退本地列表长度——对齐小程序 mine.js
   /// `photoCount: Number(userInfo.imgCount) || photos.length`。
@@ -572,31 +493,6 @@ class PhotoFrameState extends ChangeNotifier {
       ? _currentUser.productCount
       : _devices.length;
 
-  int get successCount {
-    return _castRecords
-        .where((record) => record.status == CastStatus.success)
-        .length;
-  }
-
-  int get failureCount {
-    return _castRecords
-        .where((record) => record.status == CastStatus.failed)
-        .length;
-  }
-
-  int get activePermissionCount {
-    return _permissions.values.where((enabled) => enabled).length;
-  }
-
-  int get totalPermissionCount => PermissionKind.values.length;
-
-  double get successRate {
-    if (_castRecords.isEmpty) {
-      return 0;
-    }
-    return successCount / _castRecords.length;
-  }
-
   DeviceItem deviceById(String deviceId) => _findDevice(deviceId);
 
   String deviceName(String deviceId) {
@@ -605,83 +501,8 @@ class PhotoFrameState extends ChangeNotifier {
     return matches.isEmpty ? deviceId : matches.first.name;
   }
 
-  DraftPhoto createCameraDraft() {
-    final palette = <Color>[
-      const Color(0xFFBC6C25),
-      const Color(0xFF588157),
-      const Color(0xFF3D5A80),
-      const Color(0xFF9C6644),
-      const Color(0xFF6D597A),
-    ];
-    final titles = <String>['门口剪影', '雨后露台', '下午茶桌', '沙发角落', '阳台花影'];
-    final index = _cameraCounter % palette.length;
-    _cameraCounter += 1;
-    return DraftPhoto(
-      id: _nextId('draft-camera'),
-      title: titles[index],
-      source: ImageSourceType.camera,
-      width: index.isEven ? 3024 : 2160,
-      height: index.isEven ? 4032 : 2160,
-      color: palette[index],
-      note: tr(
-        zh: '已完成自动裁剪与锐化预处理',
-        en: 'Auto cropped and sharpened before casting',
-        ja: '自動トリミングとシャープ処理済み',
-      ),
-    );
-  }
-
-  DraftPhoto createAlbumDraft({
-    required String title,
-    required double width,
-    required double height,
-    required String uri,
-  }) {
-    final palette = <Color>[
-      const Color(0xFF3D5A80),
-      const Color(0xFF6B705C),
-      const Color(0xFFD97757),
-      const Color(0xFF7F5539),
-      const Color(0xFF5E548E),
-    ];
-    final index = DateTime.now().millisecondsSinceEpoch % palette.length;
-    return DraftPhoto(
-      id: _nextId('draft-album'),
-      title: title.trim().isEmpty ? '相册图片' : title.trim(),
-      source: ImageSourceType.album,
-      width: width,
-      height: height,
-      color: palette[index],
-      note: tr(
-        zh: '来自系统相册，已获得本次读取授权',
-        en: 'Selected from system album with read access granted.',
-        ja: 'システムアルバムから選択され、読み取り権限を取得済みです。',
-      ),
-    );
-  }
-
-  DraftPhoto draftFromAlbumPhoto(AlbumPhoto photo) {
-    return DraftPhoto(
-      id: _nextId('draft-recast'),
-      title: photo.title,
-      source: photo.source,
-      width: photo.width,
-      height: photo.height,
-      color: photo.color,
-      note: photo.note,
-    );
-  }
-
   void setPermission(PermissionKind kind, bool enabled) {
     _permissions[kind] = enabled;
-    notifyListeners();
-  }
-
-  void setOffline(bool value) {
-    if (_isOffline == value) {
-      return;
-    }
-    _isOffline = value;
     notifyListeners();
   }
 
@@ -712,6 +533,26 @@ class PhotoFrameState extends ChangeNotifier {
       name: device.name,
       screenCode: device.screenType.code,
     );
+    // await 期间 refreshDevices 可能并发完成并整体替换了 _devices（新对象列表），
+    // 进场拿到的 device 引用已成孤儿——往孤儿上写标记 UI 看不见（表现为
+    // 「toast 说连接成功、卡片却显示未连接」）。回来后按 id 重查，找不到就只做
+    // reconcile 让连接态按活动会话如实回填。
+    device = null;
+    for (final item in _devices) {
+      if (item.id == deviceId) {
+        device = item;
+        break;
+      }
+    }
+    if (device == null) {
+      reconcileConnectionFlags();
+      return error != null
+          ? ActionFeedback(success: false, message: error)
+          : ActionFeedback(
+              success: true,
+              message: tr(zh: '已连接设备。', en: 'Device connected.', ja: '端末に接続しました。'),
+            );
+    }
     if (error != null) {
       device.connected = false;
       notifyListeners();
@@ -950,6 +791,7 @@ class PhotoFrameState extends ChangeNotifier {
         );
       }
       ApiSession.instance.setToken(token);
+      _sessionEpoch++; // 新会话开始，作废上一会话的在途响应
       _isLoggedIn = true;
       _currentUser.email = target;
       // 登录响应就是完整的用户信息（swagger: `UserInfoDetailApiOut` = UserInfoApiOut + userToken，
@@ -1003,6 +845,7 @@ class PhotoFrameState extends ChangeNotifier {
       }
 
       ApiSession.instance.setToken(token);
+      _sessionEpoch++; // 新会话开始，作废上一会话的在途响应
       _isLoggedIn = true;
       _applyUserInfo(data);
       _userLoaded = true;
@@ -1428,204 +1271,22 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 将一张草稿照片投屏到指定设备。
-  ///
-  /// 方法内部串联权限校验、容量校验、传输计划模拟、相册写入和记录生成；
-  /// 页面层不要拆开复用这些步骤，否则容易造成记录和设备状态不一致。
-  CastAttemptResult castDraft({
-    required DraftPhoto draft,
-    required String deviceId,
-  }) {
-    if (!_isLoggedIn) {
-      return CastAttemptResult(
-        success: false,
-        message: tr(
-          zh: '请先完成邮箱登录。',
-          en: 'Sign in with email first.',
-          ja: '先にメールでログインしてください。',
-        ),
-      );
-    }
-    if (!_permissions[PermissionKind.bluetooth]!) {
-      return CastAttemptResult(
-        success: false,
-        message: tr(
-          zh: '蓝牙权限未开启，无法连接设备。',
-          en: 'Bluetooth permission is required.',
-          ja: 'Bluetooth 権限が必要です。',
-        ),
-      );
-    }
-    if (!_permissions[PermissionKind.location]!) {
-      return CastAttemptResult(
-        success: false,
-        message: tr(
-          zh: '位置权限未开启，蓝牙搜索不可用。',
-          en: 'Location permission is required for device discovery.',
-          ja: 'デバイス探索には位置情報権限が必要です。',
-        ),
-      );
-    }
-    if (draft.source == ImageSourceType.camera &&
-        !_permissions[PermissionKind.camera]!) {
-      return CastAttemptResult(
-        success: false,
-        message: tr(
-          zh: '相机权限未开启，请先授权后再拍照投屏。',
-          en: 'Camera permission is required for camera casting.',
-          ja: '撮影投映にはカメラ権限が必要です。',
-        ),
-      );
-    }
-    final device = _findDevice(deviceId);
-    final snapshot = device.toSnapshot();
-    final imageIndex = FrameDeviceProtocol.firstFreeIndex(snapshot.imageMask);
-    if (imageIndex == null) {
-      final message = tr(
-        zh: '设备内存已满，请清理相框照片或联系设备所有者。',
-        en: 'Device storage is full. Clear photos or contact the owner.',
-        ja: '端末の容量がいっぱいです。写真整理かオーナーへの連絡が必要です。',
-      );
-      _castRecords.insert(
-        0,
-        CastRecord(
-          id: _nextId('record'),
-          title: draft.title,
-          deviceId: deviceId,
-          ownerUserId: _currentUser.id,
-          status: CastStatus.failed,
-          source: draft.source,
-          color: draft.color,
-          width: draft.width,
-          height: draft.height,
-          message: message,
-          createdAt: DateTime.now(),
-          command: FrameCommand.startTransfer,
-          resultCode: FrameProtocolResultCode.storageFull,
-          imageMask: snapshot.imageMask,
-        ),
-      );
-      notifyListeners();
-      return CastAttemptResult(
-        success: false,
-        message: message,
-        deviceFull: true,
-      );
-    }
-    final plan = FrameDeviceProtocol.buildTransferPlan(
-      imageIndex: imageIndex,
-      sourceWidth: draft.width,
-      sourceHeight: draft.height,
-      screenType: snapshot.screenType,
-    );
-    final transfer = FrameDeviceProtocol.simulateImageTransfer(
-      imageMask: snapshot.imageMask,
-      screenType: snapshot.screenType,
-      plan: plan,
-    );
-    if (!transfer.success) {
-      final message = tr(
-        zh: '投屏失败：${transfer.resultCode.labelZh}。',
-        en: 'Casting failed: ${transfer.resultCode.labelEn}.',
-        ja: '投映に失敗しました: ${transfer.resultCode.labelJa}。',
-      );
-      _castRecords.insert(
-        0,
-        CastRecord(
-          id: _nextId('record'),
-          title: draft.title,
-          deviceId: deviceId,
-          ownerUserId: _currentUser.id,
-          status: CastStatus.failed,
-          source: draft.source,
-          color: draft.color,
-          width: draft.width,
-          height: draft.height,
-          message: message,
-          createdAt: DateTime.now(),
-          imageIndex: imageIndex,
-          command: FrameCommand.finishTransfer,
-          resultCode: transfer.resultCode,
-          imageMask: transfer.imageMask,
-        ),
-      );
-      notifyListeners();
-      return CastAttemptResult(
-        success: false,
-        message: message,
-        deviceFull: transfer.resultCode == FrameProtocolResultCode.storageFull,
-      );
-    }
-    device.imageMask = transfer.imageMask;
-    device.currentImageIndex = transfer.currentImageIndex;
-    device.batteryLevel = (device.batteryLevel - 1).clamp(0, 100);
-    final photo = AlbumPhoto(
-      id: _nextId('photo'),
-      title: draft.title,
-      source: draft.source,
-      deviceId: deviceId,
-      ownerUserId: _currentUser.id,
-      imageIndex: imageIndex,
-      imageMaskBit: FrameDeviceProtocol.bitForIndex(imageIndex),
-      width: draft.width,
-      height: draft.height,
-      targetWidth: plan.targetWidth,
-      targetHeight: plan.targetHeight,
-      transferBytes: plan.dataSize,
-      crc32: plan.crc32,
-      color: draft.color,
-      note:
-          '${draft.note}；写入槽位 $imageIndex，${plan.targetWidth}×${plan.targetHeight}，${plan.packetCount} 个 BLE 分包。',
-      uploadedAt: DateTime.now(),
-    );
-    _albumPhotos.insert(0, photo);
-    _castRecords.insert(
-      0,
-      CastRecord(
-        id: _nextId('record'),
-        title: draft.title,
-        deviceId: deviceId,
-        ownerUserId: _currentUser.id,
-        status: CastStatus.success,
-        source: draft.source,
-        color: draft.color,
-        width: draft.width,
-        height: draft.height,
-        message: tr(
-          zh: '投屏成功，写入 ${device.name} 槽位 $imageIndex，IMG_MASK=${device.maskLabel}。',
-          en: 'Casting succeeded on ${device.name}, slot $imageIndex, IMG_MASK=${device.maskLabel}.',
-          ja: '${device.name} のスロット $imageIndex に投映しました。IMG_MASK=${device.maskLabel}。',
-        ),
-        createdAt: DateTime.now(),
-        imageIndex: imageIndex,
-        command: FrameCommand.finishTransfer,
-        resultCode: transfer.resultCode,
-        imageMask: transfer.imageMask,
-        photoId: photo.id,
-      ),
-    );
-    notifyListeners();
-    return CastAttemptResult(
-      success: true,
-      message: tr(
-        zh: '投屏成功，已同步到我的相册。',
-        en: 'Casting succeeded and synced to My Album.',
-        ja: '投映に成功し、マイアルバムに同期しました。',
-      ),
-    );
-  }
-
   /// 我的相册 / 图库列表：`/Client/UserProduct/getUserProductImgList`。
   ///
   /// 映射为 [AlbumPhoto]，仅在后端返回非空时替换本地列表（失败保留当前数据）。
   /// 同时把设备一并刷新，保证 [deviceName] 能解析到后端设备名。
   Future<ActionFeedback> refreshAlbum({String? userProductId}) async {
+    final epoch = _sessionEpoch;
     try {
       final data = await BoltFoxApi.getUserProductImgList({
         'pageIndex': 1,
         'pageSize': 100,
         'userProductId': ?userProductId,
       });
+      if (epoch != _sessionEpoch) {
+        // 会话代际已变（登出/换号）：丢弃这份旧会话的在途响应，防跨账号串屏。
+        return ActionFeedback(success: true, message: '');
+      }
       final rows = extractApiRows(data);
       // 后端为准：即使返回空也要覆盖本地（清空后相册应显示空态，不保留旧数据）。
       final mapped = <AlbumPhoto>[];
@@ -1949,50 +1610,6 @@ class PhotoFrameState extends ChangeNotifier {
     return pos;
   }
 
-  CastAttemptResult recastAlbumPhoto(String photoId, String deviceId) {
-    // 防御：id 不在列表时返回失败而非 StateError（本方法目前无调用方，防将来接线踩雷）。
-    final photos = _albumPhotos.where((item) => item.id == photoId);
-    if (photos.isEmpty) {
-      return CastAttemptResult(
-        success: false,
-        message: tr(
-          zh: '照片不存在或已删除。',
-          en: 'Photo not found or already deleted.',
-          ja: '写真が見つからないか、削除されています。',
-        ),
-      );
-    }
-    return castDraft(draft: draftFromAlbumPhoto(photos.first), deviceId: deviceId);
-  }
-
-  CastAttemptResult recastRecord(String recordId, String deviceId) {
-    // 防御：同 recastAlbumPhoto。
-    final records = _castRecords.where((item) => item.id == recordId);
-    if (records.isEmpty) {
-      return CastAttemptResult(
-        success: false,
-        message: tr(
-          zh: '投屏记录不存在或已删除。',
-          en: 'Cast record not found or already deleted.',
-          ja: '投影履歴が見つからないか、削除されています。',
-        ),
-      );
-    }
-    final record = records.first;
-    return castDraft(
-      draft: DraftPhoto(
-        id: _nextId('draft-record'),
-        title: record.title,
-        source: record.source,
-        width: record.width,
-        height: record.height,
-        color: record.color,
-        note: record.message,
-      ),
-      deviceId: deviceId,
-    );
-  }
-
   /// 投屏记录列表：`/Client/UserProduct/getUserProductImgRecordList`。
   ///
   /// 映射为 [CastRecord]，仅在后端返回非空时替换本地列表（失败保留当前数据）。
@@ -2002,6 +1619,7 @@ class PhotoFrameState extends ChangeNotifier {
     String? userProductId,
     int? deviceUploadState,
   }) async {
+    final epoch = _sessionEpoch;
     try {
       final data = await BoltFoxApi.getUserProductImgRecordList({
         'pageIndex': 1,
@@ -2009,6 +1627,10 @@ class PhotoFrameState extends ChangeNotifier {
         'userProductId': ?userProductId,
         'deviceUploadState': ?deviceUploadState,
       });
+      if (epoch != _sessionEpoch) {
+        // 会话代际已变（登出/换号）：丢弃旧会话的在途响应，防跨账号串屏。
+        return ActionFeedback(success: true, message: '');
+      }
       final rows = extractApiRows(data);
       // 后端为准：即使返回空也覆盖本地（无记录时应显示空态，不保留旧数据）。
       final mapped = <CastRecord>[];
@@ -2108,11 +1730,16 @@ class PhotoFrameState extends ChangeNotifier {
   /// 蓝牙相关字段（电量 / IMG_MASK / 连接态）后端不下发，先给默认值，连接后由 BLE 更新。
   /// 后端返回为准整体替换本地列表（含空列表）；请求失败保留当前列表。
   Future<ActionFeedback> refreshDevices() async {
+    final epoch = _sessionEpoch;
     try {
       final data = await BoltFoxApi.getUserProductList({
         'pageIndex': 1,
         'pageSize': 100, // 对齐小程序 getDevices({pageSize:100})
       });
+      if (epoch != _sessionEpoch) {
+        // 会话代际已变（登出/换号）：丢弃旧会话的在途响应，防跨账号串屏。
+        return ActionFeedback(success: true, message: '');
+      }
       final rows = extractApiRows(data);
       // 后端为准：即使返回空也覆盖本地（删到 0 台时应显示空态，不保留旧数据）。
       // 同一实体相框被重复绑定时，按硬件序列号折叠成一行（对齐小程序 dedupeDevices）。
@@ -2618,6 +2245,7 @@ class PhotoFrameState extends ChangeNotifier {
       // 退出登录接口失败时仍清除本地态。
     }
     ApiSession.instance.clear();
+    _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 退出登录同样清空上个账号的列表与首屏加载态，避免换账号后先看到上一个人的数据/空态。
     _devices.clear();
     _albumPhotos.clear();
@@ -2651,6 +2279,7 @@ class PhotoFrameState extends ChangeNotifier {
       // The backend account has already been deleted; continue local cleanup.
     }
     ApiSession.instance.clear();
+    _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
     // 并把首屏加载态复位，下个账号进来才会重新走一次 loading 而不是直接看到上个账号的空态。
     _albumPhotos.clear();
@@ -2683,74 +2312,6 @@ class PhotoFrameState extends ChangeNotifier {
     );
   }
 
-  List<GuideArticle> buildGuideArticles() {
-    return const [
-      GuideArticle(
-        category: 'Aurora S1',
-        titleZh: '新设备绑定',
-        titleEn: 'Bind a New Device',
-        titleJa: '新しい端末のバインド',
-        summaryZh: [
-          '打开蓝牙和位置权限后，在首页或我的设备中发起蓝牙搜索。',
-          '选中设备后可直接切换当前连接设备。',
-          '输入 SN 码可重复绑定到不同账号，但所有者权限需要显式设置。',
-        ],
-        summaryEn: [
-          'Enable Bluetooth and location, then start scanning from Home or My Devices.',
-          'Select a device to switch the current active connection.',
-          'SN codes can be reused, but owner permission must be explicitly assigned.',
-        ],
-        summaryJa: [
-          'Bluetooth と位置情報を有効にし、ホームまたはマイデバイスから検索します。',
-          '端末を選ぶと現在の接続先を切り替えられます。',
-          'SN コードは再利用できますが、オーナー権限は明示的に設定します。',
-        ],
-      ),
-      GuideArticle(
-        category: 'Gallery Loop',
-        titleZh: '投屏与容量管理',
-        titleEn: 'Casting and Capacity',
-        titleJa: '投映と容量管理',
-        summaryZh: [
-          '投屏前会预处理图片尺寸，并在预览页显示目标设备剩余容量。',
-          '设备满载时会写入失败记录，并提示用户前往我的相册或联系所有者。',
-          '我的相册只保留已成功写入设备的照片数据。',
-        ],
-        summaryEn: [
-          'Images are preprocessed before casting and remaining capacity is shown in preview.',
-          'If a device is full, a failed record is added and users are directed to My Album.',
-          'My Album only shows photos successfully written to a device.',
-        ],
-        summaryJa: [
-          '投映前に画像を前処理し、プレビューで残容量を表示します。',
-          '容量不足の場合は失敗履歴を残し、マイアルバムまたはオーナー連絡を案内します。',
-          'マイアルバムには端末への書き込み成功分のみ表示されます。',
-        ],
-      ),
-      GuideArticle(
-        category: 'Pocket Frame',
-        titleZh: '轮播与清空',
-        titleEn: 'Carousel and Clear',
-        titleJa: 'スライド再生と全削除',
-        summaryZh: [
-          '所有者可以开启轮播模式，设备将按照当前展示图片的下一张进行切换。',
-          '轮播切换按开启时间起算 24 小时后进入下一张。',
-          '一键清空会删除设备物理内存中的照片，本工程默认不保留在我的相册中。',
-        ],
-        summaryEn: [
-          'Owners can enable carousel mode to rotate to the next photo after the current one.',
-          'Rotation advances every 24 hours from the moment carousel mode is enabled.',
-          'One-tap clear removes physical device storage, and this demo removes those photos from My Album.',
-        ],
-        summaryJa: [
-          'オーナーはスライド再生を有効化でき、現在の次の写真へ切り替わります。',
-          '切り替えは有効化から 24 時間ごとに進みます。',
-          '一括クリアは端末内の写真を削除し、このデモではマイアルバムからも外します。',
-        ],
-      ),
-    ];
-  }
-
   DeviceItem _findDevice(String deviceId) {
     final matches = _devices.where((device) => device.id == deviceId);
     if (matches.isNotEmpty) {
@@ -2759,8 +2320,9 @@ class PhotoFrameState extends ChangeNotifier {
     // 容错：id 可能已不在列表——删除/解绑设备后 notifyListeners 会让仍停留在
     // 详情页的那一帧先重建（selectedDevice），投屏记录也可能反查已删除的设备
     // （deviceById）。原来 firstWhere 无 orElse 直接抛 StateError 崩整帧；
-    // 返回一个中性的「未连接占位设备」让这一帧安全渲染。
+    // 返回一个带 isPlaceholder 标记的「未连接占位设备」让这一帧安全渲染。
     return DeviceItem(
+      isPlaceholder: true,
       id: deviceId,
       name: '',
       kind: '',
@@ -2875,8 +2437,12 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 登录后尽力拉取一次用户信息，失败不阻断登录流程。
   Future<void> _refreshUserInfo() async {
+    final epoch = _sessionEpoch;
     try {
       final data = await BoltFoxApi.getUserInfo();
+      if (epoch != _sessionEpoch) {
+        return; // 会话代际已变（登出/换号）：丢弃旧会话的在途响应
+      }
       _applyUserInfo(data);
     } catch (error) {
       // 鉴权失效必须立刻清态回登录页：冷启动 restoreSession 恢复出过期 token 时，
@@ -3206,6 +2772,7 @@ class PhotoFrameState extends ChangeNotifier {
     }
     unawaited(BleController.instance.disconnect());
     ApiSession.instance.clear();
+    _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     _devices.clear();
     _albumPhotos.clear();
     _castRecords.clear();

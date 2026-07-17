@@ -97,28 +97,37 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   Future<void> _renameDevice(BuildContext context) async {
     final device = state.selectedDevice;
     final controller = TextEditingController(text: device.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(AppL10n.of(context).devRenameTitle),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 20,
-          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
+    final String? name;
+    try {
+      name = await showDialog<String>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text(AppL10n.of(context).devRenameTitle),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLength: 20,
+            decoration: InputDecoration(
+              hintText: AppL10n.of(context).devNameHint,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(AppL10n.of(context).cancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: Text(AppL10n.of(context).devConfirm),
+            ),
+          ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(AppL10n.of(context).cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, controller.text.trim()),
-            child: Text(AppL10n.of(context).devConfirm),
-          ),
-        ],
-      ),
-    );
+      );
+    } finally {
+      // 原来从不 dispose（每次重命名泄漏一个 ChangeNotifier）；退场动画期间 TextField
+      // 仍挂着 controller，延迟一个主题动画时长再释放，避免 used-after-dispose 断言。
+      Future<void>.delayed(kThemeAnimationDuration, controller.dispose);
+    }
     if (name == null || name == device.name) {
       return;
     }
@@ -128,8 +137,24 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
   }
 
+  /// 连接/断开进行中标记：断开方向没有阻断 loading（对齐小程序，断开很快），
+  /// 连点会并发两次 disconnect——BLE 层虽幂等，仍锁住避免交错。
+  bool _togglingConnection = false;
+
   /// 顶部操作栏「连接 / 断开」（对齐小程序 detail.js `toggleConnection`）。
   Future<void> _toggleConnection(BuildContext context) async {
+    if (_togglingConnection) {
+      return;
+    }
+    _togglingConnection = true;
+    try {
+      await _doToggleConnection(context);
+    } finally {
+      _togglingConnection = false;
+    }
+  }
+
+  Future<void> _doToggleConnection(BuildContext context) async {
     final device = state.selectedDevice;
     final wasConnected = device.connected;
     // 连接方向先单独走授权框，全就绪才弹「连接中」loading（断开无需权限）。
@@ -140,14 +165,20 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     if (!wasConnected) {
       AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
     }
-    final feedback = wasConnected
-        ? await state.disconnectDevice(device.id)
-        : await state.connectDevice(device.id);
+    // hide 放 finally 且不做 mounted 门控（见 AppLoadingDialog.hide 注释）：
+    // 页面在 await 期间被卸载时也要收掉 root 栈上 canPop:false 的蒙层。
+    final ActionFeedback feedback;
+    try {
+      feedback = wasConnected
+          ? await state.disconnectDevice(device.id)
+          : await state.connectDevice(device.id);
+    } finally {
+      if (!wasConnected) {
+        AppLoadingDialog.hide(context);
+      }
+    }
     if (!context.mounted) {
       return;
-    }
-    if (!wasConnected) {
-      AppLoadingDialog.hide(context);
     }
     if (!feedback.success) {
       _snack(context, feedback.message);
@@ -162,11 +193,16 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       return false;
     }
     AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
-    final feedback = await state.connectDevice(deviceId);
+    // 统一 hide 收口（精确移除 + 无 mounted 门控），替换掉盲 pop（历史闪退根源）。
+    final ActionFeedback feedback;
+    try {
+      feedback = await state.connectDevice(deviceId);
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!context.mounted) {
       return false;
     }
-    Navigator.of(context, rootNavigator: true).pop();
     if (!feedback.success) {
       _snack(context, feedback.message);
     }

@@ -75,11 +75,17 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     }
     setState(() => _busy = true);
     AppLoadingDialog.show(context, AppL10n.of(context).devClearing);
-    final feedback = await widget.state.clearDeviceMemory(_deviceId);
+    // hide 放 finally 且不做 mounted 门控（不依赖 context）：清空可长达 180s，
+    // 期间页面被卸载也要收掉 root 栈上 canPop:false 的蒙层。
+    final ActionFeedback feedback;
+    try {
+      feedback = await widget.state.clearDeviceMemory(_deviceId);
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!context.mounted) {
       return;
     }
-    AppLoadingDialog.hide(context);
     setState(() => _busy = false);
     if (feedback.success) {
       AppToast.show(context, AppL10n.of(context).devCleared);

@@ -153,6 +153,12 @@ class AppL10n {
       _pick('业务处理失败', 'Request failed. Please try again.', '処理に失敗しました。');
   String get netUploadFileRequired =>
       _pick('请选择上传文件', 'Please choose a file to upload.', 'アップロードするファイルを選択してください。');
+  // 上传源文件已被系统清理/移动（区别于网络失败，提示用户重新选择而非查网络）。
+  String get netUploadFileMissing => _pick(
+    '文件不存在或已被清理，请重新选择',
+    'The file is missing or has been cleaned up. Please choose it again.',
+    'ファイルが存在しないか削除されています。もう一度選択してください。',
+  );
   String get loadFailedTitle => _pick('加载失败', 'Failed to Load', '読み込みに失敗しました');
   String get loadFailedDesc => _pick(
     '网络异常，请检查网络后重试',
@@ -761,6 +767,12 @@ class AppL10n {
     'Device not found. Make sure it is powered on and nearby.',
     'デバイスが見つかりません。電源が入っていて近くにあることを確認してください。',
   );
+  // 连接重入护栏：并发触发连接时第二路的提示（见 BleController.connect）。
+  String get bleBusyConnecting => _pick(
+    '正在连接设备，请稍候',
+    'Connecting to the device, please wait.',
+    'デバイスに接続中です。しばらくお待ちください。',
+  );
   // 连接保活前台服务的常驻通知文案（Android 通知栏，连接期间可见）。
   String get bleKeepAliveNotification => _pick(
     '正在保持相框连接',
@@ -1168,6 +1180,12 @@ class AppL10n {
 
   // ── 引导 ──
   String get guideTitle => _pick('操作指南', 'User Guide', '操作ガイド');
+  // 搜索无匹配时的空态提示（原来玻璃卡内一片空白，像页面坏了）。
+  String get guideNoResult => _pick(
+    '没有找到相关问题，换个关键词试试',
+    'No matching questions. Try a different keyword.',
+    '該当する質問が見つかりません。別のキーワードでお試しください。',
+  );
   String get guideSearchHint =>
       _pick('搜索帮助文档', 'Search help docs', 'ヘルプを検索');
 

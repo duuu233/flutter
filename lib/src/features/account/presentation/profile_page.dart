@@ -187,37 +187,41 @@ class _ProfilePageState extends State<ProfilePage> {
     final user = widget.state.currentUser;
     setState(() => _saving = true);
     AppLoadingDialog.show(context, AppL10n.of(context).saving);
-    final profileFeedback = await widget.state.updateProfile(
-      nickname: _nicknameController.text,
-      email: user.email,
-      signature: user.signature,
-      avatarColor: user.avatarColor,
-    );
-    if (!mounted) {
-      return;
-    }
-    if (!profileFeedback.success) {
-      AppLoadingDialog.hide(context);
-      setState(() => _saving = false);
-      AppToast.warn(context, profileFeedback.message);
-      return;
-    }
-
-    final avatarPath = _pendingAvatarPath;
-    if (avatarPath != null) {
-      final avatarFeedback = await widget.state.updateAvatar(avatarPath);
+    // 整段包 try/finally（hide 幂等、不依赖 context）：mounted 早退路径不再把
+    // canPop:false 的蒙层留在 root 栈上。
+    try {
+      final profileFeedback = await widget.state.updateProfile(
+        nickname: _nicknameController.text,
+        email: user.email,
+        signature: user.signature,
+        avatarColor: user.avatarColor,
+      );
       if (!mounted) {
         return;
       }
-      if (!avatarFeedback.success) {
+      if (!profileFeedback.success) {
         AppLoadingDialog.hide(context);
         setState(() => _saving = false);
-        AppToast.warn(context, avatarFeedback.message);
+        AppToast.warn(context, profileFeedback.message);
         return;
       }
-    }
 
-    AppLoadingDialog.hide(context);
+      final avatarPath = _pendingAvatarPath;
+      if (avatarPath != null) {
+        final avatarFeedback = await widget.state.updateAvatar(avatarPath);
+        if (!mounted) {
+          return;
+        }
+        if (!avatarFeedback.success) {
+          AppLoadingDialog.hide(context);
+          setState(() => _saving = false);
+          AppToast.warn(context, avatarFeedback.message);
+          return;
+        }
+      }
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     setState(() {
       _saving = false;
       // 头像已上传成功：转为「已保存」继续本地回显（与线上内容一致），

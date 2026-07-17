@@ -122,9 +122,7 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
       loggedIn: true,
     );
     _sendingCode = false;
-    if (mounted) {
-      AppLoadingDialog.hide(context);
-    }
+    AppLoadingDialog.hide(context);
     if (!mounted) {
       return;
     }

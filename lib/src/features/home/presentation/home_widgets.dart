@@ -572,6 +572,11 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
             controller: _controller,
             itemCount: widget.devices.length == 1 ? 1 : null,
             onPageChanged: (page) {
+              // 卫语句：devices 为空时 `% 0` 直接抛错。当前上游（_buildBound 仅在
+              // 有设备时渲染轮播）护住了，但解绑全部设备的边界时序不赌上游。
+              if (widget.devices.isEmpty) {
+                return;
+              }
               _page = page;
               final index = page % widget.devices.length;
               setState(() => _index = index);
@@ -623,11 +628,9 @@ class _ConnectedDeviceCard extends StatelessWidget {
             top: -18,
             right: -18,
             bottom: -18,
-            child: Image.asset(
-              'assets/images/home-bg02.png',
-              fit: BoxFit.fill,
-              filterQuality: FilterQuality.high,
-            ),
+            // 不用 FilterQuality.high（三次立方采样）：两张底图本就接近显示尺寸，
+            // 视觉无差异，但轮播滑动时每帧重采样的 GPU 成本显著更高。
+            child: Image.asset('assets/images/home-bg02.png', fit: BoxFit.fill),
           ),
           Positioned.fill(
             child: ClipRRect(
@@ -635,7 +638,6 @@ class _ConnectedDeviceCard extends StatelessWidget {
               child: Image.asset(
                 'assets/images/home-bg01.png',
                 fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
               ),
             ),
           ),
@@ -1225,15 +1227,15 @@ class _BluetoothRadar extends StatelessWidget {
         : failed
         ? 'assets/images/device_not_found_art.png'
         : 'assets/images/search-devices.gif';
-    return Opacity(
-      opacity: dimmed ? 0.56 : 1,
-      child: Image.asset(
-        asset,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) {
-          return const _RadarFallback();
-        },
-      ),
+    // 压暗直接用 Image 自带的 opacity（着色时混合，逐帧零额外成本），不要包
+    // Opacity——它对每帧都在动的 GIF 会持续 saveLayer 离屏合成。
+    return Image.asset(
+      asset,
+      fit: BoxFit.contain,
+      opacity: dimmed ? const AlwaysStoppedAnimation(0.56) : null,
+      errorBuilder: (context, error, stackTrace) {
+        return const _RadarFallback();
+      },
     );
   }
 }

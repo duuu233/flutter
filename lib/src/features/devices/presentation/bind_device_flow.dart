@@ -204,92 +204,98 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     // 原实现连接成功后就 hide，随后的绑定网络请求（判重/上报/回查）+ 固定 800/500ms 延时全程无指示，
     // 观感就是「绑定中的框都没了还没跳转」。这里改为连接→绑定全程覆盖、跳转即消失。
     AppLoadingDialog.show(context, AppL10n.of(context).bindConnecting);
-    final error = await _ble.connect(result);
-    if (!mounted) {
-      return;
-    }
-    if (error != null) {
-      AppLoadingDialog.hide(context);
-      setState(() => _binding = false);
-      _toast(AppL10n.of(context).bindConnectFailed(error));
-      return;
-    }
-    // 连接读信息成功：不再 hide、也不再 800ms 停留，直接进入绑定（loading 继续覆盖）。
-
-    final info = _ble.info;
-    // 提交后端的硬件序列号：对齐小程序 api.bindDevice 的 productDeviceId 优先级 ——
-    // 固件 0x01 读到的 6 字节 Device_ID → 扫描广播的 4 字节 Device_ID → BLE deviceId(MAC) 兜底。
-    final serial = [
-      info?.deviceId ?? '',
-      _ble.broadcastDeviceId,
-      result.device.remoteId.str,
-    ].firstWhere((s) => s.isNotEmpty, orElse: () => result.device.remoteId.str);
-    final name = BleController.displayName(result);
-    final serials = [
-      _ble.broadcastDeviceId,
-      info?.deviceId ?? '',
-    ].where((s) => s.isNotEmpty).toList();
-    // 本机屏幕类型码（优先固件 0x01 读到的，其次广播）：判重时按型号一票否决，
-    // 防广播 4 字节与后端 6 字节偶合，把新设备(如 3.7寸)误判成已绑定的别台(如 5.89寸)而不新建绑定。
-    final scannedScreen = info?.screenType ?? _ble.broadcastScreenType;
-
-    // 绑定判重（移植小程序 bind.js findBoundDevice）：把这台设备的两个序列号
-    //（广播 4 字节 + 固件 6 字节 Device_ID）与已绑定记录容错比对（互为子串也算同一台），
-    // 已绑定的不再新建记录——否则同一台相框会在设备列表反复出现（重复绑定记录）。
-    // 先尽力刷新一次列表再判；刷新失败沿用本地列表，不把老设备误判成新设备。
-    await widget.state.refreshDevices();
-    if (!mounted) {
-      return;
-    }
-    final existed = _findBound(serials, scannedScreen);
-    if (existed != null) {
-      // 已绑定：复用该记录并设为当前选中（沿用刚建立的连接 = 已连接）。
-      // 保持 binding=true 直到返回上一页，避免 500ms 窗口内被重复点击触发二次操作。
-      widget.state.selectDevice(existed.id);
-      widget.state.reconcileConnectionFlags();
-      // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时）。
-      AppLoadingDialog.hide(context);
-      _toast(AppL10n.of(context).bindAlreadyBoundConnected);
-      Navigator.of(context).maybePop();
-      return;
-    }
-
-    // 上报后端绑定：productId 由 state.bindDevice 内部拉产品列表按机型匹配解析（对齐小程序 api.bindDevice），
-    // 这里把扫描到的型号/屏幕/名称传过去供匹配打分。
-    final feedback = await widget.state.bindDevice(
-      productName: name,
-      productSerialNo: serial,
-      model: BleController.modelOf(result),
-      screen: BleController.screenLabelOf(result),
-      scanName: name,
-    );
-    if (!mounted) {
-      return;
-    }
-    if (!feedback.success) {
-      // 绑定失败仍停留在本页：先关 loading，再断开占用的单连接，避免妨碍重试（对齐小程序 disconnect + 停留）。
-      AppLoadingDialog.hide(context);
-      await _ble.disconnect();
+    try {
+      final error = await _ble.connect(result);
       if (!mounted) {
         return;
       }
-      setState(() => _binding = false);
-      _toast(feedback.message);
-      return;
-    }
+      if (error != null) {
+        AppLoadingDialog.hide(context);
+        setState(() => _binding = false);
+        _toast(AppL10n.of(context).bindConnectFailed(error));
+        return;
+      }
+      // 连接读信息成功：不再 hide、也不再 800ms 停留，直接进入绑定（loading 继续覆盖）。
 
-    // 绑定成功后回查列表（bindDevice 内已 refreshDevices），用硬件序列号找到这条新记录并设为当前选中，
-    // 让各页都能按稳定的 userProductId 认出它（对齐小程序绑定成功后回填 userProductId + setSelectedDevice）。
-    final persisted = _findBound(serials, scannedScreen);
-    if (persisted != null) {
-      widget.state.selectDevice(persisted.id);
+      final info = _ble.info;
+      // 提交后端的硬件序列号：对齐小程序 api.bindDevice 的 productDeviceId 优先级 ——
+      // 固件 0x01 读到的 6 字节 Device_ID → 扫描广播的 4 字节 Device_ID → BLE deviceId(MAC) 兜底。
+      final serial = [
+        info?.deviceId ?? '',
+        _ble.broadcastDeviceId,
+        result.device.remoteId.str,
+      ].firstWhere((s) => s.isNotEmpty, orElse: () => result.device.remoteId.str);
+      final name = BleController.displayName(result);
+      final serials = [
+        _ble.broadcastDeviceId,
+        info?.deviceId ?? '',
+      ].where((s) => s.isNotEmpty).toList();
+      // 本机屏幕类型码（优先固件 0x01 读到的，其次广播）：判重时按型号一票否决，
+      // 防广播 4 字节与后端 6 字节偶合，把新设备(如 3.7寸)误判成已绑定的别台(如 5.89寸)而不新建绑定。
+      final scannedScreen = info?.screenType ?? _ble.broadcastScreenType;
+
+      // 绑定判重（移植小程序 bind.js findBoundDevice）：把这台设备的两个序列号
+      //（广播 4 字节 + 固件 6 字节 Device_ID）与已绑定记录容错比对（互为子串也算同一台），
+      // 已绑定的不再新建记录——否则同一台相框会在设备列表反复出现（重复绑定记录）。
+      // 先尽力刷新一次列表再判；刷新失败沿用本地列表，不把老设备误判成新设备。
+      await widget.state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      final existed = _findBound(serials, scannedScreen);
+      if (existed != null) {
+        // 已绑定：复用该记录并设为当前选中（沿用刚建立的连接 = 已连接）。
+        // 保持 binding=true 直到返回上一页，避免 500ms 窗口内被重复点击触发二次操作。
+        widget.state.selectDevice(existed.id);
+        widget.state.reconcileConnectionFlags();
+        // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时）。
+        AppLoadingDialog.hide(context);
+        _toast(AppL10n.of(context).bindAlreadyBoundConnected);
+        Navigator.of(context).maybePop();
+        return;
+      }
+
+      // 上报后端绑定：productId 由 state.bindDevice 内部拉产品列表按机型匹配解析（对齐小程序 api.bindDevice），
+      // 这里把扫描到的型号/屏幕/名称传过去供匹配打分。
+      final feedback = await widget.state.bindDevice(
+        productName: name,
+        productSerialNo: serial,
+        model: BleController.modelOf(result),
+        screen: BleController.screenLabelOf(result),
+        scanName: name,
+      );
+      if (!mounted) {
+        return;
+      }
+      if (!feedback.success) {
+        // 绑定失败仍停留在本页：先关 loading，再断开占用的单连接，避免妨碍重试（对齐小程序 disconnect + 停留）。
+        AppLoadingDialog.hide(context);
+        await _ble.disconnect();
+        if (!mounted) {
+          return;
+        }
+        setState(() => _binding = false);
+        _toast(feedback.message);
+        return;
+      }
+
+      // 绑定成功后回查列表（bindDevice 内已 refreshDevices），用硬件序列号找到这条新记录并设为当前选中，
+      // 让各页都能按稳定的 userProductId 认出它（对齐小程序绑定成功后回填 userProductId + setSelectedDevice）。
+      final persisted = _findBound(serials, scannedScreen);
+      if (persisted != null) {
+        widget.state.selectDevice(persisted.id);
+      }
+      widget.state.reconcileConnectionFlags();
+      // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时；_binding 保持 true 到本页销毁，防重复点击）。
+      AppLoadingDialog.hide(context);
+      HapticFeedback.mediumImpact(); // 绑定成功触觉反馈
+      _toast(AppL10n.of(context).bindSuccess);
+      Navigator.of(context).maybePop();
+    } finally {
+      // 兜底收口：mounted 早退/异常路径都不把 canPop:false 的蒙层留在 root 栈上
+      //（hide 幂等，上面各分支「跳转前一刻 hide」的时序不受影响）。
+      AppLoadingDialog.hide(context);
     }
-    widget.state.reconcileConnectionFlags();
-    // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时；_binding 保持 true 到本页销毁，防重复点击）。
-    AppLoadingDialog.hide(context);
-    HapticFeedback.mediumImpact(); // 绑定成功触觉反馈
-    _toast(AppL10n.of(context).bindSuccess);
-    Navigator.of(context).maybePop();
   }
 
   /// 在已绑定设备列表里按序列号容错交叉匹配 + 型号一票否决，找出这台已绑定记录（无则 null）。
