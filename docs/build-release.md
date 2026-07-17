@@ -1,5 +1,8 @@
 # BoltStar 打包发布指南（Android + iOS）
 
+> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
+
+
 > 2026-07-16 全面审查后整理。本次审查已修复的构建阻断项：
 > ① 主 Manifest 缺 `INTERNET` 权限（release 包全部网络请求失败）；
 > ② iOS 缺微信回调 `CFBundleURLTypes` 与 Associated Domains entitlements；
@@ -109,8 +112,11 @@ flutter build ipa --release --export-method app-store \
 4. iOS 真机确认微信回调经 Scene 生命周期可达（fluwx 5.7.7 早于 scene 适配期，
    若回调丢失：升级 fluwx，或删除 Info.plist 的 `UIApplicationSceneManifest` 段
    + `SceneDelegate.swift` 回退经典生命周期）。
-5. 商店素材：Android 自适应图标已生成（橙底 + inset 前景），上传前在 Android 8+
-   真机桌面确认观感；App Store 1024 图标已去 alpha。
+5. 商店素材：Android 自适应图标为**白底**（`ic_launcher_background.xml` = `#FFFFFF`）+ inset
+   前景，对齐 iOS「白底橙标」。⚠️ 不要改回品牌橙底——前景 PNG 的白色星形/十字缝是透明的，
+   橙底会把它吃掉、桌面呈现一整块橙色 LOGO 消失（2026-07 已修，见
+   `mipmap-anydpi-v26/ic_launcher.xml` 注释）。前景 inset 30%（保证圆形/圆角遮罩下
+   内容不被切）。上传前在 Android 8+ 真机桌面确认观感；App Store 1024 图标已去 alpha。
 6. 设置页联系邮箱 `99999@qq.com` 形似占位数据——确认是否真实客服邮箱（商店审核可能核验）。
 
 ## 四、已知残留（后端/异步事项）
@@ -120,3 +126,9 @@ flutter build ipa --release --export-method app-store \
 - 固件下载接口无 hash 字段，无法做完整性校验；后端补 `md5/sha256` 后可加提示级校验。
 - BLE/OTA 深层协议错误文案仍为中文（服务层，项目既定暂缓项）；`ble_debug_page` 为内部调试页未翻译。
 - 图库批量删除最长约 180s 的阻断 loading 尚无 x/N 进度展示。
+
+---
+
+## 操作日志
+
+- 2026-07（本轮）：Android 自适应图标已从"橙底"更正为"白底 #FFFFFF + inset30%"（橙底会吞掉透明白色 LOGO，勿改回）。

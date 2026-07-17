@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 
 import '../features/account/presentation/bind_email_incomplete_page.dart';
@@ -18,6 +19,7 @@ import '../features/devices/presentation/bind_device_not_found.dart';
 import '../features/devices/presentation/bind_device_scan_help.dart';
 import '../features/devices/presentation/ble_debug_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
+import '../features/devices/presentation/delete_device_flow.dart';
 import '../features/devices/presentation/device_clear_confirm_page.dart';
 import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
@@ -31,7 +33,6 @@ import '../features/devices/presentation/ota_upgrade_page.dart';
 import '../features/settings/presentation/user_agreement_page.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../shared/widgets/app_toast.dart';
-import '../shared/widgets/app_widgets.dart';
 import '../state.dart';
 
 /// 全局路由观察者：供页面实现 [RouteAware] 感知「被覆盖的页 pop 回来」(didPopNext)，
@@ -47,7 +48,6 @@ class AppRoutes {
   const AppRoutes._();
 
   static const profile = '/profile';
-  static const devices = '/devices';
   static const guide = '/guide';
   static const settings = '/settings';
   static const bleDebug = '/ble-debug';
@@ -92,9 +92,6 @@ class AppRoutes {
       case AppRoutes.profile:
         builder = (_) => ProfilePage(state: state);
         break;
-      case AppRoutes.devices:
-        builder = (_) => DevicesPage(state: state);
-        break;
       case AppRoutes.guide:
         builder = (_) => GuidePage(state: state);
         break;
@@ -102,7 +99,12 @@ class AppRoutes {
         builder = (_) => SettingsPage(state: state);
         break;
       case AppRoutes.bleDebug:
-        builder = (_) => const BleDebugPage();
+        // 硬件调试台仅 debug 构建可达：它能对设备发任意指令（含删除类）且未接 i18n。
+        // release 下唯一入口 BindDebugEntryCard 已渲染为空，此处兜底为可返回的空页
+        //（而不是 return null——无 onUnknownRoute 时那会直接抛「未知路由」异常）。
+        builder = kDebugMode
+            ? (_) => const BleDebugPage()
+            : (_) => const Scaffold(body: SizedBox.shrink());
         break;
       case AppRoutes.figmaForgotPassword:
         builder = (_) => ForgotPassword(state: state);
@@ -160,7 +162,6 @@ class AppRoutes {
         builder = (_) => DevicesPage(state: state);
         break;
       case AppRoutes.figmaDeviceDetails:
-        var deleteFlowBusy = false;
         builder = (context) => DeviceDetailsPage(
           state: state,
           onCarouselSettings: () {
@@ -179,85 +180,9 @@ class AppRoutes {
               context,
             ).pushNamed<void>(AppRoutes.figmaDeviceClearConfirm);
           },
-          onDeleteDevice: () async {
-            if (deleteFlowBusy) {
-              return;
-            }
-            deleteFlowBusy = true;
-            try {
-              // 对齐小程序 detail.js showDeleteConfirm：删除全程走浮层「二次确认弹窗」，不再用系统弹框/整页。
-              //   · 连接中：先弹「需先断开」前置确认弹窗 → 断开 → 再弹删除确认弹窗；
-              //   · 未连接：直接弹删除确认弹窗。
-              const deleteIcon = 'assets/images/device-detail-icon06.png';
-              const deleteAccent = Color(0xFFFF3045);
-              if (state.selectedDevice.connected) {
-                final proceed = await showDeviceConfirmDialog(
-                  context,
-                  iconAsset: deleteIcon,
-                  fallbackIcon: Icons.delete_outline_rounded,
-                  accent: deleteAccent,
-                  title: AppL10n.of(context).devDeleteDevice,
-                  message: AppL10n.of(context).devDeleteNeedDisconnect,
-                  confirmLabel: AppL10n.of(context).devDisconnectShort,
-                );
-                if (proceed != true || !context.mounted) {
-                  return;
-                }
-                AppLoadingDialog.show(
-                  context,
-                  AppL10n.of(context).devDisconnecting,
-                );
-                late final ActionFeedback feedback;
-                try {
-                  feedback = await state.disconnectDevice(
-                    state.selectedDevice.id,
-                  );
-                } finally {
-                  if (context.mounted) {
-                    AppLoadingDialog.hide(context);
-                  }
-                }
-                if (!context.mounted) {
-                  return;
-                }
-                if (!feedback.success) {
-                  AppToast.warn(context, feedback.message);
-                  return;
-                }
-              }
-              if (!context.mounted) {
-                return;
-              }
-              final confirmed = await showDeviceConfirmDialog(
-                context,
-                iconAsset: deleteIcon,
-                fallbackIcon: Icons.delete_outline_rounded,
-                accent: deleteAccent,
-                title: AppL10n.of(context).devDeleteDevice,
-                message: AppL10n.of(context).devDeleteDeviceMessage,
-              );
-              if (confirmed != true || !context.mounted) {
-                return;
-              }
-              AppLoadingDialog.show(context, AppL10n.of(context).devDeleting);
-              final navigator = Navigator.of(context);
-              final feedback = await state.deleteDevice(
-                state.selectedDevice.id,
-              );
-              if (!context.mounted) {
-                return;
-              }
-              AppLoadingDialog.hide(context);
-              if (feedback.success) {
-                // 删除成功：详情页出栈回到设备列表（列表刷新即为反馈，不再弹提示，对齐小程序）。
-                navigator.pop();
-              } else {
-                AppToast.warn(context, feedback.message);
-              }
-            } finally {
-              deleteFlowBusy = false;
-            }
-          },
+          // 删除设备完整流程抽在 delete_device_flow.dart（与 startOtaFlow 同模式），
+          // 路由表只做页面分发，不再内嵌业务编排。
+          onDeleteDevice: () => startDeleteDeviceFlow(context, state),
           onOtaUpgrade: () {
             // 对齐小程序 goOtaUpgrade：未连接拦截/自动连 + 二次查版本 + 确认弹窗 + 确认后自动开始。
             startOtaFlow(context, state);
@@ -283,16 +208,19 @@ class AppRoutes {
         builder = (_) => const UserAgreementPage();
         break;
       case AppRoutes.figmaUpdateBoltStar:
-        builder = (_) => const UpdateBoltStarPage();
+        // 正常入口（设置页「检测更新」）：传 state，进入即真实检查版本（三态 UI）。
+        builder = (_) => UpdateBoltStarPage(state: state);
         break;
       case AppRoutes.figmaUpdateBoltStarAvailable:
+        // 演示路由（未接入导航）：强制展示某一态，用占位版本号。
         builder = (_) => const UpdateBoltStarPage(
-          stage: BoltStarUpdateStage.updateAvailable,
+          previewStage: BoltStarUpdateStage.updateAvailable,
         );
         break;
       case AppRoutes.figmaUpdateBoltStarProgress:
-        builder = (_) =>
-            const UpdateBoltStarPage(stage: BoltStarUpdateStage.downloading);
+        builder = (_) => const UpdateBoltStarPage(
+          previewStage: BoltStarUpdateStage.downloading,
+        );
         break;
       default:
         builder = (_) => _UnknownRoutePage(routeName: settings.name);

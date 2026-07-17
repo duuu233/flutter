@@ -21,15 +21,15 @@ class _HomeBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Stack(
-      fit: StackFit.expand,
-      children: [
-        const ColoredBox(color: Color(0xFFF5F9FF)),
-        _AssetImage(
-          path: asset,
-          fallback: const _SoftBackgroundPainterWidget(),
-        ),
-      ],
-    );
+    fit: StackFit.expand,
+    children: [
+      const ColoredBox(color: Color(0xFFF5F9FF)),
+      _AssetImage(
+        path: asset,
+        fallback: const _SoftBackgroundPainterWidget(),
+      ),
+    ],
+  );
   }
 }
 
@@ -356,6 +356,10 @@ class _Avatar extends StatelessWidget {
             ? Image.file(
                 File(localPath!),
                 fit: BoxFit.cover,
+                // 36lp 圆形头像，按物理像素解码（与下方网络头像 memCacheWidth 同理），
+                // 避免本地回显把整张原尺寸位图解进内存。
+                cacheWidth: (36 * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 errorBuilder: (context, error, stackTrace) => _fallback(),
               )
             : url.isEmpty
@@ -528,7 +532,16 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
           ? _initialPage(next)
           : _nearestPage(next, widget.devices.length);
       if (_controller.hasClients) {
-        _controller.jumpToPage(_page);
+        // didUpdateWidget 处于 build/element 更新阶段，而 jumpToPage 会**同步**派发
+        // onPageChanged → onChanged(selectDevice) → notifyListeners，等于在构建期给
+        // 根部 AnimatedBuilder 这个祖先 markNeedsBuild（debug 直接断言红屏、release
+        // 产生不一致帧）。推迟到本帧结束后再跳，语义不变。
+        final page = _page;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _controller.hasClients) {
+            _controller.jumpToPage(page);
+          }
+        });
       }
     }
   }
@@ -559,6 +572,11 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
             controller: _controller,
             itemCount: widget.devices.length == 1 ? 1 : null,
             onPageChanged: (page) {
+              // 卫语句：devices 为空时 `% 0` 直接抛错。当前上游（_buildBound 仅在
+              // 有设备时渲染轮播）护住了，但解绑全部设备的边界时序不赌上游。
+              if (widget.devices.isEmpty) {
+                return;
+              }
               _page = page;
               final index = page % widget.devices.length;
               setState(() => _index = index);
@@ -598,10 +616,10 @@ class _ConnectedDeviceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onOpenDevices,
-      child: Stack(
+    // 「进设备列表」的透明手势层压在内容**下方**，卡内「连接蓝牙」按钮(opaque)自己拦截点击。
+    // 不再用「整卡 GestureDetector 外层包裹」——那样与按钮的 GestureDetector 嵌套竞争，
+    // 某些布局/裁剪下整卡手势会盖过按钮，点「连接蓝牙」反而跳进设备列表（用户反馈的 bug）。
+    return Stack(
         clipBehavior: Clip.none,
         fit: StackFit.expand,
         children: [
@@ -610,11 +628,9 @@ class _ConnectedDeviceCard extends StatelessWidget {
             top: -18,
             right: -18,
             bottom: -18,
-            child: Image.asset(
-              'assets/images/home-bg02.png',
-              fit: BoxFit.fill,
-              filterQuality: FilterQuality.high,
-            ),
+            // 不用 FilterQuality.high（三次立方采样）：两张底图本就接近显示尺寸，
+            // 视觉无差异，但轮播滑动时每帧重采样的 GPU 成本显著更高。
+            child: Image.asset('assets/images/home-bg02.png', fit: BoxFit.fill),
           ),
           Positioned.fill(
             child: ClipRRect(
@@ -622,8 +638,15 @@ class _ConnectedDeviceCard extends StatelessWidget {
               child: Image.asset(
                 'assets/images/home-bg01.png',
                 fit: BoxFit.cover,
-                filterQuality: FilterQuality.high,
               ),
+            ),
+          ),
+          // 整卡点击（非按钮区域）进设备列表：透明手势层，压在内容之下、背景之上。
+          // 上方的连接按钮(opaque)会拦截落在自己身上的点击，不会漏到这层。
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onOpenDevices,
             ),
           ),
           Padding(
@@ -725,8 +748,7 @@ class _ConnectedDeviceCard extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
+      );
   }
 }
 
@@ -1212,15 +1234,15 @@ class _BluetoothRadar extends StatelessWidget {
         : failed
         ? 'assets/images/device_not_found_art.png'
         : 'assets/images/search-devices.gif';
-    return Opacity(
-      opacity: dimmed ? 0.56 : 1,
-      child: Image.asset(
-        asset,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) {
-          return const _RadarFallback();
-        },
-      ),
+    // 压暗直接用 Image 自带的 opacity（着色时混合，逐帧零额外成本），不要包
+    // Opacity——它对每帧都在动的 GIF 会持续 saveLayer 离屏合成。
+    return Image.asset(
+      asset,
+      fit: BoxFit.contain,
+      opacity: dimmed ? const AlwaysStoppedAnimation(0.56) : null,
+      errorBuilder: (context, error, stackTrace) {
+        return const _RadarFallback();
+      },
     );
   }
 }

@@ -38,11 +38,17 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   // ① 未连接自动扫连（升级需设备在线）。
   if (!BleController.instance.connected) {
     AppLoadingDialog.show(context, AppL10n.of(context).otaConnecting);
-    final feedback = await state.connectDevice(device.id);
+    // 统一 hide 收口（精确移除 + 无 mounted 门控），替换掉盲 pop（历史闪退根源）：
+    // 本流程可叠在详情页其它 loading 之上，show 被静默忽略时盲 pop 会弹掉业务页。
+    final ActionFeedback feedback;
+    try {
+      feedback = await state.connectDevice(device.id);
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!context.mounted) {
       return;
     }
-    Navigator.of(context, rootNavigator: true).pop();
     if (!feedback.success) {
       AppToast.show(context, feedback.message);
       return;
@@ -50,11 +56,15 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   }
   // ② loading 下二次拉取最新版本信息。
   AppLoadingDialog.show(context, AppL10n.of(context).otaCheckingVersion);
-  final updated = await state.fetchDeviceFirmwareInfo(device.id);
+  final DeviceItem? updated;
+  try {
+    updated = await state.fetchDeviceFirmwareInfo(device.id);
+  } finally {
+    AppLoadingDialog.hide(context);
+  }
   if (!context.mounted) {
     return;
   }
-  Navigator.of(context, rootNavigator: true).pop();
   final target = updated ?? device;
   // ③ 已是最新 / 无有效可升级包：提示后返回。
   if (!target.hasFirmwareUpdate) {

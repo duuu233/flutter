@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
@@ -27,11 +28,11 @@ import 'casting_progress_page.dart';
 /// ## 功能上必须对齐小程序的地方（不要凭感觉改）
 /// - **裁剪框锁定设备宽高比**（3.7寸 480×720 → 2:3；5.89寸 680×960 → 17:24）。裁出来的就是设备上显示的样子。
 /// - 图片一律按**设备比例**的框 **aspectFill 铺满**展示 —— 预览所见 = 投屏所得。
-/// - **凡是比例还不是设备比例的图，点「开始投屏」时都要按设备比例做一次中心裁切**
-///   （[CastImageEditor.coverCropToRatio]）。否则预览里是中心裁切的样子、传给后端的却是别的比例，
-///   后端按设备分辨率转码时会把它压变形。
-///   判据是 [_PreviewPhoto.matchesRatio]，**不是「有没有编辑过」**：裁剪产物的比例被裁剪器锁成了
-///   设备比例可以放行，但**只旋转过的图不行**（1080×1920 转 90° → 1920×1080，照样要裁）。
+/// - **点「开始投屏」时每张图统一按设备分辨率做中心裁切 + 严格缩放**
+///   （[CastImageEditor.coverCropToSize]）：小程序的 canvas 导出画布就是设备像素尺寸，
+///   传给后端转码的源图恒为 480×720 / 680×960。裁剪产物（比例已对）经中心裁切等于
+///   无操作、只做缩放；旋转产物/未编辑图则先裁比例再缩放——单点收口，
+///   传给后端的图**永远是设备尺寸**，转码零缩放不变形（2026-07-17 对齐修复）。
 /// - 旋转是**预览态效果**，直到「保存」或进入裁剪时才真正烘焙进图片；烘焙失败必须留在编辑态。
 /// - 编辑态下「开始投屏」按钮置灰：必须先保存或还原退出编辑。
 class CastPreviewPage extends StatefulWidget {
@@ -79,18 +80,6 @@ class _PreviewPhoto {
   int editedHeight = 0;
 
   bool get edited => editedWidth > 0 && editedHeight > 0;
-
-  /// 当前图的宽高比是不是**已经就是设备比例**。
-  ///
-  /// 这是「投屏前要不要再做一次中心裁切」的唯一判据 —— **不能用 [edited] 代替**：
-  /// 裁剪产物一定是设备比例（裁剪器把比例锁死了），但**纯旋转的产物不是**
-  /// （1080×1920 竖图转 90° → 1920×1080），照样得中心裁切，否则会被后端压变形。
-  bool matchesRatio(double ratio) {
-    if (!edited) {
-      return false;
-    }
-    return (editedWidth / editedHeight - ratio).abs() < 0.01;
-  }
 
   void restoreOriginal() {
     path = originalPath;
@@ -245,10 +234,15 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
   /// 读图片像素尺寸。用 Flutter 自带的解码器（原生、快），不必为这点事再动 image 包。
   Future<({int width, int height})?> _readImageSize(String path) async {
     try {
+      // 只读图片头信息拿宽高（ImageDescriptor），不解码像素：原来
+      // decodeImageFromList 会把整张位图解出来（1920 长边 ≈ 8~16MB 瞬时分配）
+      // 又立刻 dispose，纯浪费。
       final bytes = await File(path).readAsBytes();
-      final decoded = await decodeImageFromList(bytes);
-      final result = (width: decoded.width, height: decoded.height);
-      decoded.dispose();
+      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
+      final descriptor = await ui.ImageDescriptor.encoded(buffer);
+      final result = (width: descriptor.width, height: descriptor.height);
+      descriptor.dispose();
+      buffer.dispose();
       return result;
     } catch (_) {
       return null;
@@ -286,11 +280,13 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
       result = await CastImageEditor.rotate(path: _active.path, degrees: angle);
     } catch (_) {
       result = null;
+    } finally {
+      // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
+      AppLoadingDialog.hide(context);
     }
     if (!mounted) {
       return false;
     }
-    AppLoadingDialog.hide(context);
     if (result == null) {
       AppToast.show(context, AppL10n.of(context).castRotateFailed);
       return false;
@@ -339,14 +335,13 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
 
   // ── 开始投屏 ─────────────────────────────────────────────
 
-  /// 把**比例还不是设备比例**的图按设备比例做一次 aspectFill 中心裁切，再进投屏页。
+  /// 开始投屏前，把每张图统一处理成**设备像素尺寸**（中心裁切 + 严格缩放），再进投屏页。
   ///
-  /// 这一步不能省：预览里图是按设备比例铺满（中心裁切）显示的，如果把别的比例的图传给后端，
-  /// 后端按设备分辨率转码时会把它**压变形**，与用户看到的预览不符。
-  /// 对齐小程序 confirmProjection → coverCropUnedited。
-  ///
-  /// 判据是 [_PreviewPhoto.matchesRatio] 而不是 `edited`：**只旋转过的图也得裁**
-  /// （旋转产物是原图旋转后的比例，不是设备比例）。只有裁剪产物能原样放行。
+  /// 这一步不能省：预览里图是按设备比例铺满（中心裁切）显示的，如果把别的比例/尺寸的图
+  /// 传给后端，转码时会**压变形**或引入多余缩放，与用户看到的预览不符。
+  /// 对齐小程序 confirmProjection → coverCropUnedited / canvas 导出：小程序传给后端的
+  /// 源图恒为设备分辨率（480×720 / 680×960），App 此处单点收口保证一致
+  /// （裁剪产物比例已对，中心裁切等于无操作、只做缩放）。
   Future<void> _startCast() async {
     if (_editing) {
       return; // 编辑态按钮置灰
@@ -364,27 +359,28 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
 
     AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
     final paths = <String>[];
-    final ratio = _deviceRatio;
-    for (final photo in directRecast ? const <_PreviewPhoto>[] : _photos) {
-      if (photo.matchesRatio(ratio)) {
-        paths.add(photo.path); // 裁剪产物：比例已是设备比例，原样投
-        continue;
+    final size = _deviceSize;
+    try {
+      for (final photo in directRecast ? const <_PreviewPhoto>[] : _photos) {
+        try {
+          final result = await CastImageEditor.coverCropToSize(
+            path: photo.path,
+            width: size.width,
+            height: size.height,
+          );
+          // 处理失败不阻断投屏，回退原图（对齐小程序：任一张失败都 resolve 原图）。
+          paths.add(result?.path ?? photo.path);
+        } catch (_) {
+          paths.add(photo.path);
+        }
       }
-      try {
-        final result = await CastImageEditor.coverCropToRatio(
-          path: photo.path,
-          ratio: ratio,
-        );
-        // 裁切失败不阻断投屏，回退原图（对齐小程序：任一张失败都 resolve 原图）。
-        paths.add(result?.path ?? photo.path);
-      } catch (_) {
-        paths.add(photo.path);
-      }
+    } finally {
+      // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
+      AppLoadingDialog.hide(context);
     }
     if (!mounted) {
       return;
     }
-    AppLoadingDialog.hide(context);
 
     // pushReplacement：投屏页返回时直接回到上一页（首页/设备页），
     // 不要退回这个已经用过的预览页（对齐小程序 redirectTo）。
@@ -504,6 +500,13 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
                     key: ValueKey(photo.path),
                     File(photo.path),
                     fit: BoxFit.cover, // aspectFill
+                    // 预览区≈屏宽，按物理像素解码：源图长边虽已限 1920，仍能省约一半
+                    // 位图内存（PageView 预热相邻页时最多 3 张同驻）；裁剪走原生裁剪器
+                    // 读原文件，不受此影响。
+                    cacheWidth:
+                        (MediaQuery.sizeOf(context).width *
+                                MediaQuery.devicePixelRatioOf(context))
+                            .round(),
                     errorBuilder: (context, error, stackTrace) => ColoredBox(
                       color: const Color(0x11000000),
                       child: Center(

@@ -9,8 +9,10 @@ import '../../../state.dart';
 
 /// 修改密码页，对应 UI 稿「修改密码」。
 ///
-/// 已登录用户通过邮箱验证码重置密码：验证码统一走 `sendEmail`，
-/// 提交走 `resetPassword`（email/password/emailCode）。
+/// 已登录用户改密：验证码走 `sendEmail(sendType:2)` 发到**账号绑定邮箱**，
+/// 提交走 `/Client/User/changePassword`（后端按 userToken 定位账号，body 无邮箱字段）。
+/// 邮箱行只读展示绑定邮箱，不可改——填别的邮箱收到的码对不上账号。
+/// 未登录的忘记密码流程才走 `resetPassword`（见 forgot_password.dart）。
 class ModifyPassword extends StatefulWidget {
   const ModifyPassword({super.key, required this.state, this.onConfirmed});
 
@@ -74,6 +76,7 @@ class _ModifyPasswordState extends State<ModifyPassword> {
                 controller: _emailController,
                 hintText: l10n.accEmailHint,
                 keyboardType: TextInputType.emailAddress,
+                readOnly: true,
               ),
               const FigmaFormDivider(),
               FigmaVerificationField(
@@ -108,6 +111,11 @@ class _ModifyPasswordState extends State<ModifyPassword> {
     if (_countdown > 0 || _sendingCode) {
       return;
     }
+    // changePassword 按 userToken 定位账号，验证码只能发到绑定邮箱；未绑定先去绑定。
+    if (_emailController.text.trim().isEmpty) {
+      _showSnack(AppL10n.of(context).accModifyPasswordNeedEmail);
+      return;
+    }
     _sendingCode = true;
     // 点击立刻弹蒙层 loading：后端同步发信可能数秒才响应，期间阻断重复点击
     //（否则连点会发多封验证码邮件），也让用户立刻感知「已在发送」。
@@ -123,9 +131,7 @@ class _ModifyPasswordState extends State<ModifyPassword> {
     } finally {
       // 任何异常都必须收掉 loading，否则遮罩卡死整个页面。
       _sendingCode = false;
-      if (mounted) {
-        AppLoadingDialog.hide(context);
-      }
+      AppLoadingDialog.hide(context);
     }
     if (!mounted) {
       return;
@@ -162,8 +168,8 @@ class _ModifyPasswordState extends State<ModifyPassword> {
       return;
     }
     setState(() => _submitting = true);
-    final feedback = await widget.state.resetPasswordByEmail(
-      email: _emailController.text,
+    // 已登录改密走 changePassword（userToken 定位账号，无邮箱字段）。
+    final feedback = await widget.state.changePasswordLoggedIn(
       password: _newPasswordController.text,
       emailCode: _codeController.text,
     );

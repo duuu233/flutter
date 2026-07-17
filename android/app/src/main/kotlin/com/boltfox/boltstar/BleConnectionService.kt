@@ -23,6 +23,14 @@ import android.util.Log
  *
  * 始终在 App 前台（Activity 可见）时启动——Android 12+ 禁止后台启动前台服务，
  * 连接必然发生在前台，因此这里不会触发该限制。
+ *
+ * TODO(真机验证后决策，2026-07-17 审查 S17)：本服务**不持 wakelock**，只提升进程
+ * 优先级、不保证 CPU 不挂起。息屏进 Doze/厂商深度省电后 Dart 侧 25s 心跳 Timer
+ * 可能停发，固件对空闲链路 1~2 分钟无流量即主动断开——「息屏 30 分钟」租约在
+ * 激进 ROM 上可能达不到（表现为息屏几分钟回来已断开；断开事件恢复后能正确清理，
+ * 不泄漏不崩溃，纯策略达成率问题）。先真机实测息屏存活时长：若确认达不到，在
+ * onStartCommand 持 PARTIAL_WAKE_LOCK（onDestroy 释放，与连接同生命周期、最长
+ * 30 分钟有界，代价是连接期间额外耗电）；若可接受则记入 App vs 小程序差异台账。
  */
 class BleConnectionService : Service() {
 
@@ -53,8 +61,28 @@ class BleConnectionService : Service() {
             stopSelf(startId)
             return START_NOT_STICKY
         }
+        foregroundActive = true
+        // start→stop 竞态收口（见 companion 注释）：Dart 在本服务尚未跑到这里之前
+        // 就请求过 stop（连接秒断的抖动，如设备忙 0x0B 引发的快速连→断），stop()
+        // 那侧不敢 stopService（会触发系统「未及时 startForeground」进程级崩溃），
+        // 只置了 stopRequested——现在 startForeground 已完成，安全地自停补上。
+        if (stopRequested) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            } else {
+                @Suppress("DEPRECATION")
+                stopForeground(true)
+            }
+            stopSelf(startId)
+            return START_NOT_STICKY
+        }
         // 连接断开即由 Dart 侧显式 stop；进程被杀后无连接可保，不自我复活。
         return START_NOT_STICKY
+    }
+
+    override fun onDestroy() {
+        foregroundActive = false
+        super.onDestroy()
     }
 
     private fun buildNotification(title: String, text: String): Notification {
@@ -107,7 +135,22 @@ class BleConnectionService : Service() {
         private const val EXTRA_TEXT = "text"
         private const val TAG = "BleConnectionService"
 
+        // start/stop 竞态防护（治系统「屡次停止运行」进程级崩溃）：
+        // startForegroundService() 之后系统**强制**要求本服务在时限内调用
+        // startForeground()；若在服务实例真正跑到 onStartCommand 之前就 stopService()
+        // （连接刚建立就秒断的抖动时序——设备忙 0x0B、弱信号导致的快速连→断），
+        // 服务被提前销毁、startForeground 永远没机会执行，系统抛
+        // ForegroundServiceDidNotStartInTimeException / RemoteServiceException
+        // 直接崩掉整个进程（try/catch 挡不住，它走主线程 ActivityThread）。
+        // 约定：stopService 只在服务已完成 startForeground（foregroundActive=true）
+        // 后才真正调用；尚未完成时只置 stopRequested，服务在 startForeground 完成后
+        // 看到标记立即自停（见 onStartCommand 尾部）。服务与 App 同进程，进程死
+        // 服务必死，静态标记不会跨进程失真。
+        @Volatile private var foregroundActive = false
+        @Volatile private var stopRequested = false
+
         fun start(context: Context, title: String, text: String): Boolean {
+            stopRequested = false
             val intent = Intent(context, BleConnectionService::class.java)
                 .putExtra(EXTRA_TITLE, title)
                 .putExtra(EXTRA_TEXT, text)
@@ -132,7 +175,12 @@ class BleConnectionService : Service() {
         }
 
         fun stop(context: Context) {
-            context.stopService(Intent(context, BleConnectionService::class.java))
+            stopRequested = true
+            // 只停「已完成 startForeground」的服务；正在启动中的交给它自停
+            //（见 companion 注释与 onStartCommand 尾部），从未启动的本就是 no-op。
+            if (foregroundActive) {
+                context.stopService(Intent(context, BleConnectionService::class.java))
+            }
         }
     }
 }

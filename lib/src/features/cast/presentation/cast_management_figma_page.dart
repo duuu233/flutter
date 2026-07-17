@@ -40,6 +40,9 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   @override
   void initState() {
     super.initState();
+    // 订阅全局状态（同 gallery_page 的说明）：页面打开期间 BLE 断链等外部变化
+    // 即时反映，不再依赖下一次用户交互的手动 setState。
+    widget.state.addListener(_handleStateChanged);
     // 打开时刷新设备 + 当前 tab 的投屏记录，两者并发（原来串行 await，
     // 记录页的 loading 要白等一个跟记录无关的设备接口往返）。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -48,6 +51,12 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
       await devices;
       await records;
     });
+  }
+
+  void _handleStateChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   @override
@@ -61,15 +70,18 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
 
   @override
   void dispose() {
+    widget.state.removeListener(_handleStateChanged);
     appRouteObserver.unsubscribe(this);
     super.dispose();
   }
 
   /// 被覆盖的页 pop 回来（重入）：刷新设备 + 当前 tab 记录（对齐小程序 onShow loadRecords）。
+  /// 用静默重拉而不是 _loadTab：后者会把已有列表整页换成 loading，从预览/投屏页
+  /// 返回时列表白闪一下；数据回来后 setState 刷新即可。
   @override
   void didPopNext() {
     state.refreshDevices();
-    _loadTab();
+    _silentReload();
   }
 
   /// 成功 tab→deviceUploadState:1 / 失败 tab→0（对齐小程序 records.js filterToUploadState）。
@@ -101,36 +113,55 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   // 再次/重新投屏：对齐小程序 records.js retryProjection —— 重新进入「裁剪/预览」流程（用记录原图），
   // 让用户可再裁剪/旋转/还原后再投，而不是直接 imgBle 直传。
   // 先连设备；连上后把记录原图下载到本地进投屏预览页（裁剪流程）；拿不到原图才回退 imgBle 直传，保证仍能再投。
+  /// 再次投屏进行中标记：连接（可达 10s+）+ 原图下载（超时 20s）期间锁住重复点击，
+  /// 否则连点会并发两次 connectDevice 并先后 push 两个预览页。
+  bool _recasting = false;
+
   Future<void> _recast(CastRecord record) async {
+    if (_recasting) {
+      return;
+    }
     final l10n = AppL10n.of(context);
     final imgBle = record.imgBle;
     if (imgBle == null || imgBle.isEmpty) {
       _showSnack(l10n.castRecordMissingFrame);
       return;
     }
-    _showSnack(l10n.castConnectingDevice);
-    final feedback = await state.connectDevice(record.deviceId);
+    _recasting = true;
+    // 连接 + 下载全程用阻断式 loading（原来只有一条 2 秒即逝的 toast，
+    // 长达 30s 的等待里页面看似无响应，用户必然重复点击）。
+    AppLoadingDialog.show(context, l10n.castConnectingDevice);
+    final DeviceItem device;
+    final String? localPath;
+    try {
+      final feedback = await state.connectDevice(record.deviceId);
+      if (!mounted) {
+        return;
+      }
+      if (!feedback.success) {
+        _showSnack(feedback.message);
+        return;
+      }
+      device = state.deviceById(record.deviceId);
+      final imageUrl = record.imageUrl;
+      localPath = (imageUrl != null && imageUrl.isNotEmpty)
+          ? await _downloadToTemp(imageUrl)
+          : null;
+    } finally {
+      _recasting = false;
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
       return;
     }
-    if (!feedback.success) {
-      _showSnack(feedback.message);
-      return;
-    }
-    final device = state.deviceById(record.deviceId);
-    final imageUrl = record.imageUrl;
-    final localPath = (imageUrl != null && imageUrl.isNotEmpty)
-        ? await _downloadToTemp(imageUrl)
-        : null;
-    if (!mounted) {
-      return;
-    }
-    if (localPath != null) {
+    // 复制到新局部变量再判空：在 try 块内赋值的变量，流分析在 try 之后不做
+    // 类型提升，直接用 localPath 会在闭包里报 String? 不能赋给 String。
+    final path = localPath;
+    if (path != null) {
       // 原图可用：进入裁剪/预览流程（与小程序一致），确认后由预览页走投屏。
       await Navigator.of(context).push(
         MaterialPageRoute(
-          builder: (_) =>
-              CastPreviewPage(device: device, imagePaths: [localPath]),
+          builder: (_) => CastPreviewPage(device: device, imagePaths: [path]),
         ),
       );
     } else {
@@ -438,10 +469,11 @@ class _RecordCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (record.imageUrl != null)
+                  if (record.thumbUrl != null)
                     CachedNetworkImage(
-                      imageUrl: record.imageUrl!,
-                      // aspectFit：与我的图库一致，保持比例不裁切不拉伸，按后端记录 img 原样展示
+                      // 列表只取缩略图 imgThumb（无则回退 img），对齐小程序 records.wxml 的 item.imgThumb。
+                      imageUrl: record.thumbUrl!,
+                      // aspectFit：与我的图库一致，保持比例不裁切不拉伸
                       // （对齐小程序 records.wxml mode=aspectFit）；留白落在下方色块渐变上。
                       fit: BoxFit.contain,
                       // 72lp 缩略图，按物理像素解码，避免原图全尺寸位图进内存。

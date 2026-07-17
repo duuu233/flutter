@@ -38,9 +38,7 @@ class SettingsPage extends StatelessWidget {
       debugPrint('[Settings] 检查更新失败: $error');
       AppToast.show(
         context,
-        error is ApiException
-            ? error.message
-            : l10n.checkUpdateFailedGeneric,
+        error is ApiException ? error.message : l10n.checkUpdateFailedGeneric,
       );
       return;
     }
@@ -170,10 +168,14 @@ class SettingsPage extends StatelessWidget {
                 ),
                 const _SettingsDivider(),
                 _SettingsRow(
-                  iconAsset: 'assets/images/set-icon04.png',
+                  iconAsset: 'assets/images/set-icon02.png',
                   iconBg: const Color(0x1A287DFF),
                   title: l10n.checkUpdate,
-                  onTap: () => _checkUpdate(context),
+                  // 检测更新：跳转「更新 BoltStar」页，进入即真实检查版本（三态 UI），
+                  // 不再走原来的弹窗式检查。
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed<void>(AppRoutes.figmaUpdateBoltStar),
                 ),
               ],
             ),
@@ -234,9 +236,7 @@ class SettingsPage extends StatelessWidget {
     try {
       await state.logout();
     } finally {
-      if (context.mounted) {
-        AppLoadingDialog.hide(context);
-      }
+      AppLoadingDialog.hide(context);
     }
     if (!context.mounted) {
       return;
@@ -274,9 +274,7 @@ class SettingsPage extends StatelessWidget {
     try {
       result = await state.deleteAccount();
     } finally {
-      if (context.mounted) {
-        AppLoadingDialog.hide(context);
-      }
+      AppLoadingDialog.hide(context);
     }
     if (!context.mounted) {
       return;
@@ -335,13 +333,19 @@ class _SettingsRow extends StatelessWidget {
               Container(
                 width: 32,
                 height: 32,
-                decoration: BoxDecoration(color: iconBg, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: iconBg,
+                  shape: BoxShape.circle,
+                ),
                 child: Center(
                   child: Image.asset(
                     iconAsset,
                     width: 20,
                     height: 20,
                     fit: BoxFit.contain,
+                    // 资源缺失兜底（全项目 Image.asset 均带 errorBuilder，此处曾漏）。
+                    errorBuilder: (context, error, stackTrace) =>
+                        const SizedBox(width: 20, height: 20),
                   ),
                 ),
               ),
@@ -385,6 +389,11 @@ class _SettingsRow extends StatelessWidget {
                   width: 16,
                   height: 16,
                   fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const Icon(
+                    Icons.copy,
+                    size: 16,
+                    color: Color(0xFF777E88),
+                  ),
                 ),
             ],
           ),

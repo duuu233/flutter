@@ -53,15 +53,21 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
     }
     setState(() => _busy = true);
     AppLoadingDialog.show(context, AppL10n.of(context).saving);
-    final feedback = await widget.state.setDeviceCarousel(
-      widget.state.selectedDevice.id,
-      enabled: enabled,
-      mode: mode,
-    );
+    // hide 放 finally 且不做 mounted 门控（hide 不依赖 context）：页面在 await
+    // 期间被卸载时也要收掉 root 栈上 canPop:false 的蒙层。
+    final ActionFeedback feedback;
+    try {
+      feedback = await widget.state.setDeviceCarousel(
+        widget.state.selectedDevice.id,
+        enabled: enabled,
+        mode: mode,
+      );
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
       return;
     }
-    AppLoadingDialog.hide(context);
     setState(() {
       _busy = false;
       if (feedback.success) {

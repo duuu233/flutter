@@ -2,12 +2,12 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
+import '../../../shared/avatar_upload.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
@@ -144,14 +144,8 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  /// 头像文件体积上限：100KB。原来直接传相机原图（4~12MB），弱网上传要几十秒
-  /// （“头像上传过久”）；头像最终只在 ≤64lp 的圆圈里展示，100KB 绰绰有余。
-  static const int _avatarMaxBytes = 100 * 1024;
-
-  /// 头像像素长边上限：512px 在 3x 屏的 64lp 头像上仍然过采样 2 倍以上。
-  static const double _avatarMaxEdge = 512;
-
   /// 点头像仅选择并本地回显；与小程序一致，头像和昵称在点「保存资料」时一起提交。
+  /// 尺寸/体积约束与兜底压缩统一走 [AvatarUpload]（与首页换头像入口共用）。
   Future<void> _pickAvatar() async {
     // 进相册前先过照片权限（拒绝弹「去设置」引导并中止）。
     if (!await PermissionGate.ensurePhotoAccess(context) || !mounted) {
@@ -164,8 +158,8 @@ class _ProfilePageState extends State<ProfilePage> {
       // 降采样（Android inSampleSize / iOS CoreGraphics），顺带把 HEIC 转 JPEG。
       file = await picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: _avatarMaxEdge,
-        maxHeight: _avatarMaxEdge,
+        maxWidth: AvatarUpload.maxEdge,
+        maxHeight: AvatarUpload.maxEdge,
         imageQuality: 85,
       );
     } catch (_) {
@@ -177,44 +171,11 @@ class _ProfilePageState extends State<ProfilePage> {
     if (file == null || !mounted) {
       return;
     }
-    final compressed = await _ensureAvatarUnderLimit(file.path);
+    final compressed = await AvatarUpload.ensureUnderLimit(file.path);
     if (!mounted) {
       return;
     }
     setState(() => _pendingAvatarPath = compressed);
-  }
-
-  /// 兜底压缩：原生降采样后一般已 <100KB，超限时用 image 包按质量阶梯重编码。
-  /// 压缩失败（格式不支持等）退回原文件——上传慢总好过不能换头像。
-  Future<String> _ensureAvatarUnderLimit(String path) async {
-    try {
-      final source = File(path);
-      if (await source.length() <= _avatarMaxBytes) {
-        return path;
-      }
-      final decoded = img.decodeImage(await source.readAsBytes());
-      if (decoded == null) {
-        return path;
-      }
-      var frame = decoded;
-      if (frame.width > _avatarMaxEdge || frame.height > _avatarMaxEdge) {
-        frame = frame.width >= frame.height
-            ? img.copyResize(frame, width: _avatarMaxEdge.toInt())
-            : img.copyResize(frame, height: _avatarMaxEdge.toInt());
-      }
-      List<int> bytes = img.encodeJpg(frame, quality: 80);
-      for (final quality in const [70, 60, 50, 40]) {
-        if (bytes.length <= _avatarMaxBytes) {
-          break;
-        }
-        bytes = img.encodeJpg(frame, quality: quality);
-      }
-      final out = File('${source.parent.path}/boltstar_avatar_upload.jpg');
-      await out.writeAsBytes(bytes, flush: true);
-      return out.path;
-    } catch (_) {
-      return path;
-    }
   }
 
   bool _saving = false;
@@ -226,37 +187,42 @@ class _ProfilePageState extends State<ProfilePage> {
     final user = widget.state.currentUser;
     setState(() => _saving = true);
     AppLoadingDialog.show(context, AppL10n.of(context).saving);
-    final profileFeedback = await widget.state.updateProfile(
-      nickname: _nicknameController.text,
-      email: user.email,
-      signature: user.signature,
-      avatarColor: user.avatarColor,
-    );
-    if (!mounted) {
-      return;
-    }
-    if (!profileFeedback.success) {
-      AppLoadingDialog.hide(context);
-      setState(() => _saving = false);
-      AppToast.warn(context, profileFeedback.message);
-      return;
-    }
-
+    // 提前取出：末尾 setState 也要用，不能声明在 try 块内。
     final avatarPath = _pendingAvatarPath;
-    if (avatarPath != null) {
-      final avatarFeedback = await widget.state.updateAvatar(avatarPath);
+    // 整段包 try/finally（hide 幂等、不依赖 context）：mounted 早退路径不再把
+    // canPop:false 的蒙层留在 root 栈上。
+    try {
+      final profileFeedback = await widget.state.updateProfile(
+        nickname: _nicknameController.text,
+        email: user.email,
+        signature: user.signature,
+        avatarColor: user.avatarColor,
+      );
       if (!mounted) {
         return;
       }
-      if (!avatarFeedback.success) {
+      if (!profileFeedback.success) {
         AppLoadingDialog.hide(context);
         setState(() => _saving = false);
-        AppToast.warn(context, avatarFeedback.message);
+        AppToast.warn(context, profileFeedback.message);
         return;
       }
-    }
 
-    AppLoadingDialog.hide(context);
+      if (avatarPath != null) {
+        final avatarFeedback = await widget.state.updateAvatar(avatarPath);
+        if (!mounted) {
+          return;
+        }
+        if (!avatarFeedback.success) {
+          AppLoadingDialog.hide(context);
+          setState(() => _saving = false);
+          AppToast.warn(context, avatarFeedback.message);
+          return;
+        }
+      }
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     setState(() {
       _saving = false;
       // 头像已上传成功：转为「已保存」继续本地回显（与线上内容一致），
@@ -311,6 +277,10 @@ class _AvatarRow extends StatelessWidget {
                     ? Image.file(
                         File(localPath!),
                         fit: BoxFit.cover,
+                        // 32lp 圆形头像，按物理像素解码（与下方网络头像
+                        // memCacheWidth 同理），避免整张位图解进内存。
+                        cacheWidth: (32 * MediaQuery.devicePixelRatioOf(context))
+                            .round(),
                         errorBuilder: (context, error, stackTrace) =>
                             _defaultAvatar(),
                       )

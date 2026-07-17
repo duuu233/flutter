@@ -20,6 +20,9 @@ class BoltFoxApi {
   // ==================== 基础功能接口 ====================
 
   /// 发送邮箱验证码（未登录）。[sendType]：1=注册、2=找回密码/改密、3=改邮箱。
+  ///
+  /// 关闭超时重试：超时时服务端可能已发信，静默重试会连发多封；若后端「新码作废旧码」，
+  /// 用户输入先到的那封就恒报验证码错误。连接失败（未送达）仍会自动重试。
   static Future<dynamic> sendEmail({
     required String userEmail,
     required int sendType,
@@ -28,6 +31,7 @@ class BoltFoxApi {
       '/Client/Basic/sendEmail',
       body: {'userEmail': userEmail, 'sendType': sendType},
       auth: false,
+      retryOnTimeout: false,
     );
   }
 
@@ -195,6 +199,27 @@ class BoltFoxApi {
     );
   }
 
+  /// 修改密码（**已登录**）。[emailCode] 为 `sendEmail(sendType:2)` 验证码
+  /// （swagger sendType 描述：2=找回密码邮件/修改密码，两者共用同一验证码类型）。
+  ///
+  /// 字段名以 swagger `SetPasswordApiIn` 为准：`verifyCode / password / confirmPassword`
+  /// （均 md5 32 位小写）。**没有 userEmail 字段**——后端按公共参数里的 userToken 定位
+  /// 账号，验证码须发到该账号绑定的邮箱。未登录的忘记密码走 [resetPassword]，勿混用。
+  static Future<dynamic> changePassword({
+    required String password,
+    required String emailCode,
+  }) {
+    final md5Password = md5Hex(password);
+    return _http.postJson(
+      '/Client/User/changePassword',
+      body: {
+        'password': md5Password,
+        'confirmPassword': md5Password,
+        'verifyCode': emailCode,
+      },
+    );
+  }
+
   /// 校验邮箱是否不存在（注册前置校验，邮箱已存在则后端返回异常码）。
   /// 字段名以 swagger `SetUserEmailApiIn` 为准（userEmail/verifyCode）。
   static Future<dynamic> chkUserEmailNotExist({
@@ -266,6 +291,8 @@ class BoltFoxApi {
   // ==================== 设备接口（UserProduct）====================
 
   /// 添加 / 绑定用户设备。
+  ///
+  /// 关闭超时重试：超时时后端可能已建绑定记录，重试是否重复绑定取决于后端去重，不赌。
   static Future<dynamic> addUserProduct({
     required int productId,
     required String productName,
@@ -279,6 +306,7 @@ class BoltFoxApi {
         // 硬件序列号：完全对齐已通过测试的小程序 `api.bindDevice` —— 用字段名 `deviceId` 提交（同一后端）。
         'deviceId': productSerialNo,
       },
+      retryOnTimeout: false,
     );
   }
 
@@ -427,6 +455,8 @@ class BoltFoxApi {
         'taskId': ?taskId,
         'deviceUploadState': deviceUploadState,
       },
+      // 关闭超时重试：超时时记录可能已写入，重试会产生重复投屏记录。
+      retryOnTimeout: false,
     );
   }
 }

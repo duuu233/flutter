@@ -8,7 +8,7 @@ import 'package:image/image.dart' as img;
 ///
 /// 只负责两件不需要用户交互的事：
 ///   ① [rotate]：工具栏「旋转」按钮的即时 90° 旋转；
-///   ② [coverCropToRatio]：用户没做任何编辑时，投屏前按设备比例做的 aspectFill 中心裁切。
+///   ② [coverCropToSize]：开始投屏时按设备分辨率做的 aspectFill 中心裁切 + 严格缩放。
 ///
 /// **交互式裁剪不在这里** —— 那个交给原生裁剪器（`image_cropper`：Android=uCrop / iOS=TOCropViewController）。
 /// 小程序是用 canvas + touch 事件手搓的裁剪框，那是被微信沙箱逼的；App 没必要照抄这个实现方式。
@@ -51,18 +51,23 @@ class CastImageEditor {
     return _write(result);
   }
 
-  /// 按目标宽高比 [ratio]（= 设备宽 / 设备高）做 **aspectFill 中心裁切**并导出新文件。
+  /// 按设备分辨率 [width]×[height] 做 **aspectFill 中心裁切 + 严格缩放**并导出新文件。
   ///
-  /// 用户没做任何编辑就投屏时用它：让上传后端的图与预览所见（按设备比例铺满 = 中心裁切）完全一致，
-  /// 后端再按设备分辨率转码也不会变形。对齐小程序 `coverCropOne`。
-  static Future<CastEditResult?> coverCropToRatio({
+  /// 对齐小程序 `coverCropOne` / canvas 裁剪导出：小程序的导出画布**就是设备像素尺寸**
+  /// （3.7寸 480×720 / 5.89寸 680×960），传给后端转码的源图恒为设备分辨率。
+  /// 之前 App 只裁到设备**比例**、分辨率保持源图（长边限 2000）——传给后端的图尺寸
+  /// 与小程序不一致（2026-07-17 修复）。现在：先中心裁切到设备比例，再无论大小
+  /// **严格缩放到 width×height**（小图放大，与 canvas 固定尺寸绘制一致），
+  /// 后端按同尺寸转码零缩放、预览所见即设备所得，上传体积也更小更快。
+  static Future<CastEditResult?> coverCropToSize({
     required String path,
-    required double ratio,
+    required int width,
+    required int height,
   }) async {
     final bytes = await File(path).readAsBytes();
     final result = await compute(
       _coverCrop,
-      _CoverCropRequest(bytes: bytes, ratio: ratio),
+      _CoverCropRequest(bytes: bytes, width: width, height: height),
     );
     return _write(result);
   }
@@ -114,10 +119,15 @@ class _RotateRequest {
 }
 
 class _CoverCropRequest {
-  const _CoverCropRequest({required this.bytes, required this.ratio});
+  const _CoverCropRequest({
+    required this.bytes,
+    required this.width,
+    required this.height,
+  });
 
   final Uint8List bytes;
-  final double ratio;
+  final int width;
+  final int height;
 }
 
 _EncodedImage? _rotate(_RotateRequest req) {
@@ -135,24 +145,36 @@ _EncodedImage? _coverCrop(_CoverCropRequest req) {
   if (decoded == null) {
     return null;
   }
+  final ratio = req.width / req.height;
   final srcRatio = decoded.width / decoded.height;
   int w;
   int h;
-  if (srcRatio > req.ratio) {
+  if (srcRatio > ratio) {
     // 原图更宽：以高为准，左右各裁掉一些。
     h = decoded.height;
-    w = (h * req.ratio).round();
+    w = (h * ratio).round();
   } else {
     // 原图更高：以宽为准，上下各裁掉一些。
     w = decoded.width;
-    h = (w / req.ratio).round();
+    h = (w / ratio).round();
   }
   w = w.clamp(1, decoded.width);
   h = h.clamp(1, decoded.height);
   final x = ((decoded.width - w) / 2).round();
   final y = ((decoded.height - h) / 2).round();
   final cropped = img.copyCrop(decoded, x: x, y: y, width: w, height: h);
-  return _encode(cropped);
+  // 严格缩放到设备像素尺寸（对齐小程序：canvas 画布 = 设备分辨率，小图同样被
+  // 绘制放大到画布尺寸）。cubic 插值兼顾缩小与放大的画质。
+  final sized = (cropped.width == req.width && cropped.height == req.height)
+      ? cropped
+      : img.copyResize(
+          cropped,
+          width: req.width,
+          height: req.height,
+          interpolation: img.Interpolation.cubic,
+        );
+  final bytes = img.encodeJpg(sized, quality: CastImageEditor.exportQuality);
+  return _EncodedImage(bytes, sized.width, sized.height);
 }
 
 /// 长边限幅到 [CastImageEditor.maxEdge] 后编码成 JPEG。

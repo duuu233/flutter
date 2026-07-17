@@ -26,6 +26,11 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
   int _step = 1;
   bool _busy = false;
 
+  /// 进入页面时快照要清空的设备 id：清空只认它，不实时读全局 selectedDevice——
+  /// 两步确认停留期间后台 refreshDevices 可能改写选中项，实时读会把「一键清空」
+  /// 落到另一台设备。
+  late final String _deviceId = widget.state.selectedDeviceId;
+
   @override
   Widget build(BuildContext context) {
     final isStep1 = _step == 1;
@@ -70,13 +75,17 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
     }
     setState(() => _busy = true);
     AppLoadingDialog.show(context, AppL10n.of(context).devClearing);
-    final feedback = await widget.state.clearDeviceMemory(
-      widget.state.selectedDevice.id,
-    );
+    // hide 放 finally 且不做 mounted 门控（不依赖 context）：清空可长达 180s，
+    // 期间页面被卸载也要收掉 root 栈上 canPop:false 的蒙层。
+    final ActionFeedback feedback;
+    try {
+      feedback = await widget.state.clearDeviceMemory(_deviceId);
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!context.mounted) {
       return;
     }
-    AppLoadingDialog.hide(context);
     setState(() => _busy = false);
     if (feedback.success) {
       AppToast.show(context, AppL10n.of(context).devCleared);

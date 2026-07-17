@@ -1,5 +1,8 @@
 # API Integration Progress (App / BoltStar)
 
+> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
+
+
 接口文档：https://api.boltfox.cn/swagger-ui.html#/
 
 后端地址：https://api.boltfox.cn
@@ -40,7 +43,7 @@
 | 方法 | 路径 | `BoltFoxApi` 方法 | Swagger 摘要 |
 | --- | --- | --- | --- |
 | POST | `/Client/Basic/sendEmail` | `sendEmail()` | 发送邮箱验证码（未登录） |
-| POST | `/Client/Basic/sendEmailToken` | `sendEmailToken()` | 发送邮箱验证码（已登录） |
+| POST | `/Client/Basic/sendEmail` | `sendEmail()` | ⚠️ App 端已统一走 `sendEmail`（含已登录改密/改邮箱，sendType:2/3），**未实现 `sendEmailToken`**（对齐小程序） |
 | GET | `/Client/Basic/getBasicData` | `getBasicData()` | 获取基础数据 |
 | GET | `/Client/Basic/getLastVersion` | `getLastVersion()` | 获取 App 版本更新状态 |
 | GET | `/Client/Basic/getAndroidDownload` | `getAndroidDownload()` | 安卓下载 |
@@ -61,11 +64,11 @@
 | --- | --- | --- | --- |
 | POST | `/Client/User/userLogin` | `userLogin()` | `email`、`password`；返回登录 token，需 `ApiSession.setToken` |
 | POST | `/Client/User/setWechatAppLogin` | `weChatMobileLogin()` | 移动应用 SDK code；服务端换微信身份并返回业务 userToken |
-| POST | `/Client/User/userRegister` | `userRegister()` | `email`、`password`、`emailCode`、`nickName?` |
-| POST | `/Client/User/resetPassword` | `resetPassword()` | `email`、`password`、`emailCode`（sendType:2） |
+| POST | `/Client/User/userRegister` | `userRegister()` | ⚠️ `userEmail`、`verifyCode`、`password(md5)`、`confirmPassword(md5)`（swagger `UserRegisterApiIn`，**无 nickName**；旧 `email/emailCode` 是"注册永远失败"载荷，勿复原） |
+| POST | `/Client/User/resetPassword` | `resetPassword()` | ⚠️ `userEmail`、`verifyCode`、`password(md5)`、`confirmPassword(md5)`（swagger `ResetPasswordApiIn`，sendType:2；旧 `email/emailCode` 且缺 confirmPassword 已修）。仅未登录忘记密码用 |
 | POST | `/Client/User/chkUserEmailNotExist` | `chkUserEmailNotExist()` | 注册前置校验，邮箱已存在返回异常码 |
-| POST | `/Client/User/changePassword` | `changePassword()` | `oldPassword`、`newPassword` |
-| POST | `/Client/User/changeUserEmail` | `changeUserEmail()` | `email`、`emailCode`（sendType:3） |
+| POST | `/Client/User/changePassword` | `changePassword()` | ⚠️ `verifyCode`、`password(md5)`、`confirmPassword(md5)`（swagger `SetPasswordApiIn`；userToken 定位账号，**无 oldPassword/newPassword、无邮箱字段**）。已登录改密走它，验证码 sendType:2 |
+| POST | `/Client/User/changeUserEmail` | `changeUserEmail()` | `userEmail`、`verifyCode`、`password(md5)`、`confirmPassword(md5)`（sendType:3；password 为空传空串=仅换邮箱） |
 | GET | `/Client/User/getUserInfo` | `getUserInfo()` | userToken 走 header |
 | POST | `/Client/User/changeNickName` | `changeNickName()` | 1-10 字 |
 | POST | `/Client/User/changeAvatar` | `changeAvatar()` | 头像地址（可先 `setFileUpload`） |
@@ -107,8 +110,8 @@
 | 登录 | `account/auth_page.dart` | 邮箱 → `loginWithPassword` → `userLogin`；微信 → SDK code → `loginWithWeChatCode` → `setWechatAppLogin`；成功均写 `ApiSession` |
 | 注册 | `account/register_page.dart` | 获取验证码 → `sendEmailCode(sendType:1)` → `sendEmail`；注册 → `registerWithEmail` → `userRegister` |
 | 忘记密码 | `account/forgot_password.dart` | 获取验证码 → `sendEmailCode(sendType:2)` → `sendEmail`；确认 → `resetPasswordByEmail` → `resetPassword` |
-| 修改密码 | `account/modify_password.dart` | 获取验证码 → `sendEmailCode(sendType:2, loggedIn:true)` → `sendEmailToken`；确认 → `resetPasswordByEmail` → `resetPassword` |
-| 修改邮箱 | `account/modify_email_page.dart` | 获取验证码（发到新邮箱）→ `sendEmailCode(sendType:3, loggedIn:true)` → `sendEmailToken`；确认 → `changeBoundEmail` → `changeUserEmail` |
+| 修改密码 | `account/modify_password.dart` | 获取验证码 → `sendEmailCode(sendType:2, loggedIn:true)` → **`sendEmail`**；确认 → **`changePasswordLoggedIn` → `changePassword`**（邮箱行只读，userToken 定位账号，不再走 resetPassword） |
+| 修改邮箱 | `account/modify_email_page.dart` | 获取验证码（发到新邮箱）→ `sendEmailCode(sendType:3, loggedIn:true)` → **`sendEmail`**；确认 → `changeBoundEmail` → `changeUserEmail`（含 password/confirmPassword） |
 | 个人信息 | `account/profile_page.dart` | 保存资料 → `updateProfile` → `changeNickName`（昵称 1-10 字校验） |
 | 设置 | `settings/settings_page.dart` | 退出登录 → `logout` → `loginOut` + `ApiSession.clear`；用户注销 → `deleteAccount` → `userOff` + `ApiSession.clear` |
 | 语种设置 | `settings/language_settings_page.dart` | 切换语言 → `switchLanguage` 内同步 `ApiSession.setLanguage`（更新 `language` header） |
@@ -121,8 +124,8 @@
 
 ### 待后端确认 / 已知差异
 
-- **修改密码页**收集「邮箱+验证码+新密码」，对应 `resetPassword`（sendType:2），而非仅 old/new 的 `changePassword`；如后端「修改密码」要求旧密码请改用 `changePassword`。
-- **修改邮箱页**含「密码/确认密码」输入框，但 `changeUserEmail` 仅需 email+emailCode，密码字段当前未提交，待确认后端是否需要密码校验。
+- **修改密码页**（已登录）走 **`/Client/User/changePassword`**（`verifyCode/password(md5)/confirmPassword(md5)`，userToken 定位账号，无邮箱字段）；邮箱行只读展示绑定邮箱，验证码 sendType:2 发到该邮箱。**不再复用 `resetPassword`**（2026-07-17 切换）。
+- **修改邮箱页**的「密码/确认密码」**已提交**：`changeUserEmail` 发 `userEmail/verifyCode/password(md5)/confirmPassword(md5)`（为空传空串=仅换邮箱），与小程序契约一致。
 - 绑定邮箱流程页（`bind_email_incomplete_page` / `bind_email_complete_page`）仍为 mock，未接 `changeUserEmail`，待联调（仅在用户邮箱未绑定时触达）。
 - 账户资料另有 `profile_bound_email_page` / `profile_unbound_email_page` 两个并列 Figma mock 页，主资料页为 `profile_page.dart`（已联调）。
 - 头像上传（`setFileUpload` + `changeAvatar`）未接：`UserProfile` 当前用 `avatarColor` 占位，无头像 URL 字段，待引入图片选择后再接。
@@ -190,7 +193,7 @@
 - **执行 `flutter pub get`**（`http` 已在 `pubspec.yaml`，但 `pubspec.lock` 仍标记为 transitive，需 pub get 落为 direct），再 `flutter analyze` 校验本轮改动（本机无 Flutter SDK，未能本地编译）。
 - 真机/真后端联调全链路：账号、设备、相册图库、投屏记录、操作指南。**重点确认投屏记录成功/失败字段、各列表字段名、FAQ 字段名**。
 - **绑定设备 UI 流程**（`bind_device_*` 蓝牙扫描页）接 `bindDevice`：需配合 `getProductList` 取 `productId` 与 BLE 扫描到的 `productSerialNo`。属蓝牙能力，需 BLE 流程配合。
-- **App 版本更新**（`getLastVersion` / `getAndroidDownload`）：`update_boltstar_page` 目前为本地 mock（下载动画），且设置页入口被注释隐藏。接版本检查可加 `state.checkAppUpdate()`；安卓下载/安装需引入 `url_launcher`（或安装插件）才能真正落地，暂未接。
+- **App 版本更新**（`getLastVersion` / `getAndroidDownload`）：**已接真实功能**。设置页「检测更新」入口已启用（`settings_page.dart`），跳转 `UpdateBoltStarPage`，进入即调 `state.checkAppVersion()`（当前版本 `package_info`，最新版本/下载地址来自 `getLastVersion` 的 `appVersionNo/isUpdate/downloadPath/upgradeTips`），三态展示；「立即更新」用 `url_launcher` 打开真实下载地址。⚠️ 原"本地 mock/入口被注释/`checkAppUpdate`"描述已过时。
 - **头像上传**（`setFileUpload` + `changeAvatar`）：需先引入图片选择（image_picker），`UserProfile` 再补头像 URL 字段，暂未接。
 - 跟后端确认 `terminal` 取值（iOS=1/Android=2）与是否需要持久化 token（重启免登录，可在 `ApiSession.setToken/clear` 接 `shared_preferences`）。
 - 空状态：设备删到 0 台、相册/记录为空的 UI 已有空态组件；首页 `selectedDevice` 仍假定至少一台设备，真后端零设备场景需补首页空态。
@@ -339,8 +342,10 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 ### 未移植（评估后不适用）
 
 - **图库下拉「显示全部绑定设备」修复**（小程序 `list.js`：有照片时只按照片里的设备名生成筛选项、漏掉无照片设备）：Flutter `gallery_page.dart` 的设备下拉本就 `for (final device in state.devices)` 全量遍历后端设备 + 额外「全部相框」项，**已符合期望、无需改动**。
-- **照片预览未编辑时按 aspectFill 裁切上传**：已由真实 `cast_preview_page.dart` +
-  `CastImageEditor.coverCropToRatio` 实现；App 使用原生裁剪器，输出比例和 JPEG 参数与小程序一致。
+- **照片开始投屏时按设备分辨率裁切上传**：由 `cast_preview_page.dart` +
+  **`CastImageEditor.coverCropToSize`**（符号 `coverCropToRatio` 已删除）实现——中心裁到设备比例后
+  **严格缩放到设备分辨率（480×720 / 680×960）**，传给后端的源图恒为设备尺寸、转码零缩放不变形；
+  App 使用原生裁剪器，JPEG 参数与小程序一致。
 - **首页 UI 微调**：已按当前小程序重新核对卡片比例、循环轮播、断连连接按钮、Logo、投屏卡和 Tab 样式。
 
 ### 注意
@@ -386,3 +391,9 @@ BLE 协议栈（`device/ble/*` + `native_device_api`）此前已完整实现（�
 - 本机无 Flutter SDK，未跑 `dart analyze`；CRC/组帧等价性已用 Node 验证，滑动窗口/预取逻辑按符号与调用点交叉核对。
 - **窗口连续喂数据的丢包风险**（同小程序 B1 待验）：旧窗间停顿可能兼作「给设备腾出落 Flash 时间」；滑动窗口若在真机抬高丢包率→触发缩窗减速兜底→反而变慢，需真机 A/B。若丢包变多可在填窗后加 3~5ms 小停顿折中。
 - `pace` 默认 10ms 为保守取值（无 App 真机基线）；调试页 `ble_debug_page` 的 `_pace` 滑块仍可手动调，AIMD 会自动向下收敛。真机测得稳定值后可下调默认。
+
+---
+
+## 操作日志
+
+- 2026-07（本轮）：纠正一批旧字段名（照做会复现已修 bug）——userRegister/resetPassword/changeUserEmail 均为 `userEmail/verifyCode/password(md5)/confirmPassword(md5)`(无 nickName)；changePassword 为 `verifyCode/password/confirmPassword`(userToken 定位，无 old/newPassword)；`sendEmailToken` 已统一为 `sendEmail`；更新页已真实化(checkAppVersion)；投屏 `coverCropToRatio`→`coverCropToSize`(设备分辨率)。

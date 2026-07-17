@@ -6,9 +6,7 @@ import '../../../shared/l10n/app_l10n.dart';
 
 /// 绑定设备-扫码帮助页：指引用户扫码 / 找到设备二维码，对应 UI 稿「扫码帮助」。
 class BindDeviceScanHelp extends StatelessWidget {
-  const BindDeviceScanHelp({super.key, this.onRetry});
-
-  final VoidCallback? onRetry;
+  const BindDeviceScanHelp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -125,11 +123,6 @@ class BindDeviceScanHelp extends StatelessWidget {
                         fontWeight: FontWeight.w400,
                         height: 1.55,
                       ),
-                    ),
-                    const SizedBox(height: 24),
-                    FigmaHomePrimaryButton(
-                      label: AppL10n.of(context).bindRescan,
-                      onPressed: onRetry,
                     ),
                   ],
                 ),

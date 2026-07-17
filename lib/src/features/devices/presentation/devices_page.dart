@@ -85,11 +85,16 @@ class _DevicesPageState extends State<DevicesPage> {
             }
             // 真实 BLE 连接：复用活动会话或扫描匹配（只认序列号，改名不影响连接）。
             AppLoadingDialog.show(context, AppL10n.of(context).devConnecting);
-            final feedback = await state.connectDevice(deviceId);
+            final ActionFeedback feedback;
+            try {
+              feedback = await state.connectDevice(deviceId);
+            } finally {
+              // hide 不做 mounted 门控（见 AppLoadingDialog.hide 注释）。
+              AppLoadingDialog.hide(context);
+            }
             if (!context.mounted) {
               return;
             }
-            AppLoadingDialog.hide(context);
             if (!feedback.success) {
               _showMessage(context, feedback.message);
             }
@@ -167,11 +172,16 @@ class _DevicesPageState extends State<DevicesPage> {
       return false;
     }
     AppLoadingDialog.show(context, AppL10n.of(context).bindConnecting);
-    final feedback = await widget.state.connectDevice(deviceId);
+    // 统一 hide 收口（精确移除 + 无 mounted 门控），替换掉盲 pop（历史闪退根源）。
+    final ActionFeedback feedback;
+    try {
+      feedback = await widget.state.connectDevice(deviceId);
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!context.mounted) {
       return false;
     }
-    Navigator.of(context, rootNavigator: true).pop();
     if (!feedback.success) {
       _showMessage(context, feedback.message);
     }

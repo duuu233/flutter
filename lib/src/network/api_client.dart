@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show FileSystemException, IOException;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -118,10 +119,15 @@ class ApiClient {
     );
   }
 
+  /// [retryOnTimeout]：超时后是否静默重试。超时 ≠ 请求未送达——服务端可能已执行、
+  /// 只是响应没回来。**非幂等接口**（发验证码 / 写投屏记录 / 绑定设备）应传 false，
+  /// 否则弱网下会重复副作用（验证码双发、记录重复）。连接失败（[IOException]，
+  /// 连接根本没建立、不可能有副作用）不受此参数影响，始终可重试。
   Future<dynamic> postJson(
     String path, {
     Map<String, dynamic>? body,
     bool auth = true,
+    bool retryOnTimeout = true,
   }) async {
     // POST 也要把公共参数拼进 query string（body 仍为 JSON 业务字段）：后端按 query 里的 userToken
     // 鉴权，此前 postJson 未带 query 导致 addUserProduct 等已登录 POST 鉴权失败、绑定不上。
@@ -141,6 +147,7 @@ class ApiClient {
             body: jsonEncode(payload),
           )
           .timeout(ApiConfig.timeout),
+      retryOnTimeout: retryOnTimeout,
     );
   }
 
@@ -153,8 +160,9 @@ class ApiClient {
   Future<dynamic> _sendWithRetry(
     String method,
     Uri uri,
-    Future<http.Response> Function() send,
-  ) async {
+    Future<http.Response> Function() send, {
+    bool retryOnTimeout = true,
+  }) async {
     var attempt = 0;
     while (true) {
       try {
@@ -164,19 +172,34 @@ class ApiClient {
       } on ApiException {
         rethrow; // 业务/服务器错误：不重试
       } on TimeoutException {
+        // 超时时请求可能已被服务端执行（见 postJson.retryOnTimeout 注释）。
+        if (retryOnTimeout && attempt < ApiConfig.networkRetryMax) {
+          attempt++;
+          await Future<void>.delayed(ApiConfig.networkRetryDelay);
+          continue;
+        }
+        throw ApiException('NETWORK_TIMEOUT', _l10n.netTimeout);
+      } on http.ClientException {
+        // 连接层失败（DNS/拒连/连接中断）：请求未到达服务端，重试无副作用。
         if (attempt < ApiConfig.networkRetryMax) {
           attempt++;
           await Future<void>.delayed(ApiConfig.networkRetryDelay);
           continue;
         }
-        throw ApiException('NETWORK_ERROR', _l10n.netTimeout);
-      } catch (_) {
+        throw ApiException('NETWORK_UNREACHABLE', _l10n.netConnectFailed);
+      } on IOException {
+        // SocketException / TLS 握手失败等，同上可安全重试。
         if (attempt < ApiConfig.networkRetryMax) {
           attempt++;
           await Future<void>.delayed(ApiConfig.networkRetryDelay);
           continue;
         }
-        throw ApiException('NETWORK_ERROR', _l10n.netConnectFailed);
+        throw ApiException('NETWORK_UNREACHABLE', _l10n.netConnectFailed);
+      } on Exception {
+        // 非网络异常（如 jsonEncode 对不可序列化对象抛错）：重试无意义，也不该被
+        // 报成「网络连接失败」误导用户查网络。原实现的兜底 catch 会把它重试 2 次
+        // 再谎报网络错误。Error（编程缺陷）不捕获，让全局 onError 如实记录。
+        throw ApiException('CLIENT_ERROR', _l10n.netRequestFailed);
       }
     }
   }
@@ -211,19 +234,27 @@ class ApiClient {
           }
         });
         request.files.add(await http.MultipartFile.fromPath(field, filePath));
-        // 上传用更长的 uploadTimeout（不受普通请求 10s 影响），且不做自动重试（避免重复上传/重复投屏记录）
+        // 上传用更长的 uploadTimeout（不受普通请求 10s 影响），且不做自动重试（避免重复上传/重复投屏记录）。
+        // fromStream（读响应体）也要包同一超时：send() 的超时只覆盖到响应头到达，
+        // 弱网「连接不断但停止收发」时 body 阶段会永久挂起，配 loading 就是无限转圈。
         final streamed = await _http
             .send(request)
             .timeout(ApiConfig.uploadTimeout);
-        final response = await http.Response.fromStream(streamed);
+        final response = await http.Response.fromStream(
+          streamed,
+        ).timeout(ApiConfig.uploadTimeout);
         _logResponse('POST multipart', uri, response);
         results.add(_parse(response));
       } on ApiException {
         rethrow;
       } on TimeoutException {
-        throw ApiException('NETWORK_ERROR', _l10n.netTimeout);
-      } catch (_) {
-        throw ApiException('NETWORK_ERROR', _l10n.netConnectFailed);
+        throw ApiException('NETWORK_TIMEOUT', _l10n.netTimeout);
+      } on FileSystemException {
+        // 本地文件已被清理/移动（fromPath 读不到）：这是文件问题不是网络问题，
+        // 原实现报「网络连接失败」会让用户徒劳地检查网络。
+        throw ApiException('UPLOAD_FILE_MISSING', _l10n.netUploadFileMissing);
+      } on Exception {
+        throw ApiException('NETWORK_UNREACHABLE', _l10n.netConnectFailed);
       }
     }
     return results.length == 1 ? results.first : results;
@@ -232,6 +263,10 @@ class ApiClient {
   /// 解析响应：按 HTTP 状态码与业务 retCode 二次判定，成功返回 retData。
   dynamic _parse(http.Response response) {
     Map<String, dynamic> body;
+    // 响应体非空但不是 JSON（网关维护页/运营商劫持返回 HTML 等）：不能吞成 {}
+    // 伪装成功——下游会碎成「列表悄悄变空」「未返回结果」等无法归因的症状。
+    // 非 2xx 时仍优先按状态码报错（HTML 错误页很常见），2xx 才显性抛解析失败。
+    var parseFailed = false;
     try {
       final text = response.bodyBytes.isEmpty
           ? ''
@@ -240,6 +275,7 @@ class ApiClient {
       body = decoded is Map<String, dynamic> ? decoded : <String, dynamic>{};
     } catch (_) {
       body = <String, dynamic>{};
+      parseFailed = response.bodyBytes.isNotEmpty;
     }
 
     final retCode = body['retCode'];
@@ -259,12 +295,20 @@ class ApiClient {
       );
     }
 
-    // 非 2xx 视为服务器异常
+    // 非 2xx 视为服务器异常。authError 显式置 false：HTTP 406（Not Acceptable，
+    // 网关/CDN 可能返回，与鉴权无关）不能被 isAuthError 的数值推断误判成登录失效
+    // 而把用户踢回登录页；真正的会话过期已在上面的 401/406 分支处理。
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw ApiException(
         response.statusCode,
         retMsg ?? _l10n.netServerError,
+        authError: false,
       );
+    }
+
+    // 2xx 但响应体不是 JSON：显性报服务器异常，而不是伪装成功返回空数据。
+    if (parseFailed) {
+      throw ApiException('PARSE_ERROR', _l10n.netServerError);
     }
 
     // BoltFox 约定 retCode=200 表示成功

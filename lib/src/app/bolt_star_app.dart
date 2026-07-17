@@ -13,6 +13,7 @@ import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../shared/widgets/app_toast.dart';
+import '../shared/widgets/app_widgets.dart' show AppLoadingDialog;
 import '../state.dart';
 import 'app_theme.dart';
 
@@ -99,6 +100,10 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     final loggedIn = _state.isLoggedIn;
     if (_wasLoggedIn && !loggedIn) {
       _currentIndex = 0; // 复位 Tab，下次登录从首页进
+      // 兜底收掉可能在展示的全局 loading：会话过期时若有页面正 show 着蒙层等待
+      // 在途请求，popUntil 卸载该页后蒙层会留在 root 栈上（canPop:false，App 假死）。
+      // 各调用点的 try/finally 是第一道防线，这里是登出路径的统一兜底（幂等）。
+      AppLoadingDialog.hideIfAny();
       // 不在监听回调里同步操作 Navigator（此刻可能正在 build/notify 中），推迟到帧末。
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _navigatorKey.currentState?.popUntil((route) => route.isFirst);

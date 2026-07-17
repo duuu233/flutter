@@ -5,7 +5,8 @@ import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 操作指南页面，对照小程序 `subpackages/settings/guide` 还原：
-/// 胶囊搜索框 + 一张玻璃卡内的可展开常见问题列表（带 `why-icon01` 问号图标）。
+/// 一张玻璃卡内的可展开常见问题列表（带 `why-icon01` 问号图标）。
+/// 搜索模块已按产品要求移除（2026-07-17）。
 class GuidePage extends StatefulWidget {
   const GuidePage({super.key, required this.state});
 
@@ -16,9 +17,7 @@ class GuidePage extends StatefulWidget {
 }
 
 class _GuidePageState extends State<GuidePage> {
-  final TextEditingController _searchController = TextEditingController();
   final Set<String> _expanded = <String>{};
-  String _keyword = '';
 
   @override
   void initState() {
@@ -48,12 +47,6 @@ class _GuidePageState extends State<GuidePage> {
     });
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
-
   void _toggle(FaqArticle faq) {
     setState(() {
       if (!_expanded.add(faq.id)) {
@@ -72,13 +65,7 @@ class _GuidePageState extends State<GuidePage> {
 
   @override
   Widget build(BuildContext context) {
-    final items = <FaqArticle>[
-      for (final faq in widget.state.faqArticles)
-        if (_keyword.isEmpty ||
-            faq.question.contains(_keyword) ||
-            faq.answer.contains(_keyword))
-          faq,
-    ];
+    final items = widget.state.faqArticles;
 
     return FigmaScreen(
       title: AppL10n.of(context).guideTitle,
@@ -86,11 +73,6 @@ class _GuidePageState extends State<GuidePage> {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
-          _SearchField(
-            controller: _searchController,
-            onChanged: (value) => setState(() => _keyword = value.trim()),
-          ),
           const SizedBox(height: 12),
           Expanded(
             child: SingleChildScrollView(
@@ -110,60 +92,6 @@ class _GuidePageState extends State<GuidePage> {
                 ),
               ),
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 胶囊搜索框（小程序 `.search-box`）：半透明白底 + 全圆角 + 右侧 `search-icon01`。
-class _SearchField extends StatelessWidget {
-  const _SearchField({required this.controller, required this.onChanged});
-
-  final TextEditingController controller;
-  final ValueChanged<String> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 48,
-      padding: const EdgeInsets.fromLTRB(18, 0, 19, 0),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.88)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: controller,
-              onChanged: onChanged,
-              cursorColor: const Color(0xFFEB5F1B),
-              style: const TextStyle(
-                color: Color(0xFF2A2D32),
-                fontSize: 14,
-                height: 1.2,
-              ),
-              decoration: InputDecoration(
-                isCollapsed: true,
-                border: InputBorder.none,
-                hintText: AppL10n.of(context).guideSearchHint,
-                hintStyle: const TextStyle(
-                  color: Color(0xFF9AA1AB),
-                  fontSize: 14,
-                  height: 1.2,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Image.asset(
-            'assets/images/search-icon01.png',
-            width: 16,
-            height: 16,
-            fit: BoxFit.contain,
           ),
         ],
       ),

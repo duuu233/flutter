@@ -735,19 +735,28 @@ class FigmaInfoRow extends StatelessWidget {
                 ),
                 const SizedBox(width: 10),
               ],
-              Expanded(
-                child: Text(
-                  label,
-                  // 信息行标题保持 w600（小程序设备详情 `.info-label`），不随表单标签加粗到 w700。
-                  style: FigmaTextStyles.formLabel.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: danger
-                        ? const Color(0xFFEB5F1B)
-                        : const Color(0xFF2A2B2B),
-                  ),
+              // label 左对齐、按内容宽度（这些标题都是短标签）。**必须用纯 Text**：
+              // Expanded 会把 label 强撑占满剩余的一大块、把 value 挤窄到稍长就 `...`；
+              // Flexible 又会与 value 的 Expanded 平分空间（label 短时 value 只占一半、
+              // 右边留白）。纯 Text 只占内容宽，剩余才全部留给 value。
+              Text(
+                label,
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                // 信息行标题保持 w600（小程序设备详情 `.info-label`），不随表单标签加粗到 w700。
+                style: FigmaTextStyles.formLabel.copyWith(
+                  fontWeight: FontWeight.w600,
+                  color: danger
+                      ? const Color(0xFFEB5F1B)
+                      : const Color(0xFF2A2B2B),
                 ),
               ),
-              Flexible(
+              const SizedBox(width: 12),
+              // value 右对齐、占据 label 之外的**全部**剩余空间：中间空间够大就多显示，
+              // 真的超出剩余宽度才 `...`。value 为空（如「修改密码」纯入口行）时是空占位，
+              // 把右侧箭头推到最右，与上面各行的箭头对齐。
+              Expanded(
                 child: Text(
                   value,
                   maxLines: 1,

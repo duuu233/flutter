@@ -34,6 +34,11 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   @override
   void initState() {
     super.initState();
+    // 订阅全局状态：本页原来完全不订阅、只靠交互后的手动 setState，页面打开期间
+    // BLE 断链（reconcileConnectionFlags → notify）等外部变化不会反映到界面——
+    // 用户会在「看似已连接」的图库页发起删除/刷屏，多等一轮自动重连超时。
+    // 与 devices_page 等页的订阅模式收敛为一种。
+    widget.state.addListener(_handleStateChanged);
     // 打开时刷新设备 + 图库，随后查一次当前设备的一键清除状态。
     // 两个接口并发（原来是串行 await，空态/loading 要多等一个完整往返；它们之间没有依赖）。
     // 首屏在 state.albumLoaded 之前显示 loading，不会先闪一下空态（对齐小程序 list.js loading:true）。
@@ -60,8 +65,15 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
 
   @override
   void dispose() {
+    widget.state.removeListener(_handleStateChanged);
     appRouteObserver.unsubscribe(this);
     super.dispose();
+  }
+
+  void _handleStateChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   /// 被覆盖的页 pop 回来（重入）：回后端刷新图库（对齐小程序 onShow loadPhotos）。
@@ -266,8 +278,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     // 设备侧删除(0x12)可能耗时较久（最长约 180s），期间用蒙层 loading 阻断误操作
     // （对齐小程序 wx.showLoading({title:'删除中', mask:true})）。
     _showBlockingLoading(AppL10n.of(context).galDeleting);
-    final feedback = await state.deleteAlbumPhotos(_selectedIds);
-    if (mounted) {
+    // dismiss 不做 mounted 门控（hide 本就不依赖 context）：页面在 await 期间被
+    // 卸载时也要收掉 root 栈上 canPop:false 的蒙层，否则整个 App 假死。
+    final ActionFeedback feedback;
+    try {
+      feedback = await state.deleteAlbumPhotos(_selectedIds);
+    } finally {
       _dismissBlockingLoading();
     }
     if (!mounted) {
@@ -292,8 +308,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       return;
     }
     _showBlockingLoading(AppL10n.of(context).galRefreshing);
-    final feedback = await state.refreshGalleryPhotoOnScreen(_selectedIds.first);
-    if (mounted) {
+    final ActionFeedback feedback;
+    try {
+      feedback = await state.refreshGalleryPhotoOnScreen(_selectedIds.first);
+    } finally {
       _dismissBlockingLoading();
     }
     if (!mounted) {
@@ -495,11 +513,12 @@ class _GalleryTile extends StatelessWidget {
                 ),
               ),
             ),
-            if (photo.imageUrl != null)
+            if (photo.thumbUrl != null)
               Positioned.fill(
                 child: CachedNetworkImage(
-                  imageUrl: photo.imageUrl!,
-                  // aspectFit：完整显示原图、保持比例不裁切不拉伸（对齐小程序 list.wxml mode=aspectFit），
+                  // 列表只取缩略图 imgThumb（无则回退 img），对齐小程序 list.wxml 的 item.imgThumb。
+                  imageUrl: photo.thumbUrl!,
+                  // aspectFit：完整显示、保持比例不裁切不拉伸（对齐小程序 list.wxml mode=aspectFit），
                   // 留白落在下方色块渐变上；避免 cover 中心裁切与后端记录 img 比例不一致。
                   fit: BoxFit.contain,
                   // 3 列网格瓦片约 120lp，按物理像素解码：原图(≤1920 长边)解码位图
@@ -507,6 +526,9 @@ class _GalleryTile extends StatelessWidget {
                   // 解码+重下载；限宽后 ~30 倍内存降幅，可全量驻留缓存。
                   memCacheWidth:
                       (140 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  // 磁盘缓存同样限宽：不设的话磁盘存的是服务端原图（≤1920 长边），
+                  // 百张相册量级要占几十 MB，逐出后二次解码也更贵；瓦片场景 800 足够。
+                  maxWidthDiskCache: 800,
                   errorWidget: (context, url, error) =>
                       const SizedBox.shrink(),
                 ),

@@ -73,12 +73,18 @@ class ProjectionResult {
     required this.uploaded,
     required this.total,
     required this.message,
+    this.failureKind,
   });
 
   final bool success;
   final int uploaded;
   final int total;
   final String message;
+
+  /// 失败原因的机器可读分类（来自 [FrameBleException.kind]）。
+  /// 失败页优先按它归类展示话术，[message] 只兜底——错误语义不再依赖
+  /// 对 message 的中文子串匹配，翻译服务层文案不会破坏归类。
+  final FrameBleErrorKind? failureKind;
 }
 
 /// 用户主动中断（切后台 / 离开页面）。
@@ -115,6 +121,7 @@ class ServerImageProjectionService {
         uploaded: 0,
         total: 0,
         message: '设备未连接，请先连接设备后再投屏',
+        failureKind: FrameBleErrorKind.disconnected,
       );
     }
     if (images.isEmpty) {
@@ -172,10 +179,10 @@ class ServerImageProjectionService {
       // 机型/尺寸分开判（对齐小程序 result.js:367-375）：只有 0x03 才是「该型号暂不支持图传」；
       // 读到 0 尺寸多半是刷屏后短暂断连，应提示「重新连接」而非误报机型不支持。
       if (info.screenType == 0x03) {
-        throw FrameBleException('该型号暂不支持图传');
+        throw FrameBleException('该型号暂不支持图传', kind: FrameBleErrorKind.unsupported);
       }
       if (info.width == 0 || info.height == 0) {
-        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏');
+        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏', kind: FrameBleErrorKind.disconnected);
       }
       final expected4bpp =
           (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2（向上取整）
@@ -202,6 +209,12 @@ class ServerImageProjectionService {
             height: info.height,
           ),
         );
+        // 预取失败的错误仍留到主循环 await 时按原流程抛出（ignore 只是挂一个丢弃
+        // 监听器，不吞后续 await 拿到的错误）。不挂的话：主循环要等上一张 BLE 图传完
+        // （数十秒）才 await 到它，期间「完成出错但无监听者」的 Future 会被
+        // PlatformDispatcher.onError 当成未处理异步错误写入 last_crash.txt，
+        // 一次普通弱网下载失败就会在下次启动误弹「崩溃报告」。
+        prefetch[idx]!.ignore();
       }
 
       startPrefetch(0);
@@ -246,7 +259,7 @@ class ServerImageProjectionService {
           FrameProtocol.indexesToMask(usedIndexes),
           info.capacity,
         );
-        if (index < 0) throw FrameBleException('设备已存满');
+        if (index < 0) throw FrameBleException('设备已存满', kind: FrameBleErrorKind.storageFull);
 
         // 开始图传本张：标题切「图片传输中」，百分比从 0 起（对齐小程序 result.js:483）。
         emit(
@@ -357,6 +370,7 @@ class ServerImageProjectionService {
         message: uploaded >= 1
             ? '已投 $uploaded/$total 张，其余已中断'
             : '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。',
+        failureKind: FrameBleErrorKind.aborted,
       );
     } catch (error) {
       final raw = error is FrameBleException ? error.message : error.toString();
@@ -373,6 +387,9 @@ class ServerImageProjectionService {
         message: uploaded >= 1
             ? '已投 $uploaded/$total 张（有 ${total - uploaded} 张未成功）'
             : (aborted ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。' : raw),
+        failureKind: aborted
+            ? FrameBleErrorKind.aborted
+            : (error is FrameBleException ? error.kind : null),
       );
     } finally {
       // 整批结束（成功/失败/中断都算）恢复省电：系统侧 LOW_POWER + 下发 0x13 回落到空闲连接间隔(100ms)。
@@ -429,6 +446,7 @@ class ServerImageProjectionService {
         uploaded: 0,
         total: 1,
         message: '设备未连接，请先连接设备后再投屏',
+        failureKind: FrameBleErrorKind.disconnected,
       );
     }
     if (imgBleUrl.isEmpty) {
@@ -456,10 +474,10 @@ class ServerImageProjectionService {
       ); // B2：精简读取，不带 0x03 固件版本
       // 机型/尺寸分开判（对齐小程序 result.js）：0x03 才是不支持；尺寸 0 多为短暂断连，提示重连。
       if (info.screenType == 0x03) {
-        throw FrameBleException('该型号暂不支持图传');
+        throw FrameBleException('该型号暂不支持图传', kind: FrameBleErrorKind.unsupported);
       }
       if (info.width == 0 || info.height == 0) {
-        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏');
+        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏', kind: FrameBleErrorKind.disconnected);
       }
       final expected4bpp =
           (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2
@@ -467,7 +485,7 @@ class ServerImageProjectionService {
       // 设备空间校验：至少要有 1 个空闲槽位。
       final usedIndexes = FrameProtocol.maskToIndexes(info.imgMask);
       if (info.capacity - usedIndexes.length < 1) {
-        throw FrameBleException('设备空间不足：设备已存满');
+        throw FrameBleException('设备空间不足：设备已存满', kind: FrameBleErrorKind.storageFull);
       }
 
       // 直接下载记录里后端转换好的设备帧(.bin)，同时开始极速连接间隔协商。
@@ -501,7 +519,7 @@ class ServerImageProjectionService {
         FrameProtocol.indexesToMask(usedIndexes),
         info.capacity,
       );
-      if (index < 0) throw FrameBleException('设备已存满');
+      if (index < 0) throw FrameBleException('设备已存满', kind: FrameBleErrorKind.storageFull);
 
       // D1/D2 图传预处理（整图 CRC32 + 预组 0x21 帧），失败回退不阻断本张。
       PreparedTransfer? prepared;
@@ -607,6 +625,7 @@ class ServerImageProjectionService {
         uploaded: 0,
         total: 1,
         message: '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。',
+        failureKind: FrameBleErrorKind.aborted,
       );
     } catch (error) {
       final raw = error is FrameBleException ? error.message : error.toString();
@@ -628,6 +647,9 @@ class ServerImageProjectionService {
         uploaded: 0,
         total: 1,
         message: aborted ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。' : raw,
+        failureKind: aborted
+            ? FrameBleErrorKind.aborted
+            : (error is FrameBleException ? error.kind : null),
       );
     } finally {
       // 不阻塞结果页：即使下载/校验提前失败，也会在极速协商收口后恢复省电档。
@@ -741,8 +763,10 @@ class ServerImageProjectionService {
     );
   }
 
-  /// 上传前兜底压缩，对齐小程序 2026-07-13 的 `compressForUpload`：
-  /// 源文件大于 400KB 才处理，长边最多保留设备长边的 2 倍，JPEG 质量 80；
+  /// 上传前兜底压缩，对齐小程序 2026-07-16 的 `compressForUpload`：
+  /// 源文件大于 400KB 才处理，长边压到**当前设备长边（1 倍 = 设备分辨率）**、JPEG 质量 90；
+  /// 后端反正会把图缩到设备分辨率再做六色抖动，上传超过设备长边的像素纯属浪费流量与后端转码时间
+  /// （原来传设备长边的 2 倍 ≈ 4 倍字节，正是「上传/后端转码慢」的主因，2026-07-17 对齐小程序修正）。
   /// 压缩失败或结果反而更大时继续用原文件，绝不阻断投屏。
   Future<String> _prepareUploadSource({
     required String filePath,
@@ -755,10 +779,13 @@ class ServerImageProjectionService {
       if (sourceBytes <= _uploadCompressTriggerBytes) {
         return filePath;
       }
+      // 传**文件路径**给 isolate、在 isolate 内读文件：原来主 isolate 先 readAsBytes
+      // 整张原图（相机原片 8~15MB），再作为 compute 消息跨 isolate **拷贝**一份——
+      // 瞬时 2× 原图内存 + 主 isolate 一次大 IO；低端机连投多张大图时是明显的内存尖峰。
       final encoded = await compute(
         _compressUploadSource,
         _UploadCompressRequest(
-          bytes: await source.readAsBytes(),
+          filePath: filePath,
           maxLongEdge:
               (targetWidth > targetHeight ? targetWidth : targetHeight) *
               _uploadLongEdgeScale,
@@ -821,21 +848,32 @@ class _ConvertResult {
 }
 
 const int _uploadCompressTriggerBytes = 400 * 1024;
-const int _uploadLongEdgeScale = 2;
-const int _uploadCompressQuality = 80;
+// 上传图片的目标长边 = 当前设备长边 × 此系数。对齐小程序 compressForUpload（2026-07-16）：取 1
+//（= 设备分辨率）。后端只吐设备分辨率的六色帧，传更大的原图纯属浪费上传流量与后端转码时间。
+const int _uploadLongEdgeScale = 1;
+// JPEG 重编码质量，对齐小程序 UPLOAD_COMPRESS_QUALITY = 90。
+const int _uploadCompressQuality = 90;
 
 class _UploadCompressRequest {
   const _UploadCompressRequest({
-    required this.bytes,
+    required this.filePath,
     required this.maxLongEdge,
   });
 
-  final Uint8List bytes;
+  final String filePath;
   final int maxLongEdge;
 }
 
+/// 顶层函数，在 compute isolate 内执行：读文件 + 解码 + 缩放 + JPEG 编码全在
+/// 子 isolate，主 isolate 不碰原图字节。任何失败返回 null（调用方回退原文件）。
 Uint8List? _compressUploadSource(_UploadCompressRequest request) {
-  var image = img.decodeImage(request.bytes);
+  final Uint8List bytes;
+  try {
+    bytes = File(request.filePath).readAsBytesSync();
+  } catch (_) {
+    return null;
+  }
+  var image = img.decodeImage(bytes);
   if (image == null) {
     return null;
   }

@@ -149,9 +149,7 @@ class _ForgotPasswordState extends State<ForgotPassword> {
     } finally {
       // 任何异常都必须收掉 loading，否则遮罩卡死整个页面。
       _sendingCode = false;
-      if (mounted) {
-        AppLoadingDialog.hide(context);
-      }
+      AppLoadingDialog.hide(context);
     }
     if (!mounted) {
       return;

@@ -50,14 +50,32 @@ class _SplashPageState extends State<SplashPage>
               ),
             ),
           ),
-          // 居中品牌 LOGO，淡入。
+          // 居中品牌 LOGO（英文字标，与原生启动图 splash_logo 同一个，避免切换感）
+          // + 一句 slogan，整体淡入。
           Center(
             child: FadeTransition(
               opacity: _fade,
-              child: Image.asset(
-                'assets/images/logo.png',
-                width: 200,
-                fit: BoxFit.contain,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Image.asset(
+                    'assets/images/logo.png',
+                    width: 200,
+                    fit: BoxFit.contain,
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    '把美好，留在一张纸上',
+                    style: TextStyle(
+                      color: Color(0xFF808690),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: 1,
+                      height: 1.2,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ],
               ),
             ),
           ),

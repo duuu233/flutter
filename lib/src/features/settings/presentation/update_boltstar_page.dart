@@ -1,28 +1,35 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../state.dart';
 
-/// 更新 BoltStar 页面的三种状态，分别对应 UI 稿
-/// 「更新BoltStar」(已是最新)、「立即更新」(有新版本)、「正在更新」(下载中)。
-enum BoltStarUpdateStage { upToDate, updateAvailable, downloading }
+/// 更新 BoltStar 页面的展示态，对应 UI 稿：
+/// - [checking]：进入页面正在请求版本检查（logo + 「检查更新中…」）。
+/// - [upToDate]：已是最新（logo + 「版本 x.x.x」+ 应用简介，无按钮）。
+/// - [updateAvailable]：有新版本（logo + 「当前版本 x · 最新版本 y」+ 简介 + 「立即更新」）。
+/// - [downloading]：点「立即更新」后（logo + 「正在更新…」+ 进度环）。
+enum BoltStarUpdateStage { checking, upToDate, updateAvailable, downloading }
 
-const String _currentVersion = '1.0.0';
-const String _latestVersion = '1.2.0';
-
-/// 更新 BoltStar 页面。
+/// 更新 BoltStar 页面（设置页「检测更新」入口跳转到此）。
 ///
-/// 真实环境下应在进入页面时请求版本检查接口，根据返回结果决定初始 [stage]。
-/// 这里用 [stage] 入参模拟三种状态，并用本地动画模拟下载进度（伪逻辑）。
+/// 进入即调用 [PhotoFrameState.checkAppVersion] 真实检查版本：
+/// 当前版本来自 `package_info`，最新版本 / 下载地址来自后端 `getLastVersion`。
+/// 「立即更新」用系统浏览器 / 应用商店打开下载地址（对齐项目既定设计，见 pubspec
+/// 中 url_launcher 的说明）；打开下载地址的同时切到「正在更新」进度环作为视觉反馈。
+/// 页面背景走 [FigmaScreen] 默认的 `bg01.png`（与其它页面统一，非 UI 稿里的过时浅蓝渐变）。
+///
+/// [previewStage] 仅供未接入导航的演示路由（`figmaUpdateBoltStar*`）强制展示某一态，
+/// 此时用占位版本号、不发起真实请求；正常入口只传 [state]。
 class UpdateBoltStarPage extends StatefulWidget {
-  const UpdateBoltStarPage({
-    super.key,
-    this.stage = BoltStarUpdateStage.upToDate,
-  });
+  const UpdateBoltStarPage({super.key, this.state, this.previewStage});
 
-  final BoltStarUpdateStage stage;
+  final PhotoFrameState? state;
+  final BoltStarUpdateStage? previewStage;
 
   @override
   State<UpdateBoltStarPage> createState() => _UpdateBoltStarPageState();
@@ -30,8 +37,12 @@ class UpdateBoltStarPage extends StatefulWidget {
 
 class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
     with SingleTickerProviderStateMixin {
-  late BoltStarUpdateStage _stage = widget.stage;
+  late BoltStarUpdateStage _stage;
   late final AnimationController _downloadController;
+
+  String _currentVersion = '';
+  String _latestVersion = '';
+  String _downloadUrl = '';
 
   @override
   void initState() {
@@ -39,10 +50,23 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
     _downloadController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 6),
-    )..addStatusListener(_onDownloadStatus);
-    if (_stage == BoltStarUpdateStage.downloading) {
-      _downloadController.forward();
+    );
+
+    final preview = widget.previewStage;
+    if (preview != null) {
+      // 演示路由：占位版本号 + 指定态，不发真实请求。
+      _stage = preview;
+      _currentVersion = '1.0.0';
+      _latestVersion = '1.2.0';
+      if (preview == BoltStarUpdateStage.downloading) {
+        _downloadController.forward();
+      }
+      return;
     }
+
+    // 正常入口：进入即真实检查版本。
+    _stage = BoltStarUpdateStage.checking;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _check());
   }
 
   @override
@@ -51,16 +75,59 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
     super.dispose();
   }
 
-  void _onDownloadStatus(AnimationStatus status) {
-    if (status == AnimationStatus.completed && mounted) {
-      AppToast.show(context, AppL10n.of(context).setUpdatedToLatest);
-      Navigator.maybePop(context);
+  Future<void> _check() async {
+    final state = widget.state;
+    if (state == null) {
+      return;
     }
+    // checkAppVersion 失败时**抛异常**（返回非空 AppVersionInfo，不返回 null），
+    // 必须 try/catch：否则网络异常会成为未捕获异步错误，页面永远停在「检查更新中…」
+    // 并污染崩溃日志。
+    final AppVersionInfo info;
+    try {
+      info = await state.checkAppVersion();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+      AppToast.warn(context, AppL10n.of(context).setCheckUpdateFailed);
+      Navigator.of(context).maybePop();
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _currentVersion = info.currentVersion;
+      _latestVersion = info.latestVersion;
+      _downloadUrl = info.downloadUrl;
+      _stage = info.hasUpdate
+          ? BoltStarUpdateStage.updateAvailable
+          : BoltStarUpdateStage.upToDate;
+    });
   }
 
-  void _startDownload() {
+  Future<void> _startUpdate() async {
+    // 切到「正在更新」进度环作为视觉反馈，同时用系统浏览器/商店打开下载地址
+    //（真实下载/安装交给系统，对齐项目既定设计）。
     setState(() => _stage = BoltStarUpdateStage.downloading);
     _downloadController.forward(from: 0);
+
+    final url = _downloadUrl.trim();
+    final uri = url.isEmpty ? null : Uri.tryParse(url);
+    if (uri == null) {
+      if (mounted) {
+        AppToast.warn(context, AppL10n.of(context).setCheckUpdateFailed);
+      }
+      return;
+    }
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (_) {
+      if (mounted) {
+        AppToast.warn(context, AppL10n.of(context).setDownloadOpenFailed);
+      }
+    }
   }
 
   @override
@@ -79,14 +146,11 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
             Center(
               child: AnimatedBuilder(
                 animation: _downloadController,
-                builder: (context, _) {
-                  return _DownloadProgressRing(
-                    progress: _downloadController.value,
-                  );
-                },
+                builder: (context, _) =>
+                    _DownloadProgressRing(progress: _downloadController.value),
               ),
             )
-          else
+          else if (_stage != BoltStarUpdateStage.checking)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 28),
               child: Text(
@@ -105,26 +169,26 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage>
       bottom: _stage == BoltStarUpdateStage.updateAvailable
           ? FigmaPrimaryButton(
               label: AppL10n.of(context).setUpdateNow,
-              onPressed: _startDownload,
+              onPressed: _startUpdate,
             )
           : null,
     );
   }
 
   Widget _versionLabel() {
+    final l10n = AppL10n.of(context);
     switch (_stage) {
+      case BoltStarUpdateStage.checking:
+        return Text(l10n.setCheckingUpdate, style: _versionStyle);
       case BoltStarUpdateStage.upToDate:
-        return Text(
-          AppL10n.of(context).setVersionLabel(_currentVersion),
-          style: _versionStyle,
-        );
+        return Text(l10n.setVersionLabel(_currentVersion), style: _versionStyle);
       case BoltStarUpdateStage.updateAvailable:
         return Text(
-          AppL10n.of(context).setVersionCompare(_currentVersion, _latestVersion),
+          l10n.setVersionCompare(_currentVersion, _latestVersion),
           style: _versionStyle,
         );
       case BoltStarUpdateStage.downloading:
-        return Text(AppL10n.of(context).setUpdating, style: _versionStyle);
+        return Text(l10n.setUpdating, style: _versionStyle);
     }
   }
 }
@@ -211,7 +275,7 @@ class _DownloadProgressRing extends StatelessWidget {
   }
 }
 
-/// 进度环（小程序 `.progress-ring`）：外圈 conic 饼图（橙 #ff762f 进度 + 灰 #dfe5ee 余量），
+/// 进度环（小程序 `.progress-ring`）：外圈饼图（橙 #ff762f 进度 + 灰 #dfe5ee 余量），
 /// 内圈 #edf6ff 实心盖住中心 → 呈现一圈约 8px 的进度带。
 class _RingPainter extends CustomPainter {
   const _RingPainter({required this.progress});
@@ -235,13 +299,11 @@ class _RingPainter extends CustomPainter {
       ..strokeWidth = ringWidth
       ..color = const Color(0xFFFF762F);
 
-    // 内圈浅蓝实心盘。
     canvas.drawCircle(
       center,
       innerRadius,
       Paint()..color = const Color(0xFFEDF6FF),
     );
-    // 进度带：灰底 + 橙色弧（butt 端，呈饼图的锐利切边）。
     canvas.drawCircle(center, ringRadius, track);
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: ringRadius),

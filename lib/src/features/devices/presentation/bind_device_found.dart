@@ -135,6 +135,8 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
       ),
       bottom: FigmaHomePrimaryButton(
         label: AppL10n.of(context).bindBindNow,
+        // 「立即绑定」文字加粗对齐小程序 bind.wxss 的 .primary-action(font-weight:700)。
+        fontWeight: FontWeight.w700,
         onPressed: selectedId.isEmpty
             ? null
             : () => widget.onBindId?.call(selectedId),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../device/ble/device_ble.dart' show FrameBleErrorKind;
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
@@ -175,7 +176,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         _status = _CastStatus.fail;
         _resultTitle = l10n.castFailed;
         // 有具体原因就用具体原因，否则用小程序 STATUS_TEXT.fail 的默认文案。
-        final reason = _friendlyFailure(result.message);
+        final reason = _friendlyFailure(result.message, result.failureKind);
         _desc = reason.isEmpty ? l10n.castResultFailDefaultDesc : reason;
       }
     });
@@ -183,8 +184,29 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
 
   /// 失败原因归类为友好话术（对齐小程序 result.js classifyFailureMessage）：
   /// 设备忙(0x0B) / 内存满 / 断连 / 超时 / 取消 分别给可操作的提示，其余原样透出。
-  String _friendlyFailure(String raw) {
+  ///
+  /// 优先按 [kind]（FrameBleException 的机器可读分类）归类——错误语义不再依赖
+  /// 消息文案，服务层文案翻译后归类依然正确；[kind] 缺失（老抛出点/非 BLE 错误）
+  /// 才落回下方的子串匹配兜底。
+  String _friendlyFailure(String raw, FrameBleErrorKind? kind) {
     final l10n = AppL10n.of(context);
+    switch (kind) {
+      case FrameBleErrorKind.busy:
+      case FrameBleErrorKind.commandPending:
+        return l10n.castFailureBusy;
+      case FrameBleErrorKind.storageFull:
+        return l10n.castFailureStorageFull;
+      case FrameBleErrorKind.disconnected:
+      case FrameBleErrorKind.unsupported: // 沿用原逻辑：不支持机型与断连同一话术桶
+        return l10n.castFailureDisconnected;
+      case FrameBleErrorKind.timeout:
+        return l10n.castFailureTimeout;
+      case FrameBleErrorKind.aborted:
+        return l10n.castFailureCanceled;
+      case FrameBleErrorKind.unknown:
+      case null:
+        break; // 落回子串匹配
+    }
     final lower = raw.toLowerCase();
     if (raw.contains('繁忙') ||
         raw.contains('忙') ||

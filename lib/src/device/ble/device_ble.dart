@@ -35,9 +35,43 @@ class BleMonitorRecord {
   final DateTime time;
 }
 
+/// BLE 层错误的机器可读分类：错误**语义**不再编码在展示字符串里。
+/// UI（投屏失败页等）按 [FrameBleException.kind] 归类给出原因与建议，
+/// message 只负责展示/日志——后续翻译服务层文案不会破坏归类逻辑
+/// （此前 casting_progress 用 `raw.contains('繁忙')` 等中文子串匹配，一翻译即全部失灵）。
+enum FrameBleErrorKind {
+  /// 设备忙（结果码 0x0B / 刷屏或擦写中）——稍后重试即可。
+  busy,
+
+  /// 同一条指令已有请求在飞（如与 25s 保活心跳撞 0x04），内部瞬态，短暂重试即可。
+  commandPending,
+
+  /// 设备存储已满 / 无空闲槽位。
+  storageFull,
+
+  /// 未连接 / 连接已断开 / 该会话不可用。
+  disconnected,
+
+  /// 应答超时。
+  timeout,
+
+  /// 用户主动中止。
+  aborted,
+
+  /// 该型号不支持此操作（如 0x03 屏型不支持图传）。
+  unsupported,
+
+  /// 物理连接失败（GATT connect 失败，如安卓 android-code:133）——通常靠近设备重试即可。
+  connectFailed,
+
+  /// 未细分（默认）。
+  unknown,
+}
+
 class FrameBleException implements Exception {
-  FrameBleException(this.message);
+  FrameBleException(this.message, {this.kind = FrameBleErrorKind.unknown});
   final String message;
+  final FrameBleErrorKind kind;
   @override
   String toString() => message;
 }
@@ -217,69 +251,158 @@ class FrameBleClient {
   // ── 连接 ──────────────────────────────────────────────────
 
   /// 连接设备并发现 FF00 主服务下的写(FF01)/通知(FF02)特征、协商 MTU、开启通知。
+  ///
+  /// 两条会话卫生规则（治「连不上也搜不到 + 前台服务空转」与「重连后通知被重复解析」）：
+  /// ① 建立中任何一步失败都先回收物理连接再抛错——GATT 挂着时设备停止广播，之后
+  ///    扫描永远搜不到这台设备；且失败会话绝不能把 `connected` 谎报成 true。
+  /// ② `_linkAlive`/onLinkStateChanged(true) 要等**通知订阅成功后**才置——它一触发
+  ///    控制器就启动保活心跳与 Android 前台服务，置早了失败路径下两者会永不停止。
   Future<void> connect(BluetoothDevice device) async {
+    // 先清上一段会话的订阅残留：设备侧断开路径只置 _linkAlive=false、不撤订阅
+    // （onValueReceived 是全局流，不随断开自动取消），不清的话重连同一设备后
+    // 每条通知会被 N+1 个旧监听器重复解析，图传越用越慢。
+    await _notifySub?.cancel();
+    _notifySub = null;
+    await _connSub?.cancel();
+    _connSub = null;
+
     _device = device;
     _rxBuffer.clear();
-    await device.connect(
-      license: License.nonprofit,
-      timeout: const Duration(seconds: 12),
-      mtu: null,
-    );
+    try {
+      // ① 连接带重试（对齐小程序 device-ble.createConnectionWithRetry）：安卓 GATT 首次连接
+      //    易抖动/超时，失败先物理断开清掉半连状态、等 400ms 再试，最多 2 次——单次失败即报错
+      //    会让用户手动再点一次，体感明显不如小程序「一次就连上」。
+      await _connectWithRetry(device);
 
-    _connSub = device.connectionState.listen((state) {
-      if (state == BluetoothConnectionState.disconnected) {
-        _linkAlive = false;
-        _failAllPending('连接已断开');
-        onLinkStateChanged?.call(false);
-      }
-    });
-    _linkAlive = true;
-    onLinkStateChanged?.call(true);
+      _connSub = device.connectionState.listen((state) {
+        if (state == BluetoothConnectionState.disconnected) {
+          _linkAlive = false;
+          _failAllPending('连接已断开');
+          onLinkStateChanged?.call(false);
+        }
+      });
 
-    // 协商 MTU：Android 顶到 512；iOS 由系统协商，读 mtuNow。
-    if (Platform.isAndroid) {
-      try {
-        _mtu = await device.requestMtu(512);
-      } catch (_) {
+      // 协商 MTU：Android 顶到 512；iOS 由系统协商，读 mtuNow。
+      if (Platform.isAndroid) {
+        try {
+          _mtu = await device.requestMtu(512);
+        } catch (_) {
+          _mtu = device.mtuNow;
+        }
+      } else {
         _mtu = device.mtuNow;
       }
-    } else {
-      _mtu = device.mtuNow;
-    }
 
-    final services = await device.discoverServices();
-    BluetoothService? svc;
-    for (final s in services) {
-      if (_short16(s.uuid.str) == FrameProtocol.serviceUuid) {
-        svc = s;
-        break;
+      // ② 服务/特征发现带重试（对齐小程序 discoverMainService/discoverCharacteristics）：
+      //    安卓 discoverServices 首次常返回不全，轮询到 FF00 下 FF01(写)/FF02(通知) 齐了再继续，
+      //    最多 5 次 / 每次间隔 250ms，用尽仍不全才判失败。
+      final chars = await _discoverFrameChars(device);
+      final wc = chars[0];
+      final nc = chars[1];
+      _writeChar = wc;
+      // FF01 多为「无应答写」；若不支持无应答写则退回有应答。
+      _writeWithoutResponse =
+          wc.properties.writeWithoutResponse || !wc.properties.write;
+
+      await nc.setNotifyValue(true);
+      _notifySub = nc.onValueReceived.listen(_onNotify);
+      // FBP 兜底：远端断开时自动撤销数据订阅（与 connect 入口的手动清理双保险）。
+      device.cancelWhenDisconnected(_notifySub!);
+
+      // 全部就绪，链路才算可用（见方法头注释②）。
+      _linkAlive = true;
+      onLinkStateChanged?.call(true);
+
+      // 连接建立后立即把 BLE 连接间隔设为省电的空闲档(100ms)：图传时才临时切到极速档、传完再回落，
+      // 保证保活挂着的连接不长期跑在费电的极速间隔上。best-effort（内部吞错、2s 短超时），失败不阻断连接。
+      await applyIdleConnectionInterval();
+    } catch (_) {
+      // 见方法头注释①：失败必须物理断开，让设备恢复广播、可被再次扫到。
+      // disconnect 幂等且自吞底层错误，不会掩盖原始异常。
+      await disconnect();
+      rethrow;
+    }
+  }
+
+  /// 建立物理连接（带重试，对齐小程序 device-ble.createConnectionWithRetry）：
+  /// 失败先断开清半连状态、等 400ms 再试，最多 [attempts] 次；全部失败抛最后一次错误。
+  Future<void> _connectWithRetry(
+    BluetoothDevice device, {
+    int attempts = 2,
+  }) async {
+    Object? lastError;
+    for (int i = 0; i < attempts; i++) {
+      try {
+        await device.connect(
+          license: License.nonprofit,
+          timeout: const Duration(seconds: 12),
+          mtu: null,
+        );
+        return;
+      } catch (error) {
+        lastError = error;
+        // 失败先物理断开：清掉半连状态、让设备恢复广播，否则下次扫描/连接更难成功
+        //（对齐小程序 closeBLEConnection + sleep(400) 再重试）。
+        try {
+          await device.disconnect();
+        } catch (_) {}
+        if (i < attempts - 1) {
+          await Future<void>.delayed(const Duration(milliseconds: 400));
+        }
       }
     }
-    if (svc == null) {
-      throw FrameBleException('未找到相框主服务(FF00)，请确认是相框设备');
-    }
+    throw lastError is FrameBleException
+        ? lastError
+        : FrameBleException(
+            // 原始异常（如 FlutterBluePlusException | connect | android-code:133）只进日志，
+            // 不进 message 给用户看；上层按 kind=connectFailed 映射本地化友好文案。
+            '连接设备失败：${lastError ?? '未知错误'}',
+            kind: FrameBleErrorKind.connectFailed,
+          );
+  }
 
-    BluetoothCharacteristic? wc;
-    BluetoothCharacteristic? nc;
-    for (final c in svc.characteristics) {
-      final code = _short16(c.uuid.str);
-      if (code == FrameProtocol.charWriteUuid) wc = c;
-      if (code == FrameProtocol.charNotifyUuid) nc = c;
+  /// 发现 FF00 主服务下的写(FF01)/通知(FF02)特征（带轮询重试，对齐小程序
+  /// discoverMainService/discoverCharacteristics）：安卓首次 discoverServices 常返回不全，
+  /// 轮询到齐再返回 `[write, notify]`；[attempts] 次 / 每次 250ms 用尽仍不全则抛错。
+  Future<List<BluetoothCharacteristic>> _discoverFrameChars(
+    BluetoothDevice device, {
+    int attempts = 5,
+  }) async {
+    Object? lastError;
+    for (int i = 0; i < attempts; i++) {
+      try {
+        final services = await device.discoverServices();
+        BluetoothService? svc;
+        for (final s in services) {
+          if (_short16(s.uuid.str) == FrameProtocol.serviceUuid) {
+            svc = s;
+            break;
+          }
+        }
+        if (svc != null) {
+          BluetoothCharacteristic? wc;
+          BluetoothCharacteristic? nc;
+          for (final c in svc.characteristics) {
+            final code = _short16(c.uuid.str);
+            if (code == FrameProtocol.charWriteUuid) wc = c;
+            if (code == FrameProtocol.charNotifyUuid) nc = c;
+          }
+          if (wc != null && nc != null) {
+            return [wc, nc];
+          }
+        }
+      } catch (error) {
+        lastError = error;
+      }
+      if (i < attempts - 1) {
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+      }
     }
-    if (wc == null || nc == null) {
-      throw FrameBleException('未找到读写特征(FF01/FF02)');
-    }
-    _writeChar = wc;
-    // FF01 多为「无应答写」；若不支持无应答写则退回有应答。
-    _writeWithoutResponse =
-        wc.properties.writeWithoutResponse || !wc.properties.write;
-
-    await nc.setNotifyValue(true);
-    _notifySub = nc.onValueReceived.listen(_onNotify);
-
-    // 连接建立后立即把 BLE 连接间隔设为省电的空闲档(100ms)：图传时才临时切到极速档、传完再回落，
-    // 保证保活挂着的连接不长期跑在费电的极速间隔上。best-effort（内部吞错、2s 短超时），失败不阻断连接。
-    await applyIdleConnectionInterval();
+    throw FrameBleException(
+      lastError == null
+          ? '未找到相框主服务(FF00)或读写特征(FF01/FF02)，请确认是相框设备'
+          : '发现相框服务失败：$lastError',
+    );
   }
 
   Future<void> disconnect() async {
@@ -300,10 +423,22 @@ class FrameBleClient {
     for (final p in _pending.values) {
       p.timer.cancel();
       if (!p.completer.isCompleted) {
-        p.completer.completeError(FrameBleException(reason));
+        p.completer.completeError(
+          FrameBleException(reason, kind: FrameBleErrorKind.disconnected),
+        );
       }
     }
     _pending.clear();
+    // 图传数据阶段挂着的 ACK 等待者也要立刻唤醒：否则断链后要等满 600ms ACK 超时、
+    // 再经 4×80ms 写重试才把错误浮出来（报错慢 ~1s）。completeError 会沿
+    // _waitAckAdvance → uploadImage 直接抛出，finally 的 endTransferSession
+    // 对已断链是安全的 best-effort。
+    final waiter = _imgAckWaiter;
+    if (waiter != null && !waiter.isCompleted) {
+      waiter.completeError(
+        FrameBleException(reason, kind: FrameBleErrorKind.disconnected),
+      );
+    }
   }
 
   // ── 连接间隔（关键：图传前请求短间隔提速、传完恢复省电）──────
@@ -558,7 +693,10 @@ class FrameBleClient {
           // 所有走 ACK 的设备交互（读信息/电量/播放配置、设置播放/校时/删除/刷新、图传起止）都在此汇合，
           // 集中拦截，无论读写一律以「当前设备繁忙，请稍后重试」抛出。
           pending.completer.completeError(
-            FrameBleException(FrameProtocol.busyMessage),
+            FrameBleException(
+              FrameProtocol.busyMessage,
+              kind: FrameBleErrorKind.busy,
+            ),
           );
         } else {
           pending.completer.complete(ack);
@@ -591,16 +729,27 @@ class FrameBleClient {
     bool countsAsActivity = true,
   }) async {
     final chr = _writeChar;
-    if (chr == null) throw FrameBleException('未连接或未发现写特征');
+    if (chr == null) {
+      throw FrameBleException(
+        '未连接或未发现写特征',
+        kind: FrameBleErrorKind.disconnected,
+      );
+    }
     if (_pending.containsKey(cmd)) {
-      throw FrameBleException('指令 0x${cmd.toRadixString(16)} 正在等待应答');
+      throw FrameBleException(
+        '指令 0x${cmd.toRadixString(16)} 正在等待应答',
+        kind: FrameBleErrorKind.commandPending,
+      );
     }
     final completer = Completer<ParsedAck>();
     final timer = Timer(timeout, () {
       _pending.remove(cmd);
       if (!completer.isCompleted) {
         completer.completeError(
-          FrameBleException('指令 0x${cmd.toRadixString(16)} 应答超时'),
+          FrameBleException(
+            '指令 0x${cmd.toRadixString(16)} 应答超时',
+            kind: FrameBleErrorKind.timeout,
+          ),
         );
       }
     });
@@ -642,8 +791,17 @@ class FrameBleClient {
   }
 
   Future<int> readBattery() async {
-    final ack = await request(FrameProtocol.cmdGetBattery);
-    return FrameProtocol.parseBattery(ack.data);
+    try {
+      final ack = await request(FrameProtocol.cmdGetBattery);
+      return FrameProtocol.parseBattery(ack.data);
+    } on FrameBleException catch (e) {
+      // 与 25s 保活心跳（同为 0x04）撞车时不要把「指令正在等待应答」这类内部措辞
+      // 抛给用户：心跳超时上限 2s，稍候一次重试即可覆盖。
+      if (e.kind != FrameBleErrorKind.commandPending) rethrow;
+      await Future<void>.delayed(const Duration(milliseconds: 2200));
+      final ack = await request(FrameProtocol.cmdGetBattery);
+      return FrameProtocol.parseBattery(ack.data);
+    }
   }
 
   /// 空闲保活心跳：发一条最轻的读电量(0x04)在链路上制造流量。
@@ -786,6 +944,17 @@ class FrameBleClient {
     })?
     onProgress,
   }) async {
+    // 图传状态（_lastImgAck/_imgAckWaiter）是实例级单字段，协议全程串行；这里加门闩
+    // 把「串行」变成硬约束——两路并发图传会互相打脏 ACK 状态，两张都以传输中断收场
+    //（正常 UI 流程不会并发，但硬件调试台与业务页可同时触发）。
+    if (_imgUploadBusy) {
+      throw FrameBleException(
+        '已有图传进行中，请等待当前传输结束',
+        kind: FrameBleErrorKind.busy,
+      );
+    }
+    _imgUploadBusy = true;
+
     final dataSize = data.length;
     // D2：只认 dataSize 对得上的预处理结果（防止把别张图的 prepared 传错进来——CRC32/帧都会错，
     // 设备端 0x22 校验必失败）；对得上就复用其整图 CRC32，跳过 0x20 前对整图再扫一遍。
@@ -796,7 +965,12 @@ class FrameBleClient {
     // 图传前把连接间隔切到最快（吞吐翻倍、往返延迟骤降，远离设备 1s 接收超时）。
     // 批量投屏时 manageConnection=false —— 由调用方在整批首尾各调一次，见 beginTransferSession。
     if (manageConnection) {
-      await beginTransferSession();
+      try {
+        await beginTransferSession();
+      } catch (_) {
+        _imgUploadBusy = false;
+        rethrow;
+      }
     }
     try {
       final startAck = await request(
@@ -814,6 +988,11 @@ class FrameBleClient {
       if (!startAck.ok) {
         throw FrameBleException(
           '帧头被拒绝(0x20)：${FrameProtocol.resultText(startAck.result)}',
+          kind: FrameProtocol.isBusyResult(startAck.result)
+              ? FrameBleErrorKind.busy
+              : (startAck.result == 0x06
+                    ? FrameBleErrorKind.storageFull
+                    : FrameBleErrorKind.unknown),
         );
       }
 
@@ -847,7 +1026,7 @@ class FrameBleClient {
 
       while (_lastImgAck < totalPackets - 1) {
         if (shouldAbort?.call() ?? false) {
-          throw FrameBleException('UPLOAD_ABORTED');
+          throw FrameBleException('UPLOAD_ABORTED', kind: FrameBleErrorKind.aborted);
         }
         // 卡住重试时收敛：窗口逐步缩到 1 包、每包间隔逐步拉大，专门救「设备只收按序包、忙时丢包」。
         final curWindow = retries == 0
@@ -861,7 +1040,7 @@ class FrameBleClient {
         while (nextSeq < totalPackets &&
             nextSeq - _lastImgAck - 1 < curWindow) {
           if (shouldAbort?.call() ?? false) {
-            throw FrameBleException('UPLOAD_ABORTED');
+            throw FrameBleException('UPLOAD_ABORTED', kind: FrameBleErrorKind.aborted);
           }
           final seq = nextSeq;
           final frame = prebuilt != null
@@ -942,12 +1121,16 @@ class FrameBleClient {
       onProgress?.call(totalPackets, totalPackets, 'done');
       return FrameProtocol.parseImgEndResult(endAck.data);
     } finally {
+      _imgUploadBusy = false;
       // 无论成功失败，传完恢复省电长间隔（批量投屏由调用方在整批结束后统一恢复）。
       if (manageConnection) {
         await endTransferSession();
       }
     }
   }
+
+  /// 图传互斥门闩（见 [uploadImage] 开头）。
+  bool _imgUploadBusy = false;
 
   // 已确认包数（用于进度回调）：_lastImgAck+1，夹到 totalPackets。
   int _confirmed(int totalPackets) {

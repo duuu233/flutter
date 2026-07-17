@@ -163,7 +163,9 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
         ],
       ),
     );
-    controller.dispose();
+    // 不立即 dispose：对话框还在退场动画中、TextField 仍挂着 controller，
+    // 立刻释放会触发 used-after-dispose 断言；延迟一个主题动画时长再释放。
+    Future<void>.delayed(kThemeAnimationDuration, controller.dispose);
     if (name != null) {
       // 通过回调走真实接口；列表名称由上层 state 更新后重建。
       widget.onRename?.call(device.id, name.trim());
