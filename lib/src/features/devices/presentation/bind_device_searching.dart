@@ -52,7 +52,10 @@ class BindDeviceSearching extends StatelessWidget {
           const Spacer(flex: 3),
           // 从下往上拉起帮助弹层（对齐小程序），不再 push 一个全屏页。
           _ScanHelpLink(
-            onTap: onHelp ?? () => showBindDeviceScanHelp(context),
+            // 用带花括号的 void 闭包，不用 `=> showBindDeviceScanHelp(context)`：
+            // 后者返回 Future<void>，要靠 `??` 求两个函数类型的最小公共上界才能
+            // 匹配上非空的 VoidCallback。能过，但没必要把编译结果押在类型推断上。
+            onTap: onHelp ?? () { showBindDeviceScanHelp(context); },
           ),
           const SizedBox(height: 16),
         ],

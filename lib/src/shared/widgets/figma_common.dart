@@ -382,14 +382,20 @@ class FigmaEditIconButton extends StatelessWidget {
     this.hitPadding = 11,
   });
 
-  final VoidCallback onTap;
+  /// 可空：调用方（如 `DeviceDetailsBody.onEditName`）本来就把「改名」声明成可选回调。
+  /// 与被替换掉的裸 `GestureDetector(onTap: ...)` 保持同样的签名，调用处无需改动。
+  final VoidCallback? onTap;
   final double iconSize;
   final double hitPadding;
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      behavior: HitTestBehavior.opaque,
+      // 没有回调时不要 opaque：那会让这块 40×40 白白吃掉落在它上面的点击
+      // （原来的裸 GestureDetector 就有这个毛病，顺手修掉）。
+      behavior: onTap == null
+          ? HitTestBehavior.deferToChild
+          : HitTestBehavior.opaque,
       onTap: onTap,
       child: Padding(
         padding: EdgeInsets.all(hitPadding),

@@ -48,7 +48,8 @@ class BindDeviceNotFound extends StatelessWidget {
           const Spacer(flex: 3),
           // 从下往上拉起帮助弹层（对齐小程序），不再 push 一个全屏页。
           _ScanHelpLink(
-            onTap: onHelp ?? () => showBindDeviceScanHelp(context),
+            // 同 bind_device_searching：显式 void 闭包，不依赖 `??` 的类型推断。
+            onTap: onHelp ?? () { showBindDeviceScanHelp(context); },
           ),
           const SizedBox(height: 16),
         ],
