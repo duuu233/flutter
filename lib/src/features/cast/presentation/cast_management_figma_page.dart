@@ -450,49 +450,34 @@ class _RecordCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 缩略图（小程序 .thumb：144rpx≈72，圆角 14rpx≈7）。
+          // 缩略图（小程序 .thumb：144rpx≈72，圆角 14rpx≈7，底色 #d9e8f7）。
+          // 有图时只显示图片本身：不叠来源图标、不用彩色渐变，否则会在真实图片上
+          // 糊一层「默认图」的观感（对齐小程序 records.wxml：thumb 内只有一个 image）。
           ClipRRect(
             borderRadius: BorderRadius.circular(7),
             child: Container(
               width: 72,
               height: 72,
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                  colors: [
-                    record.color.withValues(alpha: 0.92),
-                    record.color.withValues(alpha: 0.5),
-                  ],
-                ),
-              ),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (record.thumbUrl != null)
-                    CachedNetworkImage(
-                      // 列表只取缩略图 imgThumb（无则回退 img），对齐小程序 records.wxml 的 item.imgThumb。
+              color: const Color(0xFFD9E8F7),
+              child: record.thumbUrl == null
+                  ? _ThumbFallbackIcon(source: record.source)
+                  : CachedNetworkImage(
+                      // 列表只取缩略图 imgThumb（无则回退 img），
+                      // 对齐小程序 records.wxml 的 item.imgThumb。
                       imageUrl: record.thumbUrl!,
                       // aspectFit：与我的图库一致，保持比例不裁切不拉伸
-                      // （对齐小程序 records.wxml mode=aspectFit）；留白落在下方色块渐变上。
+                      //（对齐小程序 records.wxml mode=aspectFit）；留白落在底色上。
                       fit: BoxFit.contain,
                       // 72lp 缩略图，按物理像素解码，避免原图全尺寸位图进内存。
                       memCacheWidth:
-                          (72 * MediaQuery.devicePixelRatioOf(context)).round(),
+                          (72 * MediaQuery.devicePixelRatioOf(context))
+                              .round(),
+                      // 加载中/失败才回退到来源图标，成功后图标不再出现。
+                      placeholder: (context, url) =>
+                          _ThumbFallbackIcon(source: record.source),
                       errorWidget: (context, url, error) =>
-                          const SizedBox.shrink(),
+                          _ThumbFallbackIcon(source: record.source),
                     ),
-                  Center(
-                    child: Icon(
-                      record.source == ImageSourceType.camera
-                          ? Icons.photo_camera_outlined
-                          : Icons.collections_outlined,
-                      color: Colors.white.withValues(alpha: 0.9),
-                      size: 24,
-                    ),
-                  ),
-                ],
-              ),
             ),
           ),
           const SizedBox(width: 12),
@@ -567,6 +552,27 @@ class _RecordCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 缩略图兜底：**只在没有缩略图 / 加载中 / 加载失败时**出现的来源图标。
+/// 加载成功后不再叠加任何图层，避免在真实图片上糊一层「默认图」。
+class _ThumbFallbackIcon extends StatelessWidget {
+  const _ThumbFallbackIcon({required this.source});
+
+  final ImageSourceType source;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Icon(
+        source == ImageSourceType.camera
+            ? Icons.photo_camera_outlined
+            : Icons.collections_outlined,
+        color: const Color(0xFF8FB3D4),
+        size: 24,
       ),
     );
   }

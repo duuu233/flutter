@@ -79,7 +79,6 @@ class AppRoutes {
   static const figmaUpdateBoltStar = '/figma/settings/update';
   static const figmaUpdateBoltStarAvailable =
       '/figma/settings/update/available';
-  static const figmaUpdateBoltStarProgress = '/figma/settings/update/progress';
 
   static Route<dynamic> onGenerateRoute({
     required RouteSettings settings,
@@ -215,11 +214,6 @@ class AppRoutes {
         // 演示路由（未接入导航）：强制展示某一态，用占位版本号。
         builder = (_) => const UpdateBoltStarPage(
           previewStage: BoltStarUpdateStage.updateAvailable,
-        );
-        break;
-      case AppRoutes.figmaUpdateBoltStarProgress:
-        builder = (_) => const UpdateBoltStarPage(
-          previewStage: BoltStarUpdateStage.downloading,
         );
         break;
       default:

@@ -38,6 +38,7 @@ class AppVersionInfo {
     required this.latestVersion,
     required this.downloadUrl,
     required this.description,
+    this.compulsory = 0,
   });
 
   final bool hasUpdate;
@@ -45,6 +46,15 @@ class AppVersionInfo {
   final String latestVersion;
   final String downloadUrl;
   final String description;
+
+  /// 升级类型（swagger `AppVersionConApiOutput.compulsory`）：
+  /// 1=强制升级 2=强提示升级 3=弱提示升级 4=不提示升级。
+  final int compulsory;
+
+  /// 是否必须马上升级：**必须同时有新版本**才成立。
+  /// 只看 compulsory 是不够的——后端即使把版本配成强制类型，`isUpdate=0`（当前
+  /// 已是最新）时也不该把用户锁在升级弹窗里。
+  bool get isCompulsory => hasUpdate && compulsory == 1;
 }
 
 class UserProfile {
@@ -203,6 +213,10 @@ class AlbumPhoto {
   final ImageSourceType source;
   final String deviceId;
   final String ownerUserId;
+
+  /// 这张图在设备上的**物理槽位索引**（后端 `imgIndex`，投屏成功时由本 App 上报）；
+  /// **-1 = 后端没有索引**，此时删除/刷屏只能回退推算（见 [_resolveDeviceImageIndex]）。
+  /// ⚠️ 0 是合法槽位（相框第一个位置），判空一律用 `>= 0` / `< 0`，绝不能用真假值。
   final int imageIndex;
   final int imageMaskBit;
   final double width;
@@ -1119,12 +1133,14 @@ class PhotoFrameState extends ChangeNotifier {
     String url = '';
     String desc = '';
     bool hasUpdate = false;
+    int compulsory = 0;
     if (data is Map) {
       final m = data.map((k, v) => MapEntry(k.toString(), v));
       latest = (m['appVersionNo'] ?? '').toString();
       url = (m['downloadPath'] ?? '').toString();
       desc = (m['upgradeTips'] ?? '').toString();
       hasUpdate = _asInt(m['isUpdate']) == 1;
+      compulsory = _asInt(m['compulsory']);
     } else if (data is String) {
       latest = data.trim();
       hasUpdate = _versionGreater(latest, current);
@@ -1144,6 +1160,7 @@ class PhotoFrameState extends ChangeNotifier {
       latestVersion: latest.isEmpty ? current : latest,
       downloadUrl: url,
       description: desc,
+      compulsory: compulsory,
     );
   }
 
@@ -1594,16 +1611,44 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   /// 选中照片 → 设备固件图片槽位索引（对齐小程序 album/list.js resolveDeviceImageIndex）。
+  /// 删除图片(0x12)与刷新屏幕(0x24)共用这一处解析。
   ///
-  /// 固件已占用槽位 [occupied] 按索引升序；上传时用 firstFreeIndex 从最小空闲槽位起填，
-  /// 即最早上传的图落在最小槽位。所以本设备在库照片要按「上传先后」升序排（主键 uProductImgId
-  /// 越小越早，取不到时退回 uploadedAt），第 N 张才对应升序槽位 occupied[N]——直接按后端列表
-  /// 顺序去对会刷错图。读不到掩码时回退到位置本身；照片不在本设备上返回 -1。
+  /// ① **首选后端记录的真实槽位** [AlbumPhoto.imageIndex]：投屏成功时由本 App 上报的设备物理
+  ///    位置，是准确值（见 docs/图片索引-imgIndex方案.md）。
+  /// ② 没有索引时才**回退推算**（投屏成功但记账失败会产生这种记录）：固件已占用槽位 [occupied]
+  ///    按索引升序，上传时用 firstFreeIndex 从最小空闲槽位起填，即最早上传的图落在最小槽位；
+  ///    所以本设备在库照片按「上传先后」升序排（主键 uProductImgId 越小越早，取不到退回
+  ///    uploadedAt），第 N 张对应升序候选槽位里的第 N 个。直接按后端列表顺序（最新在前）去对
+  ///    会刷错图——这是「指定刷新图片不对」的旧根因。
+  ///    ⚠️ 推算前必须剔除「已被其它照片的真实索引钉住」的槽位，否则推算结果会撞上别人的位置。
+  ///
+  /// 照片不在本设备上、或定位不到返回 -1（调用方跳过，不会误删别人的图）。
   int _resolveDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
-    final devicePhotos =
-        _albumPhotos
-            .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
-            .toList()
+    // ① 有真实索引直接用，但要求该槽位在固件掩码里确实有图：记录指向空位说明设备侧早被删掉
+    //    （删除半成功等），此时跳过而不是回退推算——推算只会撞上别人的图。
+    //    顺带避免把空槽位塞进 0x12，被固件按「图片不存在」整批拒掉。
+    if (photo.imageIndex >= 0) {
+      return occupied.contains(photo.imageIndex) ? photo.imageIndex : -1;
+    }
+
+    final devicePhotos = _albumPhotos
+        .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
+        .toList();
+
+    // ② 回退推算：候选槽位 = 固件已占用槽位 − 已被真实索引占用的槽位。
+    //    只看**同一台设备**的照片：跨设备的槽位号互不相干，混进来会误剔除本机的候选
+    //    （小程序取的是全部在库照片，多设备下会偏；App 按 deviceId 收窄）。
+    final claimed = devicePhotos
+        .map((item) => item.imageIndex)
+        .where((slot) => slot >= 0)
+        .toSet();
+    final candidates = occupied
+        .where((slot) => !claimed.contains(slot))
+        .toList();
+
+    // 参与排队的也只剩「同样没有索引」的照片，两边一一对应才不会错位。
+    final pending =
+        devicePhotos.where((item) => item.imageIndex < 0).toList()
           ..sort((a, b) {
             final ai = int.tryParse(a.id);
             final bi = int.tryParse(b.id);
@@ -1612,14 +1657,16 @@ class PhotoFrameState extends ChangeNotifier {
             }
             return a.uploadedAt.compareTo(b.uploadedAt);
           });
-    final pos = devicePhotos.indexWhere((item) => item.id == photo.id);
+    final pos = pending.indexWhere((item) => item.id == photo.id);
     if (pos < 0) {
       return -1;
     }
-    if (occupied.isNotEmpty) {
-      return pos < occupied.length ? occupied[pos] : -1;
+    if (candidates.isNotEmpty) {
+      return pos < candidates.length ? candidates[pos] : -1;
     }
-    return pos;
+    // 候选为空：设备真无图(occupied 空)时回退到位置本身（保持旧行为）；
+    // 有图但全被真实索引钉住，说明本张在设备上没有立足之处，返回 -1 而不是硬套一个别人的槽位。
+    return occupied.isEmpty ? pos : -1;
   }
 
   /// 投屏记录列表：`/Client/UserProduct/getUserProductImgRecordList`。
@@ -2663,12 +2710,26 @@ class PhotoFrameState extends ChangeNotifier {
     );
   }
 
+  /// 后端记录的设备槽位索引(`imgIndex`, String) → 数字；无索引/非法值统一返回 **-1**。
+  ///
+  /// ⚠️ 0 是合法槽位（相框第一个位置），所以判空只能判 null/空串，绝不能用真假值——
+  /// 否则第一个位置上的照片永远删不掉、刷不到（见 docs/图片索引-imgIndex方案.md 问题 E）。
+  ///
+  /// 这里**不做上限校验**：容量是真机上报的（[DeviceItem.capacity]，常量 maxImages 只是未连接
+  /// 时的回退值），拿它当上限会把大容量设备上的合法高位槽位误判成「无索引」，反而退回推算去删错图。
+  /// 越界保护在 [_resolveDeviceImageIndex]：只有出现在设备真实掩码里的槽位才会被采用。
+  int _parseImgIndex(Object? value) {
+    if (value == null) return -1;
+    final index = int.tryParse(value.toString().trim());
+    return (index == null || index < 0) ? -1 : index;
+  }
+
   /// 把后端相册图片记录映射为 [AlbumPhoto]；BLE 相关字段给默认值。
   ///
   /// 字段名以后端 swagger `ClientUserProductImgApiOut` 为准：
   /// `uProductImgId` / `img`(图片地址) / `imgBle`(设备帧 .bin) / `productName`(设备名) /
-  /// `userProductId` / `deviceId`。该接口**不下发任何时间字段**，故 [AlbumPhoto.uploadedAt]
-  /// 只用于本地排序，不要在 UI 上当成真实上传时间展示。
+  /// `userProductId` / `deviceId` / `imgIndex`(设备物理槽位)。该接口**不下发任何时间字段**，
+  /// 故 [AlbumPhoto.uploadedAt] 只用于本地排序，不要在 UI 上当成真实上传时间展示。
   /// 原实现读的 `imgName` / `createTime` 等键后端根本不存在——标题永远是「照片」、
   /// imgBle 整个丢掉（图库照片没法再次投屏）。
   AlbumPhoto _albumPhotoFromJson(Map<String, dynamic> data, int index) {
@@ -2689,7 +2750,8 @@ class PhotoFrameState extends ChangeNotifier {
       deviceId: deviceId,
       deviceName: deviceName,
       ownerUserId: _currentUser.id,
-      imageIndex: 0,
+      // 设备物理槽位（后端 String，可能缺失）：图库删除/刷新屏幕按它定位，无索引为 -1。
+      imageIndex: _parseImgIndex(data['imgIndex']),
       imageMaskBit: 0,
       width: 0,
       height: 0,
@@ -2727,6 +2789,8 @@ class PhotoFrameState extends ChangeNotifier {
     // 设备帧文件地址：再次投屏直传设备用（不走后端转码）。
     final imgBle = (data['imgBle'] ?? '').toString();
     final status = _castStatusFromJson(data);
+    // 设备槽位（后端 String，可能缺失）：-1 表无索引，CastRecord 用 null 表达。
+    final slot = _parseImgIndex(data['imgIndex']);
     return CastRecord(
       id: id,
       title: deviceName.isNotEmpty ? deviceName : '投屏记录',
@@ -2744,6 +2808,9 @@ class PhotoFrameState extends ChangeNotifier {
           : (status == CastStatus.success ? '投屏成功' : '投屏失败'),
       // upTime=最近修改时间，joinTime=添加时间（小程序 normalizeProjectionRecord 同序）。
       createdAt: _parseDate(data['upTime'] ?? data['joinTime']),
+      // 这条记录当次投屏占用的设备槽位。记录页本身不读它——再次/重新投屏都是重新找空位；
+      // 保留透传是为了排查时能和设备实际位置对上（对齐小程序 normalizeProjectionRecord）。
+      imageIndex: slot < 0 ? null : slot,
       imageUrl: url.isEmpty ? null : url,
       thumbUrl: thumb.isEmpty ? null : thumb,
       imgBle: imgBle.isEmpty ? null : imgBle,

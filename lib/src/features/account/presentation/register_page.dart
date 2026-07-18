@@ -306,12 +306,7 @@ class _RegisterPageState extends State<RegisterPage> {
               autofillHints: const [AutofillHints.email],
             ),
           ),
-          if (_emailError)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 23),
-              child: AuthErrorText(text: l10n.accEmailInvalid),
-            ),
-          const SizedBox(height: 16),
+          AuthErrorSlot(text: _emailError ? l10n.accEmailInvalid : null),
           // 验证码 + 获取验证码。
           SizedBox(
             height: 56,
@@ -336,12 +331,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
           ),
-          if (_codeError)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 23),
-              child: AuthErrorText(text: l10n.accVerifyCodeHint),
-            ),
-          const SizedBox(height: 16),
+          AuthErrorSlot(text: _codeError ? l10n.accVerifyCodeHint : null),
           // 密码（占位提示密码规则：6-12位数字+英文）。
           SizedBox(
             height: 56,
@@ -367,12 +357,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
           ),
-          if (_ruleError)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 23),
-              child: AuthErrorText(text: l10n.accPasswordRuleError),
-            ),
-          const SizedBox(height: 16),
+          AuthErrorSlot(text: _ruleError ? l10n.accPasswordRuleError : null),
           // 确认密码。
           SizedBox(
             height: 56,
@@ -398,12 +383,10 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
           ),
-          if (_mismatchError)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 23),
-              child: AuthErrorText(text: l10n.accPasswordMismatchReconfirm),
-            ),
-          const SizedBox(height: 28),
+          AuthErrorSlot(
+            text: _mismatchError ? l10n.accPasswordMismatchReconfirm : null,
+            gap: 28,
+          ),
           SizedBox(
             height: 56,
             child: AuthPrimaryButton(

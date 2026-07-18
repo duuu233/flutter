@@ -220,16 +220,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     _clearModalShowing = true;
     final confirmed = await showDialog<bool>(
       context: context,
+      // 纯告知弹窗：必须点「确认」才复位清除标记，点遮罩不算确认。
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
-        title: Text(AppL10n.of(context).galTip),
-        content: Text(AppL10n.of(context).galDeviceClearedNotice),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: Text(AppL10n.of(context).galConfirm),
-          ),
-        ],
+      barrierColor: Colors.black.withValues(alpha: 0.4),
+      builder: (context) => _GalleryConfirmDialog(
+        title: AppL10n.of(context).galTip,
+        message: AppL10n.of(context).galDeviceClearedNotice,
+        showCancel: false,
       ),
     );
     _clearModalShowing = false;
@@ -270,7 +267,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     final confirmed = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withValues(alpha: 0.4),
-      builder: (context) => _DeleteDialog(count: count),
+      builder: (context) => _GalleryConfirmDialog(
+        title: AppL10n.of(context).galDeletePhotos,
+        message: AppL10n.of(context).galDeleteConfirm(count),
+      ),
     );
     if (confirmed != true || !mounted) {
       return;
@@ -740,15 +740,36 @@ class _CircleAction extends StatelessWidget {
   }
 }
 
-/// 删除照片确认弹窗（小程序 `.confirm-dialog`）：图标盒 + 标题/说明 + 取消/确认。
-/// 蒙层阻断式 loading 卡片：居中黑底圆角 + 转圈 + 文案（对齐小程序 wx.showLoading mask）。
-class _DeleteDialog extends StatelessWidget {
-  const _DeleteDialog({required this.count});
+/// 图库弹窗，对齐小程序 `.confirm-dialog`：白卡（radius 28rpx→14）+ 左侧橙色图标盒
+/// （64rpx→32，底 rgba(255,106,32,.08)）+ 右侧标题（38rpx→19/700）与说明（24rpx→12），
+/// 底部胶囊按钮（72rpx→36 高，取消 #EEEEEE / 确认 #FF9140→#FF6A20 渐变）。
+///
+/// [showCancel] 为 false 时只渲染一个通栏「确认」——用于「设备已被清空」这类
+/// 纯告知弹窗（小程序那边走 `wx.showModal({showCancel:false})`，App 统一用本样式，
+/// 避免和系统 [AlertDialog] 出现两种确认样式）。
+class _GalleryConfirmDialog extends StatelessWidget {
+  const _GalleryConfirmDialog({
+    required this.title,
+    required this.message,
+    this.showCancel = true,
+  });
 
-  final int count;
+  final String title;
+  final String message;
+  final bool showCancel;
 
   @override
   Widget build(BuildContext context) {
+    final confirmButton = _DialogButton(
+      label: AppL10n.of(context).galConfirm,
+      textColor: Colors.white,
+      gradient: const LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
+      ),
+      onTap: () => Navigator.of(context).pop(true),
+    );
     return Dialog(
       backgroundColor: Colors.white,
       insetPadding: const EdgeInsets.symmetric(horizontal: 24),
@@ -781,7 +802,7 @@ class _DeleteDialog extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        AppL10n.of(context).galDeletePhotos,
+                        title,
                         style: const TextStyle(
                           color: Color(0xFF25282D),
                           fontSize: 19,
@@ -791,7 +812,7 @@ class _DeleteDialog extends StatelessWidget {
                       ),
                       const SizedBox(height: 6),
                       Text(
-                        AppL10n.of(context).galDeleteConfirm(count),
+                        message,
                         style: const TextStyle(
                           color: Color(0xFF6F7782),
                           fontSize: 12,
@@ -806,31 +827,22 @@ class _DeleteDialog extends StatelessWidget {
             const SizedBox(height: 21),
             Padding(
               padding: const EdgeInsets.only(left: 46),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _DialogButton(
-                      label: AppL10n.of(context).cancel,
-                      textColor: const Color(0xFF32363C),
-                      background: const Color(0xFFEEEEEE),
-                      onTap: () => Navigator.of(context).pop(false),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _DialogButton(
-                      label: AppL10n.of(context).galConfirm,
-                      textColor: Colors.white,
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-                      ),
-                      onTap: () => Navigator.of(context).pop(true),
-                    ),
-                  ),
-                ],
-              ),
+              child: showCancel
+                  ? Row(
+                      children: [
+                        Expanded(
+                          child: _DialogButton(
+                            label: AppL10n.of(context).cancel,
+                            textColor: const Color(0xFF32363C),
+                            background: const Color(0xFFEEEEEE),
+                            onTap: () => Navigator.of(context).pop(false),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(child: confirmButton),
+                      ],
+                    )
+                  : confirmButton,
             ),
           ],
         ),
