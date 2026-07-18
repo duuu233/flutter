@@ -413,14 +413,28 @@ class BoltFoxApi {
     );
   }
 
+  /// 设备图片槽位索引 → 接口入参（swagger 约定 String）。
+  ///
+  /// 传 null 或负数表示「本次没有索引可上报」，返回 null 后由 `?` 展开丢弃该键，后端按不传处理。
+  /// ⚠️ 0 是合法槽位（相框第一个位置），必须原样上报——不能当空值丢掉，
+  /// 否则第一个位置上的照片在图库里永远删不掉、刷不到。见 docs/图片索引-imgIndex方案.md 问题 E。
+  /// （小程序 api.js 的 `imgIndexParam` 还要挡 undefined/''，Dart 有 `int?` 不需要那层。）
+  static String? _imgIndexParam(int? index) {
+    return (index == null || index < 0) ? null : index.toString();
+  }
+
   /// 编辑投屏记录（设备图传成功后置设备上传状态）。
   ///
   /// 对齐小程序 `editUserProductImgRecord`：设备 BLE 图传成功后调用，把 [upirId] 对应记录的
   /// [deviceUploadState] 置为 1（0=失败,1=成功）；[taskId] 为 [setUserProductUpload] 返回的任务 id。
+  ///
+  /// [imgIndex]=这张图实际写入设备的物理槽位索引，供图库删除/刷新屏幕定位
+  /// （见 docs/图片索引-imgIndex方案.md）。设备上没有这张图时不传。
   static Future<dynamic> editUserProductImgRecord({
     required Object upirId,
     Object? taskId,
     int deviceUploadState = 1,
+    int? imgIndex,
   }) {
     return _http.postJson(
       '/Client/UserProduct/editUserProductImgRecord',
@@ -428,6 +442,7 @@ class BoltFoxApi {
         'upirId': upirId,
         'taskId': ?taskId,
         'deviceUploadState': deviceUploadState,
+        'imgIndex': ?_imgIndexParam(imgIndex),
       },
     );
   }
@@ -437,6 +452,9 @@ class BoltFoxApi {
   /// 对齐小程序 `addUserProductImgRecord`：投屏记录页「再次投屏」直接用记录里的设备帧
   /// [imgBle] 图传，不再走后端上传/转码；设备图传成功([deviceUploadState]=1)/失败(0)后
   /// 都新增一条投屏记录。[taskId] 再次投屏链路没有，为空时不传（后端沿用旧记录不需要）。
+  ///
+  /// [imgIndex] 同 [editUserProductImgRecord]：再次/重新投屏也会占用一个新槽位，必须一并上报，
+  /// 否则这条新记录在图库里没有索引、删不掉。图传失败(0)的补记不传——设备上没有这张图。
   static Future<dynamic> addUserProductImgRecord({
     Object? upirId,
     Object? userProductId,
@@ -444,6 +462,7 @@ class BoltFoxApi {
     String? imgBle,
     Object? taskId,
     int deviceUploadState = 1,
+    int? imgIndex,
   }) {
     return _http.postJson(
       '/Client/UserProduct/addUserProductImgRecord',
@@ -454,6 +473,7 @@ class BoltFoxApi {
         'imgBle': ?imgBle,
         'taskId': ?taskId,
         'deviceUploadState': deviceUploadState,
+        'imgIndex': ?_imgIndexParam(imgIndex),
       },
       // 关闭超时重试：超时时记录可能已写入，重试会产生重复投屏记录。
       retryOnTimeout: false,

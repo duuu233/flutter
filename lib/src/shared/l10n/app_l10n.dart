@@ -1247,9 +1247,18 @@ class AppL10n {
     'Current $current · Latest $latest',
     '現在 $current · 最新 $latest',
   );
-  String get setUpdating => _pick('正在更新...', 'Updating…', '更新中…');
-  String get setDownloading =>
-      _pick('正在下载更新中', 'Downloading update…', '更新をダウンロード中…');
+  // setUpdating / setDownloading 已随「下载进度环」一并移除：下载安装交给应用商店，
+  // App 侧拿不到真实进度，不再有「正在更新 / 正在下载」态。
+  // 强制升级弹窗（登录成功后 compulsory=1 时弹出，不可关闭）。
+  String get setForceUpdateTitle =>
+      _pick('发现新版本', 'Update Required', '新しいバージョンがあります');
+  String setForceUpdateVersion(String version) =>
+      _pick('最新版本 $version', 'Latest version $version', '最新バージョン $version');
+  String get setForceUpdateMessage => _pick(
+    '当前版本过低，需要更新到最新版本后才能继续使用。',
+    'This version is out of date. Please update to continue using the app.',
+    'ご利用のバージョンは古いため、続行するには最新バージョンへの更新が必要です。',
+  );
   String setUpdatedDate(String date) =>
       _pick('更新日期：$date', 'Updated: $date', '更新日：$date');
   String setEffectiveDate(String date) =>

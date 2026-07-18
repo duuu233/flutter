@@ -330,12 +330,9 @@ class _AuthCanvas extends StatelessWidget {
               autofillHints: const [AutofillHints.email],
             ),
           ),
-          if (emailError)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 23),
-              child: AuthErrorText(text: AppL10n.of(context).accEmailInvalid),
-            ),
-          const SizedBox(height: 16),
+          AuthErrorSlot(
+            text: emailError ? AppL10n.of(context).accEmailInvalid : null,
+          ),
           SizedBox(
             height: 56,
             child: AuthPillTextField(
@@ -361,12 +358,10 @@ class _AuthCanvas extends StatelessWidget {
               ),
             ),
           ),
-          if (passwordError)
-            Padding(
-              padding: const EdgeInsets.only(top: 8, left: 23),
-              child: AuthErrorText(text: AppL10n.of(context).accPasswordEmpty),
-            ),
-          const SizedBox(height: 12),
+          AuthErrorSlot(
+            text: passwordError ? AppL10n.of(context).accPasswordEmpty : null,
+            gap: 12,
+          ),
           Align(
             alignment: Alignment.centerRight,
             child: GestureDetector(

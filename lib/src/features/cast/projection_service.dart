@@ -323,11 +323,14 @@ class ServerImageProjectionService {
         // 也不把整单判失败。await 它等于在「本张传完」和「下一张开传」之间硬插一次完整的网络往返，
         // 批量投屏时这笔开销要乘以张数。改成后台发出，图传立刻接着下一张。
         // 用户走到投屏记录页时这几个请求早已落地（页面自己还会重新拉一次列表）。
+        // imgIndex=本张实际写入设备的物理槽位 index：图库删除/刷新屏幕靠它定位这张图。
+        // ⚠️ index 可能为 0（相框第一个位置），是合法值，勿按假值过滤。
         unawaited(
           BoltFoxApi.editUserProductImgRecord(
             upirId: acquired.upirId ?? '',
             taskId: acquired.taskId,
             deviceUploadState: 1,
+            imgIndex: index,
           ).catchError((_) => null),
         );
 
@@ -591,6 +594,7 @@ class ServerImageProjectionService {
       lastRefresh = client.refreshScreen(index).catchError((_) => 0xFF);
 
       // 设备图传成功 → 新增一条成功记录（尽力而为，失败只忽略）。
+      // 带上本张占用的槽位 index：再次/重新投屏拿的是新空位，图库要靠它定位这条新记录。
       unawaited(
         _addRetryRecord(
           userProductId: userProductId,
@@ -598,6 +602,7 @@ class ServerImageProjectionService {
           imgUrl: imgUrl,
           imgBle: imgBleUrl,
           deviceUploadState: 1,
+          imgIndex: index,
         ),
       );
       emit(1, _l10n?.castTransferredSingle ?? '投屏成功', current: 1);
@@ -671,12 +676,16 @@ class ServerImageProjectionService {
   }
 
   /// 再次/重新投屏记账：设备图传成功(1)/失败(0)后新增一条投屏记录。尽力而为，失败只忽略。
+  ///
+  /// [imgIndex]=本张写入设备的物理槽位，只在图传成功时才有意义——失败时设备上没有这张图，
+  /// 报上去会让图库把别人的槽位当成它的。故这里按 [deviceUploadState] 再挡一道。
   Future<void> _addRetryRecord({
     required Object userProductId,
     Object? upirId,
     String? imgUrl,
     required String imgBle,
     required int deviceUploadState,
+    int? imgIndex,
   }) async {
     try {
       await BoltFoxApi.addUserProductImgRecord(
@@ -685,6 +694,7 @@ class ServerImageProjectionService {
         img: imgUrl,
         imgBle: imgBle,
         deviceUploadState: deviceUploadState,
+        imgIndex: deviceUploadState == 1 ? imgIndex : null,
       );
     } catch (_) {}
   }

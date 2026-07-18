@@ -14,6 +14,7 @@ import '../routes/app_routes.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../shared/widgets/app_toast.dart';
 import '../shared/widgets/app_widgets.dart' show AppLoadingDialog;
+import '../shared/widgets/force_update_dialog.dart';
 import '../state.dart';
 import 'app_theme.dart';
 
@@ -43,6 +44,9 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   /// 上一帧的登录态，用来识别「已登录 → 未登录」这一跳变。
   late bool _wasLoggedIn = _state.isLoggedIn;
 
+  /// 本次登录会话是否已做过强制升级检查（登出时复位，下次登录重新查一次）。
+  bool _forceUpdateChecked = false;
+
   /// 上一帧的语言：MaterialApp 本体已收窄为只随 setState 重建（见 build 注释），
   /// 语言变化需要显式 setState 才能更新 MaterialApp.locale（系统组件文案跟随切换）。
   late AppLanguage _lastLanguage = _state.language;
@@ -66,6 +70,8 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
         // 闪屏结束后检查上次是否异常退出：有崩溃日志则弹窗展示（可复制），
         // 用于定位「应用因自身原因导致崩溃」这类进程级崩溃（见 CrashLogger）。
         unawaited(_maybeShowCrashReport());
+        // 冷启动恢复登录态时，登录跳变发生在闪屏期间（那时不弹窗），到这里补做。
+        unawaited(_maybeCheckForceUpdate());
       }
     });
     // 恢复上次选择的语言（持久化在本地）。异步读取，读到后 switchLanguage 会 notify 触发整树重译。
@@ -98,7 +104,12 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   /// 之后每个接口都报错。这里统一 popUntil 回根，显式登出与会话失效两条路径就都收敛了。
   void _handleAuthChanged() {
     final loggedIn = _state.isLoggedIn;
+    if (!_wasLoggedIn && loggedIn) {
+      // 登录成功（邮箱/微信，或冷启动恢复登录态）：查一次强制升级。
+      unawaited(_maybeCheckForceUpdate());
+    }
     if (_wasLoggedIn && !loggedIn) {
+      _forceUpdateChecked = false; // 登出：下次登录重新检查
       _currentIndex = 0; // 复位 Tab，下次登录从首页进
       // 兜底收掉可能在展示的全局 loading：会话过期时若有页面正 show 着蒙层等待
       // 在途请求，popUntil 卸载该页后蒙层会留在 root 栈上（canPop:false，App 假死）。
@@ -117,6 +128,47 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
         setState(() {});
       }
     }
+  }
+
+  /// 强制升级门禁：进入已登录状态后查一次 `getLastVersion`，`compulsory=1`
+  /// 且确有新版本（`isUpdate=1`）时弹出**关不掉**的升级弹窗。
+  ///
+  /// 非强制升级（compulsory=2/3/4）这里不打扰用户——按产品要求，由用户自己去
+  /// 「设置 → 更新BoltStar」手动点按钮更新。
+  ///
+  /// 三条「宁可放行也不误挡」的兜底：
+  /// - 检查失败（断网/后端异常）静默跳过：网络问题不该把用户锁在门外；
+  /// - 下载地址为空时不弹：弹窗关不掉而按钮又打不开商店 = 用户彻底卡死；
+  /// - 闪屏期间不弹，等切到主壳层再补做（此时不置 checked 标记，稍后会重来）。
+  Future<void> _maybeCheckForceUpdate() async {
+    if (_forceUpdateChecked || _showSplash || !_state.isLoggedIn) {
+      return;
+    }
+    _forceUpdateChecked = true; // 置前：避免登录跳变与闪屏结束两条路径并发重复弹
+    final AppVersionInfo info;
+    try {
+      info = await _state.checkAppVersion();
+    } catch (error) {
+      debugPrint('[ForceUpdate] 版本检查失败，本次放行：$error');
+      return;
+    }
+    if (!mounted || !_state.isLoggedIn || !info.isCompulsory) {
+      return;
+    }
+    if (info.downloadUrl.trim().isEmpty) {
+      debugPrint('[ForceUpdate] 强制升级但后端没给下载地址，本次放行');
+      return;
+    }
+    final context = _navigatorKey.currentContext;
+    if (context == null) {
+      return;
+    }
+    await ForceUpdateDialog.show(
+      context,
+      latestVersion: info.latestVersion,
+      downloadUrl: info.downloadUrl,
+      description: info.description,
+    );
   }
 
   /// AppLanguage → Flutter Locale（Material 内建组件文案的语言）。

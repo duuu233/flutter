@@ -171,3 +171,15 @@
 ## 操作日志
 
 - 2026-07（本轮）：投屏预览/预处理改为 `coverCropToSize` 恒缩到设备分辨率(480×720/680×960)，非仅"设备比例中心裁切"；400KB 长边2倍仅为极端兜底。
+- 2026-07-18：接入设备槽位索引 imgIndex（对齐小程序同日改动）。投屏成功上报物理槽位，图库删除/刷屏改为「优先真实索引、无索引才回退推算」，根治「删错图/指定刷新的图不对」的槽位推断错位。落点与四处有意差异见 `docs/图片索引-imgIndex方案.md`；问题 A（幽灵记录）仍待后端唯一性规则。
+- 2026-07-18（三项反馈）：
+  - **更新 BoltStar 去掉下载进度环**（`update_boltstar_page.dart`、`app_routes.dart`、`app_l10n.dart`）。原 `downloading` 态是一个 6 秒**假**动画（`AnimationController` 空跑，与真实下载无关），会让用户误以为 App 在自己下载。现改为三态 `checking / upToDate / updateAvailable`：进页真实检查版本，有更新才显示「立即更新」，点击直接用 `launchUrl(externalApplication)` 交给应用商店/浏览器并停留本页。同时删除 `_DownloadProgressRing`/`_RingPainter`、演示路由 `figmaUpdateBoltStarProgress` 和 `setUpdating`/`setDownloading` 文案。
+  - **顺带补回 scheme 白名单**：`downloadUrl` 来自后端，旧的 `{https, market, itms-apps}` 白名单只留在 `settings_page.dart` 那条**已停用**的弹窗式旧路径里，现行页面是裸 `Uri.tryParse` + 任意 scheme 直拉。已在 `_startUpdate` 补回白名单与 `PlatformException` 兜底（无商店 ROM 上 `market://` 会抛 ActivityNotFoundException）。
+  - **图库「设备已被清空」提示改用小程序 `.confirm-dialog` 样式**（`gallery_page.dart`）。原为系统 `AlertDialog`，与项目其它弹窗割裂。把同文件的 `_DeleteDialog` 泛化为 `_GalleryConfirmDialog(title/message/showCancel)`，删除确认与本提示共用同一张白卡（radius 14 + 橙色图标盒 + 19/700 标题 + 12 说明 + 胶囊按钮）；`showCancel: false` 时渲染通栏「确认」，对应小程序 `wx.showModal({showCancel:false})`。仍保持 `barrierDismissible: false`——点遮罩不算确认，不复位清空标记。
+  - **投屏记录缩略图去掉多余图层**（`cast_management_figma_page.dart`）。原本无条件在图片**上方**叠一个居中 24px 白色来源图标（`Stack` 里排在 `CachedNetworkImage` 之后），底色又是按列表下标轮转的彩色渐变，`BoxFit.contain` 的留白露出渐变 → 观感就是「默认图和真实图片重叠」。现对齐小程序 `.thumb`：纯 `#D9E8F7` 底 + 单张 aspectFit 图片，来源图标降级为 `_ThumbFallbackIcon`，**只在无缩略图/加载中/加载失败时**出现。（`CastRecord.color` 与 `_paletteColor` 已无读取方，属可选清理，未动。）
+- 2026-07-18（强制升级 + 登录/注册错误位）：
+  - **强制升级门禁**（`state.dart`、新增 `shared/widgets/force_update_dialog.dart`、`bolt_star_app.dart`、`app_l10n.dart`）。字段已按 swagger `AppVersionConApiOutput` 核对：`compulsory` integer，1=强制 2=强提示 3=弱提示 4=不提示。`AppVersionInfo` 新增 `compulsory` 与 `isCompulsory`（**必须 `isUpdate=1` 同时成立**——后端把版本配成强制类型但当前已是最新时，不该把用户锁在弹窗里）。
+  - 触发点在 `bolt_star_app.dart` 的登录态跳变处，**不是**登录页：登录成功后 `AuthPage` 立刻被根节点换成主壳层，在登录页弹窗会随页面一起卸载。`_maybeCheckForceUpdate()` 在「未登录→已登录」跳变和闪屏结束两处触发（冷启动恢复 token 时跳变发生在闪屏期间），每个登录会话只查一次，登出复位。
+  - 弹窗关不掉：`barrierDismissible:false` + `PopScope(canPop:false)`，只有一个通栏「立即更新」，点了去应用商店但**弹窗不关**（用户没真升级就回来仍被挡住）。三条兜底防止误锁死用户：版本检查失败静默放行、`downloadPath` 为空不弹（否则按钮打不开商店而弹窗又关不掉＝彻底卡死）、闪屏期间不弹。scheme 白名单同 `update_boltstar_page.dart`。
+  - 非强制升级（2/3/4）**不弹任何提示**，按产品要求由用户自己去「设置 → 更新BoltStar」手动更新。
+  - **登录/注册页错误提示不再顶动页面**（`auth_widgets.dart` 新增 `AuthErrorSlot`，`auth_page.dart` 2 处 / `register_page.dart` 4 处替换）。原来是 `if (error) Padding(...)` + 其后 `SizedBox(height:16)`，错误一出现就把下方所有内容顶下去。现在改为「输入框之间的间距**恒定预留**一行错误高度」：`AuthErrorSlot(text: cond ? msg : null, gap: …)` 无论有无错误都占住 `top 8 + minHeight 16 + gap`。用 `minHeight` 而非固定高度——中文文案全部单行、零位移；EN/JA 个别长文案（`accPasswordRuleError`、`accPasswordMismatchReconfirm`）会换到第二行并轻微下移，宁可位移也不裁切文案。两页都在 `SingleChildScrollView + IntrinsicHeight + Spacer` 内，多出的高度由 Spacer 吸收、不够则滚动。
