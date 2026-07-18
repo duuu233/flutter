@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/frame_device_protocol.dart';
@@ -13,7 +14,7 @@ import '../../../shared/l10n/app_l10n.dart';
 /// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
 ///
 /// 对照微信小程序 `photo-album/subpackages/device/detail`：摘要卡 + 顶部操作栏（投屏 / 连接·断开）+
-/// 信息列表 + 操作列表（清空 / 删除），删除/清空走二次确认弹窗（见 [DeviceConfirmDialog]）。
+/// 信息列表 + 操作列表（清空 / 删除），删除/清空走全局统一的二次确认弹窗（见 [AppDialog]）。
 /// 展示当前选中设备（`state.selectedDevice`），随 [PhotoFrameState] 变化自动刷新。
 class DeviceDetailsPage extends StatefulWidget {
   const DeviceDetailsPage({
@@ -99,30 +100,18 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     final controller = TextEditingController(text: device.name);
     final String? name;
     try {
-      name = await showDialog<String>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: Text(AppL10n.of(context).devRenameTitle),
-          content: TextField(
-            controller: controller,
-            autofocus: true,
-            maxLength: 20,
-            decoration: InputDecoration(
-              hintText: AppL10n.of(context).devNameHint,
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(AppL10n.of(context).cancel),
-            ),
-            TextButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: Text(AppL10n.of(context).devConfirm),
-            ),
-          ],
+      final confirmed = await showAppConfirmDialog(
+        context,
+        title: AppL10n.of(context).devRenameTitle,
+        icon: Icons.drive_file_rename_outline_rounded,
+        confirmLabel: AppL10n.of(context).devConfirm,
+        content: AppDialogTextField(
+          controller: controller,
+          hintText: AppL10n.of(context).devNameHint,
+          maxLength: 20,
         ),
       );
+      name = confirmed == true ? controller.text.trim() : null;
     } finally {
       // 原来从不 dispose（每次重命名泄漏一个 ChangeNotifier）；退场动画期间 TextField
       // 仍挂着 controller，延迟一个主题动画时长再释放，避免 used-after-dispose 断言。
@@ -741,212 +730,6 @@ class _DeviceActionButton extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// [DeviceConfirmDialog] 以浮层弹窗形式弹出（对齐小程序 `.confirm-dialog`：半透明遮罩 + 居中卡片，
-/// 点遮罩关闭）。用户点「确认」返回 true，点「取消」/点遮罩返回 null。删除/断开等二次确认统一走这里，
-/// 不再用系统 [AlertDialog] 或整页确认（那会出现「两种确认样式」的割裂）。
-Future<bool?> showDeviceConfirmDialog(
-  BuildContext context, {
-  required String iconAsset,
-  required IconData fallbackIcon,
-  required Color accent,
-  required String title,
-  required String message,
-  String? confirmLabel,
-}) {
-  var resolved = false;
-  void close(BuildContext dialogContext, [bool? result]) {
-    if (resolved) {
-      return;
-    }
-    resolved = true;
-    Navigator.of(dialogContext).pop(result);
-  }
-
-  return showDialog<bool>(
-    context: context,
-    barrierColor: Colors.black.withValues(alpha: 0.4),
-    builder: (dialogContext) => Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Center(
-        child: DeviceConfirmDialog(
-          iconAsset: iconAsset,
-          fallbackIcon: fallbackIcon,
-          accent: accent,
-          title: title,
-          message: message,
-          confirmLabel: confirmLabel,
-          onCancel: () => close(dialogContext),
-          onConfirm: () => close(dialogContext, true),
-        ),
-      ),
-    ),
-  );
-}
-
-/// 设备「删除 / 清空」二次确认弹窗（小程序 `.confirm-dialog`）。
-///
-/// 左侧彩色图标盒 + 右侧标题/说明，底部「取消 / 确认」胶囊按钮。
-/// [confirmLabel] 可覆盖右侧确认按钮文案（如删除前置弹窗用「断开」）；为空则用默认「确认」。
-class DeviceConfirmDialog extends StatelessWidget {
-  const DeviceConfirmDialog({
-    super.key,
-    required this.iconAsset,
-    required this.fallbackIcon,
-    required this.accent,
-    required this.title,
-    required this.message,
-    required this.onCancel,
-    required this.onConfirm,
-    this.confirmLabel,
-  });
-
-  final String iconAsset;
-  final IconData fallbackIcon;
-  final Color accent;
-  final String title;
-  final String message;
-  final VoidCallback onCancel;
-  final VoidCallback? onConfirm;
-  final String? confirmLabel;
-
-  @override
-  Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 30, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 48,
-                  height: 48,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: accent.withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                  child: Image.asset(
-                    iconAsset,
-                    width: 24,
-                    height: 24,
-                    fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) =>
-                        Icon(fallbackIcon, color: accent, size: 24),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: Color(0xFF25282D),
-                          fontSize: 19,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        message,
-                        style: const TextStyle(
-                          color: Color(0xFF6F7782),
-                          fontSize: 12,
-                          height: 1.45,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 21),
-            Padding(
-              padding: const EdgeInsets.only(left: 59),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _DialogButton(
-                      label: AppL10n.of(context).cancel,
-                      textColor: const Color(0xFF32363C),
-                      background: const Color(0xFFEEEEEE),
-                      onTap: onCancel,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _DialogButton(
-                      label: confirmLabel ?? AppL10n.of(context).devConfirm,
-                      textColor: Colors.white,
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-                      ),
-                      onTap: onConfirm,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DialogButton extends StatelessWidget {
-  const _DialogButton({
-    required this.label,
-    required this.textColor,
-    required this.onTap,
-    this.background,
-    this.gradient,
-  });
-
-  final String label;
-  final Color textColor;
-  final VoidCallback? onTap;
-  final Color? background;
-  final Gradient? gradient;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: background,
-          gradient: gradient,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-        ),
       ),
     );
   }

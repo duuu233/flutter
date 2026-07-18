@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble/device_ble.dart' show FrameBleErrorKind;
 import '../../../routes/app_routes.dart';
@@ -157,6 +160,11 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         widget.userProductId.toString(),
       );
       if (!mounted) return;
+      // 投屏成功即上传了新照片：顺手刷新账号级计数（getUserInfo 的 imgCount），
+      // 否则「我的」页的图库数字会一直停在投屏前的旧值（它不看本地相册列表）。
+      if (result.success) {
+        unawaited(widget.state!.refreshCurrentUser());
+      }
     }
     final l10n = AppL10n.of(context);
     // 关键节点触觉反馈（iOS 惯例）：投屏结束时轻震一下，用户不用盯着屏幕等。
@@ -333,22 +341,14 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 传输中确认退出：返回 true 表示用户坚持退出（将中断本次投屏）。
   Future<bool> _confirmExitWhileCasting() async {
     final l10n = AppL10n.of(context);
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.castExitConfirmTitle),
-        content: Text(l10n.castExitConfirmContent),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.castExitConfirmStay),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.castExitConfirmLeave),
-          ),
-        ],
-      ),
+    final leave = await showAppConfirmDialog(
+      context,
+      title: l10n.castExitConfirmTitle,
+      message: l10n.castExitConfirmContent,
+      icon: Icons.exit_to_app_rounded,
+      tone: AppDialogTone.danger,
+      cancelLabel: l10n.castExitConfirmStay,
+      confirmLabel: l10n.castExitConfirmLeave,
     );
     return leave ?? false;
   }

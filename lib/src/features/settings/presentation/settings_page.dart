@@ -6,12 +6,13 @@ import '../../../network/api_exception.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 设置页面，对照微信小程序 `subpackages/settings/index` 精准还原。
 ///
-/// 第一张玻璃卡仅含「语种设置」；第二张含「联系方式 / 隐私政策 / 用户协议」
+/// 第一张玻璃卡仅含「语种设置」；第二张含「联系我们 / 隐私政策 / 用户协议」
 /// （小程序中「更新BoltStar」入口被注释，故此处不展示）。底部「退出登录」胶囊按钮
 /// 与「用户注销」文字链分别弹确认弹窗。
 class SettingsPage extends StatelessWidget {
@@ -19,8 +20,8 @@ class SettingsPage extends StatelessWidget {
 
   final PhotoFrameState state;
 
-  // 联系方式（与小程序 index.js 的 contact 一致）。
-  static const String _contact = '99999@qq.com';
+  // 联系我们的邮箱（与小程序 index.js 的 contact 保持一致，两端一起改）。
+  static const String _contact = 'boltstarservice@boltstar.net';
 
   /// 检查 App 更新：查最新版本 → 有更新则弹窗 → 「立即更新」用 url_launcher 打开下载地址
   /// （对齐小程序 app.js 里的 getLastVersion / getAndroidDownload TODO）。
@@ -46,39 +47,23 @@ class SettingsPage extends StatelessWidget {
       return;
     }
     if (!info.hasUpdate) {
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) => AlertDialog(
-          title: Text(l10n.checkUpdate),
-          content: Text(l10n.alreadyLatest(info.currentVersion)),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(dialogContext).pop(),
-              child: Text(l10n.gotIt),
-            ),
-          ],
-        ),
+      await showAppNoticeDialog(
+        context,
+        title: l10n.checkUpdate,
+        message: l10n.alreadyLatest(info.currentVersion),
+        icon: Icons.system_update_alt_rounded,
       );
       return;
     }
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.newVersionFound(info.latestVersion)),
-        content: Text(
-          info.description.isEmpty ? l10n.newVersionPrompt : info.description,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.updateLater),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.updateNow),
-          ),
-        ],
-      ),
+    final go = await showAppConfirmDialog(
+      context,
+      title: l10n.newVersionFound(info.latestVersion),
+      message: info.description.isEmpty
+          ? l10n.newVersionPrompt
+          : info.description,
+      icon: Icons.system_update_alt_rounded,
+      cancelLabel: l10n.updateLater,
+      confirmLabel: l10n.updateNow,
     );
     if (go != true) {
       return;
@@ -255,6 +240,7 @@ class SettingsPage extends StatelessWidget {
       context,
       title: l10n.deleteAccount,
       message: l10n.deleteAccountWarn1,
+      icon: Icons.person_remove_alt_1_outlined,
     );
     if (step1 != true || !context.mounted) {
       return;
@@ -264,6 +250,7 @@ class SettingsPage extends StatelessWidget {
       context,
       title: l10n.deleteAccountConfirmTitle,
       message: l10n.deleteAccountWarn2,
+      icon: Icons.person_remove_alt_1_outlined,
     );
     if (step2 != true || !context.mounted) {
       return;
@@ -293,11 +280,15 @@ Future<bool?> _showConfirmDialog(
   BuildContext context, {
   required String title,
   required String message,
+  IconData icon = Icons.logout_rounded,
+  AppDialogTone tone = AppDialogTone.danger,
 }) {
-  return showDialog<bool>(
-    context: context,
-    barrierColor: const Color(0x802A2B2B),
-    builder: (context) => _ConfirmDialog(title: title, message: message),
+  return showAppConfirmDialog(
+    context,
+    title: title,
+    message: message,
+    icon: icon,
+    tone: tone,
   );
 }
 
@@ -319,6 +310,20 @@ class _SettingsRow extends StatelessWidget {
   final String? value;
   final _RowTrailing trailing;
   final VoidCallback onTap;
+
+  static const TextStyle _titleStyle = TextStyle(
+    color: Color(0xFF2A2D32),
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+  );
+
+  static const TextStyle _valueStyle = TextStyle(
+    color: Color(0xFF808690),
+    fontSize: 14,
+    fontWeight: FontWeight.w400,
+    height: 1.2,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -350,25 +355,21 @@ class _SettingsRow extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  title,
-                  style: const TextStyle(
-                    color: Color(0xFF2A2D32),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
-                  ),
-                ),
-              ),
-              if (value != null) ...[
-                Text(
-                  value!,
-                  style: const TextStyle(
-                    color: Color(0xFF808690),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w400,
-                    height: 1.2,
+              // 无取值时标题独占剩余宽度；有取值时反过来——标题按自身宽度排，
+              // 取值吃掉剩余宽度并右对齐，过长（如 boltstarservice@boltstar.net）
+              // 单行省略号。行高固定 62，绝不能让文案换行把自己挤出卡片。
+              if (value == null)
+                Expanded(child: Text(title, style: _titleStyle))
+              else ...[
+                Text(title, style: _titleStyle, maxLines: 1),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    value!,
+                    textAlign: TextAlign.right,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _valueStyle,
                   ),
                 ),
                 const SizedBox(width: 9),
@@ -446,121 +447,6 @@ class _LogoutButton extends StatelessWidget {
                 fontSize: 17,
                 fontWeight: FontWeight.w700,
                 height: 1.2,
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ConfirmDialog extends StatelessWidget {
-  const _ConfirmDialog({required this.title, required this.message});
-
-  final String title;
-  final String message;
-
-  @override
-  Widget build(BuildContext context) {
-    return Dialog(
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 40),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(17)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(36, 35, 36, 16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: Color(0xFF2A2D32),
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                height: 1,
-              ),
-            ),
-            const SizedBox(height: 11),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF636A74),
-                fontSize: 12,
-                fontWeight: FontWeight.w400,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 21),
-            Row(
-              children: [
-                Expanded(
-                  child: _DialogButton(
-                    label: AppL10n.of(context).cancel,
-                    filled: false,
-                    onPressed: () => Navigator.of(context).pop(false),
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: _DialogButton(
-                    label: AppL10n.of(context).confirm,
-                    filled: true,
-                    onPressed: () => Navigator.of(context).pop(true),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DialogButton extends StatelessWidget {
-  const _DialogButton({
-    required this.label,
-    required this.filled,
-    required this.onPressed,
-  });
-
-  final String label;
-  final bool filled;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(18);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: filled ? null : const Color(0xFFEEEEEE),
-        borderRadius: radius,
-        gradient: filled
-            ? const LinearGradient(
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-                colors: [Color(0xFFFF8338), Color(0xFFFF621F)],
-              )
-            : null,
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: radius,
-        child: InkWell(
-          borderRadius: radius,
-          onTap: onPressed,
-          child: Container(
-            height: 36,
-            alignment: Alignment.center,
-            child: Text(
-              label,
-              style: TextStyle(
-                color: filled ? Colors.white : const Color(0xFF2A2D32),
-                fontSize: 14,
-                fontWeight: FontWeight.w700,
-                height: 1,
               ),
             ),
           ),

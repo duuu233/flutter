@@ -8,6 +8,7 @@ import '../../../device/serial_match.dart';
 import '../../../native_device_api.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
@@ -160,30 +161,21 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     if (!mounted) {
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(AppL10n.of(dialogContext).cancel),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.of(dialogContext).pop();
-              try {
-                await onAction();
-              } catch (_) {
-                // 打开系统设置失败不阻断（如 iOS 通道未实现），用户可手动去设置。
-              }
-            },
-            child: Text(actionLabel),
-          ),
-        ],
-      ),
+    final go = await showAppConfirmDialog(
+      context,
+      title: title,
+      message: message,
+      icon: Icons.bluetooth_disabled_rounded,
+      confirmLabel: actionLabel,
     );
+    if (go != true) {
+      return;
+    }
+    try {
+      await onAction();
+    } catch (_) {
+      // 打开系统设置失败不阻断（如 iOS 通道未实现），用户可手动去设置。
+    }
   }
 
   /// 绑定当前选中设备（按 id），完整对齐小程序 `bind.js bindById`：

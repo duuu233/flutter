@@ -19,7 +19,7 @@ class MinePage extends StatefulWidget {
   State<MinePage> createState() => _MinePageState();
 }
 
-class _MinePageState extends State<MinePage> {
+class _MinePageState extends State<MinePage> with RouteAware {
   static const _inset = EdgeInsets.symmetric(horizontal: 24);
 
   @override
@@ -28,6 +28,39 @@ class _MinePageState extends State<MinePage> {
     // 对齐小程序 mine.onShow：刷新用户资料 + 设备/图库计数。
     // 不再判 isLoggedIn —— App 是强制登录的（见 bolt_star_app.dart），
     // 本页挂载时必然已登录，加判断只会让下面的 loaded 标记有翻不了身的风险。
+    _reload();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 图库/设备/投屏都是 push 到**根** Navigator 的，盖在本页之上，本页不会被卸载；
+    // 只有订阅路由事件才能在它们 pop 回来时重新拉数（见 didPopNext）。
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  /// 被覆盖的页 pop 回来（如投屏/上传完再返回）：重新拉数，等价小程序 mine.onShow。
+  ///
+  /// 这是「上传图片后回我的，图库数字不更新」的根因：计数取的是 `getUserInfo` 的
+  /// `imgCount`/`productCount`（账号级总数），而 `refreshAlbum`/`refreshDevices`
+  /// **不会**更新这两个字段——不重新打 `getUserInfo` 就永远是旧值。
+  @override
+  void didPopNext() {
+    _reload();
+  }
+
+  void _reload() {
+    // 三个接口并发：计数以 refreshCurrentUser 的账号级总数为准，
+    // 另外两个用于总数缺失时的兜底（state.minePhotoCount / mineDeviceCount）。
     widget.state.refreshCurrentUser();
     widget.state.refreshDevices();
     widget.state.refreshAlbum();

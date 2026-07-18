@@ -51,12 +51,14 @@ void main() {
     expect(tester.getSize(weChatButton), const Size(48, 48));
 
     await tester.tap(weChatButton);
-    await tester.pump();
+    // 校验失败改为弹提示框（AppDialog），等入场动画跑完再断言。
+    await tester.pumpAndSettle();
 
     expect(fakeClient.callCount, 0);
     expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
 
-    // AppToast 会在两秒后自动移除，推进假时钟以免测试结束时遗留计时器。
-    await tester.pump(const Duration(seconds: 3));
+    // 关掉弹窗，避免测试结束时留下未收起的路由。
+    await tester.tap(find.text('我知道了'));
+    await tester.pumpAndSettle();
   });
 }

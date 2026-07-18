@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble_controller.dart';
@@ -68,40 +69,23 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   final target = updated ?? device;
   // ③ 已是最新 / 无有效可升级包：提示后返回。
   if (!target.hasFirmwareUpdate) {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(AppL10n.of(dialogContext).otaFirmwareUpgrade),
-        content: Text(AppL10n.of(dialogContext).otaAlreadyLatestContent),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: Text(AppL10n.of(dialogContext).otaKnow),
-          ),
-        ],
-      ),
+    await showAppNoticeDialog(
+      context,
+      title: AppL10n.of(context).otaFirmwareUpgrade,
+      message: AppL10n.of(context).otaAlreadyLatestContent,
+      icon: Icons.system_update_alt_rounded,
+      confirmLabel: AppL10n.of(context).otaKnow,
     );
     return;
   }
   // ④ 有新版本：确认弹窗（稍后 / 立刻更新）。
-  final confirmed = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(AppL10n.of(dialogContext).otaFirmwareUpgrade),
-      content: Text(
-        AppL10n.of(dialogContext).otaNewVersionConfirm(target.newVersionNo),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: Text(AppL10n.of(dialogContext).otaLater),
-        ),
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: Text(AppL10n.of(dialogContext).otaUpdateNow),
-        ),
-      ],
-    ),
+  final confirmed = await showAppConfirmDialog(
+    context,
+    title: AppL10n.of(context).otaFirmwareUpgrade,
+    message: AppL10n.of(context).otaNewVersionConfirm(target.newVersionNo),
+    icon: Icons.system_update_alt_rounded,
+    cancelLabel: AppL10n.of(context).otaLater,
+    confirmLabel: AppL10n.of(context).otaUpdateNow,
   );
   if (confirmed != true || !context.mounted) {
     return;
@@ -524,22 +508,14 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   /// 升级中确认退出：返回 true 表示用户坚持退出（将中断固件传输）。
   Future<bool> _confirmExitWhileUpgrading() async {
     final l10n = AppL10n.of(context);
-    final leave = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.otaExitConfirmTitle),
-        content: Text(l10n.otaExitConfirmContent),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.otaExitConfirmStay),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.otaExitConfirmLeave),
-          ),
-        ],
-      ),
+    final leave = await showAppConfirmDialog(
+      context,
+      title: l10n.otaExitConfirmTitle,
+      message: l10n.otaExitConfirmContent,
+      icon: Icons.exit_to_app_rounded,
+      tone: AppDialogTone.danger,
+      cancelLabel: l10n.otaExitConfirmStay,
+      confirmLabel: l10n.otaExitConfirmLeave,
     );
     return leave ?? false;
   }

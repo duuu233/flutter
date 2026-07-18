@@ -147,9 +147,21 @@ class _HomePageState extends State<HomePage> {
     //（setOffline 从无调用方，isOffline 永 false）。
     // 进入首页即回后端刷新设备列表（对齐小程序 home.js onShow→loadHomeState）：
     // 否则登录后直接落到首页、其它 tab 尚未刷新时，已绑定设备会误显示「未绑定」空态。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        widget.state.refreshDevices();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) {
+        return;
+      }
+      await widget.state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      // 电量/内存是蓝牙字段、后端不下发：列表刷完再对连接中的那台补一次 0x01 回读，
+      // 首页卡片进来就是实时电量，而不是上一次读到的缓存值。
+      for (final device in widget.state.devices) {
+        if (device.connected) {
+          await widget.state.refreshConnectedDeviceInfo(device.id);
+          break; // BLE 同时只保持一条会话
+        }
       }
     });
   }

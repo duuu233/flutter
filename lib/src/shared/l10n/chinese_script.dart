@@ -18,6 +18,7 @@ String toTraditionalChinese(String source) {
 const Map<String, String> _traditionalPhrases = {
   '简体中文': '簡體中文',
   '繁体中文': '繁體中文',
+  '联系我们': '聯繫我們',
   '联系方式': '聯繫方式',
   '用户协议': '用戶協議',
   '隐私政策': '隱私政策',

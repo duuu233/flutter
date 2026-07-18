@@ -7,6 +7,7 @@ import '../../../network/api_client.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'cast_preview_page.dart';
@@ -214,22 +215,13 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   Future<void> _delete(CastRecord record) async {
     final l10n = AppL10n.of(context);
     // 二次确认（对齐小程序 records.js:215-232 的 wx.showModal），避免误删不可恢复的记录。
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.castDeleteRecordTitle),
-        content: Text(l10n.castDeleteRecordConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(l10n.castDelete),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: l10n.castDeleteRecordTitle,
+      message: l10n.castDeleteRecordConfirm,
+      icon: Icons.delete_outline_rounded,
+      tone: AppDialogTone.danger,
+      confirmLabel: l10n.castDelete,
     );
     if (confirmed != true) {
       return;

@@ -23,16 +23,55 @@ class DevicesPage extends StatefulWidget {
   State<DevicesPage> createState() => _DevicesPageState();
 }
 
-class _DevicesPageState extends State<DevicesPage> {
+class _DevicesPageState extends State<DevicesPage> with RouteAware {
   @override
   void initState() {
     super.initState();
-    // 进入页面后拉取一次后端设备列表（失败则保留当前列表）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        widget.state.refreshDevices();
+        _reload();
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void dispose() {
+    appRouteObserver.unsubscribe(this);
+    super.dispose();
+  }
+
+  /// 从设备详情等页 pop 回来时重新拉数（本页原来只在 initState 拉一次，
+  /// 详情页里改名/连接/清空后返回，列表还是旧的）。
+  @override
+  void didPopNext() {
+    _reload();
+  }
+
+  /// 后端列表 + 已连接设备的真机实时值。
+  ///
+  /// 电量/内存是**蓝牙**字段，后端不下发；只调 refreshDevices 的话列表永远显示
+  /// 上一次 BLE 读到的缓存值（修好覆盖 bug 之前更是直接显示 0%）。这里对当前
+  /// 连接中的那台补一次 0x01 回读，页面进来就是实时电量。
+  Future<void> _reload() async {
+    await widget.state.refreshDevices();
+    if (!mounted) {
+      return;
+    }
+    for (final device in widget.state.devices) {
+      if (device.connected) {
+        await widget.state.refreshConnectedDeviceInfo(device.id);
+        break; // BLE 同时只保持一条会话，最多只有一台是连接态
+      }
+    }
   }
 
   @override
@@ -45,9 +84,7 @@ class _DevicesPageState extends State<DevicesPage> {
           // 首屏未出结果前显示 loading，不先闪空列表。
           loading: !state.devicesLoaded,
           loadError: state.devicesLoadError,
-          onRefresh: () async {
-            await state.refreshDevices();
-          },
+          onRefresh: _reload,
           devices: state.devices
               .map(
                 (device) => MyDeviceOverview(

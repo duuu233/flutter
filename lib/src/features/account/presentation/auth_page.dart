@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
@@ -37,8 +38,8 @@ class _AuthPageState extends State<AuthPage> {
 
   bool _passwordVisible = false;
   bool _agreed = false;
-  // 每个字段独立的校验错误：只填错邮箱不该提示「密码为空」，反之亦然；
-  // 输入一变就清除对应错误（之前是单一 _showErrors，置 true 后永不复位）。
+  // 校验错误只用来把对应输入框标红（文案走弹窗，见 _alert）：逐项判断，
+  // 同一时刻最多标红一个；输入一变就清除。
   bool _emailError = false;
   bool _passwordError = false;
   bool _weChatSubmitting = false;
@@ -140,21 +141,26 @@ class _AuthPageState extends State<AuthPage> {
     // 点击登录先收起键盘：未勾选协议弹提示时键盘若还开着，
     // 用户看不全提示、还可能通过键盘继续操作。
     FocusManager.instance.primaryFocus?.unfocus();
+    final l10n = AppL10n.of(context);
     final email = _emailController.text.trim();
     final password = _passwordController.text;
-    final emailValid = RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email);
 
-    if (!emailValid || password.trim().isEmpty) {
-      setState(() {
-        _emailError = !emailValid;
-        _passwordError = password.trim().isEmpty;
-      });
+    // 逐项校验：命中第一条就弹提示并返回，不再一次性把所有错误全部铺出来。
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      _markError(email: true);
+      await _alert(l10n.accEmailInvalid);
+      return;
+    }
+    if (password.trim().isEmpty) {
+      _markError(password: true);
+      await _alert(l10n.accPasswordEmpty);
       return;
     }
     if (!_agreed) {
-      _showFeedback(AppL10n.of(context).accAgreementRequired);
+      await _alert(l10n.accAgreementRequired);
       return;
     }
+    _markError();
 
     setState(() {
       _submitting = true;
@@ -184,7 +190,7 @@ class _AuthPageState extends State<AuthPage> {
     // 同 _login：先收起键盘再弹提示/拉起微信。
     FocusManager.instance.primaryFocus?.unfocus();
     if (!_agreed) {
-      _showFeedback(AppL10n.of(context).accAgreementRequired);
+      await _alert(AppL10n.of(context).accAgreementRequired);
       return;
     }
 
@@ -250,6 +256,26 @@ class _AuthPageState extends State<AuthPage> {
 
   void _showFeedback(String message) {
     AppToast.show(context, message);
+  }
+
+  /// 校验失败的统一提示弹窗（全项目同一套确认框样式）。
+  Future<void> _alert(String message) {
+    return showAppNoticeDialog(
+      context,
+      title: AppL10n.of(context).tipTitle,
+      message: message,
+    );
+  }
+
+  /// 只把**当前这一条**校验失败的输入框标红，其余复位。
+  void _markError({bool email = false, bool password = false}) {
+    if (_emailError == email && _passwordError == password) {
+      return;
+    }
+    setState(() {
+      _emailError = email;
+      _passwordError = password;
+    });
   }
 }
 
@@ -330,9 +356,7 @@ class _AuthCanvas extends StatelessWidget {
               autofillHints: const [AutofillHints.email],
             ),
           ),
-          AuthErrorSlot(
-            text: emailError ? AppL10n.of(context).accEmailInvalid : null,
-          ),
+          const SizedBox(height: 16),
           SizedBox(
             height: 56,
             child: AuthPillTextField(
@@ -358,10 +382,7 @@ class _AuthCanvas extends StatelessWidget {
               ),
             ),
           ),
-          AuthErrorSlot(
-            text: passwordError ? AppL10n.of(context).accPasswordEmpty : null,
-            gap: 12,
-          ),
+          const SizedBox(height: 12),
           Align(
             alignment: Alignment.centerRight,
             child: GestureDetector(

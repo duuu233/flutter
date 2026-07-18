@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../state.dart';
-import 'device_details_page.dart' show showDeviceConfirmDialog;
 
 /// 删除设备流程进行中标记：并发触发（连点）时第二路直接返回。
 /// 文件级单份——原实现是路由 builder 闭包里的局部变量，每次路由实例化各一份，
@@ -34,13 +34,12 @@ Future<void> startDeleteDeviceFlow(
   _deleteFlowBusy = true;
   try {
     const deleteIcon = 'assets/images/device-detail-icon06.png';
-    const deleteAccent = Color(0xFFFF3045);
     if (state.deviceById(deviceId).connected) {
-      final proceed = await showDeviceConfirmDialog(
+      final proceed = await showAppConfirmDialog(
         context,
         iconAsset: deleteIcon,
-        fallbackIcon: Icons.delete_outline_rounded,
-        accent: deleteAccent,
+        icon: Icons.delete_outline_rounded,
+        tone: AppDialogTone.danger,
         title: AppL10n.of(context).devDeleteDevice,
         message: AppL10n.of(context).devDeleteNeedDisconnect,
         confirmLabel: AppL10n.of(context).devDisconnectShort,
@@ -67,13 +66,14 @@ Future<void> startDeleteDeviceFlow(
     if (!context.mounted) {
       return;
     }
-    final confirmed = await showDeviceConfirmDialog(
+    final confirmed = await showAppConfirmDialog(
       context,
       iconAsset: deleteIcon,
-      fallbackIcon: Icons.delete_outline_rounded,
-      accent: deleteAccent,
+      icon: Icons.delete_outline_rounded,
+      tone: AppDialogTone.danger,
       title: AppL10n.of(context).devDeleteDevice,
       message: AppL10n.of(context).devDeleteDeviceMessage,
+      confirmLabel: AppL10n.of(context).devConfirm,
     );
     if (confirmed != true || !context.mounted) {
       return;

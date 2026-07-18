@@ -213,71 +213,6 @@ class AuthPillTextField extends StatelessWidget {
   }
 }
 
-/// 输入框下方的红色错误提示行（圆圈叹号 + 文案）。
-class AuthErrorText extends StatelessWidget {
-  const AuthErrorText({super.key, required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        const Icon(
-          Icons.info_outline_rounded,
-          color: Color(0xFFFF3B3B),
-          size: 16,
-        ),
-        const SizedBox(width: 6),
-        // Flexible：EN 长文案在窄屏上换行而不是横向溢出。
-        Flexible(child: Text(text, style: AuthTextStyles.error)),
-      ],
-    );
-  }
-}
-
-/// 输入框下方的错误提示位：**有没有错误都占住一行的高度**，把「输入框之间的间距」
-/// 预先撑到「错误提示的高度」，这样错误出现/消失时下方内容不再整体跳动
-/// （原来是 `if (error) Padding(...)`，一出错就把下面所有内容顶下去）。
-///
-/// 用 `minHeight` 而非固定高度：中文错误文案全部单行，能做到零位移；EN/JA 个别长
-/// 文案（如 accPasswordRuleError）会换到第二行，此时宁可轻微下移也不裁切文案。
-///
-/// [gap] 是错误位到下一个输入框的间距，替代原来跟在后面的 `SizedBox(height: 16)`——
-/// 换用本组件时要把那个 SizedBox 一起删掉，否则间距会翻倍。
-class AuthErrorSlot extends StatelessWidget {
-  const AuthErrorSlot({super.key, this.text, this.gap = 16});
-
-  /// 为 null / 空串时只占位不渲染文案。
-  final String? text;
-  final double gap;
-
-  /// 单行错误提示的高度：图标 16 与 13px×1.2 文字取大者。
-  static const double lineHeight = 16;
-
-  /// 输入框底边到错误文案的间距（与原 `EdgeInsets.only(top: 8)` 一致）。
-  static const double _topGap = 8;
-
-  @override
-  Widget build(BuildContext context) {
-    final message = text;
-    return Padding(
-      // left 23 对齐输入框内文字起始位置（与原实现一致）。
-      padding: EdgeInsets.only(top: _topGap, left: 23, bottom: gap),
-      child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: lineHeight),
-        child: message == null || message.isEmpty
-            ? const SizedBox(width: double.infinity)
-            : Align(
-                alignment: Alignment.centerLeft,
-                child: AuthErrorText(text: message),
-              ),
-      ),
-    );
-  }
-}
-
 /// 密码可见性切换的眼睛按钮（登录/注册密码行共用尾部控件）。
 class AuthEyeButton extends StatelessWidget {
   const AuthEyeButton({
@@ -470,13 +405,6 @@ class AuthTextStyles {
   static const input = TextStyle(
     color: Color(0xFF2A2B2B),
     fontSize: 14,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
-  static const error = TextStyle(
-    color: Color(0xFFFF3B3B),
-    fontSize: 13,
     fontWeight: FontWeight.w400,
     height: 1.2,
   );

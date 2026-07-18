@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
@@ -158,40 +161,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     });
   }
 
-  Future<void> _pickDeviceFilter() async {
-    final selected = await showModalBottomSheet<String?>(
-      context: context,
-      backgroundColor: Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // 无「全部相框」：对齐小程序单设备图库模型（避免跨设备选中删错槽位）。
-              for (final device in state.devices)
-                ListTile(
-                  title: Text(device.name),
-                  trailing: _deviceFilter == device.id
-                      ? const Icon(
-                          Icons.check_rounded,
-                          color: Color(0xFFFF6A24),
-                        )
-                      : null,
-                  onTap: () => Navigator.of(context).pop(device.id),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-    if (selected == null) {
+  /// 切换设备筛选（下拉菜单选项回调，见 [_DeviceFilterChip]）。
+  void _pickDeviceFilter(String deviceId) {
+    if (deviceId == _deviceFilter) {
       return;
     }
     setState(() {
-      _deviceFilter = selected;
+      _deviceFilter = deviceId;
       _selectedIds.clear();
     });
     // 每次切换设备筛选都查一次该设备的一键清除状态（与进入图库同一汇合点）。
@@ -218,16 +194,15 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       return;
     }
     _clearModalShowing = true;
-    final confirmed = await showDialog<bool>(
-      context: context,
+    final confirmed = await showAppConfirmDialog(
+      context,
       // 纯告知弹窗：必须点「确认」才复位清除标记，点遮罩不算确认。
       barrierDismissible: false,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      builder: (context) => _GalleryConfirmDialog(
-        title: AppL10n.of(context).galTip,
-        message: AppL10n.of(context).galDeviceClearedNotice,
-        showCancel: false,
-      ),
+      showCancel: false,
+      icon: Icons.image_outlined,
+      title: AppL10n.of(context).galTip,
+      message: AppL10n.of(context).galDeviceClearedNotice,
+      confirmLabel: AppL10n.of(context).galConfirm,
     );
     _clearModalShowing = false;
     if (confirmed == true) {
@@ -250,7 +225,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
           child: Row(
             children: [
               const Spacer(),
-              _DeviceFilterChip(label: _filterLabel, onTap: _pickDeviceFilter),
+              _DeviceFilterChip(
+                label: _filterLabel,
+                devices: state.devices,
+                selectedId: _deviceFilter,
+                onSelected: _pickDeviceFilter,
+              ),
             ],
           ),
         ),
@@ -264,13 +244,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       return;
     }
     final count = _selectedIds.length;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.4),
-      builder: (context) => _GalleryConfirmDialog(
-        title: AppL10n.of(context).galDeletePhotos,
-        message: AppL10n.of(context).galDeleteConfirm(count),
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      icon: Icons.delete_outline_rounded,
+      tone: AppDialogTone.danger,
+      title: AppL10n.of(context).galDeletePhotos,
+      message: AppL10n.of(context).galDeleteConfirm(count),
+      confirmLabel: AppL10n.of(context).galConfirm,
     );
     if (confirmed != true || !mounted) {
       return;
@@ -377,7 +357,9 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                       const Spacer(),
                       _DeviceFilterChip(
                         label: _filterLabel,
-                        onTap: _pickDeviceFilter,
+                        devices: state.devices,
+                        selectedId: _deviceFilter,
+                        onSelected: _pickDeviceFilter,
                       ),
                     ],
                   ),
@@ -429,11 +411,220 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   }
 }
 
-/// 设备筛选胶囊（小程序 `.filter-btn`）：白 0.78 胶囊 + 文案 + 下拉箭头。
-class _DeviceFilterChip extends StatelessWidget {
-  const _DeviceFilterChip({required this.label, required this.onTap});
+/// 设备筛选胶囊 + 下拉菜单（小程序 `.filter-btn` / `.filter-menu`，rpx ÷ 2）。
+///
+/// **不是**底部弹层：小程序是贴着胶囊右下角展开的下拉菜单（`.filter-wrap` 相对定位、
+/// `.filter-menu` 绝对定位 `top:70rpx; right:0`），宽 105、白 0.9 + 1px 白边 + 圆角 6，
+/// 选中项是橙字 + 橙色淡底药丸（**没有对勾**）。这里用 [OverlayPortal] + [LayerLink]
+/// 挂到 Overlay 上，保证菜单能盖住下方照片网格而不被 Column 裁掉。
+///
+/// 与小程序唯一有意的差异：多加一层透明全屏点击层，点空白处收起菜单——小程序没有遮罩、
+/// 只能再点一次胶囊才收起，在 App 上那是明显的手感缺陷。
+class _DeviceFilterChip extends StatefulWidget {
+  const _DeviceFilterChip({
+    required this.label,
+    required this.devices,
+    required this.selectedId,
+    required this.onSelected,
+  });
 
   final String label;
+  final List<DeviceItem> devices;
+  final String? selectedId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  State<_DeviceFilterChip> createState() => _DeviceFilterChipState();
+}
+
+class _DeviceFilterChipState extends State<_DeviceFilterChip> {
+  final LayerLink _link = LayerLink();
+  final OverlayPortalController _menu = OverlayPortalController();
+  bool _open = false;
+
+  void _toggle() {
+    setState(() {
+      _open = !_open;
+      _open ? _menu.show() : _menu.hide();
+    });
+  }
+
+  void _close() {
+    if (!_open) {
+      return;
+    }
+    setState(() {
+      _open = false;
+      _menu.hide();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: _link,
+      child: OverlayPortal(
+        controller: _menu,
+        overlayChildBuilder: (context) => Stack(
+          children: [
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: _close,
+              ),
+            ),
+            CompositedTransformFollower(
+              link: _link,
+              // 菜单右边缘与胶囊右边缘对齐，间隔 4（小程序 top:70rpx − 胶囊 62rpx）。
+              targetAnchor: Alignment.bottomRight,
+              followerAnchor: Alignment.topRight,
+              offset: const Offset(0, 4),
+              child: _FilterMenu(
+                devices: widget.devices,
+                selectedId: widget.selectedId,
+                onSelected: (id) {
+                  _close();
+                  widget.onSelected(id);
+                },
+              ),
+            ),
+          ],
+        ),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _toggle,
+          child: Container(
+            height: 31,
+            constraints: const BoxConstraints(minWidth: 88),
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.78),
+              borderRadius: BorderRadius.circular(999),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF7E96B8).withValues(alpha: 0.08),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Color(0xFF777E88),
+                      fontSize: 13,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                _FilterArrow(open: _open),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 小程序 `.filter-arrow`：7×7 方块只留右/下 1px 边，旋转 45°（展开时 225°）成箭头。
+class _FilterArrow extends StatelessWidget {
+  const _FilterArrow({required this.open});
+
+  final bool open;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox.square(
+      dimension: 10,
+      child: Center(
+        child: Transform.rotate(
+          angle: open ? 225 * math.pi / 180 : 45 * math.pi / 180,
+          child: Transform.translate(
+            offset: const Offset(0, -1.5),
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                border: Border(
+                  right: BorderSide(color: Color(0xFF777E88)),
+                  bottom: BorderSide(color: Color(0xFF777E88)),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 小程序 `.filter-menu`：宽 105、白 0.9、1px 白边、圆角 6、上下留白 4/6。
+class _FilterMenu extends StatelessWidget {
+  const _FilterMenu({
+    required this.devices,
+    required this.selectedId,
+    required this.onSelected,
+  });
+
+  final List<DeviceItem> devices;
+  final String? selectedId;
+  final ValueChanged<String> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Container(
+        width: 105,
+        padding: const EdgeInsets.only(top: 4, bottom: 6),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.9),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF7E746A).withValues(alpha: 0.18),
+              blurRadius: 20,
+              offset: const Offset(0, 9),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          // 无「全部相框」项：对齐小程序单设备图库模型（避免跨设备选中删错槽位）。
+          children: [
+            for (final device in devices)
+              _FilterOption(
+                label: device.name,
+                active: device.id == selectedId,
+                onTap: () => onSelected(device.id),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 小程序 `.filter-option`：高 28、左右内缩 6、圆角 4；选中为橙字 + 橙淡底。
+class _FilterOption extends StatelessWidget {
+  const _FilterOption({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
   final VoidCallback onTap;
 
   @override
@@ -442,37 +633,29 @@ class _DeviceFilterChip extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Container(
-        height: 31,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        height: 28,
+        margin: const EdgeInsets.symmetric(horizontal: 6),
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.78),
-          borderRadius: BorderRadius.circular(999),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF7E96B8).withValues(alpha: 0.08),
-              blurRadius: 14,
-              offset: const Offset(0, 5),
-            ),
-          ],
+          color: active
+              ? const Color(0xFFFF7436).withValues(alpha: 0.12)
+              : null,
+          borderRadius: BorderRadius.circular(4),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF777E88),
-                fontSize: 13,
-                height: 1,
-              ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: active
+                  ? const Color(0xFFFF5F1F)
+                  : const Color(0xFF777E88),
+              fontSize: 13,
+              height: 1,
             ),
-            const SizedBox(width: 8),
-            const Icon(
-              Icons.keyboard_arrow_down_rounded,
-              color: Color(0xFF777E88),
-              size: 18,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -735,159 +918,6 @@ class _CircleAction extends StatelessWidget {
           ),
         ),
       ),
-      ),
-    );
-  }
-}
-
-/// 图库弹窗，对齐小程序 `.confirm-dialog`：白卡（radius 28rpx→14）+ 左侧橙色图标盒
-/// （64rpx→32，底 rgba(255,106,32,.08)）+ 右侧标题（38rpx→19/700）与说明（24rpx→12），
-/// 底部胶囊按钮（72rpx→36 高，取消 #EEEEEE / 确认 #FF9140→#FF6A20 渐变）。
-///
-/// [showCancel] 为 false 时只渲染一个通栏「确认」——用于「设备已被清空」这类
-/// 纯告知弹窗（小程序那边走 `wx.showModal({showCancel:false})`，App 统一用本样式，
-/// 避免和系统 [AlertDialog] 出现两种确认样式）。
-class _GalleryConfirmDialog extends StatelessWidget {
-  const _GalleryConfirmDialog({
-    required this.title,
-    required this.message,
-    this.showCancel = true,
-  });
-
-  final String title;
-  final String message;
-  final bool showCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final confirmButton = _DialogButton(
-      label: AppL10n.of(context).galConfirm,
-      textColor: Colors.white,
-      gradient: const LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-      ),
-      onTap: () => Navigator.of(context).pop(true),
-    );
-    return Dialog(
-      backgroundColor: Colors.white,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 30, 24, 20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 32,
-                  height: 32,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFF6A20).withValues(alpha: 0.08),
-                    borderRadius: BorderRadius.circular(9),
-                  ),
-                  child: const Icon(
-                    Icons.image_outlined,
-                    color: Color(0xFFFF5F1F),
-                    size: 18,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        style: const TextStyle(
-                          color: Color(0xFF25282D),
-                          fontSize: 19,
-                          fontWeight: FontWeight.w700,
-                          height: 1.15,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        message,
-                        style: const TextStyle(
-                          color: Color(0xFF6F7782),
-                          fontSize: 12,
-                          height: 1.45,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 21),
-            Padding(
-              padding: const EdgeInsets.only(left: 46),
-              child: showCancel
-                  ? Row(
-                      children: [
-                        Expanded(
-                          child: _DialogButton(
-                            label: AppL10n.of(context).cancel,
-                            textColor: const Color(0xFF32363C),
-                            background: const Color(0xFFEEEEEE),
-                            onTap: () => Navigator.of(context).pop(false),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(child: confirmButton),
-                      ],
-                    )
-                  : confirmButton,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DialogButton extends StatelessWidget {
-  const _DialogButton({
-    required this.label,
-    required this.textColor,
-    required this.onTap,
-    this.background,
-    this.gradient,
-  });
-
-  final String label;
-  final Color textColor;
-  final VoidCallback onTap;
-  final Color? background;
-  final Gradient? gradient;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        height: 36,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: background,
-          gradient: gradient,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: textColor,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            height: 1,
-          ),
-        ),
       ),
     );
   }

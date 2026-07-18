@@ -132,6 +132,9 @@ class AppL10n {
   String get cancel => _pick('取消', 'Cancel', 'キャンセル');
   String get confirm => _pick('确定', 'OK', '確定');
   String get gotIt => _pick('我知道了', 'Got it', '了解しました');
+
+  /// 通用提示弹窗标题（校验失败、纯告知类提示统一用它）。
+  String get tipTitle => _pick('提示', 'Notice', 'お知らせ');
   String get loading => _pick('加载中…', 'Loading…', '読み込み中…');
 
   // ── 网络层兜底（ApiClient 经 ApiSession 语言取用，无 BuildContext）─────
@@ -174,7 +177,7 @@ class AppL10n {
   // ── 设置页 ──────────────────────────────────────────────────────────────
   String get settingsTitle => _pick('设置', 'Settings', '設定');
   String get languageSetting => _pick('语种设置', 'Language', '言語設定');
-  String get contactUs => _pick('联系方式', 'Contact', '連絡先');
+  String get contactUs => _pick('联系我们', 'Contact Us', 'お問い合わせ');
   String get privacyPolicy => _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');
   String get userAgreement => _pick('用户协议', 'User Agreement', '利用規約');
   String get checkUpdate => _pick('检查更新', 'Check for Updates', 'アップデート確認');

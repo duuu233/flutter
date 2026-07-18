@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../native_device_api.dart';
 import 'l10n/app_l10n.dart';
+import 'widgets/app_dialog.dart';
 
 /// 运行时权限门卫：在进入相册 / 蓝牙设备操作**之前**先完成系统授权。
 ///
@@ -86,28 +87,19 @@ Future<void> showPermissionGuideDialog(
   required String actionLabel,
   required Future<void> Function() onAction,
 }) async {
-  await showDialog<void>(
-    context: context,
-    builder: (dialogContext) => AlertDialog(
-      title: Text(title),
-      content: Text(message),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(dialogContext).pop(),
-          child: Text(AppL10n.of(dialogContext).cancel),
-        ),
-        TextButton(
-          onPressed: () async {
-            Navigator.of(dialogContext).pop();
-            try {
-              await onAction();
-            } catch (_) {
-              // 打开系统设置失败不阻断（如 iOS 通道未实现），用户可手动去设置。
-            }
-          },
-          child: Text(actionLabel),
-        ),
-      ],
-    ),
+  final go = await showAppConfirmDialog(
+    context,
+    title: title,
+    message: message,
+    icon: Icons.lock_outline_rounded,
+    confirmLabel: actionLabel,
   );
+  if (go != true) {
+    return;
+  }
+  try {
+    await onAction();
+  } catch (_) {
+    // 打开系统设置失败不阻断（如 iOS 通道未实现），用户可手动去设置。
+  }
 }

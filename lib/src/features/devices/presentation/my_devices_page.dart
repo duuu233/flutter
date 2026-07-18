@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
@@ -140,29 +141,17 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
 
   Future<void> _rename(MyDeviceOverview device) async {
     final controller = TextEditingController(text: device.name);
-    final name = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(AppL10n.of(context).devDeviceNameTitle),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          maxLength: 6,
-          cursorColor: const Color(0xFFEB5F1B),
-          decoration: InputDecoration(hintText: AppL10n.of(context).devNameHint),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: Text(AppL10n.of(context).cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(controller.text),
-            child: Text(AppL10n.of(context).confirm),
-          ),
-        ],
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: AppL10n.of(context).devDeviceNameTitle,
+      icon: Icons.drive_file_rename_outline_rounded,
+      content: AppDialogTextField(
+        controller: controller,
+        hintText: AppL10n.of(context).devNameHint,
+        maxLength: 6,
       ),
     );
+    final name = confirmed == true ? controller.text : null;
     // 不立即 dispose：对话框还在退场动画中、TextField 仍挂着 controller，
     // 立刻释放会触发 used-after-dispose 断言；延迟一个主题动画时长再释放。
     Future<void>.delayed(kThemeAnimationDuration, controller.dispose);

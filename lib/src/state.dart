@@ -675,15 +675,19 @@ class PhotoFrameState extends ChangeNotifier {
     await refreshConnectedDeviceInfo(_selectedDeviceId);
   }
 
-  /// 按设备 id 回读真机内存/索引。投屏完成页调用时不改变当前选中的设备。
-  Future<void> refreshConnectedDeviceInfo(String deviceId) async {
-    DeviceItem? device;
+  /// 按 id 在当前列表里找设备；找不到返回 null（区别于 [_findDevice] 的占位兜底）。
+  DeviceItem? _deviceByIdOrNull(String deviceId) {
     for (final item in _devices) {
       if (item.id == deviceId) {
-        device = item;
-        break;
+        return item;
       }
     }
+    return null;
+  }
+
+  /// 按设备 id 回读真机内存/索引。投屏完成页调用时不改变当前选中的设备。
+  Future<void> refreshConnectedDeviceInfo(String deviceId) async {
+    final device = _deviceByIdOrNull(deviceId);
     if (device == null) {
       return;
     }
@@ -699,13 +703,70 @@ class PhotoFrameState extends ChangeNotifier {
         'read-core-info-0x01',
         BleController.instance.client.readTransferInfo,
       );
-      _applyConnectedInfo(device, info);
-      device.connected = true;
+      // 读 0x01 期间（100~500ms）若有并发的 refreshDevices 完成，_devices 已被整体换过，
+      // 上面捕获的 device 就成了游离对象——写进去 UI 永远读不到（connectDevice 早有同款
+      // 保护，见其 await 后的重新查找）。这里按 id 重新定位一次。
+      final target = _deviceByIdOrNull(deviceId) ?? device;
+      _applyConnectedInfo(target, info);
+      target.connected = true;
       notifyListeners();
       trace.finish(success: true);
     } catch (_) {
       // 读失败静默（与小程序 loadDetail 的 catch 一致），保持旧值。
       trace.finish(success: false);
+    }
+  }
+
+  /// 把上一份列表里同一台设备的**蓝牙专属字段**搬到新对象上。
+  ///
+  /// [refreshDevices] 是整体替换列表（后端为准），而电量 / 实时内存 / 当前索引 / 固件版本 /
+  /// 轮播态这些字段后端根本不返回，新对象里是 0/null。不搬运的话，任何一次列表刷新都会
+  /// 把 BLE 辛苦读回来的值清掉，而设备列表页自身**不做** BLE 回读，于是就一直显示 0%。
+  ///
+  /// 匹配优先按 id；id 变了（后端换主键/重复绑定折叠）时退回硬件序列号——与
+  /// [_dedupeDevicesBySerial] 用同一套归一化规则。
+  void _carryOverBleFields(DeviceItem fresh) {
+    String norm(String s) => s.replaceAll(RegExp(r'[:\-\s]'), '').toUpperCase();
+    final freshSerial = norm(fresh.serialNumber);
+    DeviceItem? old;
+    for (final item in _devices) {
+      if (item.id == fresh.id) {
+        old = item;
+        break;
+      }
+      if (old == null &&
+          freshSerial.isNotEmpty &&
+          norm(item.serialNumber) == freshSerial) {
+        old = item; // 序列号命中先记下，继续找 id 精确匹配
+      }
+    }
+    if (old == null) {
+      return; // 新绑定的设备：没有旧值可搬，等连接后 BLE 回填
+    }
+    if (fresh.batteryLevel <= 0) {
+      fresh.batteryLevel = old.batteryLevel;
+    }
+    fresh.charging = old.charging;
+    fresh.liveImageCount ??= old.liveImageCount;
+    fresh.liveCapacity ??= old.liveCapacity;
+    if (fresh.imageMask == 0) {
+      fresh.imageMask = old.imageMask;
+    }
+    if (fresh.currentImageIndex < 0) {
+      fresh.currentImageIndex = old.currentImageIndex;
+    }
+    if (fresh.firmwareVersion.isEmpty) {
+      fresh.firmwareVersion = old.firmwareVersion;
+    }
+    fresh.playbackMode = old.playbackMode;
+    fresh.carouselEnabled = old.carouselEnabled;
+    // 间隔要跟默认值比、不能跟 0 比：列表接口不下发 carouselInterval，_deviceFromJson
+    // 一律填默认 2h，用 `<= 0` 判就永远不生效——真机读回来的间隔会被 2h 覆盖，
+    // 用户下次开关轮播时还会把这个 2h 写回设备。
+    if (fresh.carouselIntervalSeconds ==
+            FrameProtocolConfig.defaultCarouselIntervalSeconds &&
+        old.carouselIntervalSeconds > 0) {
+      fresh.carouselIntervalSeconds = old.carouselIntervalSeconds;
     }
   }
 
@@ -719,6 +780,8 @@ class PhotoFrameState extends ChangeNotifier {
       device.batteryLevel = info.battery;
     }
     // 真机内存（真机容量最多 95 槽，超出 int 掩码范围，直接采用上报计数/容量）。
+    // 这里**不能**像电量/容量那样加 `> 0` 守卫：0 张是合法状态（设备被清空），
+    // 加了守卫清空后就会一直显示旧张数。
     device.liveImageCount = info.imgCount;
     if (info.capacity > 0) {
       device.liveCapacity = info.capacity;
@@ -1808,6 +1871,11 @@ class PhotoFrameState extends ChangeNotifier {
       // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
       for (final device in mapped) {
         device.connected = _sessionMatches(device);
+        // 蓝牙字段回填：后端**不下发**电量/内存/索引/固件等，_deviceFromJson 一律给 0/null。
+        // 若整体替换而不回填，每次进首页/设备列表（都会调本方法）都会把 BLE 读到的
+        // 电量抹成 0%、内存抹成 0/32——正是「切换页面后电量变 0%」的根因。
+        // 小程序同样是合并而非覆盖（home.js:424 / device/list.js:86 的 `?? cached`）。
+        _carryOverBleFields(device);
       }
       _devices
         ..clear()
@@ -2257,6 +2325,9 @@ class PhotoFrameState extends ChangeNotifier {
     // 3) 同步本地：设备已无图（IMG_MASK 清零 / 当前索引复位），相册对应照片标记为不在设备上。
     device.imageMask = 0;
     device.currentImageIndex = 0;
+    // 实时张数也要归零：imageCount 优先读 liveImageCount，不清的话详情页会一直显示
+    // 清空前的旧张数，直到下一次 0x01 回读落地。
+    device.liveImageCount = 0;
     // 此处不再阻塞等待成功后的设备回读。确认页会先关闭 loading、提示成功并返回详情页，
     // 详情页 didPopNext 再以后台方式调用 refreshSelectedDeviceMemory（且仅读 0x01）。
     var clearedCount = 0;

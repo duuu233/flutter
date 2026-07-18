@@ -12,6 +12,7 @@ import '../features/shell/presentation/shell_page.dart';
 import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
 import '../shared/l10n/app_l10n.dart';
+import '../shared/widgets/app_dialog.dart';
 import '../shared/widgets/app_toast.dart';
 import '../shared/widgets/app_widgets.dart' show AppLoadingDialog;
 import '../shared/widgets/force_update_dialog.dart';
@@ -240,54 +241,39 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       return;
     }
     final l10n = AppL10n.of(context);
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.crashReportTitle),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(l10n.crashReportHint, style: const TextStyle(fontSize: 12)),
-              const SizedBox(height: 10),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxHeight: 300),
-                child: SingleChildScrollView(
-                  child: SelectableText(
-                    log,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontFamily: 'monospace',
-                      height: 1.3,
-                    ),
-                  ),
-                ),
-              ),
-            ],
+    // 「复制日志」= 取消位（点了不关弹窗，方便复制完再关），「清除并关闭」= 确认位。
+    final cleared = await showAppConfirmDialog(
+      context,
+      title: l10n.crashReportTitle,
+      message: l10n.crashReportHint,
+      icon: Icons.bug_report_outlined,
+      tone: AppDialogTone.danger,
+      barrierDismissible: false,
+      cancelLabel: l10n.crashReportCopy,
+      confirmLabel: l10n.crashReportClose,
+      onCancelTap: () async {
+        await Clipboard.setData(ClipboardData(text: log));
+        if (context.mounted) {
+          AppToast.show(context, l10n.crashReportCopied);
+        }
+      },
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 300),
+        child: SingleChildScrollView(
+          child: SelectableText(
+            log,
+            style: const TextStyle(
+              fontSize: 11,
+              fontFamily: 'monospace',
+              height: 1.3,
+            ),
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: log));
-              if (dialogContext.mounted) {
-                AppToast.show(dialogContext, l10n.crashReportCopied);
-              }
-            },
-            child: Text(l10n.crashReportCopy),
-          ),
-          TextButton(
-            onPressed: () {
-              unawaited(NativeDeviceApi.clearCrashLog());
-              Navigator.of(dialogContext).pop();
-            },
-            child: Text(l10n.crashReportClose),
-          ),
-        ],
       ),
     );
+    if (cleared == true) {
+      unawaited(NativeDeviceApi.clearCrashLog());
+    }
   }
 
   /// 主题在 App 生命周期内不变：缓存一份实例。之前写在 build 里的

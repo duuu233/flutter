@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
@@ -16,8 +17,9 @@ import 'auth_widgets.dart';
 /// 与登录页共用同一套视觉（`auth_widgets.dart`）：同一张全屏背景、LOGO、
 /// 胶囊输入框、渐变主按钮与协议确认行；**不**再与修改/忘记密码页共用表单卡样式。
 ///
-/// 校验时机与登录页一致：点「注册」时统一判断并在对应输入框下方就地提示，
-/// 重新输入即清除提示；键盘「完成」只收起键盘，不触发校验。
+/// 校验时机与登录页一致：点「注册」时**逐项**判断，命中第一条就把该输入框标红并
+/// 弹提示框（不再一次性把所有错误铺在输入框下方，那会把整个表单顶得上下跳动）；
+/// 重新输入即清除标红；键盘「完成」只收起键盘，不触发校验。
 /// 注册同样要求勾选协议（对齐登录页的协议确认）。
 class RegisterPage extends StatefulWidget {
   const RegisterPage({
@@ -109,7 +111,8 @@ class _RegisterPageState extends State<RegisterPage> {
     }
     // 本地先校验邮箱格式，空/格式错不发请求（原来空邮箱也会打接口）。
     if (!_emailPattern.hasMatch(_emailController.text.trim())) {
-      setState(() => _emailError = true);
+      _markError(email: true);
+      await _alert(AppL10n.of(context).accEmailInvalid);
       return;
     }
     _sendingCode = true;
@@ -156,24 +159,33 @@ class _RegisterPageState extends State<RegisterPage> {
     }
     // 同登录页：点注册先收起键盘，再校验/弹提示。
     FocusManager.instance.primaryFocus?.unfocus();
-    final emailValid = _emailPattern.hasMatch(_emailController.text.trim());
-    final codeFilled = _codeController.text.trim().isNotEmpty;
-    final ruleOk = _passwordPattern.hasMatch(_passwordController.text);
-    final confirmOk = _passwordController.text == _confirmController.text;
-    if (!emailValid || !codeFilled || !ruleOk || !confirmOk) {
-      setState(() {
-        _emailError = !emailValid;
-        _codeError = !codeFilled;
-        _ruleError = !ruleOk;
-        // 密码本身不合规时先只提示规则错误，规则过了再比对两次一致性。
-        _mismatchError = ruleOk && !confirmOk;
-      });
+    final l10n = AppL10n.of(context);
+    // 逐项校验：命中第一条就弹提示并返回，不再一次性把所有错误全部铺出来。
+    if (!_emailPattern.hasMatch(_emailController.text.trim())) {
+      _markError(email: true);
+      await _alert(l10n.accEmailInvalid);
+      return;
+    }
+    if (_codeController.text.trim().isEmpty) {
+      _markError(code: true);
+      await _alert(l10n.accVerifyCodeHint);
+      return;
+    }
+    if (!_passwordPattern.hasMatch(_passwordController.text)) {
+      _markError(rule: true);
+      await _alert(l10n.accPasswordRuleError);
+      return;
+    }
+    if (_passwordController.text != _confirmController.text) {
+      _markError(mismatch: true);
+      await _alert(l10n.accPasswordMismatchReconfirm);
       return;
     }
     if (!_agreed) {
-      _showSnack(AppL10n.of(context).accAgreementRequired);
+      await _alert(l10n.accAgreementRequired);
       return;
     }
+    _markError();
     setState(() => _submitting = true);
     final feedback = await widget.state.registerWithEmail(
       email: _emailController.text,
@@ -202,7 +214,7 @@ class _RegisterPageState extends State<RegisterPage> {
     if (loginFb.success) {
       // loginWithPassword 已置登录态并 notifyListeners，根组件（bolt_star_app）会把
       // 根页面切成主壳层；弹回栈底即露出首页（注册页/登录页均在其上被弹掉）。
-      _showSnack(feedback.message); // 「注册成功。」
+      // 不弹「注册成功」提示：直接进首页，界面变化本身就是反馈（同登录成功不弹提示）。
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
       // 极少数：注册成功但自动登录失败，退回登录页并提示，用户手动登录。
@@ -213,6 +225,36 @@ class _RegisterPageState extends State<RegisterPage> {
 
   void _showSnack(String message) {
     AppToast.show(context, message);
+  }
+
+  /// 校验失败的统一提示弹窗（全项目同一套确认框样式）。
+  Future<void> _alert(String message) {
+    return showAppNoticeDialog(
+      context,
+      title: AppL10n.of(context).tipTitle,
+      message: message,
+    );
+  }
+
+  /// 只把**当前这一条**校验失败的输入框标红，其余复位。
+  void _markError({
+    bool email = false,
+    bool code = false,
+    bool rule = false,
+    bool mismatch = false,
+  }) {
+    if (_emailError == email &&
+        _codeError == code &&
+        _ruleError == rule &&
+        _mismatchError == mismatch) {
+      return;
+    }
+    setState(() {
+      _emailError = email;
+      _codeError = code;
+      _ruleError = rule;
+      _mismatchError = mismatch;
+    });
   }
 
   void _openUserAgreement() {
@@ -306,7 +348,7 @@ class _RegisterPageState extends State<RegisterPage> {
               autofillHints: const [AutofillHints.email],
             ),
           ),
-          AuthErrorSlot(text: _emailError ? l10n.accEmailInvalid : null),
+          const SizedBox(height: 16),
           // 验证码 + 获取验证码。
           SizedBox(
             height: 56,
@@ -331,7 +373,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
           ),
-          AuthErrorSlot(text: _codeError ? l10n.accVerifyCodeHint : null),
+          const SizedBox(height: 16),
           // 密码（占位提示密码规则：6-12位数字+英文）。
           SizedBox(
             height: 56,
@@ -357,7 +399,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
           ),
-          AuthErrorSlot(text: _ruleError ? l10n.accPasswordRuleError : null),
+          const SizedBox(height: 16),
           // 确认密码。
           SizedBox(
             height: 56,
@@ -383,10 +425,7 @@ class _RegisterPageState extends State<RegisterPage> {
               ),
             ),
           ),
-          AuthErrorSlot(
-            text: _mismatchError ? l10n.accPasswordMismatchReconfirm : null,
-            gap: 28,
-          ),
+          const SizedBox(height: 28),
           SizedBox(
             height: 56,
             child: AuthPrimaryButton(

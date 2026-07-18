@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_l10n.dart';
+import 'app_dialog.dart';
 import 'app_toast.dart';
 
 /// 强制升级弹窗（登录成功后 `getLastVersion` 返回 `compulsory=1` 且 `isUpdate=1` 时弹出）。
@@ -80,107 +81,21 @@ class ForceUpdateDialog extends StatelessWidget {
     final message = description.trim().isEmpty
         ? l10n.setForceUpdateMessage
         : description.trim();
+    final version = latestVersion.trim();
     return PopScope(
       // 返回键 / 手势返回都关不掉：强制升级必须升级后才能继续用。
       canPop: false,
-      child: Dialog(
-        backgroundColor: Colors.white,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 30, 24, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: 32,
-                    height: 32,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFF6A20).withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(9),
-                    ),
-                    child: const Icon(
-                      Icons.system_update_alt_rounded,
-                      color: Color(0xFFFF5F1F),
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 14),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          l10n.setForceUpdateTitle,
-                          style: const TextStyle(
-                            color: Color(0xFF25282D),
-                            fontSize: 19,
-                            fontWeight: FontWeight.w700,
-                            height: 1.15,
-                          ),
-                        ),
-                        if (latestVersion.trim().isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            l10n.setForceUpdateVersion(latestVersion.trim()),
-                            style: const TextStyle(
-                              color: Color(0xFF808690),
-                              fontSize: 12,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 6),
-                        Text(
-                          message,
-                          style: const TextStyle(
-                            color: Color(0xFF6F7782),
-                            fontSize: 12,
-                            height: 1.45,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 21),
-              // 通栏「立即更新」：没有取消按钮，这是强制升级弹窗与普通确认弹窗的差别。
-              Padding(
-                padding: const EdgeInsets.only(left: 46),
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: () => _openStore(context),
-                  child: Container(
-                    height: 36,
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-                      ),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      l10n.setUpdateNow,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500,
-                        height: 1,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
+      child: AppDialog(
+        icon: Icons.system_update_alt_rounded,
+        title: l10n.setForceUpdateTitle,
+        message: version.isEmpty
+            ? message
+            : '${l10n.setForceUpdateVersion(version)}\n$message',
+        // 通栏「立即更新」：没有取消按钮，这是强制升级弹窗与普通确认弹窗的差别；
+        // 点它只把用户送去商店，**不关弹窗**（见类文档）。
+        showCancel: false,
+        confirmLabel: l10n.setUpdateNow,
+        onConfirm: () => _openStore(context),
       ),
     );
   }

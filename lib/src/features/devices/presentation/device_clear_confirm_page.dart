@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../state.dart';
@@ -43,26 +44,24 @@ class _DeviceClearConfirmPageState extends State<DeviceClearConfirmPage> {
         Positioned.fill(
           child: ColoredBox(color: Colors.black.withValues(alpha: 0.4)),
         ),
+        // AppDialog 自带 insetPadding(24) 与居中，这里只补一层 Center 定位。
         Center(
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 24),
-            child: DeviceConfirmDialog(
-              iconAsset: 'assets/images/device-detail-icon05.png',
-              fallbackIcon: Icons.cleaning_services_outlined,
-              accent: const Color(0xFFFF6A20),
-              title: AppL10n.of(context).devClearAll,
-              message: isStep1
-                  ? AppL10n.of(context).devClearStep1Message
-                  : AppL10n.of(context).devClearStep2Message,
-              onCancel: widget.onCancel ?? () => Navigator.maybePop(context),
-              onConfirm: () {
-                if (isStep1) {
-                  setState(() => _step = 2);
-                } else {
-                  _confirm(context);
-                }
-              },
-            ),
+          child: AppDialog(
+            iconAsset: 'assets/images/device-detail-icon05.png',
+            icon: Icons.cleaning_services_outlined,
+            confirmLabel: AppL10n.of(context).devConfirm,
+            title: AppL10n.of(context).devClearAll,
+            message: isStep1
+                ? AppL10n.of(context).devClearStep1Message
+                : AppL10n.of(context).devClearStep2Message,
+            onCancel: widget.onCancel ?? () => Navigator.maybePop(context),
+            onConfirm: () {
+              if (isStep1) {
+                setState(() => _step = 2);
+              } else {
+                _confirm(context);
+              }
+            },
           ),
         ),
       ],

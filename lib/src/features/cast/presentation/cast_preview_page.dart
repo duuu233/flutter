@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:image_cropper/image_cropper.dart';
 
+import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble/frame_protocol.dart';
@@ -302,25 +303,12 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
   /// 「原图」：二次确认后还原到最初的图片。对齐小程序 restoreOrigin。
   Future<void> _restoreOrigin() async {
     final l10n = AppL10n.of(context);
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(l10n.castRestoreTitle),
-        content: Text(l10n.castRestoreConfirm),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: Text(l10n.cancel),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            style: TextButton.styleFrom(
-              foregroundColor: const Color(0xFFFF5F1F),
-            ),
-            child: Text(l10n.castRestore),
-          ),
-        ],
-      ),
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: l10n.castRestoreTitle,
+      message: l10n.castRestoreConfirm,
+      icon: Icons.restore_rounded,
+      confirmLabel: l10n.castRestore,
     );
     if (confirmed != true || !mounted) {
       return;
