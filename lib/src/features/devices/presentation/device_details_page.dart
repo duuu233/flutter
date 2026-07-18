@@ -234,7 +234,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
     // 与小程序一致：选图后进入预览，可裁剪、旋转、还原原图，确认后再走后端转码与 BLE 图传。
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+      AppPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
         builder: (_) => CastPreviewPage(device: device, imagePaths: imagePaths),
       ),
@@ -353,26 +353,12 @@ class DeviceDetailsBody extends StatelessWidget {
                             ),
                           ),
                         ),
-                        const SizedBox(width: 3),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: onEditName,
-                          child: Image.asset(
-                            'assets/images/edit-icon01.png',
-                            width: 18,
-                            height: 18,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(
-                                  Icons.edit_outlined,
-                                  size: 16,
-                                  color: Color(0x992A2B2B),
-                                ),
-                          ),
-                        ),
+                        // 点击区 40×40（见 FigmaEditIconButton）：原来是 18×18 的裸
+                        // Image，用户反馈「很难点击到」。图标自带 11px 留白，
+                        // 原先的 SizedBox(width: 3) / SizedBox(height: 9) 一并去掉。
+                        FigmaEditIconButton(onTap: onEditName),
                       ],
                     ),
-                    const SizedBox(height: 9),
                     Row(
                       children: [
                         Image.asset(

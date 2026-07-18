@@ -174,7 +174,11 @@ class ServerImageProjectionService {
       emit(0, _l10n?.castReadingDeviceInfo ?? '正在读取设备信息…');
       final info = await trace.measure(
         'read-core-info-0x01',
-        client.readTransferInfo,
+        () => _readTransferInfoAwaitingIdle(
+          client,
+          onWaiting: () =>
+              emit(0, _l10n?.castDeviceRefreshing ?? '设备正在刷新，请稍候…'),
+        ),
       );
       // 机型/尺寸分开判（对齐小程序 result.js:367-375）：只有 0x03 才是「该型号暂不支持图传」；
       // 读到 0 尺寸多半是刷屏后短暂断连，应提示「重新连接」而非误报机型不支持。
@@ -473,7 +477,11 @@ class ServerImageProjectionService {
       emit(0, _l10n?.castReadingDeviceInfo ?? '正在读取设备信息…');
       final info = await trace.measure(
         'read-core-info-0x01',
-        client.readTransferInfo,
+        () => _readTransferInfoAwaitingIdle(
+          client,
+          onWaiting: () =>
+              emit(0, _l10n?.castDeviceRefreshing ?? '设备正在刷新，请稍候…'),
+        ),
       ); // B2：精简读取，不带 0x03 固件版本
       // 机型/尺寸分开判（对齐小程序 result.js）：0x03 才是不支持；尺寸 0 多为短暂断连，提示重连。
       if (info.screenType == 0x03) {
@@ -671,6 +679,46 @@ class ServerImageProjectionService {
               })
               .catchError((_) {}),
         );
+      }
+    }
+  }
+
+  /// 读设备信息(0x01)，遇「设备忙(0x0B)」自动等待重试，直到设备空闲或超时。
+  ///
+  /// 🔑 治「投屏成功后立刻点『继续投屏』，跳到失败页却没有失败记录」（2026-07-19）。
+  /// 成功投屏收尾会异步下发刷屏指令(0x24)，墨水屏实测要刷数秒；刷屏期间设备对
+  /// **任何**指令都回 0x0B。用户此时选完图进来，0x01 一撞就抛，整单在第一步就失败。
+  ///
+  /// 而失败记录是 `setUserProductUpload(deviceUploadState: 0)` 的副作用——它在
+  /// 本方法之后才会被调用，所以这条路径下后端一条记录都不会有。这正是用户看到的
+  /// 「同样的操作，有时有记录有时没有」：能不能赶在刷屏结束后进来，纯看手速。
+  ///
+  /// 修法是**别让它失败**，而不是去补记一条没有原图、也没有 imgBle（点「重新投屏」
+  /// 必然报「缺少设备帧」）的空记录——刷屏只是几秒的瞬态，等过去就好。等到超时
+  /// 仍忙才按原路径抛出，由结果页弹「设备繁忙中，请稍后再试」（见 casting_progress_page）。
+  Future<FrameDeviceInfo> _readTransferInfoAwaitingIdle(
+    FrameBleClient client, {
+    void Function()? onWaiting,
+    Duration timeout = const Duration(seconds: 12),
+    Duration interval = const Duration(milliseconds: 800),
+  }) async {
+    final deadline = DateTime.now().add(timeout);
+    var notified = false;
+    while (true) {
+      try {
+        return await client.readTransferInfo();
+      } on FrameBleException catch (error) {
+        final retryable =
+            error.kind == FrameBleErrorKind.busy ||
+            error.kind == FrameBleErrorKind.commandPending;
+        if (!retryable || !DateTime.now().isBefore(deadline)) {
+          rethrow;
+        }
+        if (!notified) {
+          notified = true;
+          onWaiting?.call();
+        }
+        await Future<void>.delayed(interval);
       }
     }
   }

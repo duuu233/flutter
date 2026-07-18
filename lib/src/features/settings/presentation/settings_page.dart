@@ -175,12 +175,13 @@ class SettingsPage extends StatelessWidget {
             width: double.infinity,
             child: _LogoutButton(onTap: () => _confirmLogout(context)),
           ),
-          const SizedBox(height: 14),
+          // 退出登录（可逆）与用户注销（不可逆）拉开距离，降低误触注销的概率。
+          const SizedBox(height: 30),
           GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () => _confirmDeleteAccount(context),
             child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 4),
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 l10n.deleteAccount,
                 textAlign: TextAlign.center,

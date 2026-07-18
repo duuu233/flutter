@@ -18,6 +18,10 @@
          API 34+ 强制要求按类型声明；connectedDevice 类型的前置权限由 BLUETOOTH_CONNECT 满足。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE"/>
+    <!-- BleConnectionService 与连接同生命周期持 PARTIAL_WAKE_LOCK：不持锁时息屏进
+         Doze 后 Dart 侧心跳与租约定时器一起停摆，「切出 15 分钟 / 息屏 30 分钟后断开」
+         永远走不到到期点，进程也就一直不可回收。租约到期即断开、停服务、释放锁。 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Android 13+ 通知运行时权限：不主动弹窗索要——未授权时前台服务照常运行，
          仅通知不可见（系统「活跃应用」面板仍可见）。 -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>

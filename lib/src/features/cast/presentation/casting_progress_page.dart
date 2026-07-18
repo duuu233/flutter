@@ -188,6 +188,20 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         _desc = reason.isEmpty ? l10n.castResultFailDefaultDesc : reason;
       }
     });
+
+    // 设备忙：除了失败页的说明文字，再弹一次系统提示框（用户要求）。
+    // 投屏服务已经会等刷屏结束再继续（见 _readTransferInfoAwaitingIdle），
+    // 能走到这里说明等满超时设备仍然忙——这时候用户确实需要一个明确的
+    // 「等一会儿再来」，而不是只在失败页上留一行小字。
+    if (!result.success &&
+        (result.failureKind == FrameBleErrorKind.busy ||
+            result.failureKind == FrameBleErrorKind.commandPending)) {
+      await showAppNoticeDialog(
+        context,
+        title: l10n.castDeviceBusyTitle,
+        message: l10n.castDeviceBusyMessage,
+      );
+    }
   }
 
   /// 失败原因归类为友好话术（对齐小程序 result.js classifyFailureMessage）：
@@ -208,8 +222,6 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       case FrameBleErrorKind.unsupported: // 沿用原逻辑：不支持机型与断连同一话术桶
       case FrameBleErrorKind.connectFailed: // GATT 连接失败，同断连话术桶（靠近设备重试）
         return l10n.castFailureDisconnected;
-      case FrameBleErrorKind.connectFailed:
-        return l10n.bleConnectFailed;
       case FrameBleErrorKind.timeout:
         return l10n.castFailureTimeout;
       case FrameBleErrorKind.aborted:
@@ -273,7 +285,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
     }
     final device = widget.device;
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+      AppPageRoute<void>(
         // 选完图先进预览页（对齐小程序 result.js chooseCamera/chooseAlbum → 跳 preview）。
         // 没有设备对象（从投屏记录「再次投屏」进来的）时退化为直接投。
         builder: (_) => device != null
@@ -295,7 +307,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 「重新投屏」：重新进入预览/裁剪流程（对齐小程序记录页与结果页）。
   void _retry() {
     Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+      AppPageRoute<void>(
         builder: (_) => widget.device != null && widget.imagePaths.isNotEmpty
             ? CastPreviewPage(
                 state: widget.state,

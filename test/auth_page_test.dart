@@ -51,14 +51,17 @@ void main() {
     expect(tester.getSize(weChatButton), const Size(48, 48));
 
     await tester.tap(weChatButton);
-    // 校验失败改为弹提示框（AppDialog），等入场动画跑完再断言。
+    // 校验失败走居中吐司（AppToast，2026-07-19 由「知道了」确认框改成吐司）：
+    // 只有 160ms 淡入，没有路由入场动画。pumpAndSettle 会一直泵到没有动画为止。
     await tester.pumpAndSettle();
 
     expect(fakeClient.callCount, 0);
     expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
 
-    // 关掉弹窗，避免测试结束时留下未收起的路由。
-    await tester.tap(find.text('我知道了'));
+    // 吐司靠 Future.delayed 自动收起（warn 用 3s）。不等它跑完，测试结束时
+    // 会因为「A Timer is still pending」失败；同时也让 AppToast 的静态
+    // OverlayEntry 归位，不残留到同文件的后续用例。
+    await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
   });
 }

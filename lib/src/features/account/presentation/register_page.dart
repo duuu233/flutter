@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
@@ -112,7 +111,7 @@ class _RegisterPageState extends State<RegisterPage> {
     // 本地先校验邮箱格式，空/格式错不发请求（原来空邮箱也会打接口）。
     if (!_emailPattern.hasMatch(_emailController.text.trim())) {
       _markError(email: true);
-      await _alert(AppL10n.of(context).accEmailInvalid);
+      _alert(AppL10n.of(context).accEmailInvalid);
       return;
     }
     _sendingCode = true;
@@ -163,26 +162,26 @@ class _RegisterPageState extends State<RegisterPage> {
     // 逐项校验：命中第一条就弹提示并返回，不再一次性把所有错误全部铺出来。
     if (!_emailPattern.hasMatch(_emailController.text.trim())) {
       _markError(email: true);
-      await _alert(l10n.accEmailInvalid);
+      _alert(l10n.accEmailInvalid);
       return;
     }
     if (_codeController.text.trim().isEmpty) {
       _markError(code: true);
-      await _alert(l10n.accVerifyCodeHint);
+      _alert(l10n.accVerifyCodeHint);
       return;
     }
     if (!_passwordPattern.hasMatch(_passwordController.text)) {
       _markError(rule: true);
-      await _alert(l10n.accPasswordRuleError);
+      _alert(l10n.accPasswordRuleError);
       return;
     }
     if (_passwordController.text != _confirmController.text) {
       _markError(mismatch: true);
-      await _alert(l10n.accPasswordMismatchReconfirm);
+      _alert(l10n.accPasswordMismatchReconfirm);
       return;
     }
     if (!_agreed) {
-      await _alert(l10n.accAgreementRequired);
+      _alert(l10n.accAgreementRequired);
       return;
     }
     _markError();
@@ -227,13 +226,14 @@ class _RegisterPageState extends State<RegisterPage> {
     AppToast.show(context, message);
   }
 
-  /// 校验失败的统一提示弹窗（全项目同一套确认框样式）。
-  Future<void> _alert(String message) {
-    return showAppNoticeDialog(
-      context,
-      title: AppL10n.of(context).tipTitle,
-      message: message,
-    );
+  /// 校验失败的统一提示。
+  ///
+  /// 2026-07-19：由「标题 + 知道了 按钮」的模态确认框改为居中黑色吐司
+  /// （[AppToast]，对齐小程序 toast 组件：黑色半透明底 + 白字，2~3 秒自动消失）。
+  /// 表单校验失败是**瞬时反馈**，不该要求用户先点一次「知道了」才能改输入；
+  /// 且本页的接口反馈（[_showSnack]）本来就走吐司，两套提示混用观感割裂。
+  void _alert(String message) {
+    AppToast.warn(context, message);
   }
 
   /// 只把**当前这一条**校验失败的输入框标红，其余复位。

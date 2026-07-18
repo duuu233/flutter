@@ -161,14 +161,14 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     if (path != null) {
       // 原图可用：进入裁剪/预览流程（与小程序一致），确认后由预览页走投屏。
       await Navigator.of(context).push(
-        MaterialPageRoute(
+        AppPageRoute(
           builder: (_) => CastPreviewPage(device: device, imagePaths: [path]),
         ),
       );
     } else {
       // 原图不可用（无 URL 或下载失败）：回退到 imgBle 直传，避免完全无法再投。
       await Navigator.of(context).push(
-        MaterialPageRoute(
+        AppPageRoute(
           builder: (_) => CastingProgressPage(
             userProductId: record.deviceId,
             deviceName: record.deviceName.isNotEmpty
@@ -438,7 +438,9 @@ class _RecordCard extends StatelessWidget {
     final l10n = AppL10n.of(context);
     final success = record.status == CastStatus.success;
     return FigmaGlassCard(
-      padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      // 底部留 3（原 13）：操作行按钮自带 12px 下内边距，两者相加与原来的
+      // 视觉留白等价，同时把可点区域一直延伸到卡片下沿。
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 3),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -518,7 +520,13 @@ class _RecordCard extends StatelessWidget {
                   height: 1,
                   color: const Color(0xFF2A2B2B).withValues(alpha: 0.08),
                 ),
-                const SizedBox(height: 14),
+                // 操作行的两个按钮各自带 12px 内边距撑点击区，这里的固定间距
+                // 相应缩小，视觉间隔与卡片高度维持原样。
+                const SizedBox(height: 2),
+                // 注：末个按钮的 12px 右内边距会让「删除」比原来内缩 12px。
+                // 不用 Transform 把它移回去——命中测试到不了父级 RenderBox 之外
+                // （Column 会先做 `size.contains(position)` 判断），移出去的那 12px
+                // 看得见却点不到，反而制造「按钮边缘失灵」。宁可内缩一点。
                 Row(
                   children: [
                     const Spacer(),
@@ -530,7 +538,7 @@ class _RecordCard extends StatelessWidget {
                     Container(
                       width: 1,
                       height: 15,
-                      margin: const EdgeInsets.symmetric(horizontal: 18),
+                      margin: const EdgeInsets.symmetric(horizontal: 6),
                       color: const Color(0xFF2A2B2B).withValues(alpha: 0.1),
                     ),
                     _LinkAction(
@@ -658,16 +666,23 @@ class _LinkAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 点击区必须靠 padding 撑开：HitTestBehavior.opaque 只是让已有矩形变实心，
+    // 并不会放大它。此前 child 是 fontSize 12 / height 1 的裸 Text，命中区就是
+    // 字形盒本身（约 12px 高），用户反馈「很难点击到」。
+    // 这里撑到 12+12+12=36px 高，相邻的固定间距同步缩小，卡片整体高度基本不变。
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w400,
-          height: 1,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w400,
+            height: 1,
+          ),
         ),
       ),
     );
@@ -697,16 +712,22 @@ class _EmptyRecords extends StatelessWidget {
               height: 1.2,
             ),
           ),
-          const SizedBox(height: 7),
-          Text(
-            success ? l10n.castEmptySuccessDesc : l10n.castEmptyFailedDesc,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF777E88),
-              fontSize: 13,
-              height: 1.45,
+          // 失败 tab 不再显示「投屏失败时会保留原因，方便排查。」这行小字
+          // （2026-07-19 产品要求，小程序 records.wxml 同步去掉）。成功 tab 的
+          // 说明文案保留，所以这里是条件渲染而不是把文案置空——置空会留下
+          // 一个空 Text 加上面的 7px 间距，空态标题下方多出一段莫名的留白。
+          if (success) ...[
+            const SizedBox(height: 7),
+            Text(
+              l10n.castEmptySuccessDesc,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF777E88),
+                fontSize: 13,
+                height: 1.45,
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );

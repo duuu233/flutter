@@ -10,6 +10,7 @@ import android.content.Intent
 import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 
 /**
@@ -24,15 +25,17 @@ import android.util.Log
  * 始终在 App 前台（Activity 可见）时启动——Android 12+ 禁止后台启动前台服务，
  * 连接必然发生在前台，因此这里不会触发该限制。
  *
- * TODO(真机验证后决策，2026-07-17 审查 S17)：本服务**不持 wakelock**，只提升进程
- * 优先级、不保证 CPU 不挂起。息屏进 Doze/厂商深度省电后 Dart 侧 25s 心跳 Timer
- * 可能停发，固件对空闲链路 1~2 分钟无流量即主动断开——「息屏 30 分钟」租约在
- * 激进 ROM 上可能达不到（表现为息屏几分钟回来已断开；断开事件恢复后能正确清理，
- * 不泄漏不崩溃，纯策略达成率问题）。先真机实测息屏存活时长：若确认达不到，在
- * onStartCommand 持 PARTIAL_WAKE_LOCK（onDestroy 释放，与连接同生命周期、最长
- * 30 分钟有界，代价是连接期间额外耗电）；若可接受则记入 App vs 小程序差异台账。
+ * 2026-07-19（上述 TODO 结案）：真机反馈「息屏后租约从没到期过，也从没被回收过」，
+ * 确认仅提升进程优先级不够——不持 wakelock 时 CPU 仍会挂起，Dart 侧的 25s 心跳与
+ * 租约 Timer 双双停摆：既喂不活固件的空闲链路，租约也永远走不到 15/30 分钟的到期点，
+ * 于是前台服务长期挂着、进程始终不可回收。现在与连接同生命周期持一个
+ * PARTIAL_WAKE_LOCK（不设超时，由 onDestroy 释放；进程异常死亡时系统自动回收）。
+ * 代价是连接期间额外耗电——这正是租约存在的意义：到期即断开、即停服务、即释放
+ * wakelock，进程回到可回收状态。已记入 App vs 小程序差异台账。
  */
 class BleConnectionService : Service() {
+
+    private var wakeLock: PowerManager.WakeLock? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -62,6 +65,7 @@ class BleConnectionService : Service() {
             return START_NOT_STICKY
         }
         foregroundActive = true
+        acquireWakeLock()
         // start→stop 竞态收口（见 companion 注释）：Dart 在本服务尚未跑到这里之前
         // 就请求过 stop（连接秒断的抖动，如设备忙 0x0B 引发的快速连→断），stop()
         // 那侧不敢 stopService（会触发系统「未及时 startForeground」进程级崩溃），
@@ -82,7 +86,46 @@ class BleConnectionService : Service() {
 
     override fun onDestroy() {
         foregroundActive = false
+        releaseWakeLock()
         super.onDestroy()
+    }
+
+    /**
+     * 与连接同生命周期的 PARTIAL_WAKE_LOCK：只保证 CPU 不挂起，屏幕/键盘照常熄灭。
+     * 没有它，息屏进 Doze 后 Dart 侧的心跳与租约定时器都停摆，租约永远走不到
+     * 15/30 分钟的到期点（用户表现为「从来没被回收过」）。
+     */
+    private fun acquireWakeLock() {
+        if (wakeLock?.isHeld == true) {
+            return
+        }
+        try {
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager ?: return
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKE_LOCK_TAG).apply {
+                setReferenceCounted(false)
+                // 不设超时：与服务同生命周期，由 onDestroy 释放。
+                // 曾经设过 35 分钟的「兜底超时」，但 onStartCommand 只在建立连接时
+                // 跑一次——用户持续操作把连接维持到 35 分钟以上时，锁会**静默失效**，
+                // CPU 重新可挂起，正好把这个改动要修的问题原样带回来（只是晚了半小时）。
+                // 进程若异常死亡，系统会自动回收它持有的 wakelock，不存在泄漏。
+                acquire()
+            }
+        } catch (error: RuntimeException) {
+            // 拿不到 wakelock 不该影响连接本身：退化成「仅提升进程优先级」，
+            // 亮屏期间行为不变，息屏租约达成率下降而已。
+            Log.e(TAG, "Unable to acquire BLE keep-alive wakelock", error)
+            wakeLock = null
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            wakeLock?.takeIf { it.isHeld }?.release()
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "Unable to release BLE keep-alive wakelock", error)
+        } finally {
+            wakeLock = null
+        }
     }
 
     private fun buildNotification(title: String, text: String): Notification {
@@ -134,6 +177,7 @@ class BleConnectionService : Service() {
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_TEXT = "text"
         private const val TAG = "BleConnectionService"
+        private const val WAKE_LOCK_TAG = "BoltStar:BleKeepAlive"
 
         // start/stop 竞态防护（治系统「屡次停止运行」进程级崩溃）：
         // startForegroundService() 之后系统**强制**要求本服务在时限内调用

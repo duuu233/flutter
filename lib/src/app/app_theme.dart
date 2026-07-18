@@ -8,6 +8,10 @@ ThemeData buildAppTheme() {
 
   return ThemeData(
     useMaterial3: true,
+    // 页面转场（时长 + 横向滑入曲线）统一在 AppPageRoute 里定义，不走
+    // pageTransitionsTheme —— PageTransitionsBuilder 的签名在不同 Flutter
+    // 版本间改过（route 参数的可空性、Cupertino builder 由 material 还是
+    // cupertino 导出），直接覆写路由自己的 buildTransitions 更稳。
     colorScheme: ColorScheme.fromSeed(seedColor: primary).copyWith(
       primary: primary,
       secondary: secondary,

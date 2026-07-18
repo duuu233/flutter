@@ -368,6 +368,47 @@ class FigmaSecondaryButton extends StatelessWidget {
   }
 }
 
+/// 「改名」铅笔图标按钮（设备详情 / 我的设备共用）。
+///
+/// 图标视觉仍是 18×18，点击区由 padding 撑到 40×40。命中测试**不会越过父级
+/// RenderBox 的边界**，所以 `OverflowBox` 这类「不占布局又想扩大点击区」的写法
+/// 在这里无效——必须真正占位。撑开后图标四周自带 11px 视觉留白，调用处相邻的
+/// 固定间距（原来的 `SizedBox(width: 3)` 等）应一并去掉，整体观感才与之前一致。
+class FigmaEditIconButton extends StatelessWidget {
+  const FigmaEditIconButton({
+    super.key,
+    required this.onTap,
+    this.iconSize = 18,
+    this.hitPadding = 11,
+  });
+
+  final VoidCallback onTap;
+  final double iconSize;
+  final double hitPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: EdgeInsets.all(hitPadding),
+        child: Image.asset(
+          'assets/images/edit-icon01.png',
+          width: iconSize,
+          height: iconSize,
+          fit: BoxFit.contain,
+          errorBuilder: (context, error, stackTrace) => Icon(
+            Icons.edit_outlined,
+            size: iconSize - 2,
+            color: const Color(0x992A2B2B),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// 玻璃面板（小程序 `.glass-panel`）：半透明白 + 2rpx 白描边 + 28rpx(=14) 圆角 + 柔和投影。
 class FigmaGlassCard extends StatelessWidget {
   const FigmaGlassCard({

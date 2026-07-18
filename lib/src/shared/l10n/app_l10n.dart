@@ -437,6 +437,23 @@ class AppL10n {
     'Reading device information…',
     'デバイス情報を読み込んでいます…',
   );
+  /// 刚投完屏、设备正在刷新（0x24）时对任何指令都回忙(0x0B)。这几秒是可等的短暂
+  /// 状态，投屏入口会自动等它刷完再继续，期间给用户这条提示。
+  String get castDeviceRefreshing => _pick(
+    '设备正在刷新，请稍候…',
+    'The frame is refreshing, please wait…',
+    'デバイスを更新中です。しばらくお待ちください…',
+  );
+
+  /// 设备一直忙到超时才放弃时的系统提示框文案。
+  String get castDeviceBusyTitle =>
+      _pick('设备繁忙中', 'Device Busy', 'デバイスがビジー状態です');
+  String get castDeviceBusyMessage => _pick(
+    '设备繁忙中，请稍后再试。',
+    'The frame is busy right now. Please try again shortly.',
+    'デバイスがビジー状態です。しばらくしてからもう一度お試しください。',
+  );
+
   String castPreparingImage(int current, int total) => _pick(
     '正在准备第 $current/$total 张…',
     'Preparing image $current of $total…',
@@ -585,11 +602,8 @@ class AppL10n {
     'Completed photo casts will appear here.',
     '写真のキャストが完了するとここに表示されます。',
   );
-  String get castEmptyFailedDesc => _pick(
-    '投屏失败时会保留原因，方便排查。',
-    'Failure reasons are kept here to help you troubleshoot.',
-    '失敗した理由を記録し、トラブルシューティングに役立てます。',
-  );
+  // castEmptyFailedDesc（「投屏失败时会保留原因，方便排查。」）已于 2026-07-19 按
+  // 产品要求下线，失败空态只保留标题；小程序 records.wxml 同步去掉。
   String get castPreviewTitle => _pick('照片预览', 'Preview', 'プレビュー');
   String get castStartCasting => _pick('开始投屏', 'Start Casting', 'キャスト開始');
   String get castCrop => _pick('裁剪', 'Crop', '切り抜き');

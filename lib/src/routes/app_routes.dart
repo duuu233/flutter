@@ -16,7 +16,6 @@ import '../features/cast/presentation/photo_preview_saved_page.dart';
 import '../features/devices/presentation/bind_device_flow.dart';
 import '../features/devices/presentation/bind_device_found.dart';
 import '../features/devices/presentation/bind_device_not_found.dart';
-import '../features/devices/presentation/bind_device_scan_help.dart';
 import '../features/devices/presentation/ble_debug_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
 import '../features/devices/presentation/delete_device_flow.dart';
@@ -34,6 +33,66 @@ import '../features/settings/presentation/user_agreement_page.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../shared/widgets/app_toast.dart';
 import '../state.dart';
+
+/// 全局页面切换动画时长。
+///
+/// Material 默认 300ms / 反向 300ms，用户反馈「看得出有动效，但速度太快，
+/// 感觉是闪了一下」。放慢到 480ms（返回 400ms——返回略快是通行手感）。
+///
+/// ⚠️ 全 App 的 push 都要用 [AppPageRoute] 而不是 [MaterialPageRoute]，
+/// 否则会出现「命名路由 480ms、直接 push 的页 300ms」两套时长的割裂感。
+const Duration kAppPageTransitionDuration = Duration(milliseconds: 480);
+const Duration kAppPageReverseTransitionDuration = Duration(milliseconds: 400);
+
+/// 统一转场时长与转场曲线的页面路由。
+///
+/// 转场直接覆写在路由上，而**不是**配 `ThemeData.pageTransitionsTheme`：
+/// `PageTransitionsBuilder` 的签名在不同 Flutter 版本间改过（`route` 参数的
+/// 可空性），`CupertinoPageTransitionsBuilder` 也在 material / cupertino 之间
+/// 搬过家——覆写 [ModalRoute.buildTransitions] 是这几个里最稳定的接口。
+///
+/// 效果：新页从右侧滑入，被覆盖的旧页同时向左退让 1/4 屏（层次感），
+/// 进场 easeOutCubic（后段舒缓落位）、返回 easeInCubic。
+class AppPageRoute<T> extends MaterialPageRoute<T> {
+  AppPageRoute({required super.builder, super.settings, super.fullscreenDialog});
+
+  @override
+  Duration get transitionDuration => kAppPageTransitionDuration;
+
+  @override
+  Duration get reverseTransitionDuration => kAppPageReverseTransitionDuration;
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    const curve = Curves.easeOutCubic;
+    const reverseCurve = Curves.easeInCubic;
+    final incoming =
+        Tween<Offset>(begin: const Offset(1, 0), end: Offset.zero).animate(
+          CurvedAnimation(
+            parent: animation,
+            curve: curve,
+            reverseCurve: reverseCurve,
+          ),
+        );
+    final outgoing =
+        Tween<Offset>(begin: Offset.zero, end: const Offset(-0.25, 0)).animate(
+          CurvedAnimation(
+            parent: secondaryAnimation,
+            curve: curve,
+            reverseCurve: reverseCurve,
+          ),
+        );
+    return SlideTransition(
+      position: outgoing,
+      child: SlideTransition(position: incoming, child: child),
+    );
+  }
+}
 
 /// 全局路由观察者：供页面实现 [RouteAware] 感知「被覆盖的页 pop 回来」(didPopNext)，
 /// 从而在重入时回后端刷新（对齐小程序 onShow 每次重入都重拉）。在 MaterialApp.navigatorObservers 注册。
@@ -59,7 +118,8 @@ class AppRoutes {
   static const figmaBindDeviceSearching = '/figma/bind-device/searching';
   static const figmaBindDeviceFound = '/figma/bind-device/found';
   static const figmaBindDeviceNotFound = '/figma/bind-device/not-found';
-  static const figmaBindDeviceScanHelp = '/figma/bind-device/scan-help';
+  // figmaBindDeviceScanHelp 已于 2026-07-19 下线：「扫描不到怎么办？」改成了
+  // 底部上拉弹层（showBindDeviceScanHelp），不再是一个可导航的页面。
   static const figmaPhotoPreviewAdjustImage = '/figma/photo-preview/adjust';
   static const figmaPhotoPreviewSaved = '/figma/photo-preview/saved';
   static const figmaCastingProgress = '/figma/cast/progress';
@@ -132,9 +192,6 @@ class AppRoutes {
         break;
       case AppRoutes.figmaBindDeviceNotFound:
         builder = (_) => const BindDeviceNotFound();
-        break;
-      case AppRoutes.figmaBindDeviceScanHelp:
-        builder = (_) => const BindDeviceScanHelp();
         break;
       case AppRoutes.figmaPhotoPreviewAdjustImage:
         builder = (_) => const PhotoPreviewAdjustImagePage();
@@ -221,7 +278,7 @@ class AppRoutes {
         break;
     }
 
-    return MaterialPageRoute<dynamic>(settings: settings, builder: builder);
+    return AppPageRoute<dynamic>(settings: settings, builder: builder);
   }
 }
 

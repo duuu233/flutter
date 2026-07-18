@@ -7,6 +7,7 @@ import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/ble/ota_ble.dart';
+import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 
@@ -92,7 +93,7 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   }
   // ⑤ 进 OTA 页并自动开始升级。
   await Navigator.of(context).push<void>(
-    MaterialPageRoute(
+    AppPageRoute(
       builder: (_) => OtaUpgradePage(state: state, autoStart: true),
     ),
   );

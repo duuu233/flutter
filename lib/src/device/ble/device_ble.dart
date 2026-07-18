@@ -138,6 +138,10 @@ class FrameBleClient {
   // 仍会谎报 true——上层会复用这条死会话导致写失败/超时（对齐小程序「连接体检」治理的问题）。
   bool _linkAlive = false;
 
+  /// 本段会话是否已在跑「远端断开回收」（[_releaseAfterRemoteDisconnect] 的重入闸）。
+  /// 每段会话只回收一次，由 [connect] 在建立新会话时复位。
+  bool _releasingRemote = false;
+
   int get mtu => _mtu;
   bool get connected => _device != null && _writeChar != null && _linkAlive;
   bool get writeWithoutResponse => _writeWithoutResponse;
@@ -233,6 +237,11 @@ class FrameBleClient {
       }
     });
     try {
+      // 首次安装必现的「第一次连不上、再点一次就好」就断在这里：权限对话框
+      // 刚点「允许」，Android 的蓝牙适配器仍处于 unauthorized/turningOn，
+      // FBP 的原生侧也才刚被这第一次调用惰性初始化——立刻 startScan 要么抛错、
+      // 要么整窗扫描零结果，6 秒后报「未搜索到该设备」。等适配器真正 on 再扫。
+      await _awaitAdapterReady();
       await FlutterBluePlus.startScan(timeout: timeout);
       // 扫描自然到点(isScanning 置 false) 或 目标命中(earlyStop) 先到者为准。
       await Future.any([
@@ -246,6 +255,34 @@ class FrameBleClient {
       } catch (_) {}
     }
     return sorted();
+  }
+
+  /// 等蓝牙适配器进入 `on` 再放行扫描。
+  ///
+  /// 已经是 `on` 时零等待（绝大多数调用），只有刚授权 / 刚开蓝牙的冷启动窗口
+  /// 才会真的等上几百毫秒。等不到也不阻断——照常尝试扫描，失败仍由上层文案兜底，
+  /// 避免适配器状态流在个别 ROM 上不上报时把扫描永久卡死。
+  static Future<void> _awaitAdapterReady({
+    Duration timeout = const Duration(seconds: 3),
+  }) async {
+    try {
+      final now = FlutterBluePlus.adapterStateNow;
+      if (now == BluetoothAdapterState.on) {
+        return;
+      }
+      // 蓝牙被用户关掉 / 设备不支持：等下去也不会变 on（打开蓝牙要用户去系统设置，
+      // 那条路由 PermissionGate 负责）。立刻放行，别白白多等一个超时——否则
+      // 「蓝牙没开」时用户要多盯着转圈等这么久才看到提示。
+      if (now == BluetoothAdapterState.off ||
+          now == BluetoothAdapterState.unavailable) {
+        return;
+      }
+      await FlutterBluePlus.adapterState
+          .firstWhere((s) => s == BluetoothAdapterState.on)
+          .timeout(timeout);
+    } catch (_) {
+      // 超时 / 平台异常：继续走扫描，由结果为空的既有路径处理。
+    }
   }
 
   // ── 连接 ──────────────────────────────────────────────────
@@ -268,6 +305,8 @@ class FrameBleClient {
 
     _device = device;
     _rxBuffer.clear();
+    // 新会话开始：远端断开回收闸复位（上一段会话的回收已经跑完或不再相关）。
+    _releasingRemote = false;
     try {
       // ① 连接带重试（对齐小程序 device-ble.createConnectionWithRetry）：安卓 GATT 首次连接
       //    易抖动/超时，失败先物理断开清掉半连状态、等 400ms 再试，最多 2 次——单次失败即报错
@@ -276,9 +315,7 @@ class FrameBleClient {
 
       _connSub = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
-          _linkAlive = false;
-          _failAllPending('连接已断开');
-          onLinkStateChanged?.call(false);
+          unawaited(_releaseAfterRemoteDisconnect());
         }
       });
 
@@ -403,6 +440,52 @@ class FrameBleClient {
           ? '未找到相框主服务(FF00)或读写特征(FF01/FF02)，请确认是相框设备'
           : '发现相框服务失败：$lastError',
     );
+  }
+
+  /// 远端 / 协议栈单方面断开后的回收（对应本地主动断开的 [disconnect]）。
+  ///
+  /// 🔑 曾经这里只置 `_linkAlive=false` 就完事，把 Android 的 GATT client 泄漏在
+  /// 打开状态——设备侧断开（息屏投屏时固件空闲断链最常见）之后，下一次连接同一
+  /// 设备就撞 `android-code:133`，用户看到的正是「请靠近设备 / 确认设备已开机」，
+  /// 要连点两次才成功（第二次时旧 client 已被系统回收）。必须显式 `disconnect()`
+  /// 关掉 client 才能释放句柄。
+  ///
+  /// `onLinkStateChanged(false)` 保持在最前面通知，让控制器照原时序停心跳、
+  /// 撤前台服务；GATT 回收在其后异步完成，不拖慢 UI 状态更新。
+  Future<void> _releaseAfterRemoteDisconnect() async {
+    // 重入护栏：`connectionState` 是带初值的广播流，安卓关掉 GATT client 时
+    // 常常会再报一次 disconnected。没有这道闸，下面的 `_device.disconnect()`
+    // 会把自己再触发一遍，形成无界循环，并且每一轮都重复对控制器
+    // onLinkStateChanged(false)（停心跳、撤前台服务、notifyListeners）。
+    //
+    // 用独立标记而不是 `if (!_linkAlive) return`：`_connSub` 在 `_connectWithRetry`
+    // 成功后就挂上了，而 `_linkAlive` 要等 MTU/服务发现/开通知全部就绪才置 true
+    // （中间有最多 5×250ms 的发现重试）。拿 `_linkAlive` 当闸会把这几秒里的真实
+    // 掉线整个吞掉。
+    if (_releasingRemote) {
+      return;
+    }
+    _releasingRemote = true;
+    _linkAlive = false;
+    _failAllPending('连接已断开');
+    onLinkStateChanged?.call(false);
+    // 捕获成局部变量：并发的 connect() 可能已经把字段指向了新设备，
+    // 这里要回收的是**这一段**会话的句柄。
+    final device = _device;
+    final conn = _connSub;
+    final notify = _notifySub;
+    _connSub = null;
+    _notifySub = null;
+    _writeChar = null;
+    try {
+      await conn?.cancel();
+    } catch (_) {}
+    try {
+      await notify?.cancel();
+    } catch (_) {}
+    try {
+      await device?.disconnect();
+    } catch (_) {}
   }
 
   Future<void> disconnect() async {

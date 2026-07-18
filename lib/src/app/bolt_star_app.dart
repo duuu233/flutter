@@ -318,7 +318,13 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       home: AnimatedBuilder(
         animation: _state,
         builder: (context, _) => AnimatedSwitcher(
-          duration: const Duration(milliseconds: 350),
+          // 闪屏→登录页/首页、登录页→首页 都是这一处的交叉淡入（不走导航）。
+          // 原来 350ms 线性淡入，用户反馈「像闪了一下」。放慢到 600ms 并给出
+          // 进/出场曲线：新页面走 easeOutCubic（后段舒缓地落位），旧页面走
+          // easeInCubic（先慢后快地退走），避免两层同时半透明时的浑浊感。
+          duration: const Duration(milliseconds: 600),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeInCubic,
           child: _showSplash
               ? const SplashPage()
               : _state.isLoggedIn

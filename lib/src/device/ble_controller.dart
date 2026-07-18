@@ -338,6 +338,11 @@ class BleController extends ChangeNotifier {
       return results;
     }
     scanning = true;
+    // 上一轮的扫描结果必须清空后再扫。留着的话，「刚断开→立刻重连」这种时序里
+    // matchScannedDevice 会匹配到上一轮的 ScanResult，把一个已失效的
+    // BluetoothDevice 句柄交给 connect()，连接必然失败——正是「断开再连要点两次」
+    // 的另一半成因。
+    results = const [];
     notifyListeners();
     try {
       final allowedNames = allowAll ? null : await _loadAllowedBroadcastIds();
@@ -460,7 +465,11 @@ class BleController extends ChangeNotifier {
     final found = await trace.measure(
       'scan',
       () => scan(
-        timeout: const Duration(seconds: 6),
+        // 12 秒（原 6 秒）：相框被 GATT 占着时不广播，断开后要好几秒才恢复广播。
+        // 6 秒窗口在「断开→立刻重连」时经常等不到设备现身就判 target-not-found，
+        // 用户表现为「要点两次才连上」。有 until 命中即停兜底，设备已在广播时
+        // 依然是扫到即走（通常 <1s），加长窗口只影响设备确实还没现身的场景。
+        timeout: const Duration(seconds: 12),
         until: (list) =>
             matchScannedDevice(
               list,

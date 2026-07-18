@@ -449,27 +449,12 @@ class _DeviceCard extends StatelessWidget {
                                 ),
                               ),
                             ),
-                            const SizedBox(width: 3),
-                            GestureDetector(
-                              behavior: HitTestBehavior.opaque,
-                              onTap: onRename,
-                              child: Image.asset(
-                                'assets/images/edit-icon01.png',
-                                width: 18,
-                                height: 18,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Icon(
-                                    Icons.edit_outlined,
-                                    size: 16,
-                                    color: Color(0x992A2B2B),
-                                  );
-                                },
-                              ),
-                            ),
+                            // 点击区 40×40（见 FigmaEditIconButton）：原来是 18×18 的
+                            // 裸 Image，用户反馈「很难点击到」。图标自带 11px 留白，
+                            // 原先的 SizedBox(width: 3) / SizedBox(height: 7) 一并去掉。
+                            FigmaEditIconButton(onTap: onRename),
                           ],
                         ),
-                        const SizedBox(height: 7),
                         Row(
                           children: [
                             // 连接状态：蓝牙图标 + 文案。

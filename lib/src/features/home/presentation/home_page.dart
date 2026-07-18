@@ -419,7 +419,7 @@ class _HomePageState extends State<HomePage> {
 
     // 与小程序一致：选图后先进入投屏预览，可选择裁剪、旋转或保留原图，确认后再投屏。
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+      AppPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
         builder: (_) => CastPreviewPage(
           state: widget.state,

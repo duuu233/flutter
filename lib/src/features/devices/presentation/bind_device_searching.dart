@@ -50,16 +50,9 @@ class BindDeviceSearching extends StatelessWidget {
             style: FigmaTextStyles.bodySmall,
           ),
           const Spacer(flex: 3),
+          // 从下往上拉起帮助弹层（对齐小程序），不再 push 一个全屏页。
           _ScanHelpLink(
-            onTap:
-                onHelp ??
-                () {
-                  Navigator.of(context).push<void>(
-                    MaterialPageRoute<void>(
-                      builder: (_) => const BindDeviceScanHelp(),
-                    ),
-                  );
-                },
+            onTap: onHelp ?? () => showBindDeviceScanHelp(context),
           ),
           const SizedBox(height: 16),
         ],
@@ -79,17 +72,21 @@ class _ScanHelpLink extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 文字链的点击区靠 padding 撑开：裸 Text 时只有约 20px 高，很难点中。
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Text(
-        AppL10n.of(context).bindScanHelpLink,
-        textAlign: TextAlign.center,
-        style: const TextStyle(
-          color: Color(0xFF2A2B2B),
-          fontSize: 14,
-          fontWeight: FontWeight.w400,
-          height: 1.4,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        child: Text(
+          AppL10n.of(context).bindScanHelpLink,
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Color(0xFF2A2B2B),
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+            height: 1.4,
+          ),
         ),
       ),
     );

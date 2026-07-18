@@ -189,7 +189,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
       return;
     }
     await Navigator.of(context).push<void>(
-      MaterialPageRoute(
+      AppPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
         builder: (_) => CastPreviewPage(
           state: widget.state,

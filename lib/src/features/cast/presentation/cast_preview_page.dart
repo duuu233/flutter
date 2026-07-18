@@ -10,6 +10,7 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble/frame_protocol.dart';
 // `screenType.code` 是 FrameScreenTypeDetails 扩展方法：扩展必须导入其定义库才能用。
 import '../../../device/frame_device_protocol.dart';
+import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../cast_image_editor.dart';
@@ -373,7 +374,7 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
     // pushReplacement：投屏页返回时直接回到上一页（首页/设备页），
     // 不要退回这个已经用过的预览页（对齐小程序 redirectTo）。
     await Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
+      AppPageRoute<void>(
         builder: (_) => CastingProgressPage(
           state: widget.state,
           userProductId: widget.device.id,

@@ -414,9 +414,21 @@ class PhotoFrameState extends ChangeNotifier {
     // 若 refreshAlbum 与 refreshCurrentUser 并发（「我的」页就是这么调的），用户 id 由 '' 变成真实值后
     // 全部照片都会被这个条件筛掉，图库直接空白。小程序也不做这层过滤，直接渲染后端返回的数据。
     final items = _albumPhotos.where((photo) => photo.isOnDevice).toList();
-    items.sort((left, right) => right.uploadedAt.compareTo(left.uploadedAt));
+    // 最新在前。时间相同（后端不下发时间字段时很常见）再按 uProductImgId 倒序兜底：
+    // 它是自增主键，越大越新，且**每次刷新都一样**——Dart 的 List.sort 不稳定，
+    // 没有这层确定性兜底时相等元素的先后是任意的，刷新一次换一个样。
+    items.sort((left, right) {
+      final byTime = right.uploadedAt.compareTo(left.uploadedAt);
+      if (byTime != 0) {
+        return byTime;
+      }
+      return _albumIdRank(right).compareTo(_albumIdRank(left));
+    });
     return items;
   }
+
+  /// 图库排序兜底键：`uProductImgId` 转数字（非数字 id 归 0，仍是确定值）。
+  static int _albumIdRank(AlbumPhoto photo) => int.tryParse(photo.id) ?? 0;
 
   List<CastRecord> get castRecords => List.unmodifiable(_castRecords);
 
@@ -2703,18 +2715,44 @@ class PhotoFrameState extends ChangeNotifier {
 
   Color _paletteColor(int seed) => _palette[seed % _palette.length];
 
-  /// 解析后端时间字段（ISO 字符串或时间戳），失败回退当前时间。
-  DateTime _parseDate(dynamic value) {
+  /// 图库排序的确定性回退基准：后端不下发时间字段时，用「本基准 - 下标秒」当排序键。
+  /// 取一个远早于任何真实业务时间的固定时刻——万一部分记录有真实时间、部分没有，
+  /// 没有时间的排在后面，而不是凭空插到最前。
+  static final DateTime _albumOrderFallbackEpoch = DateTime.utc(2000);
+
+  /// 解析后端时间字段（ISO 字符串或时间戳），**解析不出来时返回 null**。
+  ///
+  /// 曾经还有一个回退成 `DateTime.now()` 的 `_parseDate`，已删除：那种回退值
+  /// 绝不能拿来当排序键——每次刷新都是新值，正是图库位置乱跳的根因
+  /// （见 [_albumPhotoFromJson]）。需要非空时由调用方自己 `?? DateTime.now()`，
+  /// 让「这里用了一个假时间」显式可见。
+  DateTime? _tryParseDate(dynamic value) {
     if (value is String && value.isNotEmpty) {
-      return DateTime.tryParse(value) ?? DateTime.now();
+      return DateTime.tryParse(value);
     }
-    if (value is int) {
+    // 0 / 负数不是「1970 年」，是「后端没填」——当成无时间，否则它会排到
+    // 无时间回退基准（2000 年）之后，比真正没有时间的记录还靠后。
+    if (value is int && value > 0) {
       // 13 位按毫秒、10 位按秒处理。
       final millis = value > 1000000000000 ? value : value * 1000;
       return DateTime.fromMillisecondsSinceEpoch(millis);
     }
-    return DateTime.now();
+    return null;
   }
+
+  /// 依次尝试多个时间字段，返回第一个**能解析出来**的。
+  /// 不能用 `a ?? b`：`upTime` 存在但格式不合（后端偶尔给 `2026/07/19 12:00`
+  /// 这种 `DateTime.parse` 不认的写法）时，`??` 早就选中了它，`joinTime` 再也轮不上。
+  DateTime? _firstParsableDate(List<dynamic> values) {
+    for (final value in values) {
+      final parsed = _tryParseDate(value);
+      if (parsed != null) {
+        return parsed;
+      }
+    }
+    return null;
+  }
+
 
   /// 常见问题列表：`/Client/Product/getProductFaqList`，映射为 [FaqArticle]。
   /// 仅在后端返回非空时替换本地列表（失败保留内置 FAQ）。
@@ -2832,9 +2870,19 @@ class PhotoFrameState extends ChangeNotifier {
       crc32: 0,
       color: _paletteColor(index),
       note: '',
-      // 后端无时间字段：保持列表原序（后端已按时间倒序），故这里按下标构造递减时间戳，
-      // 避免 myAlbum 里按 uploadedAt 排序时全部相等而打乱后端顺序。
-      uploadedAt: DateTime.now().subtract(Duration(microseconds: index)),
+      // 排序键。优先用后端真实时间（`upTime` 最近修改 / `joinTime` 添加时间，
+      // 对齐小程序 normalizePhoto 的 `upTime ?? joinTime`）；接口没下发时间字段时
+      // 回退到「固定基准 - 下标秒」，保持后端返回的原序。
+      //
+      // 🔑 **绝不能再用 `DateTime.now()`**（2026-07-19 修「下拉刷新后图片随机换位」）：
+      // 旧写法是 `DateTime.now().subtract(Duration(microseconds: index))`，而 now()
+      // 是在映射循环里逐行读的。本意是「每行比上一行早 1µs」，可单次迭代的真实耗时
+      // 往往就超过 1µs 且有抖动 —— 于是相邻两行的键可能相等（Dart 的 List.sort
+      // 不稳定，相等元素顺序任意）甚至递增（直接与后端顺序相反）。抖动每次刷新都不同，
+      // 表现就是「每次下拉刷新部分图片随机调换位置」。
+      uploadedAt:
+          _firstParsableDate([data['upTime'], data['joinTime']]) ??
+          _albumOrderFallbackEpoch.subtract(Duration(seconds: index)),
       imageUrl: url.isEmpty ? null : url,
       thumbUrl: thumb.isEmpty ? null : thumb,
       imgBle: imgBle.isEmpty ? null : imgBle,
@@ -2878,7 +2926,11 @@ class PhotoFrameState extends ChangeNotifier {
           ? data['deviceUploadStateMsg'].toString()
           : (status == CastStatus.success ? '投屏成功' : '投屏失败'),
       // upTime=最近修改时间，joinTime=添加时间（小程序 normalizeProjectionRecord 同序）。
-      createdAt: _parseDate(data['upTime'] ?? data['joinTime']),
+      // 逐个字段试解析，不用 `a ?? b`：upTime 存在但格式不合时 `??` 已经选中了它，
+      // joinTime 再也轮不上，结果整列记录都回退成「现在」（见 _firstParsableDate）。
+      createdAt:
+          _firstParsableDate([data['upTime'], data['joinTime']]) ??
+          DateTime.now(),
       // 这条记录当次投屏占用的设备槽位。记录页本身不读它——再次/重新投屏都是重新找空位；
       // 保留透传是为了排查时能和设备实际位置对上（对齐小程序 normalizeProjectionRecord）。
       imageIndex: slot < 0 ? null : slot,

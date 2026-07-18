@@ -3,7 +3,6 @@ import 'package:flutter/services.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
-import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
@@ -38,7 +37,7 @@ class _AuthPageState extends State<AuthPage> {
 
   bool _passwordVisible = false;
   bool _agreed = false;
-  // 校验错误只用来把对应输入框标红（文案走弹窗，见 _alert）：逐项判断，
+  // 校验错误只用来把对应输入框标红（文案走吐司，见 _alert）：逐项判断，
   // 同一时刻最多标红一个；输入一变就清除。
   bool _emailError = false;
   bool _passwordError = false;
@@ -148,16 +147,16 @@ class _AuthPageState extends State<AuthPage> {
     // 逐项校验：命中第一条就弹提示并返回，不再一次性把所有错误全部铺出来。
     if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
       _markError(email: true);
-      await _alert(l10n.accEmailInvalid);
+      _alert(l10n.accEmailInvalid);
       return;
     }
     if (password.trim().isEmpty) {
       _markError(password: true);
-      await _alert(l10n.accPasswordEmpty);
+      _alert(l10n.accPasswordEmpty);
       return;
     }
     if (!_agreed) {
-      await _alert(l10n.accAgreementRequired);
+      _alert(l10n.accAgreementRequired);
       return;
     }
     _markError();
@@ -190,7 +189,7 @@ class _AuthPageState extends State<AuthPage> {
     // 同 _login：先收起键盘再弹提示/拉起微信。
     FocusManager.instance.primaryFocus?.unfocus();
     if (!_agreed) {
-      await _alert(AppL10n.of(context).accAgreementRequired);
+      _alert(AppL10n.of(context).accAgreementRequired);
       return;
     }
 
@@ -258,13 +257,14 @@ class _AuthPageState extends State<AuthPage> {
     AppToast.show(context, message);
   }
 
-  /// 校验失败的统一提示弹窗（全项目同一套确认框样式）。
-  Future<void> _alert(String message) {
-    return showAppNoticeDialog(
-      context,
-      title: AppL10n.of(context).tipTitle,
-      message: message,
-    );
+  /// 校验失败的统一提示。
+  ///
+  /// 2026-07-19：由「标题 + 知道了 按钮」的模态确认框改为居中黑色吐司
+  /// （[AppToast]，对齐小程序 toast 组件：黑色半透明底 + 白字，2~3 秒自动消失）。
+  /// 表单校验失败是**瞬时反馈**，不该要求用户先点一次「知道了」才能改输入；
+  /// 且同一页里成功/失败的接口反馈本来就走吐司，两套提示混用观感割裂。
+  void _alert(String message) {
+    AppToast.warn(context, message);
   }
 
   /// 只把**当前这一条**校验失败的输入框标红，其余复位。
