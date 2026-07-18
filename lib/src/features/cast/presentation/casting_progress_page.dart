@@ -199,6 +199,8 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       case FrameBleErrorKind.disconnected:
       case FrameBleErrorKind.unsupported: // 沿用原逻辑：不支持机型与断连同一话术桶
         return l10n.castFailureDisconnected;
+      case FrameBleErrorKind.connectFailed:
+        return l10n.bleConnectFailed;
       case FrameBleErrorKind.timeout:
         return l10n.castFailureTimeout;
       case FrameBleErrorKind.aborted:
