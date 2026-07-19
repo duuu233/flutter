@@ -26,16 +26,23 @@ class ApiConfig {
   /// 每次重试前的等待间隔，给网络一点恢复时间，同时避免瞬间连打。
   static const Duration networkRetryDelay = Duration(milliseconds: 500);
 
-  /// 终端类型：iOS=1，Android=2（小程序=3、PC=4）。
+  /// 终端类型：**Android=1，iOS=2**（小程序=3）。
   ///
-  /// 注：取值需与后端约定一致，如后端另有定义请在此调整。
+  /// ⚠️ 取值以 swagger 为准，别凭直觉排序。`terminal` 在 swagger 里出现 20 处、三种措辞，
+  /// 全部一致：`1=安卓客户端,2=苹果客户端,3=小程序` / `1=Android 2=IOS 3=WechatApp` /
+  /// `1=Android,2=Ios`。
+  ///
+  /// 2026-07-19 修：原来写反了（iOS=1/Android=2），后端按 terminal 分发版本信息，
+  /// 结果 **iOS 收到安卓的版本号、安卓收到 iOS 的版本号**（`getLastVersion`）。
+  /// 这个 header 是全局公共参数，任何按端区分的接口都会一起错，不止版本检查。
   static int get terminal {
-    if (Platform.isIOS) {
+    if (Platform.isAndroid) {
       return 1;
     }
-    if (Platform.isAndroid) {
+    if (Platform.isIOS) {
       return 2;
     }
+    // App 只出 Android/iOS 两端，理论不可达；真跑到这里按 Android 处理。
     return 1;
   }
 }

@@ -146,7 +146,7 @@ class BoltFoxApi {
   ///
   /// [code] 来自移动端微信 SDK 的 `snsapi_userinfo` 授权回调。AppSecret、code 换
   /// access_token 以及用户身份合并都必须在服务端完成；客户端只接收业务 userToken。
-  /// 后端可根据公共 header 中的 terminal（iOS=1 / Android=2）与小程序（3）区分流程。
+  /// 后端可根据公共 header 中的 terminal（Android=1 / iOS=2）与小程序（3）区分流程。
   static Future<dynamic> weChatMobileLogin({required String code}) {
     return _http.postJson(
       '/Client/User/setWechatAppLogin',

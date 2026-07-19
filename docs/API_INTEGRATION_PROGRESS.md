@@ -19,7 +19,7 @@
 - App 同时支持**邮箱登录/注册**与微信开放平台**移动应用微信登录**；后者复用 `/Client/User/setWechatAppLogin`，仅提交 SDK 返回的一次性 code。
 - App 需要版本更新与安卓下载：`/Client/Basic/getLastVersion`、`/Client/Basic/getAndroidDownload` 接入（与小程序相反）。
 - `/Client/User/userOffPC`（PC 注销）跳过。
-- 公共参数 `device` / `terminal` / `language` / `userToken` 通过 headers 传递；App `terminal`：iOS=1、Android=2（取值以后端约定为准，见 `lib/src/network/api_config.dart`）。
+- 公共参数 `device` / `terminal` / `language` / `userToken` 通过 headers 传递；App `terminal`：**Android=1、iOS=2**（小程序=3），已按 swagger 核实，见 `lib/src/network/api_config.dart`。
 - BoltFox 响应格式为 `retCode/retMsg/retData`，`retCode=200` 表示成功，由 `ApiClient` 统一解析。
 - 网络层位置：`lib/src/network/`（`api_config` / `api_session` / `api_exception` / `api_client` / `boltfox_api`）。
 - 新增依赖：`http`、`fluwx`（见 `pubspec.yaml`）。**首次拉取后需执行 `flutter pub get`。**
@@ -195,7 +195,7 @@
 - **绑定设备 UI 流程**（`bind_device_*` 蓝牙扫描页）接 `bindDevice`：需配合 `getProductList` 取 `productId` 与 BLE 扫描到的 `productSerialNo`。属蓝牙能力，需 BLE 流程配合。
 - **App 版本更新**（`getLastVersion` / `getAndroidDownload`）：**已接真实功能**。设置页「检测更新」入口已启用（`settings_page.dart`），跳转 `UpdateBoltStarPage`，进入即调 `state.checkAppVersion()`（当前版本 `package_info`，最新版本/下载地址来自 `getLastVersion` 的 `appVersionNo/isUpdate/downloadPath/upgradeTips`），三态展示；「立即更新」用 `url_launcher` 打开真实下载地址。⚠️ 原"本地 mock/入口被注释/`checkAppUpdate`"描述已过时。
 - **头像上传**（`setFileUpload` + `changeAvatar`）：需先引入图片选择（image_picker），`UserProfile` 再补头像 URL 字段，暂未接。
-- 跟后端确认 `terminal` 取值（iOS=1/Android=2）与是否需要持久化 token（重启免登录，可在 `ApiSession.setToken/clear` 接 `shared_preferences`）。
+- ~~跟后端确认 `terminal` 取值~~：已按 swagger 定案 **Android=1 / iOS=2**（2026-07-19，此前写反）。token 持久化亦已完成。
 - 空状态：设备删到 0 台、相册/记录为空的 UI 已有空态组件；首页 `selectedDevice` 仍假定至少一台设备，真后端零设备场景需补首页空态。
 - `state.dart` 种子态 `_isLoggedIn = true` 为演示用，无真实 token；真机需先走登录拿 token，已登录态接口才不会 401。
 

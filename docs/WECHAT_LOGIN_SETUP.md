@@ -7,7 +7,7 @@
 `POST /Client/User/setWechatAppLogin` → 后端返回 BoltStar `userToken` 和用户信息。
 
 客户端不保存微信 AppSecret，也不直接向微信换取 `access_token`。服务端应根据请求头中的
-`terminal`（iOS=1、Android=2，小程序=3）区分移动应用与小程序登录流程。
+`terminal`（**Android=1、iOS=2**，小程序=3）区分移动应用与小程序登录流程。
 
 ## 构建参数
 
