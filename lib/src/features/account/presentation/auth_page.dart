@@ -30,7 +30,24 @@ class AuthPage extends StatefulWidget {
   State<AuthPage> createState() => _AuthPageState();
 }
 
-class _AuthPageState extends State<AuthPage> {
+class _AuthPageState extends State<AuthPage>
+    with SingleTickerProviderStateMixin {
+  /// 入场动效：表单整体上浮 16px 落位。
+  ///
+  /// 根节点（闪屏 ↔ 登录页 ↔ 主壳层）之间只有一层交叉淡入，而闪屏和本页共用同一张
+  /// 背景图 bg01，淡入淡出的只有前景内容——纯改透明度会让人觉得「没有动效，闪了一下」。
+  /// 这里给表单补一个上浮：位移是 Transform，不参与布局，不影响键盘弹起时的滚动。
+  /// 本页只在「登出后」和「冷启动未登录」时挂载一次，动画不会反复播放。
+  late final AnimationController _entryController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..forward();
+
+  late final Animation<Offset> _entryOffset =
+      Tween<Offset>(begin: const Offset(0, 0.02), end: Offset.zero).animate(
+        CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic),
+      );
+
   late final TextEditingController _emailController;
   late final WeChatAuthorizationClient _weChatAuthorizationClient;
   final TextEditingController _passwordController = TextEditingController();
@@ -76,6 +93,7 @@ class _AuthPageState extends State<AuthPage> {
 
   @override
   void dispose() {
+    _entryController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
@@ -98,31 +116,34 @@ class _AuthPageState extends State<AuthPage> {
           children: [
             const AuthBackground(),
             SafeArea(
-              child: _AuthCanvas(
-                emailController: _emailController,
-                passwordController: _passwordController,
-                passwordVisible: _passwordVisible,
-                agreed: _agreed,
-                emailError: _emailError,
-                passwordError: _passwordError,
-                onPasswordVisibilityChanged: () {
-                  setState(() {
-                    _passwordVisible = !_passwordVisible;
-                  });
-                },
-                onAgreementChanged: () {
-                  setState(() {
-                    _agreed = !_agreed;
-                  });
-                },
-                onForgotPassword: _forgotPassword,
-                onRegister: _register,
-                onUserAgreement: _openUserAgreement,
-                onPrivacyPolicy: _openPrivacyPolicy,
-                onLogin: _login,
-                onWeChatLogin: _loginWithWeChat,
-                submitting: _submitting,
-                weChatSubmitting: _weChatSubmitting,
+              child: SlideTransition(
+                position: _entryOffset,
+                child: _AuthCanvas(
+                  emailController: _emailController,
+                  passwordController: _passwordController,
+                  passwordVisible: _passwordVisible,
+                  agreed: _agreed,
+                  emailError: _emailError,
+                  passwordError: _passwordError,
+                  onPasswordVisibilityChanged: () {
+                    setState(() {
+                      _passwordVisible = !_passwordVisible;
+                    });
+                  },
+                  onAgreementChanged: () {
+                    setState(() {
+                      _agreed = !_agreed;
+                    });
+                  },
+                  onForgotPassword: _forgotPassword,
+                  onRegister: _register,
+                  onUserAgreement: _openUserAgreement,
+                  onPrivacyPolicy: _openPrivacyPolicy,
+                  onLogin: _login,
+                  onWeChatLogin: _loginWithWeChat,
+                  submitting: _submitting,
+                  weChatSubmitting: _weChatSubmitting,
+                ),
               ),
             ),
           ],

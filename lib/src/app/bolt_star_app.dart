@@ -19,6 +19,59 @@ import '../shared/widgets/force_update_dialog.dart';
 import '../state.dart';
 import 'app_theme.dart';
 
+/// 根节点（闪屏 / 登录页 / 主壳层）之间的切换时长。
+///
+/// 这三者不走 Navigator，是 `home` 里一处 [AnimatedSwitcher] 的交叉淡入。
+/// 600ms → 1100ms：用户反馈「闪屏进首页、登录/注册进首页可以再慢 0.5 秒」。
+/// 页内导航另有一套时长（[kAppPageTransitionDuration]），两者不共用——
+/// 根节点切换是「换场景」，比页内 push 慢是刻意的。
+const Duration kRootTransitionDuration = Duration(milliseconds: 1100);
+
+/// 根节点切换的层叠方式：在新旧两页**之下**垫一层不透明背景。
+///
+/// 为什么需要这一层：`home` 底下没有任何东西负责铺底（路由本体不绘制背景），
+/// 交叉淡入时两页各自半透明，合成后的覆盖率不足 1，会直接透到引擎的黑色底色。
+/// 表现就是切换中间画面整体压暗一下——用户反馈的「闪了一下」。
+/// 垫上与闪屏/登录页同一张 `bg01.png` 后，背景层在整个切换过程中恒等于 bg01，
+/// 只有前景内容（LOGO ↔ 登录表单）在淡入淡出，视觉上完全没有明暗跳变。
+///
+/// `previousChildren.isNotEmpty` 恰好等价于「正在切换」：切换结束后旧页条目被
+/// 移除，这层随之不再构建，稳态零开销（不会常驻一张全屏图做无谓的 overdraw）。
+/// [AnimatedSwitcher] 内部给每个条目都包了 KeyedSubtree，插不插这一层都按 key
+/// 复用 Element，不会打断正在进行的动画。
+Widget _rootTransitionLayout(
+  Widget? currentChild,
+  List<Widget> previousChildren,
+) {
+  return Stack(
+    fit: StackFit.expand,
+    children: [
+      if (previousChildren.isNotEmpty) const _RootTransitionBackdrop(),
+      ...previousChildren,
+      if (currentChild != null) currentChild,
+    ],
+  );
+}
+
+/// 切换期间的兜底背景：与 [SplashPage] / [AuthPage] 同一张背景图。
+class _RootTransitionBackdrop extends StatelessWidget {
+  const _RootTransitionBackdrop();
+
+  @override
+  Widget build(BuildContext context) {
+    // 图早在闪屏就进了 ImageCache，这里不会有解码延迟；加载失败回退到纯色，
+    // 至少保证不透到黑底（这层的唯一职责就是「不透明」）。
+    return ColoredBox(
+      color: const Color(0xFFF7FAFF),
+      child: Image.asset(
+        'assets/images/bg01.png',
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) => const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
 /// 应用根组件。
 ///
 /// 这里集中创建全局业务状态、挂载主题、配置首页壳层和命名路由。
@@ -319,12 +372,12 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
         animation: _state,
         builder: (context, _) => AnimatedSwitcher(
           // 闪屏→登录页/首页、登录页→首页 都是这一处的交叉淡入（不走导航）。
-          // 原来 350ms 线性淡入，用户反馈「像闪了一下」。放慢到 600ms 并给出
           // 进/出场曲线：新页面走 easeOutCubic（后段舒缓地落位），旧页面走
           // easeInCubic（先慢后快地退走），避免两层同时半透明时的浑浊感。
-          duration: const Duration(milliseconds: 600),
+          duration: kRootTransitionDuration,
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeInCubic,
+          layoutBuilder: _rootTransitionLayout,
           child: _showSplash
               ? const SplashPage()
               : _state.isLoggedIn
