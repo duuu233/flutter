@@ -3,7 +3,8 @@
 // 链路（画质相关计算放到服务器，避免受端上解码/缩放差异影响，见
 // docs `server-image-processing-ble-transfer.md`）：
 //   连接设备 → 读设备信息(0x01) → 逐张：
-//     原图传后端转换(setUserProductUpload，按设备宽高转成六色 4bpp 帧 .bin，得下载地址 + taskId + upirId)
+//     原图传后端转换(setUserProductUpload，按设备宽高转成六色 4bpp 帧 .bin，得下载地址 + taskId；
+//       ⚠️ 响应 DTO BaseUploadApiOut 没有 upirId，后端靠 taskId 定位记录)
 //     → 下载 .bin 帧数据 → 校验长度==宽×高÷2 → 选空闲槽位 → BLE 图传(0x20/0x21/0x22)
 //     → 设备成功才编辑投屏记录(editUserProductImgRecord 置 deviceUploadState=1) → 刷新显示。
 //
@@ -14,7 +15,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show compute;
+import 'package:flutter/foundation.dart' show compute, debugPrint;
 import 'package:image/image.dart' as img;
 
 import '../../device/ble/device_ble.dart';
@@ -329,13 +330,26 @@ class ServerImageProjectionService {
         // 用户走到投屏记录页时这几个请求早已落地（页面自己还会重新拉一次列表）。
         // imgIndex=本张实际写入设备的物理槽位 index：图库删除/刷新屏幕靠它定位这张图。
         // ⚠️ index 可能为 0（相框第一个位置），是合法值，勿按假值过滤。
+        //
+        // ⚠️ upirId 直接透传（可能为 null，由 API 层的 `?` 丢掉这个键），**不要 `?? ''` 兜底**：
+        // setUserProductUpload 的响应里根本没有 upirId，恒为 null；空串喂给后端的 integer 字段
+        // 会 400，记录就永远停在 deviceUploadState=0，图库（只显示成功上传的照片）没有这张。
+        // 后端是按 taskId 定位记录的。详见 BoltFoxApi.editUserProductImgRecord 的注释。
         unawaited(
           BoltFoxApi.editUserProductImgRecord(
-            upirId: acquired.upirId ?? '',
+            upirId: acquired.upirId,
             taskId: acquired.taskId,
             deviceUploadState: 1,
             imgIndex: index,
-          ).catchError((_) => null),
+          ).catchError((Object error) {
+            // 不能再静默吞：这条挂了就是「投屏成功但图库没有这张」，而用户侧毫无线索
+            // ——2026-07-19 这个 bug 正是因为无日志才只能靠翻 swagger 反推出来的。
+            debugPrint(
+              '[投屏] ⚠️ 投屏记录置成功失败（图库将缺这张）：'
+              'taskId=${acquired.taskId} imgIndex=$index $error',
+            );
+            return null;
+          }),
         );
 
         // 把该槽位记为已用，供下一张选槽位。
@@ -744,7 +758,14 @@ class ServerImageProjectionService {
         deviceUploadState: deviceUploadState,
         imgIndex: deviceUploadState == 1 ? imgIndex : null,
       );
-    } catch (_) {}
+    } catch (error) {
+      // 同 editUserProductImgRecord：记账失败不影响投屏结果，但必须留痕——
+      // 静默吞掉的话，「投屏成功但图库没这张」在日志里完全查不到。
+      debugPrint(
+        '[投屏] ⚠️ 再次投屏记录写入失败（图库可能缺这张）：'
+        'state=$deviceUploadState imgIndex=$imgIndex $error',
+      );
+    }
   }
 
   /// 取本张要发给设备的六色 4bpp 帧 + 后端记录 id（原图传后端转换 → 下载 .bin → D1/D2 预处理）。
@@ -779,7 +800,10 @@ class ServerImageProjectionService {
     );
   }
 
-  /// 本张照片传后端转换：上传原图 → 后端按设备宽高转换成设备帧并存 OSS，返回 url/taskId/upirId。
+  /// 本张照片传后端转换：上传原图 → 后端按设备宽高转换成设备帧并存 OSS，返回 url/taskId。
+  ///
+  /// ⚠️ `upirId` 实际取不到（响应 DTO `BaseUploadApiOut` 只有 base64Img/formatColors/name/taskId/url），
+  /// 这里仍然解析是为了后端哪天补上就能直接用；调用方必须把它当**可能为 null** 处理。
   Future<_ConvertResult> _convertOnServer({
     required String filePath,
     required Object userProductId,

@@ -357,6 +357,13 @@ class PhotoFrameState extends ChangeNotifier {
   final List<AlbumPhoto> _albumPhotos;
   final List<CastRecord> _castRecords;
   final List<FaqArticle> _faqArticles = _seedFaqArticles();
+
+  /// `_faqArticles` 当前对应的语言。null = 还没成功从后端拉到（列表是内置兜底）。
+  ///
+  /// 常见问题是后端按 `language` 返回不同语种的整套文案，缓存必须带语种标签：
+  /// 否则切到英文再进操作指南，看到的还是上次拉的中文列表。
+  AppLanguage? _faqLanguage;
+
   String _selectedDeviceId;
 
   // ── 首屏加载态（对齐小程序各页 `data.loading` 初值 true）────────────────────
@@ -433,6 +440,9 @@ class PhotoFrameState extends ChangeNotifier {
   List<CastRecord> get castRecords => List.unmodifiable(_castRecords);
 
   List<FaqArticle> get faqArticles => List.unmodifiable(_faqArticles);
+
+  /// 常见问题是否需要（重新）拉取：从没拉到过，或缓存语种与当前语种不一致。
+  bool get faqNeedsRefresh => _faqLanguage != _language;
 
   DeviceItem get selectedDevice => _findDevice(_selectedDeviceId);
 
@@ -2755,20 +2765,83 @@ class PhotoFrameState extends ChangeNotifier {
 
 
   /// 常见问题列表：`/Client/Product/getProductFaqList`，映射为 [FaqArticle]。
-  /// 仅在后端返回非空时替换本地列表（失败保留内置 FAQ）。
+  ///
+  /// 几条定死的规则：
+  /// - **全量读取**：按 `pageCount` / `recordCount` 一直翻到取完，不是只取第一页。
+  ///   后端 `pageSize` 可能被忽略或封顶（默认才 10），只发一页会漏条目。
+  /// - **不按设备过滤**：Client 侧 swagger 里 `getProductFaqList` 根本没有
+  ///   productId 参数，这里也不加任何设备/产品条件，取的就是全局常见问题。
+  /// - **不做客户端排序**：权重 `grade` 只存在于后台 `ProductFaqApiOut`，
+  ///   Client 侧 DTO 拿不到，所以顺序完全以后端返回为准，原样保留。
+  /// - 结果按语种缓存（见 [faqNeedsRefresh]）。**成功即以后端为准**——哪怕返回空，
+  ///   也要清掉旧语种的残留，否则切到日文后会继续显示上一次的中文列表；
+  ///   只有请求抛错才保留现有/内置文案。
   Future<ActionFeedback> refreshFaq() async {
+    // 单页条数取 50：后端 pageSize 上限未知，取太大有被截断的风险，
+    // 翻页逻辑本身能兜住，宁可多翻一次。
+    const pageSize = 50;
+    // 安全上限：后端分页字段异常时不至于把请求打成死循环。
+    const maxPages = 20;
+    // 语种在请求开始时就固定下来：翻页要花好几个 RTT，期间用户可能又切了语种，
+    // 拿结束时的 _language 打标会把旧语种的内容标成新语种（页面就不会再补拉了）。
+    final requestedLanguage = _language;
     try {
-      final data = await BoltFoxApi.getProductFaqList({
-        'pageIndex': 1,
-        'pageSize': 100,
-      });
-      final rows = extractApiRows(data);
-      if (rows.isNotEmpty) {
-        _faqArticles
-          ..clear()
-          ..addAll(rows.map(_faqFromJson));
-        notifyListeners();
+      final collected = <FaqArticle>[];
+      final seenIds = <String>{};
+      var pageIndex = 1;
+      var truncated = false;
+      while (true) {
+        final data = await BoltFoxApi.getProductFaqList({
+          'pageIndex': pageIndex,
+          'pageSize': pageSize,
+        });
+        final rows = extractApiRows(data);
+        for (final row in rows) {
+          final article = _faqFromJson(row);
+          // 翻页之间后端顺序可能有变动，按 id 去重，避免同一条重复出现。
+          if (seenIds.add(article.id)) {
+            collected.add(article);
+          }
+        }
+
+        // 空页 = 没有更多了。
+        if (rows.isEmpty) {
+          break;
+        }
+
+        // 停止条件**优先用后端的分页元数据**，不能拿「返回条数 < 请求的 pageSize」
+        // 当依据：后端可能无视 pageSize、按自己的默认值（swagger 写的是 10）分页，
+        // 那样第一页就 10 < 50 直接停了，只能拿到 10 条——正是「只显示几条」的成因。
+        final pageCount = data is Map ? _asInt(data['pageCount']) : 0;
+        final recordCount = data is Map ? _asInt(data['recordCount']) : 0;
+        if (recordCount > 0 && collected.length >= recordCount) {
+          break;
+        }
+        if (pageCount > 0 && pageIndex >= pageCount) {
+          break;
+        }
+        // 两个元数据都没有时，才退回按「不满一页即最后一页」判断。
+        if (pageCount == 0 && recordCount == 0 && rows.length < pageSize) {
+          break;
+        }
+        pageIndex++;
+        if (pageIndex > maxPages) {
+          truncated = true;
+          break;
+        }
       }
+      if (truncated) {
+        debugPrint(
+          'refreshFaq: 已达 $maxPages 页上限仍未取完，共 ${collected.length} 条，'
+          '请检查后端分页字段（pageCount/recordCount）。',
+        );
+      }
+
+      _faqArticles
+        ..clear()
+        ..addAll(collected);
+      _faqLanguage = requestedLanguage;
+      notifyListeners();
       return ActionFeedback(
         success: true,
         message: tr(

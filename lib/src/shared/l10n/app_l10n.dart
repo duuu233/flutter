@@ -1203,6 +1203,8 @@ class AppL10n {
 
   // ── 引导 ──
   String get guideTitle => _pick('操作指南', 'User Guide', '操作ガイド');
+  String get guideEmpty =>
+      _pick('暂无常见问题', 'No FAQs yet', 'よくある質問はありません');
 
   // ── 我的 ──
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');

@@ -425,13 +425,21 @@ class BoltFoxApi {
 
   /// 编辑投屏记录（设备图传成功后置设备上传状态）。
   ///
-  /// 对齐小程序 `editUserProductImgRecord`：设备 BLE 图传成功后调用，把 [upirId] 对应记录的
+  /// 对齐小程序 `editUserProductImgRecord`：设备 BLE 图传成功后调用，把该条记录的
   /// [deviceUploadState] 置为 1（0=失败,1=成功）；[taskId] 为 [setUserProductUpload] 返回的任务 id。
+  ///
+  /// ⚠️ **后端按 [taskId] 定位记录，不是 [upirId]**（小程序 result.js:561 同）。
+  /// [setUserProductUpload] 的响应 DTO `BaseUploadApiOut` 压根没有 upirId 字段
+  /// （只有 base64Img/formatColors/name/taskId/url），所以正常投屏链路这里恒为 null。
+  /// **null 必须用 `?` 丢掉整个键**，绝不能 `?? ''` 兜底成空串——swagger
+  /// `ClientUserProductImgRecordEditApiIn.upirId` 是 **integer**，空串会让后端反序列化 400，
+  /// 整个请求作废 → 记录永远停在 deviceUploadState=0 → 图库（仅显示成功上传的照片）就没有这张。
+  /// 小程序侧靠 JS 的 `undefined` 被 JSON.stringify 自动丢弃躲过了这个坑（2026-07-19 修）。
   ///
   /// [imgIndex]=这张图实际写入设备的物理槽位索引，供图库删除/刷新屏幕定位
   /// （见 docs/图片索引-imgIndex方案.md）。设备上没有这张图时不传。
   static Future<dynamic> editUserProductImgRecord({
-    required Object upirId,
+    Object? upirId,
     Object? taskId,
     int deviceUploadState = 1,
     int? imgIndex,
@@ -439,7 +447,7 @@ class BoltFoxApi {
     return _http.postJson(
       '/Client/UserProduct/editUserProductImgRecord',
       body: {
-        'upirId': upirId,
+        'upirId': ?upirId,
         'taskId': ?taskId,
         'deviceUploadState': deviceUploadState,
         'imgIndex': ?_imgIndexParam(imgIndex),

@@ -37,7 +37,7 @@
 | 个人资料 | `subpackages/settings/profile` | `features/account/presentation/profile_page.dart` | ✅ | 进入刷新资料；头像先本地预览，点击“保存资料”后与昵称一起提交；成功不弹提示 |
 | 绑定/修改邮箱 | `subpackages/settings/{bind-email,change-email}` | `features/account/presentation/{bind_email_incomplete_page,modify_email_page}.dart` | ✅ | 验证码与 `changeUserEmail` 参数一致 |
 | 语言 | `subpackages/settings/language` | `features/settings/presentation/language_settings_page.dart` | ✅🔶 | 四项 UI、选中态、“已保存”提示和保存后留页一致；App 额外会切换已接入的 zh/en/ja 文案 |
-| 操作指南 | `subpackages/settings/guide` | `features/guide/presentation/guide_page.dart` | ✅ | 本地兜底展开态、FAQ 列表/详情、搜索和多项展开一致 |
+| 操作指南 | `subpackages/settings/guide` | `features/guide/presentation/guide_page.dart` | ✅ | FAQ 列表/详情、多项展开一致；两端均**默认全部收起**、翻页**全量**读取、随语种重新拉取。差异：答案富文本小程序用原生 `rich-text`，App 用自研 `SimpleHtmlText`（零依赖 HTML 子集渲染）；滚动小程序用 `scroll-view`，App 用 `SingleChildScrollView`（2026-07-19） |
 | 用户协议 | `subpackages/settings/agreement` | `features/settings/presentation/user_agreement_page.dart` | ✅ | 标题、日期、章节和正文已逐段对齐 |
 | 隐私政策 | `subpackages/settings/privacy` | `features/settings/presentation/privacy_policy_page.dart` | ✅ | 标题、日期、章节和正文已逐段对齐 |
 | App 版本升级 | `subpackages/settings/update` | `features/settings/presentation/update_boltstar_page.dart` | 🔶 | App 使用真实版本检查和安装包下载；平台能力不同 |
