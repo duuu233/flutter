@@ -314,16 +314,14 @@ class DeviceDetailsBody extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           child: Row(
             children: [
-              Container(
+              // 设备图统一用首页那张 home-icon02（原来是 device-list-icon01，另一张小图）。
+              // 该图四角 alpha=0 自带圆角，故去掉原先的橙色底色容器与圆角裁剪——
+              // 首页没有底色，留着会在四角露出色晕，三处就不一致了。
+              SizedBox(
                 width: 46,
                 height: 46,
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF6A20).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
                 child: Image.asset(
-                  'assets/images/device-list-icon01.png',
+                  'assets/images/home-icon02.png',
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(
                     Icons.photo_library_outlined,

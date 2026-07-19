@@ -401,32 +401,23 @@ class _DeviceCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 24, 17, 0),
               child: Row(
                 children: [
-                  // 设备 Logo（连接态 device-list-icon04 / 离线 icon05，120rpx≈60）。
-                  // 对齐小程序：连接态底色 rgba(255,175,139,0.1)，离线无底色，图标不缩小。
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: device.connected
-                          ? const Color(0xFFFFAF8B).withValues(alpha: 0.1)
-                          : Colors.transparent,
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Image.asset(
-                      device.connected
-                          ? 'assets/images/device-list-icon04.png'
-                          : 'assets/images/device-list-icon05.png',
-                      width: 60,
-                      height: 60,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Icon(
-                          Icons.photo_library_outlined,
-                          color: device.connected
-                              ? const Color(0xFFEB5F1B)
-                              : const Color(0x992A2B2B),
-                          size: 34,
-                        );
-                      },
-                    ),
+                  // 设备图统一用首页那张 home-icon02（2026-07-19 产品要求：
+                  // 首页/设备列表/设备详情三处用同一张，且**不区分连接状态**，
+                  // 连接状态由蓝牙角标与状态文案表达）。
+                  // 该图 166×166、四角 alpha=0 自带圆角，所以**不再加底色容器**——
+                  // 首页本身就没有底色，加了会在四角露出色晕，三处就不一致了。
+                  Image.asset(
+                    'assets/images/home-icon02.png',
+                    width: 60,
+                    height: 60,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) {
+                      return const Icon(
+                        Icons.photo_library_outlined,
+                        color: Color(0xFFEB5F1B),
+                        size: 34,
+                      );
+                    },
                   ),
                   const SizedBox(width: 22),
                   Expanded(
