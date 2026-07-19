@@ -27,6 +27,38 @@ import 'app_theme.dart';
 /// 根节点切换是「换场景」，比页内 push 慢是刻意的。
 const Duration kRootTransitionDuration = Duration(milliseconds: 1100);
 
+/// fade-through 时间轴分界：前 35% 旧页退场、后 65% 新页进场（见 [_rootTransitionBuilder]）。
+const double _kRootFadeThroughSplit = 0.35;
+
+/// 新页进场的起始缩放：从 1.04 落回 1.0（出场反向：1.0 推远到 1.04）。
+///
+/// 用 >1 而不是 Material fadeThrough 标准的 0.92→1.0：这几页全是全屏铺底图，
+/// 从小于 1 进场会在四周露出底下垫的 bg01，出现一圈「画中画」边缝；
+/// 从 1.04 收缩则溢出屏幕外，永远不露边。
+const double _kRootEntryScale = 1.04;
+
+/// 根节点切换动效（Material Motion fade-through 的变体）。
+///
+/// 纯 crossfade 的「不丝滑」在于全程两页同时半透明——画面浑浊、又没有任何
+/// 空间感。这里改成两段接力（Interval 曲线在 AnimatedSwitcher 上配）：
+///   0%─35%    旧页淡出，同时轻微推远（1.0→1.04）
+///   35%─100%  新页淡入，从 1.04 缩放落位（easeOutCubic 后段舒缓）
+/// 中间的空档由 [_rootTransitionLayout] 垫的 bg01 撑住：背景恒定、只有前景
+/// 内容在换——这正是市面 App「启动页→首页」的通行手感。
+/// 进出场共用同一个 Tween：出场条目的动画反向跑，自动得到「推远退场」。
+Widget _rootTransitionBuilder(Widget child, Animation<double> animation) {
+  return FadeTransition(
+    opacity: animation,
+    child: ScaleTransition(
+      scale: Tween<double>(
+        begin: _kRootEntryScale,
+        end: 1,
+      ).animate(animation),
+      child: child,
+    ),
+  );
+}
+
 /// 根节点切换的层叠方式：在新旧两页**之下**垫一层不透明背景。
 ///
 /// 为什么需要这一层：`home` 底下没有任何东西负责铺底（路由本体不绘制背景），
@@ -371,12 +403,21 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       home: AnimatedBuilder(
         animation: _state,
         builder: (context, _) => AnimatedSwitcher(
-          // 闪屏→登录页/首页、登录页→首页 都是这一处的交叉淡入（不走导航）。
-          // 进/出场曲线：新页面走 easeOutCubic（后段舒缓地落位），旧页面走
-          // easeInCubic（先慢后快地退走），避免两层同时半透明时的浑浊感。
+          // 闪屏→登录页/首页、登录页→首页 都是这一处的场景切换（不走导航）。
+          // fade-through 两段接力：Interval 把出场压在前 35%、进场排在后 65%，
+          // 时间轴与缩放的完整推理见 _rootTransitionBuilder。
           duration: kRootTransitionDuration,
-          switchInCurve: Curves.easeOutCubic,
-          switchOutCurve: Curves.easeInCubic,
+          switchInCurve: const Interval(
+            _kRootFadeThroughSplit,
+            1,
+            curve: Curves.easeOutCubic,
+          ),
+          switchOutCurve: const Interval(
+            1 - _kRootFadeThroughSplit,
+            1,
+            curve: Curves.easeInCubic,
+          ),
+          transitionBuilder: _rootTransitionBuilder,
           layoutBuilder: _rootTransitionLayout,
           child: _showSplash
               ? const SplashPage()
@@ -403,19 +444,34 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       // AppLocalizationsScope 一个 InheritedWidget；语言没变时不通知任何依赖者。
       // withClampedTextScaling：全 App 大量 Figma 定宽定高排版，系统字号 >1.3x
       // 会挤爆固定容器，钳制到 1.3x 作为止血（长期应把固定高改 minHeight）。
-      builder: (context, child) => MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.3,
-        // 全局「点空白处收起键盘」：置于 Navigator 之上，覆盖所有页面（含对话框/弹层）。
-        // 手势竞技场里可交互组件（按钮/输入框/列表项）总是赢家，只有无人认领的
-        // 空白点击才会落到这层 onTap —— 不会拦截或延迟任何现有交互。
-        child: GestureDetector(
-          behavior: HitTestBehavior.translucent,
-          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-          child: AnimatedBuilder(
-            animation: _state,
-            builder: (context, _) => AppLocalizationsScope(
-              language: _state.language,
-              child: child ?? const SizedBox.shrink(),
+      // 全局系统栏样式兜底（治 Android「冷启动首页/我的 头部背景图不到顶」）：
+      // 状态栏样式是「最后写入者驻留」——没有任何 AnnotatedRegion 在树里时，
+      // 引擎保持上一次生效的样式不动。首页/我的/闪屏都没有自己的注解，冷启动
+      // 驻留的是 main() 的初始样式；进过一次内页（FigmaScreen=transparent）
+      // 再退出来，驻留的又成了内页的——同一页面出现两种状态栏。这层挂在
+      // Navigator 之上做全局默认后语义就确定了：页面自己有注解用页面的
+      //（嵌套时最内层赢），没有就用这里的，永不再随导航历史漂移。
+      // iOS 不受影响：statusBarColor 本就是 Android-only 属性。
+      builder: (context, child) => AnnotatedRegion<SystemUiOverlayStyle>(
+        value: SystemUiOverlayStyle.dark.copyWith(
+          statusBarColor: Colors.transparent,
+          systemNavigationBarColor: Colors.white,
+          systemNavigationBarDividerColor: const Color(0xFFE5DED4),
+        ),
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          // 全局「点空白处收起键盘」：置于 Navigator 之上，覆盖所有页面（含对话框/弹层）。
+          // 手势竞技场里可交互组件（按钮/输入框/列表项）总是赢家，只有无人认领的
+          // 空白点击才会落到这层 onTap —— 不会拦截或延迟任何现有交互。
+          child: GestureDetector(
+            behavior: HitTestBehavior.translucent,
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            child: AnimatedBuilder(
+              animation: _state,
+              builder: (context, _) => AppLocalizationsScope(
+                language: _state.language,
+                child: child ?? const SizedBox.shrink(),
+              ),
             ),
           ),
         ),

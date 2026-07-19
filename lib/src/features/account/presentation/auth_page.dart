@@ -34,18 +34,26 @@ class _AuthPageState extends State<AuthPage>
     with SingleTickerProviderStateMixin {
   /// 入场动效：表单整体上浮 16px 落位。
   ///
-  /// 根节点（闪屏 ↔ 登录页 ↔ 主壳层）之间只有一层交叉淡入，而闪屏和本页共用同一张
-  /// 背景图 bg01，淡入淡出的只有前景内容——纯改透明度会让人觉得「没有动效，闪了一下」。
+  /// 根节点（闪屏 ↔ 登录页 ↔ 主壳层）是 fade-through 切换，而闪屏和本页共用同一张
+  /// 背景图 bg01，真正在换的只有前景内容——不给前景加位移的话观感就是「没有动效」。
   /// 这里给表单补一个上浮：位移是 Transform，不参与布局，不影响键盘弹起时的滚动。
   /// 本页只在「登出后」和「冷启动未登录」时挂载一次，动画不会反复播放。
   late final AnimationController _entryController = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 900),
+    duration: const Duration(milliseconds: 1500),
   )..forward();
 
+  /// 前 35%（约 525ms）按兵不动：根节点 fade-through 里本页要到 ~385ms 才开始
+  /// 显形（kRootTransitionDuration 的后 65% 才是进场段）。动画若从挂载即起跑，
+  /// easeOutCubic 的大半位移会消耗在不可见期，等看得见时只剩尾巴两三像素——
+  /// 上一版 900ms 就是这么被吃掉的。Interval 顺延到显形后起步，且比淡入晚
+  /// ~140ms，形成「页面现身 → 表单落位」的小节奏。
   late final Animation<Offset> _entryOffset =
       Tween<Offset>(begin: const Offset(0, 0.02), end: Offset.zero).animate(
-        CurvedAnimation(parent: _entryController, curve: Curves.easeOutCubic),
+        CurvedAnimation(
+          parent: _entryController,
+          curve: const Interval(0.35, 1, curve: Curves.easeOutCubic),
+        ),
       );
 
   late final TextEditingController _emailController;

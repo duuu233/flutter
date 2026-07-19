@@ -14,9 +14,15 @@ void main() {
   // 但原生侧的连接保活前台服务可能仍在跑——表现为热重启后通知栏保活常驻、
   // 设备被残留 GATT 占线搜不到。冷启动时本就没有服务在跑，停一次是无害空调用。
   unawaited(NativeDeviceApi.stopConnectionKeepAliveService());
+  // 状态栏透明（Android）：让每页自己的头部背景直接透到状态栏区域。
+  // ⚠️ 别改回不透明色——曾设 0xFFF7EDE2，冷启动的首页/我的 头图上就压着一条
+  // 米色实心带（这两页没有自己的 AnnotatedRegion，这里设什么就驻留什么）；
+  // 进一次内页后 FigmaScreen 的 transparent 注解驻留下来，问题看似"自愈"，
+  // 实为同一页面两种状态栏。真正的全局兜底是根组件 builder 上的
+  // AnnotatedRegion（bolt_star_app.dart），这里保持同值，只覆盖首帧前的空窗。
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
-      statusBarColor: Color(0xFFF7EDE2),
+      statusBarColor: Colors.transparent,
       statusBarIconBrightness: Brightness.dark,
       statusBarBrightness: Brightness.light,
       systemNavigationBarColor: Colors.white,

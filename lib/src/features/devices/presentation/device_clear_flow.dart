@@ -25,8 +25,8 @@ bool _clearFlowBusy = false;
 /// 进入时快照设备 id：两步确认停留期间后台 refreshDevices 可能改写全局 selectedDevice，
 /// 实时读会把这个破坏性操作落到另一台设备上。
 ///
-/// 不做权限门禁：`clearDeviceMemory` 要求设备**已连接**（未连接直接返回「请先连接设备」，
-/// 见 state.dart），不会自动扫连，因而不触发蓝牙/定位授权。
+/// 不做权限门禁：入口先判「已连接」，未连接直接提示并返回；`clearDeviceMemory`
+/// 本身也不自动扫连（见 state.dart），全程不会触发蓝牙/定位授权。
 Future<void> startClearDeviceFlow(
   BuildContext context,
   PhotoFrameState state,
@@ -36,6 +36,13 @@ Future<void> startClearDeviceFlow(
   }
   final deviceId = state.selectedDeviceId;
   if (deviceId.isEmpty) {
+    return;
+  }
+  // 入口先判连接（对齐小程序 detail.js：未连接直接提示，不进两步确认）。
+  // clearDeviceMemory 不自动扫连，不在这里拦的话用户点完两步确认才看到
+  // 「请先连接设备」——白走一遍确认流程。与轮播设置入口同一形态（app_routes）。
+  if (!state.deviceById(deviceId).connected) {
+    AppToast.show(context, AppL10n.of(context).devConnectFirst);
     return;
   }
   _clearFlowBusy = true;
