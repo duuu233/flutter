@@ -9,6 +9,7 @@ import '../../../device/ble_controller.dart';
 import '../../../device/ble/ota_ble.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
 
 /// 设备固件 OTA 升级页 —— 由微信小程序版 `subpackages/device/ota/ota`（ota.js + ota.wxml）移植。
@@ -39,6 +40,10 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   final device = state.selectedDevice;
   // ① 未连接自动扫连（升级需设备在线）。
   if (!BleController.instance.connected) {
+    // 权限门禁前置于 loading：授权框要单独出现，不与设备操作同屏（见 PermissionGate）。
+    if (!await PermissionGate.ensureBleReady(context) || !context.mounted) {
+      return;
+    }
     AppLoadingDialog.show(context, AppL10n.of(context).otaConnecting);
     // 统一 hide 收口（精确移除 + 无 mounted 门控），替换掉盲 pop（历史闪退根源）：
     // 本流程可叠在详情页其它 loading 之上，show 被静默忽略时盲 pop 会弹掉业务页。

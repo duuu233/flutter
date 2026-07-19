@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
@@ -255,6 +256,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (confirmed != true || !mounted) {
       return;
     }
+    // 权限门禁：删除会走设备侧 0x12，未连接时 deleteAlbumPhotos 内部自动扫连
+    // （state.dart `connectDevice`）——扫连**必须**先拿到蓝牙/定位授权。
+    // 位置在「用户已确认删除」之后、蒙层 loading 之前：授权框要单独出现，
+    // 不能和设备操作同屏（见 PermissionGate 文档）。
+    if (!await PermissionGate.ensureBleReady(context) || !mounted) {
+      return;
+    }
     // 设备侧删除(0x12)可能耗时较久（最长约 180s），期间用蒙层 loading 阻断误操作
     // （对齐小程序 wx.showLoading({title:'删除中', mask:true})）。
     _showBlockingLoading(AppL10n.of(context).galDeleting);
@@ -285,6 +293,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (_selectedIds.length != 1) {
       // 对齐小程序：多选时刷屏给出提示而非静默无反应。
       _showFeedback(AppL10n.of(context).galRefreshSingleOnly);
+      return;
+    }
+    // 同 _confirmDelete：刷屏(0x24)未连接时会自动扫连，授权必须前置于 loading。
+    if (!await PermissionGate.ensureBleReady(context) || !mounted) {
       return;
     }
     _showBlockingLoading(AppL10n.of(context).galRefreshing);

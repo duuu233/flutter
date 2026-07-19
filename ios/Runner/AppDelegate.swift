@@ -60,6 +60,18 @@ final class DeviceApiHandler: NSObject {
     return manager
   }()
 
+  /// 等用户回答系统权限弹窗的兜底上限。
+  ///
+  /// ⚠️ 这**不是**「等多久算超时」，而是「回调万一永不触发时兜底多久」——正常路径下
+  /// 用户一作答，didUpdateState / didChangeAuthorization 立刻回调并把 pending 置空，
+  /// 这个计时器随即变成空转，等多久都不影响体验。
+  ///
+  /// 原值 4s/5s 太短，制造了「首次安装要点两次」：首次安装的系统弹窗用户常要读几秒才点
+  /// 「允许」，超过 4s 兜底就先带着 `.notDetermined`（即 granted=false）返回了 →
+  /// Dart 侧 PermissionGate 判定为「被拒绝」弹出「去设置」引导框 → 用户懵了关掉、
+  /// 再点一次才连上。而用户真正点「允许」后到来的那次回调，因 pending 已被置空被直接丢弃。
+  private static let permissionAnswerTimeout: TimeInterval = 30
+
   private var pendingBluetoothResult: FlutterResult?
   private var pendingLocationResult: FlutterResult?
   private var pendingGalleryResult: FlutterResult?
@@ -113,10 +125,10 @@ final class DeviceApiHandler: NSObject {
 
   private func requestBluetooth(_ result: @escaping FlutterResult) {
     // 访问 centralManager 触发创建（首次使用会弹权限）。状态是异步的：state==.unknown 时
-    // 等 didUpdateState 回调后再返回真实状态；4s 兜底避免永远不回。
+    // 等 didUpdateState 回调后再返回真实状态；兜底计时器避免永远不回。
     if centralManager.state == .unknown {
       pendingBluetoothResult = result
-      DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
+      DispatchQueue.main.asyncAfter(deadline: .now() + Self.permissionAnswerTimeout) { [weak self] in
         guard let self = self, let pending = self.pendingBluetoothResult else { return }
         self.pendingBluetoothResult = nil
         pending(self.buildStatus())
@@ -148,7 +160,7 @@ final class DeviceApiHandler: NSObject {
     if status == .notDetermined {
       pendingLocationResult = result
       locationManager.requestWhenInUseAuthorization()
-      DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak self] in
+      DispatchQueue.main.asyncAfter(deadline: .now() + Self.permissionAnswerTimeout) { [weak self] in
         guard let self = self, let pending = self.pendingLocationResult else { return }
         self.pendingLocationResult = nil
         pending(self.buildStatus())

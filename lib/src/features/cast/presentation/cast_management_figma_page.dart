@@ -6,6 +6,7 @@ import '../../../network/api_client.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
@@ -128,7 +129,16 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
       _showSnack(l10n.castRecordMissingFrame);
       return;
     }
+    // 重入锁在权限门禁之前上：授权框停留期间用户还能点其它记录的「再次投屏」，
+    // 不锁就会并发弹两次授权 + 两次 connectDevice。
     _recasting = true;
+    // 权限门禁：本流程下一步就是 connectDevice(扫连)，蓝牙/定位授权必须先拿到。
+    // 必须在 AppLoadingDialog **之前**——授权框与设备操作不同屏（见 PermissionGate 文档）；
+    // 原实现先弹了「连接设备中」蒙层再连，系统授权框会压在蒙层上出现。
+    if (!await PermissionGate.ensureBleReady(context) || !mounted) {
+      _recasting = false;
+      return;
+    }
     // 连接 + 下载全程用阻断式 loading（原来只有一条 2 秒即逝的 toast，
     // 长达 30s 的等待里页面看似无响应，用户必然重复点击）。
     AppLoadingDialog.show(context, l10n.castConnectingDevice);

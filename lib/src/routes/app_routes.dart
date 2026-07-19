@@ -19,7 +19,7 @@ import '../features/devices/presentation/bind_device_not_found.dart';
 import '../features/devices/presentation/ble_debug_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
 import '../features/devices/presentation/delete_device_flow.dart';
-import '../features/devices/presentation/device_clear_confirm_page.dart';
+import '../features/devices/presentation/device_clear_flow.dart';
 import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
@@ -131,7 +131,8 @@ class AppRoutes {
   static const figmaMyDevices = '/figma/devices/my-devices';
   static const figmaDeviceDetails = '/figma/devices/detail';
   static const figmaDeviceOta = '/figma/devices/ota';
-  static const figmaDeviceClearConfirm = '/figma/devices/clear-confirm';
+  // figmaDeviceClearConfirm 已于 2026-07-19 下线：「一键清空」改成当前页两步弹窗
+  //（startClearDeviceFlow），不再是一个可导航的页面。同 figmaBindDeviceScanHelp。
   static const figmaCarouselSettings = '/figma/devices/carousel-settings';
   static const figmaLanguageSettings = '/figma/settings/language';
   static const figmaPrivacyPolicy = '/figma/settings/privacy-policy';
@@ -231,11 +232,9 @@ class AppRoutes {
               context,
             ).pushNamed<void>(AppRoutes.figmaCarouselSettings);
           },
-          onClearDevice: () {
-            Navigator.of(
-              context,
-            ).pushNamed<void>(AppRoutes.figmaDeviceClearConfirm);
-          },
+          // 「一键清空」在**当前页**两步弹窗确认，不再 push 确认页
+          // （与 startDeleteDeviceFlow 同形态，路由表只做分发不内嵌业务编排）。
+          onClearDevice: () => startClearDeviceFlow(context, state),
           // 删除设备完整流程抽在 delete_device_flow.dart（与 startOtaFlow 同模式），
           // 路由表只做页面分发，不再内嵌业务编排。
           onDeleteDevice: () => startDeleteDeviceFlow(context, state),
@@ -247,9 +246,6 @@ class AppRoutes {
         break;
       case AppRoutes.figmaDeviceOta:
         builder = (_) => OtaUpgradePage(state: state);
-        break;
-      case AppRoutes.figmaDeviceClearConfirm:
-        builder = (_) => DeviceClearConfirmPage(state: state);
         break;
       case AppRoutes.figmaCarouselSettings:
         builder = (_) => CarouselSettingsPage(state: state);
