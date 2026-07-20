@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:BoltStar/src/app.dart';
 import 'package:BoltStar/src/native_device_api.dart';
+import 'package:BoltStar/src/shared/temp_cache_sweeper.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,6 +15,9 @@ void main() {
   // 但原生侧的连接保活前台服务可能仍在跑——表现为热重启后通知栏保活常驻、
   // 设备被残留 GATT 占线搜不到。冷启动时本就没有服务在跑，停一次是无害空调用。
   unawaited(NativeDeviceApi.stopConnectionKeepAliveService());
+  // 上次运行遗留的临时图片产物（cast_edit_* / recast_*）清扫，见 TempCacheSweeper。
+  unawaited(TempCacheSweeper.sweepOnColdStart());
+  _configureImageCache();
   // 状态栏透明（Android）：让每页自己的头部背景直接透到状态栏区域。
   // ⚠️ 别改回不透明色——曾设 0xFFF7EDE2，冷启动的首页/我的 头图上就压着一条
   // 米色实心带（这两页没有自己的 AnnotatedRegion，这里设什么就驻留什么）；
@@ -31,6 +35,25 @@ void main() {
     ),
   );
   runApp(const BoltStarApp());
+}
+
+/// 收窄 Flutter 全局图片解码缓存的上限。
+///
+/// 默认是 **1000 个对象 / 100MB**，对本 App 偏高：图库一页 100 张，
+/// 每格按 `memCacheWidth = 格宽 × devicePixelRatio` 解码（`gallery_page.dart:722`），
+/// 3x 屏上单格解码后约 1MB 起步——填满默认额度就是 100MB **纯解码位图**，
+/// 叠上原生侧 `MainActivity.decodeToRgba` 的 `w*h*4` 分配，低端机很容易撞上
+/// LMK（系统低内存杀进程）。用户侧表现就是「切出去一会儿回来又是冷启动」。
+///
+/// 60MB 大约能存 50~60 格，覆盖一屏加上下各一屏的滚动缓冲，滚动不会明显反复解码；
+/// 超出的部分本来也会被逐出，只是提前发生、峰值更低。
+///
+/// ⚠️ 这里只调**内存**缓存。磁盘缓存归 `cached_network_image`（gallery 已限
+/// `maxWidthDiskCache: 800`），两者互不影响：内存逐出后从磁盘重建，不重新下载。
+void _configureImageCache() {
+  final cache = PaintingBinding.instance.imageCache;
+  cache.maximumSizeBytes = 60 << 20; // 60MB
+  cache.maximumSize = 200; // 个对象（默认 1000）
 }
 
 /// 每次运行最多落盘多少条 Dart 错误：防止 build 期异常每帧重抛把日志文件刷爆。

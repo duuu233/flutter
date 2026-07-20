@@ -172,5 +172,8 @@ flutter_blue_plus 的原生侧也才被这第一次调用惰性初始化——�
 
 ## 操作日志
 
+- 2026-07-20：产品再次以「切出 15 分钟 / 息屏 30 分钟**重启**」的措辞提出同一诉求，逐条对账后确认
+  **本文第 1 项的实现已全部满足，不改代码**（「重启」= 进程回到可回收状态，见上方引用块）。
+  详见 `2026-07-20-resource-reclamation.md` 第二节——那里也记了「别再把『切回来还在原页面』当 bug 反复提」的判据。
 - 2026-07-19：本轮 12 项全部静态实施完毕；删除 `2026-07-15-final-bugfix-audit.md`（已全部完成且含过期指引，抢救内容见上）。
   顺带修掉 `casting_progress_page._friendlyFailure` 里 `connectFailed` 的重复 case（第二个分支不可达，`flutter analyze` 会报 `unreachable_switch_case`）。

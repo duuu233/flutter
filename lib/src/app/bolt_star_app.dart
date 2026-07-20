@@ -289,6 +289,29 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     }
   }
 
+  /// 系统低内存告警：立刻放掉图片解码缓存，换取不被 LMK 直接杀掉。
+  ///
+  /// Android 在内存吃紧时会先给应用发这个信号（`onTrimMemory`），**之后**才动手杀进程。
+  /// 在此之前本 App 收到信号什么都不做——白白浪费了唯一一次自救机会。
+  /// 图片缓存是本 App 最大的一块可释放内存（见 main.dart `_configureImageCache`），
+  /// 丢掉它只是下次显示时重新解码（磁盘缓存还在，不重新下载），代价远小于被杀。
+  ///
+  /// `clearLiveImages()` 也一并调用：`clear()` 只清"缓存着但没人用"的，
+  /// 正在显示的图仍挂在 live 表上；低内存时这部分同样应该放掉，
+  /// 它们会在下一帧按需重建。
+  @override
+  void didHaveMemoryPressure() {
+    super.didHaveMemoryPressure();
+    final cache = PaintingBinding.instance.imageCache;
+    debugPrint(
+      '[MemoryPressure] 系统低内存告警，清空图片缓存'
+      '（当前 ${cache.currentSize} 个 / '
+      '${(cache.currentSizeBytes / 1024 / 1024).toStringAsFixed(1)}MB）',
+    );
+    cache.clear();
+    cache.clearLiveImages();
+  }
+
   /// paused 分不清「切出 App」和「按电源键息屏（App 仍在栈顶）」，
   /// 由原生查屏幕亮灭判定：亮屏=切出（BLE 宽限 15 分钟）、灭屏=息屏（30 分钟）。
   /// hidden 与 paused 会连续触发，setPhase 幂等，重复调用无副作用。

@@ -41,6 +41,10 @@ dependencies:
   # 网络图片内存+磁盘双层缓存：图库/投屏记录/头像。纯 Image.network 只有内存缓存，
   # 冷启动或缓存逐出后全量重新下载（一页 100 张 ≈ 20~40MB 流量、数秒白图）。
   cached_network_image: ^3.4.1
+  # cached_network_image 的底层磁盘缓存管理器。本来是它的传递依赖，这里**显式提升为直接依赖**：
+  # 退出登录 / 注销 / 登录态失效时要清掉上个账号的图片磁盘缓存（隐私，见 ImageCacheCleanup），
+  # 而 `DefaultCacheManager` 只能从这个包导入。直接 import 传递依赖会在上游改版本时突然断裂。
+  flutter_cache_manager: ^3.4.1
   # 蓝牙图传：扫描/连接/MTU/收发/notify，且自带 requestConnectionPriority(图传前后调连接间隔)
   flutter_blue_plus: ^2.3.8
   # BoltFox 后端接口请求（lib/src/network）：JSON 请求与 form-data 文件上传

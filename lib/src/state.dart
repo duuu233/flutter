@@ -11,6 +11,7 @@ import 'network/api_rows.dart';
 import 'network/api_session.dart';
 import 'network/boltfox_api.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'shared/image_cache_cleanup.dart';
 import 'shared/l10n/chinese_script.dart';
 
 enum AppLanguage { zh, zhHant, en, ja }
@@ -2398,6 +2399,8 @@ class PhotoFrameState extends ChangeNotifier {
     }
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
+    // 清空列表还不够：照片本体还在内存/磁盘两层图片缓存里（见 ImageCacheCleanup）。
+    ImageCacheCleanup.clearAll();
     // 退出登录同样清空上个账号的列表与首屏加载态，避免换账号后先看到上一个人的数据/空态。
     _devices.clear();
     _albumPhotos.clear();
@@ -2432,6 +2435,8 @@ class PhotoFrameState extends ChangeNotifier {
     }
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
+    // 账号已在服务端删除，本地缓存的照片本体更不该留（见 ImageCacheCleanup）。
+    ImageCacheCleanup.clearAll();
     // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
     // 并把首屏加载态复位，下个账号进来才会重新走一次 loading 而不是直接看到上个账号的空态。
     _albumPhotos.clear();
@@ -3054,6 +3059,8 @@ class PhotoFrameState extends ChangeNotifier {
     unawaited(BleController.instance.disconnect());
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
+    // 与 logout 同等对待：会话已失效，上个账号的照片不该留在本机（见 ImageCacheCleanup）。
+    ImageCacheCleanup.clearAll();
     _devices.clear();
     _albumPhotos.clear();
     _castRecords.clear();
