@@ -2241,7 +2241,12 @@ class PhotoFrameState extends ChangeNotifier {
     final client = BleController.instance.client;
 
     // 清空需与固件交互：未连接不自动重连，直接提示先连接（对齐小程序 clearCopies 前置拦截）。
-    if (!client.connected) {
+    //
+    // `_sessionMatches(device)` 不可省：`client.connected` 只说明「App 连着某台设备」，
+    // 不说明连的就是 `deviceId` 这台。0x12 删除全部照片是不可逆操作，另外三处与固件交互的
+    // 入口（删图 :1525 / 刷屏 :1647 / 轮播 :2189）都有这道守卫，唯独这里漏了——
+    // 「连着 B、详情页停在 A 点一键清空」就会把 B 的照片全删光。
+    if (!client.connected || !_sessionMatches(device)) {
       trace.finish(success: false, stage: 'not-connected');
       return ActionFeedback(
         success: false,

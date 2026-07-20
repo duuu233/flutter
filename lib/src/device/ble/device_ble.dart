@@ -12,7 +12,7 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kDebugMode, debugPrint;
+import 'package:flutter/foundation.dart' show kReleaseMode, debugPrint;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'frame_protocol.dart';
@@ -97,6 +97,17 @@ class _Pending {
   _Pending(this.completer, this.timer);
   final Completer<ParsedAck> completer;
   final Timer timer;
+}
+
+/// 图传性能埋点日志（前缀统一为 `[BLEPerf]`，方便 `flutter run` / `idevicesyslog` 里 grep）。
+///
+/// 为什么 gate 在 `!kReleaseMode` 而不是 `kDebugMode`：吞吐**必须在 `--profile` 下测**——
+/// debug 是 JIT 且开着 assertions，每张图的 crc32(≈172KB) + 预组约 1000 个数据帧都会被显著拖慢，
+/// 测出的 KB/s 偏低，还会把连接间隔造成的差异整个淹没掉。而 profile 下 `kDebugMode` 为 false，
+/// 若沿用 `kDebugMode` 就会出现「切到 profile 去测，结果一条日志都没有」。release 仍然闭嘴。
+void _perfLog(String message) {
+  if (kReleaseMode) return;
+  debugPrint(message);
 }
 
 /// 单设备 BLE 会话。一个实例管理一台已连接设备的收发与图传。
@@ -329,6 +340,13 @@ class FrameBleClient {
       } else {
         _mtu = device.mtuNow;
       }
+      // 埋点①：MTU 是「iOS 投屏慢」排查的第一现场。iOS 没有 requestMtu，只能读系统协商值，
+      // 读早了会拿到 _mtu 的初值 23 → dataChunk 掉到 12 字节/包 → 包数暴涨 20 倍。
+      // iPhone 正常应为 185（部分新机 527），对应 chunk=174；chunk=12 即命中该问题。
+      _perfLog(
+        '[BLEPerf] connected platform=${Platform.isAndroid ? 'android' : 'ios'} '
+        'mtu=$_mtu chunk=$dataChunk',
+      );
 
       // ② 服务/特征发现带重试（对齐小程序 discoverMainService/discoverCharacteristics）：
       //    安卓 discoverServices 首次常返回不全，轮询到 FF00 下 FF01(写)/FF02(通知) 齐了再继续，
@@ -618,17 +636,17 @@ class FrameBleClient {
       // 参数更新要走几个连接事件才落定，立刻回读常拿到旧值。
       await Future<void>.delayed(const Duration(milliseconds: 300));
       final actual = await getConnectionIntervalMs();
-      if (kDebugMode) {
-        debugPrint(
-          '[BLE] 连接间隔：请求 ${target}ms，回读 ${actual}ms'
-          '${(actual - target).abs() < 0.01 ? '（已生效）' : '（未生效，链路仍跑在实际值上）'}',
-        );
-      }
+      // 注意：这里的「已生效」只代表**固件回了这个值**，不代表链路真的跑在该间隔上——
+      // 0x05 读回的可能是固件保存的配置值（见本方法头注释）。iOS 上尤其不可当作证据：
+      // 若固件下发的参数违反 Apple 规范(Interval Max ≥ Interval Min + 15ms)被系统拒绝，
+      // 链路会停在 30ms 而这里照样回 15。真正的判据是 [BLEPerf] 的 throughput 对照。
+      _perfLog(
+        '[BLEPerf] connInterval requested=${target}ms readback=${actual}ms'
+        '${(actual - target).abs() < 0.01 ? '(firmware-ack, NOT proof of link rate)' : '(MISMATCH)'}',
+      );
     } catch (error) {
       // 旧固件不支持 0x05/0x13、或设备拒绝：不阻断图传，只是跑在较慢的间隔上。
-      if (kDebugMode) {
-        debugPrint('[BLE] 连接间隔优化失败（不影响图传）：$error');
-      }
+      _perfLog('[BLEPerf] connInterval optimize failed (transfer continues): $error');
     }
   }
 
@@ -643,9 +661,7 @@ class FrameBleClient {
     try {
       await setConnectionIntervalMs(idleConnIntervalMs);
     } catch (error) {
-      if (kDebugMode) {
-        debugPrint('[BLE] 设空闲连接间隔失败（不影响使用）：$error');
-      }
+      _perfLog('[BLEPerf] set idle connInterval failed (harmless): $error');
     }
   }
 
@@ -1107,6 +1123,12 @@ class FrameBleClient {
       _lastImgAck = -1;
       onProgress?.call(0, totalPackets, 'start');
 
+      // 埋点②：只计 0x21 数据段——这段才是连接间隔的作用域。
+      // totalRetries 单独累加：循环里的 retries 每次窗口推进都会清零(见下方 `retries = 0`)，
+      // 统计不到整张图的累计丢包次数，而这个数正是判断「iOS 无应答写有没有背压」的依据。
+      final swData = Stopwatch()..start();
+      int totalRetries = 0;
+
       while (_lastImgAck < totalPackets - 1) {
         if (shouldAbort?.call() ?? false) {
           throw FrameBleException('UPLOAD_ABORTED', kind: FrameBleErrorKind.aborted);
@@ -1159,6 +1181,7 @@ class FrameBleClient {
               '图传中断：设备停在已接收第 $_lastImgAck 包不再前进。可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunk 字节',
             );
           }
+          totalRetries++;
           onProgress?.call(
             _confirmed(totalPackets),
             totalPackets,
@@ -1191,11 +1214,30 @@ class FrameBleClient {
         onProgress?.call(_confirmed(totalPackets), totalPackets, 'data');
       }
 
+      swData.stop();
+
       // 0x22 结束：设备核对整图 CRC32 并落盘，给足 20s。
+      final swEnd = Stopwatch()..start();
       final endAck = await request(
         FrameProtocol.cmdImgEnd,
         timeout: const Duration(seconds: 20),
       );
+      swEnd.stop();
+
+      // 埋点②汇总。两个要点：
+      //  · 吞吐只按 dataMs(0x21 数据段)算——0x22 是设备侧 CRC 校验 + Flash 落盘(超时给到 20s)，
+      //    与链路速度无关，混进来会把吞吐污染掉，所以 endMs 单独报；
+      //  · 先打日志再判 endAck.ok——0x22 校验失败时这批数据同样有诊断价值。
+      final dataMs = swData.elapsedMilliseconds;
+      final kbps = dataMs > 0 ? (dataSize / 1024) / (dataMs / 1000) : 0.0;
+      _perfLog(
+        '[BLEPerf] upload done mtu=$_mtu chunk=$chunk packets=$totalPackets '
+        'bytes=$dataSize dataMs=$dataMs endMs=${swEnd.elapsedMilliseconds} '
+        'throughput=${kbps.toStringAsFixed(1)}KB/s '
+        'retries=$totalRetries finalPace=${curPace.toStringAsFixed(1)}ms '
+        'reqInterval=${transferConnIntervalMs}ms ok=${endAck.ok}',
+      );
+
       if (!endAck.ok) {
         throw FrameBleException(
           '结束校验失败(0x22)：${FrameProtocol.resultText(endAck.result)}',
