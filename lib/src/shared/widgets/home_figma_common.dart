@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
+import '../l10n/app_l10n.dart';
+
 /// Figma 首页 / 绑定设备流程的公共组件库（非页面）：背景、投屏方式卡片、
 /// 蓝牙雷达、绑定设备卡片等通用控件，被首页及绑定相关页面复用。
 class FigmaHomeBackground extends StatelessWidget {
@@ -491,9 +493,8 @@ class FigmaBindDeviceCard extends StatelessWidget {
   const FigmaBindDeviceCard({
     super.key,
     required this.name,
-    required this.iconColor,
-    required this.iconBackground,
     this.subtitle = '',
+    this.deviceId = '',
     this.selected = false,
     this.onTap,
     this.onLongPress,
@@ -503,8 +504,12 @@ class FigmaBindDeviceCard extends StatelessWidget {
 
   /// 副标题：尺寸 · 电量XX% · 信号XX（对齐小程序 `nearby-sub`）。空串则不显示。
   final String subtitle;
-  final Color iconColor;
-  final Color iconBackground;
+
+  /// 设备ID（广播 Device_ID 归一化后的 8 位十六进制）。空串则不显示。
+  /// 为什么要单独一行而不是拼进 subtitle：同型号设备默认名相同（默认名=产品广播名），
+  /// 绑定前这是唯一能区分两台的标识；而 subtitle 在英文下本就已被 ellipsis 截断
+  /// （"5.89in · Battery 88% · Signal Excellent" 已超出可用宽度），拼进去等于直接被截没。
+  final String deviceId;
   final bool selected;
   final VoidCallback? onTap;
 
@@ -520,7 +525,10 @@ class FigmaBindDeviceCard extends StatelessWidget {
       child: Container(
         // 撑满父容器（页面自带边距）：写死 327 在 ≤320dp 宽屏/分屏会横向溢出。
         width: double.infinity,
-        height: 64,
+        // 64 → 82：加了「设备ID」第三行后，内容高度 = 名称 19.2 + 3 + 副标题 14.4 + 3 + ID 14.4
+        // ≈ 54px，而 64 减去上下各 8 的 padding 只剩 48px，会稳定触发 RenderFlex 溢出黄条。
+        // 82 - 16 = 66px 可用，留出余量给字体缩放。
+        height: 82,
         padding: const EdgeInsets.fromLTRB(20, 8, 18, 8),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: selected ? 0.76 : 0.58),
@@ -532,14 +540,23 @@ class FigmaBindDeviceCard extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Container(
+            // 设备图统一用首页那张 home-icon02（2026-07-20 补齐本页：首页/设备列表/设备详情
+            // 已在 2026-07-19 统一，搜索设备列表是漏掉的最后一处）。
+            // 该图四角 alpha=0 自带圆角，所以**不加底色容器**——加了会在四角露出色晕。
+            // 原实现更离谱：不是资源图而是 Material 的 videocam 字形，还按列表下标染成橙/绿/蓝，
+            // 同一列表里几台设备图标颜色各不相同，与首页毫无关系。
+            Image.asset(
+              'assets/images/home-icon02.png',
               width: 48,
               height: 48,
-              decoration: BoxDecoration(
-                color: iconBackground,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Icon(Icons.videocam_outlined, color: iconColor, size: 26),
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.photo_library_outlined,
+                  color: Color(0xFFEB5F1B),
+                  size: 26,
+                );
+              },
             ),
             const SizedBox(width: 20),
             Expanded(
@@ -558,6 +575,15 @@ class FigmaBindDeviceCard extends StatelessWidget {
                     const SizedBox(height: 3),
                     Text(
                       subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FigmaHomeTextStyles.cardSubtitle,
+                    ),
+                  ],
+                  if (deviceId.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      '${AppL10n.of(context).devDeviceId} $deviceId',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: FigmaHomeTextStyles.cardSubtitle,

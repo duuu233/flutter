@@ -146,7 +146,26 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       id: result.device.remoteId.str,
       name: BleController.displayName(result),
       subtitle: parts.join(' · '),
+      deviceId: _displayDeviceCode(result),
     );
+  }
+
+  /// 展示用「设备ID」：取广播里的 Device_ID，归一化成 8 位十六进制（如 `1A2B3C4D`）。
+  ///
+  /// 为什么要展示：默认设备名 = 产品广播名，同型号设备必然重名，绑定前这是唯一能把两台区分开的标识。
+  /// 与小程序 `bind.js` 的 `displayDeviceCode()` 同规则，两端展示的值要一致。
+  ///
+  /// 兜底：广播厂商数据解析不出来时（`advertisingOf` 返回 null）退回平台的 remoteId
+  /// ——安卓是 MAC（12 hex）、iOS 是 UUID（32 hex），又长又对用户无意义，故只取末 8 位。
+  static String _displayDeviceCode(ScanResult result) {
+    final broadcast = normalizeSerial(
+      BleController.advertisingOf(result)?.deviceId,
+    );
+    final raw = broadcast.isNotEmpty
+        ? broadcast
+        : normalizeSerial(result.device.remoteId.str);
+    if (raw.isEmpty) return '';
+    return raw.length > 8 ? raw.substring(raw.length - 8) : raw;
   }
 
   /// 蓝牙未开启 / 权限未授予时的引导弹窗：给一个「去设置 / 去打开蓝牙」的直达按钮

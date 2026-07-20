@@ -192,3 +192,13 @@
     - **注册/登录页校验提示由模态确认框改为居中黑色吐司**，与小程序 toast 组件（黑色半透明底 + 白字）观感一致；App 此前用的是「标题 + 知道了」确认框，属两端不一致，本轮对齐。
     - **「扫描不到怎么办？」改为真正的底部上拉弹层**（`showModalBottomSheet`），此前是全屏页自绘蒙层假装弹层，与小程序交互不一致，本轮对齐。
   - **无需同步 —— 结论是「小程序更弱，App 保持现状」**：头像上传压缩。App 有 ≤100KB / 长边 ≤512px 的客户端压缩；小程序头像走微信 `chooseAvatar` 拿到的现成小图，`setFileUpload` 不带任何压缩参数，即**小程序侧没有客户端压缩**。不要为了「对齐」把 App 这层去掉。
+- 2026-07-20（搜索设备列表图标/设备ID 两端同步；图库张数经核对 App 无需改）：
+  - **搜索设备列表图标统一成首页那张 home-icon02**（`shared/widgets/home_figma_common.dart` 的 `FigmaBindDeviceCard`）。首页/设备列表/设备详情已在 2026-07-19 统一，**搜索设备列表是漏掉的最后一处**。原实现比小程序那边更偏：不是资源图，而是 Material 的 `Icons.videocam_outlined` 字形，还按列表下标 `_deviceAccent(i)` 染成橙/绿/蓝 —— 同一列表里几台设备图标颜色各不相同，与首页毫无关系。现改为 `Image.asset('assets/images/home-icon02.png', 48×48)` + `errorBuilder`，并**删掉底色容器**（该图四角 alpha=0 自带圆角，加底色会在四角露色晕，与 `my_devices_page.dart:404-420`、`device_details_page.dart:317-332` 换图时的处理一致）。随之删除已成死参的 `iconColor` / `iconBackground` 与 `bind_device_found.dart` 的 `_deviceAccent()`。
+  - **搜索设备列表新增「设备ID」行**（`bind_device_found.dart` 的 `BindDeviceEntry` 加 `deviceId` 字段、`bind_device_flow.dart` 新增 `_displayDeviceCode()`、`FigmaBindDeviceCard` 加 `deviceId` 参数渲染第三行）。默认设备名=产品广播名，同型号必然重名，绑定前这是唯一能区分两台的标识。取值规则与小程序 `bind.js` 的 `displayDeviceCode()` **完全一致**（广播 Device_ID → `normalizeSerial` 去分隔符大写 → 8 位十六进制；解析失败退回 remoteId 取末 8 位），保证两端展示同一个值。复用已有 l10n `devDeviceId`（`app_l10n.dart:879`），无需新增文案。
+    - ⚠️ **`BindDeviceEntry.id` 与 `deviceId` 不是一回事**，别混：`id` 是平台给的 MAC/UUID，只作单选键、从不展示；`deviceId` 才是给用户看的那个。
+    - ⚠️ **卡片高度 64 → 82 是必须的配套改动**：第三行使内容高度约 54px，而 64 减去上下各 8 的 padding 只剩 48px，不改会稳定触发 `RenderFlex overflowed` 黄条。
+    - 为什么单独一行而不是拼进 subtitle：英文副标题（`"5.89in · Battery 88% · Signal Excellent"`）本就已被 ellipsis 截断，拼进去等于直接被截没，达不到目的。
+  - **图库「共 N 张」：核对结论是 App 无需改动**。小程序原来把它绑成了全部设备合计且切设备不变（本轮已修）；App 的 `gallery_page.dart:361` 一直绑的是按设备过滤后的 `_photos`（`:127`），切设备经 `setState` 自动重算，且同一个列表同时驱动 `itemCount`，标签与网格不可能对不上 —— **App 本来就是小程序修完之后的形态**。
+    - ⚠️ 不要拿 `UserProfile.imgCount`（`state.dart:81`）去「优化」这里：那是账号级总数，用上去正好复刻小程序刚修掉的 bug。
+    - ⏳ **两端共有的遗留问题（本轮均未改）**：`refreshAlbum` 只拉一页 `pageSize:100` 且无滚动加载，这 100 条是所有设备**共享**预算，账号总照片超 100 时单设备计数会静默偏小（3 台各 60 张 → 只加载 100 条 → 某台可能显示「共 20 张」）。App 侧已有正确范式可抄：`refreshFaq`（`state.dart:2789-2842`）按信封的 `pageCount`/`recordCount` 翻页，而 `refreshAlbum` 把这两个字段丢掉了。修的话给 `refreshAlbum` 加翻页循环、保持全量拉取+客户端过滤，爆炸半径最小。
+  - **本轮未验证**：本机无 Flutter SDK，`dart analyze` / 真机均未跑，仅人工核对了符号签名（`BleController.advertisingOf` 为 static、`FrameAdvertising.deviceId` 存在、`devDeviceId` l10n key 存在、`FigmaBindDeviceCard` 全项目仅一处调用、删除的参数无悬空引用）。
