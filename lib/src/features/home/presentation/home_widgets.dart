@@ -590,6 +590,9 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
         AspectRatio(
           aspectRatio: _kCardW / _kArtH,
           child: PageView.builder(
+            // 背景图的左右投影会超出卡面盒子；PageView 默认的
+            // Clip.hardEdge 会在视口边缘把这部分裁掉。
+            clipBehavior: Clip.none,
             controller: _controller,
             itemCount: widget.devices.length == 1 ? 1 : null,
             onPageChanged: (page) {
