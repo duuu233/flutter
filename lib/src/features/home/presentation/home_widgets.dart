@@ -468,8 +468,25 @@ class _GreetingTitle extends StatelessWidget {
   ) => const Text('BoltStar', style: _HomeTextStyles.brand);
 }
 
+/// `home-bg03.png` 的几何（rpx，量自 PNG alpha 通道，非目测）：
+/// 画布 726×376，其中**卡面实体** 654×304，四周是烘焙进图的投影——
+/// 左 36 / 右 36 / 上 28 / 下 44。注意投影**偏下、上下不对称**，
+/// 所以整幅在卡面盒子里不能居中，得按 28:44 的比例往上偏。
+///
+/// 旧的 bg01(卡面) + bg02(投影) 两层叠加已被这一张替代：bg03 自带投影和
+/// 40rpx 圆角，因此既不需要 ClipRRect，也不需要第二层图。
+const double _kCardW = 654;
+const double _kCardH = 304;
+const double _kArtW = 726;
+const double _kArtH = 376;
+
+/// 卡面在整幅中的垂直对齐系数：上下投影 28:44 → Alignment.y ≈ -0.222。
+/// 轮播视口内「卡面 vs 视口」和卡片内「整幅 vs 卡面盒」两处都用它，
+/// 因为两者是同一个 28:44 比例的两种表述。
+const double _kCardAlignY = (28 - 44) / (28 + 44);
+
 /// 已连接设备卡片（小程序 `.device-carousel`）：
-/// 卡片底图 `home-bg01.png`（702×420rpx）+ 左侧圆环 `home-icon02.png` +
+/// 卡片底图 `home-bg03.png`（726×376rpx，含投影）+ 左侧圆环 `home-icon02.png` +
 /// 右侧设备信息（名称 / 蓝牙连接状态 / 电量）。
 class _DeviceCarousel extends StatefulWidget {
   const _DeviceCarousel({
@@ -566,8 +583,12 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        SizedBox(
-          height: 186,
+        // 视口按比例，不写死高度：宽度取 padding 后的卡面宽（对齐上下文的 24 内缩），
+        // 高度取「卡面宽 : 整幅高」= 654:376，正好容下卡面 + 上下投影。
+        // 原来是 SizedBox(height: 186) 配一个随宽度缩放的 AspectRatio，两者不同步——
+        // 375pt 下只余 0.5px 侥幸不裁，414pt 宽的机器投影已被裁掉约 8.5px。
+        AspectRatio(
+          aspectRatio: _kCardW / _kArtH,
           child: PageView.builder(
             controller: _controller,
             itemCount: widget.devices.length == 1 ? 1 : null,
@@ -582,9 +603,12 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
               setState(() => _index = index);
               widget.onChanged(widget.devices[index]);
             },
-            itemBuilder: (context, page) => Center(
+            itemBuilder: (context, page) => Align(
+              // 卡面盒子 = 卡面实体（654×304），投影由卡片内部往外溢出。
+              // 在视口里按 28:44 偏上放，给下方更厚的投影留出空间。
+              alignment: const Alignment(0, _kCardAlignY),
               child: AspectRatio(
-                aspectRatio: 327 / 149,
+                aspectRatio: _kCardW / _kCardH,
                 child: _ConnectedDeviceCard(
                   device: widget.devices[page % widget.devices.length],
                   onOpenDevices: widget.onOpenDevices,
@@ -623,21 +647,20 @@ class _ConnectedDeviceCard extends StatelessWidget {
         clipBehavior: Clip.none,
         fit: StackFit.expand,
         children: [
-          Positioned(
-            left: -18,
-            top: -18,
-            right: -18,
-            bottom: -18,
-            // 不用 FilterQuality.high（三次立方采样）：两张底图本就接近显示尺寸，
-            // 视觉无差异，但轮播滑动时每帧重采样的 GPU 成本显著更高。
-            child: Image.asset('assets/images/home-bg02.png', fit: BoxFit.fill),
-          ),
+          // 整幅底图（含投影）按比例往卡面盒子外溢出：横向各 (726-654)/2、
+          // 纵向按 28:44 分配。用 Fractionally 而非写死的 -18px，是为了在任何
+          // 屏宽下溢出量都随卡片一起缩放——固定 px 在宽屏上会和图对不上。
+          // 盒子比例已等于图的比例，BoxFit.fill 此处等价于 cover/contain。
+          // 不用 FilterQuality.high（三次立方采样）：底图本就接近显示尺寸，
+          // 视觉无差异，但轮播滑动时每帧重采样的 GPU 成本显著更高。
           Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(24),
+            child: FractionallySizedBox(
+              widthFactor: _kArtW / _kCardW,
+              heightFactor: _kArtH / _kCardH,
+              alignment: const Alignment(0, _kCardAlignY),
               child: Image.asset(
-                'assets/images/home-bg01.png',
-                fit: BoxFit.cover,
+                'assets/images/home-bg03.png',
+                fit: BoxFit.fill,
               ),
             ),
           ),
