@@ -410,7 +410,8 @@ class _BlePerfPageState extends State<BlePerfPage> {
         _choiceRow<double?>(
           label: '图传连接间隔',
           current: BleTuning.skipConnIntervalRequest ? -1.0 : BleTuning.connIntervalOverrideMs,
-          options: const {
+          // 注意：double key 没有 primitive equality，不能用 const map（AOT 编译会报错）
+          options: {
             null: '平台默认',
             15.0: '15ms',
             30.0: '30ms',
@@ -425,7 +426,7 @@ class _BlePerfPageState extends State<BlePerfPage> {
         _choiceRow<double>(
           label: '发送地板 pace',
           current: BleTuning.paceFloorMs,
-          options: const {0.0: '0（默认）', 1.0: '1ms', 2.0: '2ms'},
+          options: {0.0: '0（默认）', 1.0: '1ms', 2.0: '2ms'},
           onPick: (v) => BleTuning.paceFloorMs = v,
         ),
         _choiceRow<int>(
