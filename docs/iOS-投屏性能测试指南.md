@@ -3,7 +3,30 @@
 > 目的：定位「iOS 投屏比 Android 明显慢」的根因，并**判定 0x13 请求的 15ms 连接间隔是否真的生效**。
 >
 > 埋点已落在 `lib/src/device/ble/device_ble.dart`，日志前缀统一为 `[BLEPerf]`。
-> 创建日期：2026-07-20
+> 创建日期：2026-07-20 ｜ 更新：2026-07-22
+
+---
+
+## ⚡ 先看这里（2026-07-22 更新）：现在**不需要 Mac 也能测**
+
+本文档余下章节假设你有 Mac + Xcode。若你的条件是「**只能改代码、只在打好的正式包里体验**」，
+直接用应用内的**投屏性能自检页**，本文第 6 节的 A/B/C 三组对照**不必再出三个包**：
+
+> **入口：设置 → 更新 BoltStar → 连点版本号 7 次**（3 秒内）
+
+它在正式包里给出本文档想要的全部答案：
+
+| 本文档章节 | 应用内替代 |
+|---|---|
+| 第 5 节埋点 / 第 4 节采日志 | 自检页第⑤块「埋点记录」（`BlePerfLog`，**release 也记录**）+ 一键复制 |
+| 第 6 节 A/B/C 对照实验 | 自检页第④块旋钮（连接间隔可切 15 / 30 / 100 / 不下发），一个包跑完 |
+| 第 7 节主判据 throughput | 自检页第③块「纯 BLE 吞吐测速」（本地彩条帧，不联网、不经后端转码） |
+| 第 9 节 PacketLogger | 自检页第②块「**连接间隔自检（RTT 探针）**」——不依赖任何私有 API 的间接判据 |
+
+RTT 探针的原理与判读见 `docs/2026-07-22-iOS投屏性能优化.md` 第二章②。
+同一份文档还记录了本轮已落地的 iOS 侧优化（MTU 读取时机、FBP 日志级别、空闲档不再阻塞连接、
+`UIBackgroundModes`），**其中 MTU 那条极可能就是本次「iOS 特别慢」的真凶**，请先看第 7 节的
+`mtu` / `chunk` 两行。
 
 ---
 
@@ -134,9 +157,17 @@ idevicesyslog | grep -i BLEPerf
 
 均在 `lib/src/device/ble/device_ble.dart`：
 
+> **2026-07-22 变更**：`_perfLog` 改为 `_perfLog(tag, message)`，**两个出口**——
+> 一路仍是 `debugPrint`（gate 在 `!kReleaseMode`，理由见坑 2），另一路写进 `BlePerfLog`
+> **任何构建都记录**，供自检页显示/复制。埋点①的位置也从「connect 里 MTU 协商后」
+> 挪到了「服务发现之后」（iOS 的 `mtuNow` 要等原生推上来，读早了拿到初值 23，
+> 见 `docs/2026-07-22-iOS投屏性能优化.md` 第三章 A）。
+
 | # | 位置 | 输出 |
 |---|---|---|
-| ① | `connect()` MTU 协商后 | `[BLEPerf] connected platform=ios mtu=… chunk=…` |
+| ① | `connect()` 服务发现 + MTU 协商后 | `[BLEPerf] connected platform=ios mtu=… chunk=…` |
+| ①' | `dataChunk < 100` 时 | `[BLEPerf] MTU 异常偏低…`（tag=`warn`，自检页标红） |
+| ④ | 自检页 RTT 探针 | `[BLEPerf] connInterval self-test idle(100ms) … | fast(15ms) … | ratio=…` |
 | ② | `uploadImage()` 0x22 之后 | `[BLEPerf] upload done mtu=… chunk=… packets=… bytes=… dataMs=… endMs=… throughput=…KB/s retries=… finalPace=…ms reqInterval=…ms ok=…` |
 | ③ | `optimizeConnectionIntervalForTransfer()` | `[BLEPerf] connInterval requested=…ms readback=…ms` |
 
@@ -202,6 +233,13 @@ iOS 上尤其危险：若固件下发的参数违反 Apple 规范被系统拒绝
 ---
 
 ## 8. 已知待验证项（测出结果后按此跟进）
+
+> **2026-07-22 进度**：④ 已修（`Info.plist` 补了 `UIBackgroundModes: bluetooth-central`）；
+> ① 无需再翻插件源码——自检页第④块把「数据包写方式」切成**有应答写**再测一次即可证伪
+> （有应答写天然有背压、绝不静默丢包，若 `retries` 由此归零就是无应答写在丢包），
+> 并且 `paceFloor` 也做成了可调（0/1/2ms）；② ③ 仍在固件侧，App 改不了。
+> 另外本轮补了一条本节没写到的 iOS 独有开销：**flutter_blue_plus 默认逐包打日志**，
+> release 已关（见 `docs/2026-07-22-iOS投屏性能优化.md` 第三章 B）。
 
 ### ① iOS 的 `writeWithoutResponse` 是否有背压
 

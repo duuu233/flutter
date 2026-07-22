@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:BoltStar/src/app.dart';
+import 'package:BoltStar/src/device/ble/ble_tuning.dart';
+import 'package:BoltStar/src/device/ble/device_ble.dart';
 import 'package:BoltStar/src/native_device_api.dart';
 import 'package:BoltStar/src/shared/temp_cache_sweeper.dart';
 
@@ -17,6 +19,12 @@ void main() {
   unawaited(NativeDeviceApi.stopConnectionKeepAliveService());
   // 上次运行遗留的临时图片产物（cast_edit_* / recast_*）清扫，见 TempCacheSweeper。
   unawaited(TempCacheSweeper.sweepOnColdStart());
+  // 图传调优旋钮（「投屏性能自检」页里调的那几个值）跨启动保留。不 await：BLE 在启动后
+  // 好几秒才可能用上，读 prefs 的这点时间不该挡首帧；读回来之前用的就是出厂默认值。
+  unawaited(BleTuning.load());
+  // flutter_blue_plus 默认把每次特征读写都打日志；图传一张图 ~1000 个包，iOS 上这份
+  // os_log 开销直接落在传输热路径上。release 关掉，debug/profile 留 warning。
+  FrameBleClient.applyPluginLogLevel();
   _configureImageCache();
   // 状态栏透明（Android）：让每页自己的头部背景直接透到状态栏区域。
   // ⚠️ 别改回不透明色——曾设 0xFFF7EDE2，冷启动的首页/我的 头图上就压着一条

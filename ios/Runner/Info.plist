@@ -90,6 +90,15 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- 投屏中锁屏 / 切后台时保住 CoreBluetooth 会话。
+	     没有这一项，iOS 会在 App 进入后台后很快挂起蓝牙中心角色，整批图传必断
+	     （Android 侧对应的是 BleConnectionService 前台服务）。
+	     ⚠️ 上架审核会问用途：如实答「与蓝牙相框保持连接以完成正在进行的照片传输」。
+	     若产品最终不要求「投屏中可锁屏」，删掉这一项也不影响前台投屏。 -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>需要蓝牙来搜索、连接相框设备并向其投屏照片。</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>

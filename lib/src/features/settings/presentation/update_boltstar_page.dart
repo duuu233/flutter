@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../state.dart';
@@ -130,7 +131,17 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage> {
           const SizedBox(height: 88),
           const Center(child: _BoltStarWordmark()),
           const SizedBox(height: 21),
-          Center(child: _versionLabel()),
+          // 版本号连点 7 次 → 「投屏性能自检」页（隐藏诊断入口，见 AppRoutes.blePerf）。
+          // 正式包里也可达：iOS 没有任何应用内日志、没有 Mac 拿不到 Xcode 输出，
+          // 「15ms 连接间隔生没生效」只能靠那一页在机内自证。放在这里是因为版本号是
+          // 全 App 唯一一个「点它本来没有任何反应」的控件，绝不会被用户误触。
+          Center(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _onVersionTapped,
+              child: _versionLabel(),
+            ),
+          ),
           const SizedBox(height: 64),
           if (_stage != BoltStarUpdateStage.checking)
             Padding(
@@ -155,6 +166,24 @@ class _UpdateBoltStarPageState extends State<UpdateBoltStarPage> {
             )
           : null,
     );
+  }
+
+  // ── 隐藏诊断入口：版本号连点 7 次 ────────────────────────
+  int _versionTaps = 0;
+  DateTime? _firstTapAt;
+
+  void _onVersionTapped() {
+    final now = DateTime.now();
+    // 3 秒内连点才算数：隔了很久的零散点击不该累积成一次「秘密手势」。
+    if (_firstTapAt == null || now.difference(_firstTapAt!) > const Duration(seconds: 3)) {
+      _firstTapAt = now;
+      _versionTaps = 0;
+    }
+    _versionTaps++;
+    if (_versionTaps < 7) return;
+    _versionTaps = 0;
+    _firstTapAt = null;
+    Navigator.of(context).pushNamed(AppRoutes.blePerf);
   }
 
   Widget _versionLabel() {

@@ -12,9 +12,11 @@ import 'dart:async';
 import 'dart:io' show Platform;
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kReleaseMode, debugPrint;
+import 'package:flutter/foundation.dart'
+    show ChangeNotifier, kReleaseMode, debugPrint;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import 'ble_tuning.dart';
 import 'frame_protocol.dart';
 import 'image_codec.dart';
 
@@ -99,22 +101,122 @@ class _Pending {
   final Timer timer;
 }
 
-/// 图传性能埋点日志（前缀统一为 `[BLEPerf]`，方便 `flutter run` / `idevicesyslog` 里 grep）。
+/// 一组指令往返时间(RTT)采样的统计（见 [FrameBleClient.probeCommandRtt]）。
 ///
-/// 为什么 gate 在 `!kReleaseMode` 而不是 `kDebugMode`：吞吐**必须在 `--profile` 下测**——
-/// debug 是 JIT 且开着 assertions，每张图的 crc32(≈172KB) + 预组约 1000 个数据帧都会被显著拖慢，
-/// 测出的 KB/s 偏低，还会把连接间隔造成的差异整个淹没掉。而 profile 下 `kDebugMode` 为 false，
-/// 若沿用 `kDebugMode` 就会出现「切到 profile 去测，结果一条日志都没有」。release 仍然闭嘴。
-void _perfLog(String message) {
+/// **只看 [minMs]**：RTT = k×连接间隔 + 固件处理时间 + 排队抖动，取最小值才能把抖动挤掉，
+/// 让连接间隔成为主导项。平均值/中位数受一次偶发重传就整体上抬，不适合当判据。
+class BleRttStats {
+  BleRttStats({
+    required this.samples,
+    required this.minMs,
+    required this.medianMs,
+    required this.maxMs,
+  });
+
+  factory BleRttStats.fromMicros(List<int> micros) {
+    if (micros.isEmpty) {
+      return BleRttStats(samples: 0, minMs: 0, medianMs: 0, maxMs: 0);
+    }
+    final sorted = [...micros]..sort();
+    double ms(int us) => us / 1000.0;
+    return BleRttStats(
+      samples: sorted.length,
+      minMs: ms(sorted.first),
+      medianMs: ms(sorted[sorted.length ~/ 2]),
+      maxMs: ms(sorted.last),
+    );
+  }
+
+  final int samples;
+  final double minMs;
+  final double medianMs;
+  final double maxMs;
+
+  bool get isEmpty => samples == 0;
+
+  @override
+  String toString() =>
+      'n=$samples min=${minMs.toStringAsFixed(1)}ms '
+      'median=${medianMs.toStringAsFixed(1)}ms max=${maxMs.toStringAsFixed(1)}ms';
+}
+
+/// 一条图传性能埋点记录（[BlePerfLog] 的元素）。
+class BlePerfRecord {
+  BlePerfRecord(this.time, this.tag, this.text);
+
+  /// 分类：`connected` / `connInterval` / `upload` / `rtt` / `warn`。
+  final String tag;
+  final String text;
+  final DateTime time;
+
+  String get stamp {
+    String two(int v) => v.toString().padLeft(2, '0');
+    return '${two(time.hour)}:${two(time.minute)}:${two(time.second)}';
+  }
+
+  @override
+  String toString() => '$stamp [$tag] $text';
+}
+
+/// 应用内常驻的图传性能埋点缓冲。**release 包里同样记录**。
+///
+/// 为什么不能只靠 `debugPrint`：iOS 端没有任何应用内日志文件（`CrashLogger` 是原生实现且
+/// 只有 Android 侧有，`AppDelegate.swift` 对 `getLastCrashLog` 直接返回 notImplemented），
+/// 而正式包（release / TestFlight）在没有 Mac 的情况下拿不到 Xcode / Console 输出——
+/// 于是「iOS 投屏慢」的所有关键数字（MTU / 分包大小 / 吞吐 / 重传次数）在真正要体验的那个包里
+/// 全是黑箱。这里把它们留在内存里，由「投屏性能自检」页直接显示 + 一键复制。
+///
+/// 只保留最近 [maxRecords] 条（约几十 KB），不落盘：诊断用，不该产生隐私/存储负担。
+class BlePerfLog extends ChangeNotifier {
+  BlePerfLog._();
+
+  static final BlePerfLog instance = BlePerfLog._();
+
+  static const int maxRecords = 300;
+
+  final List<BlePerfRecord> _records = <BlePerfRecord>[];
+
+  /// 最新的在前。
+  List<BlePerfRecord> get records => List.unmodifiable(_records.reversed);
+
+  void add(String tag, String text) {
+    _records.add(BlePerfRecord(DateTime.now(), tag, text));
+    if (_records.length > maxRecords) {
+      _records.removeRange(0, _records.length - maxRecords);
+    }
+    notifyListeners();
+  }
+
+  void clear() {
+    _records.clear();
+    notifyListeners();
+  }
+
+  /// 导出为纯文本（自检页「复制」按钮用，可直接粘到聊天窗口回传）。
+  String exportText() => _records.map((r) => r.toString()).join('\n');
+}
+
+/// 图传性能埋点（前缀统一为 `[BLEPerf]`，方便 `flutter run` / `idevicesyslog` 里 grep）。
+///
+/// 两条出口：
+///  · [BlePerfLog]——**任何构建都写**，正式包里靠它在自检页看数字（见上）；
+///  · `debugPrint`——gate 在 `!kReleaseMode` 而不是 `kDebugMode`。吞吐**必须在 `--profile` 下测**：
+///    debug 是 JIT 且开着 assertions，每张图的 crc32(≈172KB) + 预组约 1000 个数据帧都会被显著拖慢，
+///    测出的 KB/s 偏低，还会把连接间隔造成的差异整个淹没掉；而 profile 下 `kDebugMode` 为 false，
+///    若沿用 `kDebugMode` 就会「切到 profile 去测，结果一条日志都没有」。
+void _perfLog(String tag, String message) {
+  BlePerfLog.instance.add(tag, message);
   if (kReleaseMode) return;
-  debugPrint(message);
+  debugPrint('[BLEPerf] $message');
 }
 
 /// 单设备 BLE 会话。一个实例管理一台已连接设备的收发与图传。
 class FrameBleClient {
   /// 真实投屏参数，与小程序 `utils/device-ble.js` 保持一致。
-  static const int transferPacketPaceMs = 3;
-  static const int transferWindowPackets = 10;
+  /// pace/window 从 [BleTuning] 取（默认值就是小程序那组 3ms / 10 包）——正式包内可在
+  /// 「投屏性能自检」页临时改成对照组，不必为一次对照实验重新出一个包。
+  static int get transferPacketPaceMs => BleTuning.paceMs;
+  static int get transferWindowPackets => BleTuning.windowPackets;
   static const int transferWindowMaxPackets = 10;
   static const Duration transferAckAdvanceTimeout = Duration(milliseconds: 600);
   static const int transferMaxRetries = 15;
@@ -128,6 +230,8 @@ class FrameBleClient {
   final Map<int, _Pending> _pending = {};
   int _mtu = 23;
   bool _writeWithoutResponse = true;
+  // FF01 是否也支持「有应答写」——[BleTuning.forceAckedWrite] 的前提。
+  bool _supportsAckedWrite = false;
   int _lastImgAck = -1; // 设备已连续接收到的最后包号
   // 图传发送方在等 0x23 累计 ACK 时挂起的唤醒器；ACK 一到 _onNotify 即 complete。
   // 图传协议全程串行（同一时刻只有一张图在传），单个字段即可。
@@ -166,6 +270,28 @@ class FrameBleClient {
     final chunk = maxFrame - 8;
     if (chunk < 1) return 1;
     return chunk > 236 ? 236 : chunk;
+  }
+
+  /// 收紧 flutter_blue_plus 自身的日志级别（进程内做一次，由 `main()` 调用）。
+  ///
+  /// FBP 默认会把每一次特征读写都打出来。图传一张 480×720 的图要发 ~1000 个数据包，
+  /// 每包都产生日志——iOS 上 `print` 走 os_log，单条就要几十~上百微秒，整张图白白多花
+  /// 几十到几百毫秒，而且这份开销**只在传输热路径上**，正是「iOS 比安卓慢」里容易被忽略的一块
+  /// （安卓的 logcat 便宜得多，同样的日志量代价小很多）。
+  ///
+  /// release 直接闭嘴；debug/profile 留 warning，出问题还能看到底层告警。
+  static bool _logLevelApplied = false;
+  static void applyPluginLogLevel() {
+    if (_logLevelApplied) return;
+    _logLevelApplied = true;
+    try {
+      FlutterBluePlus.setLogLevel(
+        kReleaseMode ? LogLevel.none : LogLevel.warning,
+        color: false,
+      );
+    } catch (_) {
+      // 插件版本差异导致签名不符时不该阻断启动。
+    }
   }
 
   // ── 扫描 ──────────────────────────────────────────────────
@@ -330,27 +456,13 @@ class FrameBleClient {
         }
       });
 
-      // 协商 MTU：Android 顶到 512；iOS 由系统协商，读 mtuNow。
-      if (Platform.isAndroid) {
-        try {
-          _mtu = await device.requestMtu(512);
-        } catch (_) {
-          _mtu = device.mtuNow;
-        }
-      } else {
-        _mtu = device.mtuNow;
-      }
-      // 埋点①：MTU 是「iOS 投屏慢」排查的第一现场。iOS 没有 requestMtu，只能读系统协商值，
-      // 读早了会拿到 _mtu 的初值 23 → dataChunk 掉到 12 字节/包 → 包数暴涨 20 倍。
-      // iPhone 正常应为 185（部分新机 527），对应 chunk=174；chunk=12 即命中该问题。
-      _perfLog(
-        '[BLEPerf] connected platform=${Platform.isAndroid ? 'android' : 'ios'} '
-        'mtu=$_mtu chunk=$dataChunk',
-      );
-
       // ② 服务/特征发现带重试（对齐小程序 discoverMainService/discoverCharacteristics）：
       //    安卓 discoverServices 首次常返回不全，轮询到 FF00 下 FF01(写)/FF02(通知) 齐了再继续，
       //    最多 5 次 / 每次间隔 250ms，用尽仍不全才判失败。
+      //
+      //    ⚠️ 顺序很重要：MTU 协商挪到**服务发现之后**。iOS 侧 mtuNow 要等系统把 ATT MTU
+      //    交换结果推上来才有真值，紧跟 connect() 读多半还是初值 23；服务发现本身要花
+      //    几百毫秒，放在它后面读几乎必然已经是真值（再配合下面的轮询兜底）。
       final chars = await _discoverFrameChars(device);
       final wc = chars[0];
       final nc = chars[1];
@@ -358,6 +470,26 @@ class FrameBleClient {
       // FF01 多为「无应答写」；若不支持无应答写则退回有应答。
       _writeWithoutResponse =
           wc.properties.writeWithoutResponse || !wc.properties.write;
+      // 是否**可以**改用有应答写（BleTuning.forceAckedWrite 的前提，见 _imgWriteWithoutResponse）。
+      _supportsAckedWrite = wc.properties.write;
+
+      _mtu = await _negotiateMtu(device);
+      // 埋点①：MTU 是「iOS 投屏慢」排查的第一现场，chunk 直接决定包数。
+      // iPhone 正常 mtu=185（部分新机 527）对应 chunk=174；Android requestMtu(512) 后 chunk=236。
+      _perfLog(
+        'connected',
+        'connected platform=${Platform.isAndroid ? 'android' : 'ios'} '
+            'mtu=$_mtu chunk=$dataChunk writeWithoutResponse=$_writeWithoutResponse',
+      );
+      if (dataChunk < 100) {
+        // 走到这里说明 MTU 没协商上来（多半停在 23 → chunk=12）：包数会暴涨到 20 倍，
+        // 这才是「慢」的真凶，且与连接间隔完全无关。单独记一条 warn，自检页会高亮。
+        _perfLog(
+          'warn',
+          'MTU 异常偏低(mtu=$_mtu chunk=$dataChunk)：包数约为正常的 ${(174 / dataChunk).round()} 倍，'
+              '本次投屏必然很慢。先查 MTU，别调连接间隔。',
+        );
+      }
 
       await nc.setNotifyValue(true);
       _notifySub = nc.onValueReceived.listen(_onNotify);
@@ -368,9 +500,13 @@ class FrameBleClient {
       _linkAlive = true;
       onLinkStateChanged?.call(true);
 
-      // 连接建立后立即把 BLE 连接间隔设为省电的空闲档(100ms)：图传时才临时切到极速档、传完再回落，
-      // 保证保活挂着的连接不长期跑在费电的极速间隔上。best-effort（内部吞错、2s 短超时），失败不阻断连接。
-      await applyIdleConnectionInterval();
+      // 连接建立后把 BLE 连接间隔设为省电的空闲档(100ms)：图传时才临时切到极速档、传完再回落，
+      // 保证保活挂着的连接不长期跑在费电的极速间隔上。best-effort（内部吞错、2s 短超时）。
+      //
+      // 不再 await（P3-6）：老固件不认 0x13 时这里要白等满 2s 才算「连接完成」，连接体感白丢 2 秒，
+      // 而省电目的根本不需要阻塞连接建立。改后台发；顺序安全由 [_queueConnInterval] 串行队列 +
+      // 「图传会话开着就跳过空闲档」双保险保证——绝不会出现「空闲档 100ms 后到、把图传的 15ms 覆盖掉」。
+      unawaited(applyIdleConnectionInterval());
     } catch (_) {
       // 见方法头注释①：失败必须物理断开，让设备恢复广播、可被再次扫到。
       // disconnect 幂等且自吞底层错误，不会掩盖原始异常。
@@ -414,6 +550,34 @@ class FrameBleClient {
             '连接设备失败：${lastError ?? '未知错误'}',
             kind: FrameBleErrorKind.connectFailed,
           );
+  }
+
+  /// 协商 / 读取本次会话的 ATT MTU。
+  ///
+  /// Android：主动 `requestMtu(512)`，真机通常给到 517 → 分包稳拿上限 236。
+  ///
+  /// iOS：**没有任何请求 MTU 的 API**，只能读系统协商结果。而 flutter_blue_plus 的
+  /// `device.mtuNow` 是原生侧推上来的缓存值，`connect()` 返回时这条消息可能还没到，
+  /// 读到的就是初值 23 —— 于是 `dataChunk` 从 174 掉到 12，同一张 172KB 的图从 ≈994 包
+  /// 暴涨到 ≈14400 包，慢十几倍。这个坑与连接间隔无关，却长得一模一样（都表现为「投屏很慢」），
+  /// 必须先排掉。这里轮询等它上报（最多 ~1s，正常几十毫秒内就到）。
+  ///
+  /// 轮询用尽仍是 23 时**保持 23**：宁可慢，也不臆造一个更大的 MTU——真按 185 分包而链路
+  /// 只有 23，数据包会被静默丢弃，表现为图传停在某一包不再前进（比慢更糟）。
+  Future<int> _negotiateMtu(BluetoothDevice device) async {
+    if (Platform.isAndroid) {
+      try {
+        return await device.requestMtu(512);
+      } catch (_) {
+        return device.mtuNow;
+      }
+    }
+    var mtu = device.mtuNow;
+    for (var i = 0; i < 20 && mtu <= 23; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      mtu = device.mtuNow;
+    }
+    return mtu;
   }
 
   /// 发现 FF00 主服务下的写(FF01)/通知(FF02)特征（带轮询重试，对齐小程序
@@ -577,7 +741,24 @@ class FrameBleClient {
   /// 图传目标连接间隔：Android 7.5ms（协议最小值，安卓中心侧通常批准）；
   /// iOS 15ms —— Apple 规范拒绝 <15ms 的参数更新请求，请求 7.5ms 会被直接忽略、
   /// 链路反而停在系统自选的 30/45ms 上（小程序真机实测：请求 15ms 后吞吐 11.1→17.6KB/s）。
-  static double get transferConnIntervalMs => Platform.isAndroid ? 7.5 : 15.0;
+  ///
+  /// [BleTuning.connIntervalOverrideMs] 非空时用它（自检页的对照组：15 / 30 / 100）。
+  static double get transferConnIntervalMs =>
+      BleTuning.connIntervalOverrideMs ?? (Platform.isAndroid ? 7.5 : 15.0);
+
+  /// 连接间隔指令(0x13)的串行队列。
+  ///
+  /// 自从 [connect] 不再 await 空闲档下发（P3-6），「连接后立刻投屏」就可能出现两条 0x13
+  /// 在飞：空闲档(100ms) 与 图传档(15ms)。谁后到谁生效——若空闲档后到，整场图传就跑在 100ms
+  /// 间隔上，比不做这个优化还慢 6 倍，而且现象随时序抖动、极难复现。用一条串行链把它们排队，
+  /// 再配合 [applyIdleConnectionInterval] 的「图传会话开着就跳过」，两头都堵死。
+  Future<void> _connIntervalChain = Future<void>.value();
+
+  Future<void> _queueConnInterval(Future<void> Function() op) {
+    final next = _connIntervalChain.then((_) => op()).catchError((_) {});
+    _connIntervalChain = next;
+    return next;
+  }
 
   /// 空闲期(非图传)的省电连接间隔：连接建立后、以及每次图传结束后都下发 0x13 把间隔回落到此值。
   /// 只有真正传图时才由 [optimizeConnectionIntervalForTransfer] 切到极速档(安卓 7.5 / iOS 15ms)——
@@ -627,27 +808,38 @@ class FrameBleClient {
   /// 为什么无条件下发（对齐小程序 2026-07-13 的修正）：0x05 读回的可能是固件保存的**配置值**，
   /// 而不是链路的实时参数——新连接的链路参数由手机侧决定。若因「读到的值已等于目标」就跳过 0x13，
   /// 整场图传会跑在手机默认间隔上，表现正是「传一段停一下、明显偏慢」。代价仅一条指令。
-  Future<void> optimizeConnectionIntervalForTransfer() async {
-    // Android 侧的系统级请求与设备侧的 0x13 不冲突，两个一起上效果最好。
-    await requestFastConnection();
-    try {
-      final target = transferConnIntervalMs;
-      await setConnectionIntervalMs(target);
-      // 参数更新要走几个连接事件才落定，立刻回读常拿到旧值。
-      await Future<void>.delayed(const Duration(milliseconds: 300));
-      final actual = await getConnectionIntervalMs();
-      // 注意：这里的「已生效」只代表**固件回了这个值**，不代表链路真的跑在该间隔上——
-      // 0x05 读回的可能是固件保存的配置值（见本方法头注释）。iOS 上尤其不可当作证据：
-      // 若固件下发的参数违反 Apple 规范(Interval Max ≥ Interval Min + 15ms)被系统拒绝，
-      // 链路会停在 30ms 而这里照样回 15。真正的判据是 [BLEPerf] 的 throughput 对照。
-      _perfLog(
-        '[BLEPerf] connInterval requested=${target}ms readback=${actual}ms'
-        '${(actual - target).abs() < 0.01 ? '(firmware-ack, NOT proof of link rate)' : '(MISMATCH)'}',
-      );
-    } catch (error) {
-      // 旧固件不支持 0x05/0x13、或设备拒绝：不阻断图传，只是跑在较慢的间隔上。
-      _perfLog('[BLEPerf] connInterval optimize failed (transfer continues): $error');
-    }
+  Future<void> optimizeConnectionIntervalForTransfer() {
+    return _queueConnInterval(() async {
+      // 阴性对照(B 组)：完全不发 0x13，看链路跑在系统自选参数上有多慢。
+      if (BleTuning.skipConnIntervalRequest) {
+        _perfLog('connInterval', 'connInterval SKIPPED by tuning (control group B)');
+        return;
+      }
+      // Android 侧的系统级请求与设备侧的 0x13 不冲突，两个一起上效果最好。
+      await requestFastConnection();
+      try {
+        final target = transferConnIntervalMs;
+        await setConnectionIntervalMs(target);
+        // 参数更新要走几个连接事件才落定，立刻回读常拿到旧值。
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+        final actual = await getConnectionIntervalMs();
+        // 注意：这里的「已生效」只代表**固件回了这个值**，不代表链路真的跑在该间隔上——
+        // 0x05 读回的可能是固件保存的配置值（见本方法头注释）。iOS 上尤其不可当作证据：
+        // 若固件下发的参数违反 Apple 规范(Interval Max ≥ Interval Min + 15ms)被系统拒绝，
+        // 链路会停在 30ms 而这里照样回 15。真正的判据是自检页的 RTT 探针 / 吞吐对照。
+        _perfLog(
+          'connInterval',
+          'connInterval requested=${target}ms readback=${actual}ms'
+              '${(actual - target).abs() < 0.01 ? '(firmware-ack, NOT proof of link rate)' : '(MISMATCH)'}',
+        );
+      } catch (error) {
+        // 旧固件不支持 0x05/0x13、或设备拒绝：不阻断图传，只是跑在较慢的间隔上。
+        _perfLog(
+          'connInterval',
+          'connInterval optimize failed (transfer continues): $error',
+        );
+      }
+    });
   }
 
   /// 把 BLE 连接间隔回落到空闲省电档（[idleConnIntervalMs]=100ms）：连接建立后、以及每次图传结束后调用，
@@ -656,13 +848,69 @@ class FrameBleClient {
   ///   ② 旧固件不支持 0x13 / 设备拒绝时吞掉（[setConnectionIntervalMs] 内部 0x13 已用 2s 短超时）。
   /// 注意：图传最后一张的异步刷屏(0x24)期间设备会对新指令回忙(0x0B)，调用方应等刷屏跑完再调本函数，
   /// 否则这次回落会撞上 0x0B 白白失败（见 projection_service 收尾对 lastRefresh 的链式处理）。
-  Future<void> applyIdleConnectionInterval() async {
-    if (!_linkAlive) return;
-    try {
-      await setConnectionIntervalMs(idleConnIntervalMs);
-    } catch (error) {
-      _perfLog('[BLEPerf] set idle connInterval failed (harmless): $error');
+  Future<void> applyIdleConnectionInterval() {
+    return _queueConnInterval(() async {
+      if (!_linkAlive) return;
+      // 图传会话开着就跳过：连接后台下发的空闲档若排在图传档之后落地，整场图传会跑在
+      // 100ms 间隔上（见 [_queueConnInterval]）。这一条是那道保险的另一半。
+      if (_transferSessionDepth > 0) return;
+      try {
+        await setConnectionIntervalMs(idleConnIntervalMs);
+      } catch (error) {
+        _perfLog('connInterval', 'set idle connInterval failed (harmless): $error');
+      }
+    });
+  }
+
+  // ── 连接间隔的应用内实测（RTT 探针）────────────────────────
+  //
+  // 背景：CoreBluetooth **没有任何 API 能读连接间隔**，0x05 回读的又可能只是固件保存的
+  // 配置值（见 optimizeConnectionIntervalForTransfer 的注释），所以 iOS 上「15ms 到底生没生效」
+  // 在 App 内一直无法自证，只能靠 Mac 上的 PacketLogger 抓 HCI。
+  //
+  // 但有一条不依赖任何私有 API 的间接判据：**一问一答的最小往返时间受连接间隔量化**。
+  // 一条指令要在某个连接事件里发出、设备在下一个（或下下个）连接事件里回 ACK，
+  // 所以 RTT ≈ k×连接间隔 + 固件处理时间（k≥1，固件处理时间对同一条指令基本恒定）。
+  // 取**最小值**能把排队/调度抖动挤掉，剩下的就由连接间隔主导：
+  //   · 15ms 链路：最小 RTT 通常 30~60ms
+  //   · 30ms 链路：约 60~120ms
+  //   · 100ms 链路（空闲档）：约 200~300ms
+  // 于是「先在 100ms 下测一组、再在 15ms 下测一组」——若两组最小 RTT 拉开数倍，
+  // 就证明 0x13 真的改变了链路参数；若两组几乎一样，说明 0x13 对链路毫无作用。
+  // 这个判据在 **release 包 + 无 Mac** 的条件下成立，正是 iOS 侧最缺的那块。
+
+  /// 采一组指令往返时间（RTT）。
+  ///
+  /// 用 0x04(读电量) 当探针：它是最轻的一条指令，payload 为空、固件侧几乎不做事，
+  /// 因而 RTT 里链路占比最大。[samples] 个样本串行发，样本间留 [gap] 让链路空一拍。
+  /// 与 25s 保活心跳撞车（同为 0x04，抛 commandPending）时跳过该样本，不计入统计。
+  Future<BleRttStats> probeCommandRtt({
+    int samples = 16,
+    Duration gap = const Duration(milliseconds: 30),
+    bool Function()? shouldAbort,
+  }) async {
+    final values = <int>[];
+    for (var i = 0; i < samples; i++) {
+      if (shouldAbort?.call() ?? false) break;
+      if (!_linkAlive) break;
+      final sw = Stopwatch()..start();
+      try {
+        await request(
+          FrameProtocol.cmdGetBattery,
+          timeout: const Duration(seconds: 2),
+          countsAsActivity: false,
+        );
+        sw.stop();
+        values.add(sw.elapsedMicroseconds);
+      } on FrameBleException catch (e) {
+        // 与心跳撞 0x04 槽位 / 设备正忙：这个样本作废，别污染最小值。
+        if (e.kind == FrameBleErrorKind.disconnected) rethrow;
+      } catch (_) {
+        // 其它异常同样只作废本样本。
+      }
+      await Future<void>.delayed(gap);
     }
+    return BleRttStats.fromMicros(values);
   }
 
   /// 图传会话开始：整批投屏**只调一次**，不要每张图都调。
@@ -689,12 +937,12 @@ class FrameBleClient {
   /// 注意：批量投屏(manageConnection=false)时最后一张会异步刷屏(0x24)，调用方须等刷屏跑完再调本方法，
   /// 否则 0x13 会撞上设备忙(0x0B)白白失败（见 projection_service 收尾对 lastRefresh 的链式处理）。
   Future<void> endTransferSession() async {
-    try {
-      await requestPowerSaveConnection();
-      await applyIdleConnectionInterval();
-    } finally {
-      _finishTransferSession();
-    }
+    // 先降会话深度再回落：[applyIdleConnectionInterval] 会「图传会话开着就跳过」
+    // （防止后台下发的空闲档覆盖掉图传档），深度不先降，这次回落会被自己跳掉、
+    // 链路永远留在费电的极速间隔上。先降也不影响异常安全——深度一定被减。
+    _finishTransferSession();
+    await requestPowerSaveConnection();
+    await applyIdleConnectionInterval();
   }
 
   void _finishTransferSession() {
@@ -1025,8 +1273,10 @@ class FrameBleClient {
     // 发送节奏上界（ms）。3ms 对齐小程序 PACKET_PACE_MS：固件已扩大收包缓冲(10 包)，
     // 配合 7.5ms 连接间隔按最快速率喂数据。原来默认 10ms —— AIMD 每 6 个干净窗口才降 0.5ms，
     // 从 10 探到 0 要 120 个窗口，整张图的前 1/6 都跑在明显偏慢的节奏上。
-    int pace = transferPacketPaceMs,
-    int window = transferWindowPackets,
+    // null = 用当前 [BleTuning] 的值（默认 3ms / 10 包）。不能写成默认参数值，
+    // 因为它们已改成读运行时旋钮的 getter，而默认参数必须是编译期常量。
+    int? pace,
+    int? window,
     // 是否由本方法自己管理连接参数（设快 / 传完恢复省电）。
     // 批量投屏请传 false，改由调用方在**整批**首尾各调一次
     // [beginTransferSession] / [endTransferSession] —— 否则每张之间链路会掉回
@@ -1054,6 +1304,8 @@ class FrameBleClient {
     }
     _imgUploadBusy = true;
 
+    final int paceMs = pace ?? transferPacketPaceMs;
+    final int windowSize = window ?? transferWindowPackets;
     final dataSize = data.length;
     // D2：只认 dataSize 对得上的预处理结果（防止把别张图的 prepared 传错进来——CRC32/帧都会错，
     // 设备端 0x22 校验必失败）；对得上就复用其整图 CRC32，跳过 0x20 前对整图再扫一遍。
@@ -1096,11 +1348,11 @@ class FrameBleClient {
       }
 
       final chunk = dataChunk;
-      final win = window < 1
+      final win = windowSize < 1
           ? 1
-          : (window > transferWindowMaxPackets
+          : (windowSize > transferWindowMaxPackets
                 ? transferWindowMaxPackets
-                : window); // 固件收包缓冲 10 包，夹到 [1,10]
+                : windowSize); // 固件收包缓冲 10 包，夹到 [1,10]
       final totalPackets = (dataSize + chunk - 1) ~/ chunk;
 
       // D1：预取阶段按会话分包大小预组好的全部 0x21 帧，分包/帧数对得上才用（会话重建后 MTU 可能变化）；
@@ -1115,10 +1367,15 @@ class FrameBleClient {
 
       int nextSeq = 0;
       int retries = 0;
-      const paceFloor = 0.0;
+      // AIMD 的下探地板。默认 0（探到「不再主动 sleep」），可由 [BleTuning] 抬高——
+      // 用于验证 iOS 的无应答写是否在静默丢包（见 BleTuning.defaultPaceFloorMs 注释）。
+      // 夹到不超过起始 pace，否则地板高于起点会让 AIMD 逻辑自相矛盾。
+      final double paceFloor = BleTuning.paceFloorMs
+          .clamp(0.0, paceMs.toDouble())
+          .toDouble();
       const paceStep = 0.5;
       const paceProbeAfter = 6;
-      double curPace = pace.toDouble();
+      double curPace = paceMs.toDouble();
       int cleanRun = 0;
       _lastImgAck = -1;
       onProgress?.call(0, totalPackets, 'start');
@@ -1190,8 +1447,8 @@ class FrameBleClient {
             retries: retries,
           );
           nextSeq = _lastImgAck + 1;
-          curPace = curPace + paceStep > pace
-              ? pace.toDouble()
+          curPace = curPace + paceStep > paceMs
+              ? paceMs.toDouble()
               : curPace + paceStep;
           cleanRun = 0;
           final backoff = (50 * retries) > 150
@@ -1231,11 +1488,14 @@ class FrameBleClient {
       final dataMs = swData.elapsedMilliseconds;
       final kbps = dataMs > 0 ? (dataSize / 1024) / (dataMs / 1000) : 0.0;
       _perfLog(
-        '[BLEPerf] upload done mtu=$_mtu chunk=$chunk packets=$totalPackets '
-        'bytes=$dataSize dataMs=$dataMs endMs=${swEnd.elapsedMilliseconds} '
-        'throughput=${kbps.toStringAsFixed(1)}KB/s '
-        'retries=$totalRetries finalPace=${curPace.toStringAsFixed(1)}ms '
-        'reqInterval=${transferConnIntervalMs}ms ok=${endAck.ok}',
+        'upload',
+        'upload done mtu=$_mtu chunk=$chunk packets=$totalPackets '
+            'bytes=$dataSize dataMs=$dataMs endMs=${swEnd.elapsedMilliseconds} '
+            'throughput=${kbps.toStringAsFixed(1)}KB/s '
+            'retries=$totalRetries finalPace=${curPace.toStringAsFixed(1)}ms '
+            'reqInterval=${BleTuning.skipConnIntervalRequest ? 'none' : '$transferConnIntervalMs'}ms '
+            'win=$win writeWithoutResponse=$_imgWriteWithoutResponse '
+            'tuning=${BleTuning.describe()} ok=${endAck.ok}',
       );
 
       if (!endAck.ok) {
@@ -1263,14 +1523,25 @@ class FrameBleClient {
     return c > totalPackets ? totalPackets : c;
   }
 
+  /// 图传数据包实际用的写方式。
+  ///
+  /// 默认沿用特征声明的无应答写（快）。[BleTuning.forceAckedWrite] 打开且特征确实支持
+  /// 有应答写时改用有应答写——只作诊断用途：有应答写每包都等外设确认，天然有背压、
+  /// 绝不静默丢包，若切过去 `retries` 就归零，即坐实了「无应答写在丢包」。
+  bool get _imgWriteWithoutResponse {
+    if (BleTuning.forceAckedWrite && _supportsAckedWrite) return false;
+    return _writeWithoutResponse;
+  }
+
   /// 写一个图传数据包（[frame] 为已组好的完整 0x21 帧），带「缓冲忙就退避重试」。
   Future<void> _writePacket(Uint8List frame) async {
     final chr = _writeChar;
     if (chr == null) throw FrameBleException('未连接或未发现写特征');
     int attempt = 0;
+    final withoutResponse = _imgWriteWithoutResponse;
     while (true) {
       try {
-        await chr.write(frame, withoutResponse: _writeWithoutResponse);
+        await chr.write(frame, withoutResponse: withoutResponse);
         return;
       } catch (e) {
         if (++attempt > 4) rethrow;

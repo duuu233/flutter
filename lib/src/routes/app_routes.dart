@@ -17,6 +17,7 @@ import '../features/devices/presentation/bind_device_flow.dart';
 import '../features/devices/presentation/bind_device_found.dart';
 import '../features/devices/presentation/bind_device_not_found.dart';
 import '../features/devices/presentation/ble_debug_page.dart';
+import '../features/devices/presentation/ble_perf_page.dart';
 import '../features/devices/presentation/carousel_settings_page.dart';
 import '../features/devices/presentation/delete_device_flow.dart';
 import '../features/devices/presentation/device_clear_flow.dart';
@@ -110,6 +111,12 @@ class AppRoutes {
   static const guide = '/guide';
   static const settings = '/settings';
   static const bleDebug = '/ble-debug';
+
+  /// 投屏性能自检页。与 [bleDebug] 不同，本页**在 release 包里也可达**——
+  /// iOS 正式包没有任何应用内日志、没有 Mac 就拿不到 Xcode 输出，
+  /// 「15ms 连接间隔生没生效」只能靠这一页在机内自证（见 ble_perf_page 头注释）。
+  /// 入口是隐藏的：设置 → 更新 BoltStar → 连点版本号 7 次。
+  static const blePerf = '/ble-perf';
   static const figmaForgotPassword = '/figma/forgot-password';
   static const figmaModifyPassword = '/figma/modify-password';
   static const figmaRegister = '/figma/register';
@@ -165,6 +172,11 @@ class AppRoutes {
         builder = kDebugMode
             ? (_) => const BleDebugPage()
             : (_) => const Scaffold(body: SizedBox.shrink());
+        break;
+      case AppRoutes.blePerf:
+        // 刻意**不**按 kDebugMode 屏蔽：这页存在的全部意义就是在正式包里看数字。
+        // 它只读链路统计、跑自检、调发送参数，不发删除类指令，入口也是隐藏手势。
+        builder = (_) => const BlePerfPage();
         break;
       case AppRoutes.figmaForgotPassword:
         builder = (_) => ForgotPassword(state: state);
