@@ -371,3 +371,18 @@
     本轮不擅自加依赖，按住仍只给同语义占位提示（`aiVoicePending`）。要补齐请先确认可以加依赖。
   - **保存到系统相册**：Flutter 无内置相册写入能力（需 gal / image_gallery_saver），「下载」仍只落应用缓存目录。
   - **小程序侧的滚动条隐藏**（`::-webkit-scrollbar`）是 WebView 专属问题，App 无需同步。
+
+## 2026-07-27 同尺寸多设备身份校验与电量缓存复核
+
+- **确认 Flutter 存在“点击 A 可能连接 B”的同类问题并已修复**：
+  `matchScannedDevice` 原来仅用广播 4 字节短 ID + 屏幕尺寸选第一个候选，连接后没有用 `0x01`
+  的 6 字节完整 ID 验证用户点击的后端记录；活动会话复用也可能被共享短 ID 误命中。
+- 现改为“广播仅筛候选 → 建连读取完整 ID → 严格确认 → 不一致断开并排除候选后继续扫描”。
+  后端已有完整 ID 时绝不降级为短 ID；名称仍不作为物理身份依据。
+- 落点：`lib/src/device/serial_match.dart`、`lib/src/device/ble_controller.dart`、
+  `test/serial_match_test.dart`。
+- **电量策略同步复核**：小程序改回 15 秒缓存优先、旧值持续展示；Flutter 原本就由
+  `DeviceItem.batteryLevel` + `_carryOverBleFields` 保留旧值，页面刷新 `0x01` 前不清空，
+  读取成功后原位更新、失败保持旧值，因此没有 `-- → 真值` 闪烁，无需改成先清空。
+- 详细根因、规则和真机验收见
+  `docs/2026-07-27-同尺寸设备身份校验与电量缓存.md`。

@@ -163,8 +163,9 @@ class BleController extends ChangeNotifier {
   int get sessionScreenCode =>
       info != null ? info!.screenType : broadcastScreenType;
 
-  /// 这台后端记录的序列号是否指向当前活动会话（容错交叉匹配：
-  /// 广播 4 字节 vs 后端 6 字节互为子串也算同一台）。
+  /// 这台后端记录的序列号是否指向当前活动会话。
+  /// 后端已有 6 字节完整 ID 时，必须由会话 0x01 完整 ID 精确确认；
+  /// 不能仅凭可能重复的广播 4 字节短 ID 复用会话。
   /// [screenCode]：设备记录的屏幕类型码（FrameScreenType.code）。传入后先按型号一票否决，
   /// 防「序列号 4/6 字节偶合」把不同型号设备误认成当前会话（跨型号串台）。
   bool sessionMatchesSerial(String serial, {int screenCode = 0}) {
@@ -174,7 +175,7 @@ class BleController extends ChangeNotifier {
     if (!sameScreenCode(screenCode, sessionScreenCode)) {
       return false;
     }
-    return sessionSerials.any((s) => serialsMatch(s, serial));
+    return sessionSerialsMatch(sessionSerials, serial);
   }
 
   /// 扫描结果的展示名：platformName → 广播名 → MAC。
@@ -261,9 +262,13 @@ class BleController extends ChangeNotifier {
     required String serial,
     String name = '',
     int screenCode = 0,
+    Set<String> excludedDeviceIds = const {},
   }) {
     if (serial.trim().isNotEmpty) {
       for (final result in found) {
+        if (excludedDeviceIds.contains(result.device.remoteId.str)) {
+          continue;
+        }
         final ad = advertisingOf(result);
         if (ad == null) {
           continue;
@@ -283,6 +288,9 @@ class BleController extends ChangeNotifier {
       return null;
     }
     for (final result in found) {
+      if (excludedDeviceIds.contains(result.device.remoteId.str)) {
+        continue;
+      }
       if (displayName(result).trim() == target) {
         return result;
       }
@@ -432,10 +440,50 @@ class BleController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// 对已建立的 GATT 会话做最终身份确认。
+  ///
+  /// 扫描广播只有 4 字节短 ID，同尺寸设备可能相同；必须读取 0x01 的 6 字节完整
+  /// Device_ID 后再与用户点击的后端记录核对。名称是可编辑展示字段，不参与物理身份。
+  Future<bool> _verifyBoundDeviceIdentity({
+    required String serial,
+    required int screenCode,
+  }) async {
+    if (serial.trim().isEmpty) {
+      return true; // 没有稳定 ID 的旧记录沿用名称扫描兼容路径。
+    }
+    if (!sameScreenCode(screenCode, sessionScreenCode)) {
+      return false;
+    }
+    var actual = info?.deviceId ?? '';
+    if (actual.isEmpty) {
+      try {
+        info = await _client.readTransferInfo();
+        actual = info?.deviceId ?? '';
+        notifyListeners();
+      } catch (error) {
+        debugPrint(
+          '[BLE identity] failed to read 0x01 expected=$serial error=$error',
+        );
+        return false;
+      }
+    }
+    final matched = verifiedDeviceSerialMatch(serial, actual);
+    if (!matched) {
+      debugPrint(
+        '[BLE identity] mismatch expected=${normalizeSerial(serial)} '
+        'actual=${normalizeSerial(actual)} '
+        'broadcast=${normalizeSerial(broadcastDeviceId)} '
+        'name=$deviceName',
+      );
+    }
+    return matched;
+  }
+
   /// 连接一台已绑定设备（移植小程序 active-device.ensureDeviceConnected 语义）。
-  /// ① 已有活动会话且序列号交叉匹配 → 直接复用（切页/改名/重拉列表后不再重扫，
+  /// ① 已有活动会话且完整身份匹配 → 直接复用（切页/改名/重拉列表后不再重扫，
   ///    否则设备被自己这条会话占线不广播，重扫必然搜不到）；
-  /// ② 否则扫描 → 只按序列号容错匹配（见 [matchScannedDevice]）→ 连接并读设备信息。
+  /// ② 否则扫描广播只筛候选 → 建连读取 0x01 完整 ID 严格确认；
+  /// ③ 身份不符则断开、排除该 BLE 候选并继续扫描，绝不把 B 会话认领给 A。
   /// 成功返回 null，失败返回错误文案。
   Future<String?> connectBoundDevice({
     required String serial,
@@ -453,6 +501,21 @@ class BleController extends ChangeNotifier {
       trace.finish(success: true);
       return null;
     }
+    // 现有会话可能只登记到广播短 ID（此前 0x01 读取失败）。如果它看起来像目标，
+    // 先补读 0x01 验身；确认成功即可复用，失败再断开重扫。
+    if (connected &&
+        sameScreenCode(screenCode, sessionScreenCode) &&
+        sessionSerials.any((value) => serialsMatch(value, serial))) {
+      if (await _verifyBoundDeviceIdentity(
+        serial: serial,
+        screenCode: screenCode,
+      )) {
+        _connectionLease.noteActivity();
+        trace.mark('reuse-verified-active-session');
+        trace.finish(success: true);
+        return null;
+      }
+    }
     final permitted = await trace.measure('permission', ensurePermission);
     if (!permitted) {
       trace.finish(success: false, stage: 'permission-denied');
@@ -462,43 +525,63 @@ class BleController extends ChangeNotifier {
     if (connected) {
       await trace.measure('disconnect-previous-session', disconnect);
     }
-    final found = await trace.measure(
-      'scan',
-      () => scan(
-        // 12 秒（原 6 秒）：相框被 GATT 占着时不广播，断开后要好几秒才恢复广播。
-        // 6 秒窗口在「断开→立刻重连」时经常等不到设备现身就判 target-not-found，
-        // 用户表现为「要点两次才连上」。有 until 命中即停兜底，设备已在广播时
-        // 依然是扫到即走（通常 <1s），加长窗口只影响设备确实还没现身的场景。
-        timeout: const Duration(seconds: 12),
-        until: (list) =>
-            matchScannedDevice(
-              list,
-              serial: serial,
-              name: name,
-              screenCode: screenCode,
-            ) !=
-            null,
-      ),
-    );
-    final target = matchScannedDevice(
-      found,
-      serial: serial,
-      name: name,
-      screenCode: screenCode,
-    );
-    if (target == null) {
-      trace.finish(success: false, stage: 'target-not-found');
-      return _l10n.bleDeviceNotFound;
+    final excludedDeviceIds = <String>{};
+    String? lastConnectError;
+    // 同短 ID 设备通常为两台；最多核验 4 个候选，避免异常广播环境下无限循环。
+    for (var attempt = 0; attempt < 4; attempt += 1) {
+      final found = await trace.measure(
+        'scan-${attempt + 1}',
+        () => scan(
+          // 12 秒（原 6 秒）：相框被 GATT 占着时不广播，断开后要好几秒才恢复广播。
+          // 排除已验错候选后继续扫，直到找到另一个同短 ID、同尺寸候选。
+          timeout: const Duration(seconds: 12),
+          until: (list) =>
+              matchScannedDevice(
+                list,
+                serial: serial,
+                name: name,
+                screenCode: screenCode,
+                excludedDeviceIds: excludedDeviceIds,
+              ) !=
+              null,
+        ),
+      );
+      final target = matchScannedDevice(
+        found,
+        serial: serial,
+        name: name,
+        screenCode: screenCode,
+        excludedDeviceIds: excludedDeviceIds,
+      );
+      if (target == null) {
+        break;
+      }
+      final remoteId = target.device.remoteId.str;
+      final error = await trace.measure(
+        'connect-and-read-info-${attempt + 1}',
+        () => connect(target),
+      );
+      if (error != null) {
+        lastConnectError = error;
+        excludedDeviceIds.add(remoteId);
+        if (connected) {
+          await disconnect();
+        }
+        continue;
+      }
+      if (await _verifyBoundDeviceIdentity(
+        serial: serial,
+        screenCode: screenCode,
+      )) {
+        trace.finish(success: true, stage: 'identity-verified');
+        return null;
+      }
+      excludedDeviceIds.add(remoteId);
+      await disconnect();
+      trace.mark('identity-mismatch-excluded-$remoteId');
     }
-    final error = await trace.measure(
-      'connect-and-read-info',
-      () => connect(target),
-    );
-    trace.finish(
-      success: error == null,
-      stage: error == null ? 'complete' : 'connect-failed',
-    );
-    return error;
+    trace.finish(success: false, stage: 'verified-target-not-found');
+    return lastConnectError ?? _l10n.bleDeviceNotFound;
   }
 
   /// 回前台「连接体检」（移植小程序 device-ble.reconcileConnections）：

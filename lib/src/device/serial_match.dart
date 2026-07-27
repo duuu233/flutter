@@ -39,6 +39,69 @@ bool serialsMatch(Object? a, Object? b) {
   return longer.startsWith(shorter) || longer.endsWith(shorter);
 }
 
+/// 多来源序列号集合是否指向同一台设备。
+///
+/// 广播短 ID 可能在两台同批次设备之间重复，因此两侧若存在相同长度的 ID，
+/// 只比较最长的共同长度并要求精确相等；不能因为又共享一个短 ID 就放行。
+bool serialSetsMatch(Iterable<Object?> a, Iterable<Object?> b) {
+  final left = a
+      .map(normalizeSerial)
+      .where((value) => value.isNotEmpty)
+      .toSet();
+  final right = b
+      .map(normalizeSerial)
+      .where((value) => value.isNotEmpty)
+      .toSet();
+  if (left.isEmpty || right.isEmpty) {
+    return false;
+  }
+  final commonLengths = left
+      .map((value) => value.length)
+      .where((length) => right.any((value) => value.length == length))
+      .toList();
+  if (commonLengths.isNotEmpty) {
+    final longest = commonLengths.reduce((a, b) => a > b ? a : b);
+    final expected = left.where((value) => value.length == longest).toSet();
+    return right.any(
+      (value) => value.length == longest && expected.contains(value),
+    );
+  }
+  return left.any((x) => right.any((y) => serialsMatch(x, y)));
+}
+
+/// 已连接设备的 0x01 完整 ID 是否与用户点击的后端记录一致。
+///
+/// 后端已有 6 字节完整 ID 时必须精确相等；只有后端本身仅保存广播短 ID 的
+/// 兼容记录，才允许短 ID 与完整 ID 做前/后缀锚定。
+bool verifiedDeviceSerialMatch(Object? expected, Object? actual) {
+  final left = normalizeSerial(expected);
+  final right = normalizeSerial(actual);
+  if (left.isEmpty || right.isEmpty) {
+    return false;
+  }
+  if (left.length >= 12) {
+    return left == right;
+  }
+  return serialsMatch(left, right);
+}
+
+/// 活动会话是否足以认领后端设备记录。后端为完整 ID 时，会话必须也登记到
+/// 0x01 完整 ID 且精确相等，不能仅凭双方共享的广播短 ID 复用会话。
+bool sessionSerialsMatch(Iterable<Object?> session, Object? expected) {
+  final target = normalizeSerial(expected);
+  final serials = session
+      .map(normalizeSerial)
+      .where((value) => value.isNotEmpty)
+      .toSet();
+  if (target.isEmpty || serials.isEmpty) {
+    return false;
+  }
+  if (target.length >= 12) {
+    return serials.any((value) => value.length >= 12 && value == target);
+  }
+  return serials.any((value) => serialsMatch(value, target));
+}
+
 /// 屏幕型号是否一致（防跨型号串台，对齐小程序 active-device.sameScreen）：
 /// 两侧屏幕类型码都已知且不同 → 判为不同型号设备，返回 false；
 /// 任一侧未知(0) → 不阻断，回退纯序列号匹配（信息缺失不拦，保持兼容）。

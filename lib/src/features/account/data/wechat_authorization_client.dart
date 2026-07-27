@@ -68,7 +68,10 @@ class WeChatAuthorizationConfig {
 
   factory WeChatAuthorizationConfig.fromEnvironment() {
     return const WeChatAuthorizationConfig(
-      appId: String.fromEnvironment('WECHAT_APP_ID'),
+      appId: String.fromEnvironment(
+        'WECHAT_APP_ID',
+        defaultValue: 'wx4cf0c5f38a70d0bc',
+      ),
       universalLink: String.fromEnvironment('WECHAT_UNIVERSAL_LINK'),
     );
   }

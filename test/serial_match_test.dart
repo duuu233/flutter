@@ -58,6 +58,35 @@ void main() {
     });
   });
 
+  group('完整设备身份校验', () {
+    const fullA = 'E948C21ED428';
+    const fullB = 'E448C21ED428';
+    const sharedShort = 'C21ED428';
+
+    test('两组都含相同短 ID，但完整 ID 不同 → 不是同一台', () {
+      expect(
+        serialSetsMatch([sharedShort, fullA], [sharedShort, fullB]),
+        isFalse,
+      );
+    });
+
+    test('后端完整 ID 必须与 0x01 完整 ID 精确相等', () {
+      expect(verifiedDeviceSerialMatch(fullA, fullA), isTrue);
+      expect(verifiedDeviceSerialMatch(fullA, fullB), isFalse);
+      expect(verifiedDeviceSerialMatch(fullA, sharedShort), isFalse);
+    });
+
+    test('后端只有短 ID 时保留旧设备兼容', () {
+      expect(verifiedDeviceSerialMatch(sharedShort, fullA), isTrue);
+    });
+
+    test('完整后端 ID 不得仅凭会话广播短 ID 复用', () {
+      expect(sessionSerialsMatch([sharedShort], fullA), isFalse);
+      expect(sessionSerialsMatch([sharedShort, fullA], fullA), isTrue);
+      expect(sessionSerialsMatch([sharedShort, fullB], fullA), isFalse);
+    });
+  });
+
   group('sameScreenCode', () {
     test('两侧都已知且相同 → 同型号', () {
       expect(sameScreenCode(0x01, 0x01), isTrue);
