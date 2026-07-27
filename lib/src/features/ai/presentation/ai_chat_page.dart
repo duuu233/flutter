@@ -83,6 +83,9 @@ class AiChatPage extends StatefulWidget {
       page._handleSessionDeleted(sessionId);
     }
   }
+
+  @override
+  State<AiChatPage> createState() => _AiChatPageState();
 }
 
 /// 当前活着的聊天页实例（页面栈里可能同时躺着好几个：每从会话列表打开一条会话就多一个）。
@@ -1365,7 +1368,7 @@ class _AiChatPageState extends State<AiChatPage> {
             child: showWelcome
                 ? _buildWelcome()
                 : Opacity(
-                    opacity: _chatReady ? 1 : 0,
+                    opacity: _chatReady ? 1.0 : 0.0,
                     child: ListView.builder(
                       controller: _scroll,
                       padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
@@ -1479,8 +1482,8 @@ class _AiChatPageState extends State<AiChatPage> {
               Padding(
                 padding: EdgeInsets.only(
                   top: (i == 0 && message.content.isEmpty && !message.loading)
-                      ? 0
-                      : 8,
+                      ? 0.0
+                      : 8.0,
                 ),
                 child: _buildBubbleImage(message, i),
               ),
