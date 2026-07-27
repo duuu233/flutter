@@ -30,18 +30,18 @@ bool _clearFlowBusy = false;
 Future<void> startClearDeviceFlow(
   BuildContext context,
   PhotoFrameState state,
+  String deviceId,
 ) async {
   if (_clearFlowBusy) {
     return;
   }
-  final deviceId = state.selectedDeviceId;
   if (deviceId.isEmpty) {
     return;
   }
   // 入口先判连接（对齐小程序 detail.js：未连接直接提示，不进两步确认）。
   // clearDeviceMemory 不自动扫连，不在这里拦的话用户点完两步确认才看到
   // 「请先连接设备」——白走一遍确认流程。与轮播设置入口同一形态（app_routes）。
-  if (!state.deviceById(deviceId).connected) {
+  if (!state.isDeviceActuallyConnected(deviceId)) {
     AppToast.show(context, AppL10n.of(context).devConnectFirst);
     return;
   }

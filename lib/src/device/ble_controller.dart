@@ -622,6 +622,8 @@ class BleController extends ChangeNotifier {
   /// 真实升级要求当前已连接设备（[connected]），否则抛 [OtaException]。
   Future<OtaResult> upgradeFirmware(
     OtaFirmwarePackage pkg, {
+    String expectedSerial = '',
+    int expectedScreenCode = 0,
     void Function(OtaProgress)? onProgress,
     bool Function()? shouldAbort,
     void Function(String dir, String hex)? onMonitor,
@@ -639,6 +641,13 @@ class BleController extends ChangeNotifier {
     final dev = _client.device;
     if (dev == null || !_client.connected) {
       throw OtaException('设备未连接，请先在详情页连接设备后再升级');
+    }
+    if (expectedSerial.isEmpty ||
+        !sessionMatchesSerial(
+          expectedSerial,
+          screenCode: expectedScreenCode,
+        )) {
+      throw OtaException('当前连接的不是要升级的设备，请返回详情页重新连接');
     }
 
     final ota = FrameOtaClient(dev)..onMonitor = onMonitor;

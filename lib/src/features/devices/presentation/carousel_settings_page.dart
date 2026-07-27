@@ -12,9 +12,14 @@ import '../../../state.dart';
 /// 断线则自动扫连，再走真实 BLE `setPlayback`（见 [PhotoFrameState.setDeviceCarousel]）；
 /// 未开启轮播时「轮播方式」置灰不可选（对齐小程序 `is-disabled`）。
 class CarouselSettingsPage extends StatefulWidget {
-  const CarouselSettingsPage({super.key, required this.state});
+  const CarouselSettingsPage({
+    super.key,
+    required this.state,
+    required this.deviceId,
+  });
 
   final PhotoFrameState state;
+  final String deviceId;
 
   @override
   State<CarouselSettingsPage> createState() => _CarouselSettingsPageState();
@@ -36,9 +41,11 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
   @override
   void initState() {
     super.initState();
-    final device = widget.state.selectedDevice;
+    final device = widget.state.deviceById(widget.deviceId);
     // 连接才可信：未连接一律按「未开启」展示（对齐小程序 computeCarouselOn / 连接前不允许开启）。
-    _enabled = device.connected && device.carouselEnabled;
+    _enabled =
+        widget.state.isDeviceActuallyConnected(device.id) &&
+        device.carouselEnabled;
     _mode = device.playbackMode == FramePlaybackMode.manual
         ? FramePlaybackMode.sequence
         : device.playbackMode;
@@ -58,7 +65,7 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
     final ActionFeedback feedback;
     try {
       feedback = await widget.state.setDeviceCarousel(
-        widget.state.selectedDevice.id,
+        widget.deviceId,
         enabled: enabled,
         mode: mode,
       );

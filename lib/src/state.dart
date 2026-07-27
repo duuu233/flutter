@@ -629,12 +629,12 @@ class PhotoFrameState extends ChangeNotifier {
         if (device.id != deviceId) {
           continue;
         }
-        // 单连接模型：这台设备确实占着活动会话（序列号交叉匹配）或页面显示已连接时才真正断开。
-        if (device.connected ||
-            ble.sessionMatchesSerial(
-              device.serialNumber,
-              screenCode: device.screenType.code,
-            )) {
+        // 只允许目标设备自己占用的会话触发物理断开。缓存的 connected
+        // 可能在切页/刷新期间过期，不能据此断开当前属于另一台设备的会话。
+        if (ble.sessionMatchesSerial(
+          device.serialNumber,
+          screenCode: device.screenType.code,
+        )) {
           await trace.measure('ble-disconnect', ble.disconnect);
         } else {
           trace.mark('ble-disconnect-skipped');
@@ -671,6 +671,15 @@ class PhotoFrameState extends ChangeNotifier {
         device.serialNumber,
         screenCode: device.screenType.code,
       );
+
+  /// [deviceId] 对应的后端设备记录是否正是当前 BLE 活动会话的物理设备。
+  ///
+  /// 页面和业务动作必须使用这个判断，不能只看 [DeviceItem.connected] 或
+  /// [BleController.connected]；后两者可能是刷新前的缓存，或仅表示连着另一台设备。
+  bool isDeviceActuallyConnected(String deviceId) {
+    final device = _deviceByIdOrNull(deviceId);
+    return device != null && _sessionMatches(device);
+  }
 
   /// 用真实 BLE 会话对账各设备的「已连接」显示（回前台连接体检后调用，
   /// 对齐小程序 app.onShow → reconcileConnections 落到 UI 的那一步）。
@@ -2109,7 +2118,7 @@ class PhotoFrameState extends ChangeNotifier {
         target = null;
       }
       final tasks = <Future<void>>[];
-      if (target != null && (target.connected || _sessionMatches(target))) {
+      if (target != null && _sessionMatches(target)) {
         // BLE 释放与后端解绑互不依赖，并行执行，避免两段耗时串行叠加。
         tasks.add(() async {
           try {

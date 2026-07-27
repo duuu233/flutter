@@ -20,6 +20,7 @@ class DeviceDetailsPage extends StatefulWidget {
   const DeviceDetailsPage({
     super.key,
     required this.state,
+    required this.deviceId,
     this.onCarouselSettings,
     this.onClearDevice,
     this.onDeleteDevice,
@@ -27,6 +28,7 @@ class DeviceDetailsPage extends StatefulWidget {
   });
 
   final PhotoFrameState state;
+  final String deviceId;
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
   final VoidCallback? onDeleteDevice;
@@ -39,13 +41,14 @@ class DeviceDetailsPage extends StatefulWidget {
 class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   // 让本 State 内既有的 `state.xxx` 调用继续可用（无需逐处改成 widget.state）。
   PhotoFrameState get state => widget.state;
+  DeviceItem get device => state.deviceById(widget.deviceId);
 
   @override
   void initState() {
     super.initState();
     // 打开即重读一次真机内存/索引（对齐小程序 detail.js onShow→loadDetail→readDeviceInfo，Bug13）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      state.refreshSelectedDeviceMemory();
+      state.refreshConnectedDeviceInfo(widget.deviceId);
     });
   }
 
@@ -67,7 +70,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   // 从被覆盖页（投屏预览/清空/删除确认等）返回时再读一次内存（对齐小程序 onShow）。
   @override
   void didPopNext() {
-    state.refreshSelectedDeviceMemory();
+    state.refreshConnectedDeviceInfo(widget.deviceId);
   }
 
   @override
@@ -78,6 +81,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
         animation: state,
         builder: (context, _) => DeviceDetailsBody(
           state: state,
+          deviceId: widget.deviceId,
           onEditName: () => _renameDevice(context),
           onConnectToggle: () => _toggleConnection(context),
           onCast: () => _startCast(context),
@@ -96,7 +100,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
 
   /// 摘要卡编辑图标：重命名当前设备（对齐小程序 detail.js `showRenameModal`）。
   Future<void> _renameDevice(BuildContext context) async {
-    final device = state.selectedDevice;
+    final device = this.device;
     final controller = TextEditingController(text: device.name);
     final String? name;
     try {
@@ -144,8 +148,8 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   }
 
   Future<void> _doToggleConnection(BuildContext context) async {
-    final device = state.selectedDevice;
-    final wasConnected = device.connected;
+    final device = this.device;
+    final wasConnected = state.isDeviceActuallyConnected(device.id);
     // 连接方向先单独走授权框，全就绪才弹「连接中」loading（断开无需权限）。
     if (!wasConnected &&
         (!await PermissionGate.ensureBleReady(context) || !context.mounted)) {
@@ -205,8 +209,8 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
 
   /// 顶部操作栏「投屏」：未连接自动扫连 → 拍照/相册 → 真实投屏（对齐小程序 detail.js `startProjection`）。
   Future<void> _startCast(BuildContext context) async {
-    final device = state.selectedDevice;
-    if (!device.connected) {
+    final device = this.device;
+    if (!state.isDeviceActuallyConnected(device.id)) {
       final connected = await _ensureConnected(context, device.id);
       if (!connected || !context.mounted) {
         return;
@@ -236,7 +240,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     await Navigator.of(context).push<void>(
       AppPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
-        builder: (_) => CastPreviewPage(device: device, imagePaths: imagePaths),
+        builder: (_) => CastPreviewPage(
+          state: state,
+          device: state.deviceById(device.id),
+          imagePaths: imagePaths,
+        ),
       ),
     );
     state.refreshAlbum();
@@ -249,6 +257,7 @@ class DeviceDetailsBody extends StatelessWidget {
   const DeviceDetailsBody({
     super.key,
     required this.state,
+    required this.deviceId,
     this.onEditName,
     this.onConnectToggle,
     this.onCast,
@@ -259,6 +268,7 @@ class DeviceDetailsBody extends StatelessWidget {
   });
 
   final PhotoFrameState state;
+  final String deviceId;
 
   /// 摘要卡编辑图标点击（重命名）；为空则不可点（如清空/删除确认页复用正文时）。
   final VoidCallback? onEditName;
@@ -275,10 +285,10 @@ class DeviceDetailsBody extends StatelessWidget {
   final VoidCallback? onOtaUpgrade;
 
   String _carouselLabel(BuildContext context) {
-    final device = state.selectedDevice;
+    final device = state.deviceById(deviceId);
     final l10n = AppL10n.of(context);
     // 轮播设置是「连接才可信」的实时数据：未连接（含断开设备后）一律 -- 占位，与小程序详情页一致。
-    if (!device.connected) {
+    if (!state.isDeviceActuallyConnected(device.id)) {
       return '--';
     }
     // 对齐小程序 getPlaybackLabel：manual 或未启用 → 「未启用」。
@@ -304,7 +314,8 @@ class DeviceDetailsBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final device = state.selectedDevice;
+    final device = state.deviceById(deviceId);
+    final connected = state.isDeviceActuallyConnected(device.id);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -360,7 +371,7 @@ class DeviceDetailsBody extends StatelessWidget {
                     Row(
                       children: [
                         Image.asset(
-                          device.connected
+                          connected
                               ? 'assets/images/bluetooth-icon.png'
                               : 'assets/images/bluetooth-icon-not.png',
                           width: 11,
@@ -371,18 +382,18 @@ class DeviceDetailsBody extends StatelessWidget {
                         ),
                         const SizedBox(width: 5),
                         Text(
-                          device.connected
+                          connected
                               ? AppL10n.of(context).devConnected
                               : AppL10n.of(context).devDisconnected,
                           style: TextStyle(
-                            color: device.connected
+                            color: connected
                                 ? const Color(0xFF287DFF)
                                 : const Color(0xFF9BA2AD),
                             fontSize: 12,
                             height: 1,
                           ),
                         ),
-                        if (device.connected) ...[
+                        if (connected) ...[
                           const SizedBox(width: 15),
                           Image.asset(
                             _batteryAsset(device.batteryLevel),
@@ -459,17 +470,17 @@ class DeviceDetailsBody extends StatelessWidget {
                 if (onConnectToggle != null)
                   Expanded(
                     child: _DeviceActionButton(
-                      iconAsset: device.connected
+                      iconAsset: connected
                           ? 'assets/images/disconnect-icon01.png'
                           : 'assets/images/bluetooth-connection.png',
-                      fallbackIcon: device.connected
+                      fallbackIcon: connected
                           ? Icons.link_off_rounded
                           : Icons.bluetooth_rounded,
                       iconSize: 16,
-                      label: device.connected
+                      label: connected
                           ? AppL10n.of(context).devDisconnectShort
                           : AppL10n.of(context).devConnectShort,
-                      color: device.connected
+                      color: connected
                           ? const Color(0xFFEB5F1B)
                           : const Color(0xFF2079FC),
                       onTap: onConnectToggle,
@@ -501,7 +512,7 @@ class DeviceDetailsBody extends StatelessWidget {
                 // 设备ID只在已连接时展示（用户定版：未连接一律 -- 占位）。
                 // 也**不再回退 device.id**——那是后端记录主键 userProductId，
                 // 不是设备ID，回退显示会让用户以为设备有个「默认ID」。
-                value: device.connected && device.serialNumber.isNotEmpty
+                value: connected && device.serialNumber.isNotEmpty
                     ? device.serialNumber
                     : '--',
               ),
@@ -512,7 +523,7 @@ class DeviceDetailsBody extends StatelessWidget {
                 label: AppL10n.of(context).devDeviceMemory,
                 // 内存占用是连接才读得到的实时数据（0x01 的 IMG_MASK）：未连接（含断开设备后）一律 --，
                 // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
-                value: device.connected
+                value: connected
                     ? '${device.imageCount}/${device.capacity}'
                     : '--',
               ),

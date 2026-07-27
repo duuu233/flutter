@@ -1150,12 +1150,13 @@ class _AiChatPageState extends State<AiChatPage> {
   Future<void> _castImage(String url) async {
     final selected = widget.state.selectedDevice;
     DeviceItem? target = selected.isPlaceholder ? null : selected;
-    if (target == null || !target.connected) {
+    if (target == null ||
+        !widget.state.isDeviceActuallyConnected(target.id)) {
       target = await _pickDevice();
       if (target == null || !mounted) {
         return;
       }
-      if (!target.connected) {
+      if (!widget.state.isDeviceActuallyConnected(target.id)) {
         AppLoadingDialog.show(context, AppL10n.of(context).castConnectingDevice);
         final feedback = await widget.state.connectDevice(target.id);
         AppLoadingDialog.hide(context);

@@ -102,7 +102,10 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
           },
           onOpenDetail: (deviceId) {
             state.selectDevice(deviceId);
-            Navigator.of(context).pushNamed<void>(AppRoutes.figmaDeviceDetails);
+            Navigator.of(context).pushNamed<void>(
+              AppRoutes.figmaDeviceDetails,
+              arguments: deviceId,
+            );
           },
           onCast: (deviceId) => _startCast(context, deviceId),
           onRename: (deviceId, name) async {
@@ -158,11 +161,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
   Future<void> _startCast(BuildContext context, String deviceId) async {
     final state = widget.state;
     state.selectDevice(deviceId);
-    final device = state.devices.firstWhere(
-      (d) => d.id == deviceId,
-      orElse: () => state.selectedDevice,
-    );
-    if (!device.connected) {
+    if (!state.isDeviceActuallyConnected(deviceId)) {
       final connected = await _ensureConnected(context, deviceId);
       if (!connected || !context.mounted) {
         return;
@@ -188,6 +187,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
     if (!context.mounted || imagePaths.isEmpty) {
       return;
     }
+    final device = state.deviceById(deviceId);
     await Navigator.of(context).push<void>(
       AppPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。

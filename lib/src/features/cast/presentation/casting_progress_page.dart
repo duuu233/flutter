@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble/device_ble.dart' show FrameBleErrorKind;
+import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
@@ -126,16 +127,60 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       });
     }
 
-    // 2026-07-23 起再次/重新投屏与正常投屏同链路（抖动接口出帧 + 建记录），无 imgBle 直传分支。
-    final result = await service.castImages(
-      userProductId: widget.userProductId!,
-      filePaths: widget.imagePaths,
-      recordFilePaths: widget.originalPaths.isEmpty
-          ? null
-          : widget.originalPaths,
-      shouldAbort: () => _aborted,
-      onProgress: handleProgress,
-    );
+    DeviceItem? target = widget.device;
+    if (target == null &&
+        widget.state != null &&
+        widget.userProductId != null) {
+      final candidate = widget.state!.deviceById(
+        widget.userProductId.toString(),
+      );
+      if (!candidate.isPlaceholder) {
+        target = candidate;
+      }
+    }
+    final targetSerial = target?.serialNumber ?? '';
+    final targetScreenCode = target?.screenType.code ?? 0;
+    String? connectError;
+    if (target == null || targetSerial.trim().isEmpty) {
+      connectError = AppL10n.of(context).castFailureDisconnected;
+    } else if (widget.state != null &&
+        !widget.state!.isDeviceActuallyConnected(target.id)) {
+      handleProgress(
+        CastProgress(
+          percent: 0,
+          current: 0,
+          total: widget.imagePaths.length,
+          title: AppL10n.of(context).castStageTranscoding,
+          message: AppL10n.of(context).castConnectingDevice,
+        ),
+      );
+      final feedback = await widget.state!.connectDevice(target.id);
+      if (!feedback.success) {
+        connectError = feedback.message;
+      }
+    }
+
+    // 跳转后再次按目标设备 ID 确认会话：预览期间即使其它页面切换了连接，
+    // 这里也只会重连并投到原目标，不会复用同尺寸设备的旧句柄。
+    final result = connectError != null
+        ? ProjectionResult(
+            success: false,
+            uploaded: 0,
+            total: widget.imagePaths.length,
+            message: connectError,
+            failureKind: FrameBleErrorKind.connectFailed,
+          )
+        : await service.castImages(
+            userProductId: widget.userProductId!,
+            expectedSerial: targetSerial,
+            expectedScreenCode: targetScreenCode,
+            filePaths: widget.imagePaths,
+            recordFilePaths: widget.originalPaths.isEmpty
+                ? null
+                : widget.originalPaths,
+            shouldAbort: () => _aborted,
+            onProgress: handleProgress,
+          );
     if (!mounted) return;
     if (widget.state != null && widget.userProductId != null) {
       await widget.state!.refreshConnectedDeviceInfo(

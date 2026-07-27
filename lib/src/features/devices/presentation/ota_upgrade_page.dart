@@ -7,6 +7,7 @@ import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/ble/ota_ble.dart';
+import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
@@ -20,9 +21,15 @@ import '../../../state.dart';
 ///
 /// 与「更新 BoltStar」(App 版本更新，`update_boltstar_page`) 是两件事：这里升级的是相框设备固件。
 class OtaUpgradePage extends StatefulWidget {
-  const OtaUpgradePage({super.key, required this.state, this.autoStart = false});
+  const OtaUpgradePage({
+    super.key,
+    required this.state,
+    required this.deviceId,
+    this.autoStart = false,
+  });
 
   final PhotoFrameState state;
+  final String deviceId;
 
   /// 由详情页 OTA 入口的确认弹窗（立刻更新）进入时为 true：包就绪且已连接则自动开始升级
   /// （对齐小程序 goOtaUpgrade 确认后带 `auto=1` 自动开始）。
@@ -36,10 +43,14 @@ class OtaUpgradePage extends StatefulWidget {
 /// ① 未连接→自动扫连；② loading 下二次拉取版本(`getUserProductDetail`)；
 /// ③ 已最新/无有效包→提示后返回；④ 有新版→弹「检测到新版本 X，是否升级(稍后/立刻更新)」；
 /// ⑤ 确认「立刻更新」→进 OTA 页并 `autoStart` 自动开始。
-Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
-  final device = state.selectedDevice;
+Future<void> startOtaFlow(
+  BuildContext context,
+  PhotoFrameState state,
+  String deviceId,
+) async {
+  final device = state.deviceById(deviceId);
   // ① 未连接自动扫连（升级需设备在线）。
-  if (!BleController.instance.connected) {
+  if (!state.isDeviceActuallyConnected(device.id)) {
     // 权限门禁前置于 loading：授权框要单独出现，不与设备操作同屏（见 PermissionGate）。
     if (!await PermissionGate.ensureBleReady(context) || !context.mounted) {
       return;
@@ -99,7 +110,11 @@ Future<void> startOtaFlow(BuildContext context, PhotoFrameState state) async {
   // ⑤ 进 OTA 页并自动开始升级。
   await Navigator.of(context).push<void>(
     AppPageRoute(
-      builder: (_) => OtaUpgradePage(state: state, autoStart: true),
+      builder: (_) => OtaUpgradePage(
+        state: state,
+        deviceId: device.id,
+        autoStart: true,
+      ),
     ),
   );
 }
@@ -151,15 +166,10 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     super.dispose();
   }
 
-  String? get _deviceId {
-    try {
-      return widget.state.selectedDevice.id;
-    } catch (_) {
-      return null;
-    }
-  }
+  String? get _deviceId => widget.deviceId.isEmpty ? null : widget.deviceId;
 
-  bool get _connected => _ble.connected;
+  bool get _connected =>
+      widget.state.isDeviceActuallyConnected(widget.deviceId);
 
   static String _formatSize(int bytes) {
     if (bytes >= 1024 * 1024) {
@@ -204,7 +214,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     final l10n = AppL10n.of(context);
     DeviceItem device;
     try {
-      device = updated ?? widget.state.selectedDevice;
+      device = updated ?? widget.state.deviceById(id);
     } catch (_) {
       setState(() {
         _stage = _OtaStage.failed;
@@ -216,7 +226,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     }
 
     // 当前固件版本：优先取已连接设备 BLE 实读版本，其次后端详情版本。
-    final bleFw = _ble.info?.firmwareVersion ?? '';
+    final bleFw = _connected ? (_ble.info?.firmwareVersion ?? '') : '';
     final currentVersion = (bleFw.isNotEmpty ? bleFw : device.firmwareVersion).trim();
     final latestVersion = device.newVersionNo.trim();
     final alreadyLatest = _sameVersion(currentVersion, latestVersion);
@@ -340,8 +350,11 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     }
 
     try {
+      final target = widget.state.deviceById(widget.deviceId);
       final result = await _ble.upgradeFirmware(
         _buildPackage(dryRun: dryRun),
+        expectedSerial: target.serialNumber,
+        expectedScreenCode: target.screenType.code,
         dryRun: dryRun,
         pace: 3,
         onProgress: _onProgress,

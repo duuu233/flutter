@@ -112,6 +112,8 @@ class ServerImageProjectionService {
   /// 已成功传到设备的张数保留在设备上（本张成功即物理写入）。
   Future<ProjectionResult> castImages({
     required Object userProductId,
+    required String expectedSerial,
+    required int expectedScreenCode,
     required List<String> filePaths,
     List<String>? recordFilePaths,
     void Function(CastProgress)? onProgress,
@@ -133,7 +135,13 @@ class ServerImageProjectionService {
       originals.add(original.isNotEmpty ? original : path);
     }
 
-    if (!client.connected) {
+    // `client.connected` 只说明 App 连着某台设备。投屏前必须确认当前会话
+    // 就是页面携带的目标完整 ID，不能把同尺寸、同广播短 ID 的另一台当成目标。
+    if (expectedSerial.trim().isEmpty ||
+        !_ble.sessionMatchesSerial(
+          expectedSerial,
+          screenCode: expectedScreenCode,
+        )) {
       return const ProjectionResult(
         success: false,
         uploaded: 0,

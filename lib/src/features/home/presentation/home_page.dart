@@ -135,7 +135,9 @@ class _HomePageState extends State<HomePage> {
     if (selected.isNotEmpty) {
       return selected.first;
     }
-    final connected = devices.where((device) => device.connected);
+    final connected = devices.where(
+      (device) => widget.state.isDeviceActuallyConnected(device.id),
+    );
     return connected.isNotEmpty ? connected.first : devices.first;
   }
 
@@ -386,7 +388,7 @@ class _HomePageState extends State<HomePage> {
       );
       return;
     }
-    if (!activeDevice.connected) {
+    if (!widget.state.isDeviceActuallyConnected(activeDevice.id)) {
       // 未连接则自动扫连再投（对齐小程序 ensureActiveDeviceConnection）；连不上提示并中止。
       final connected = await _ensureConnected(activeDevice.id);
       if (!connected || !mounted) {
@@ -417,13 +419,14 @@ class _HomePageState extends State<HomePage> {
       true,
     );
 
+    final targetDevice = widget.state.deviceById(activeDevice.id);
     // 与小程序一致：选图后先进入投屏预览，可选择裁剪、旋转或保留原图，确认后再投屏。
     await Navigator.of(context).push<void>(
       AppPageRoute(
         // 选图后先进**投屏预览页**（裁剪/旋转/原图），确认后才开始投屏。
         builder: (_) => CastPreviewPage(
           state: widget.state,
-          device: activeDevice,
+          device: targetDevice,
           imagePaths: imagePaths,
         ),
       ),

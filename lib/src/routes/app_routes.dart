@@ -232,36 +232,57 @@ class AppRoutes {
         builder = (_) => DevicesPage(state: state);
         break;
       case AppRoutes.figmaDeviceDetails:
+        final detailDeviceId = settings.arguments is String
+            ? settings.arguments as String
+            : state.selectedDeviceId;
         builder = (context) => DeviceDetailsPage(
           state: state,
+          deviceId: detailDeviceId,
           onCarouselSettings: () {
             // 对齐小程序 detail.js goSlideshow：入口时未连接直接拦截；若进入后链路掉线，
             // 设置页提交时仍会按 ensureConnectedForAction 自动重连。
-            if (!state.selectedDevice.connected) {
+            if (!state.isDeviceActuallyConnected(detailDeviceId)) {
               AppToast.show(context, AppL10n.of(context).devConnectFirst);
               return;
             }
             Navigator.of(
               context,
-            ).pushNamed<void>(AppRoutes.figmaCarouselSettings);
+            ).pushNamed<void>(
+              AppRoutes.figmaCarouselSettings,
+              arguments: detailDeviceId,
+            );
           },
           // 「一键清空」在**当前页**两步弹窗确认，不再 push 确认页
           // （与 startDeleteDeviceFlow 同形态，路由表只做分发不内嵌业务编排）。
-          onClearDevice: () => startClearDeviceFlow(context, state),
+          onClearDevice: () =>
+              startClearDeviceFlow(context, state, detailDeviceId),
           // 删除设备完整流程抽在 delete_device_flow.dart（与 startOtaFlow 同模式），
           // 路由表只做页面分发，不再内嵌业务编排。
-          onDeleteDevice: () => startDeleteDeviceFlow(context, state),
+          onDeleteDevice: () =>
+              startDeleteDeviceFlow(context, state, detailDeviceId),
           onOtaUpgrade: () {
             // 对齐小程序 goOtaUpgrade：未连接拦截/自动连 + 二次查版本 + 确认弹窗 + 确认后自动开始。
-            startOtaFlow(context, state);
+            startOtaFlow(context, state, detailDeviceId);
           },
         );
         break;
       case AppRoutes.figmaDeviceOta:
-        builder = (_) => OtaUpgradePage(state: state);
+        final otaDeviceId = settings.arguments is String
+            ? settings.arguments as String
+            : state.selectedDeviceId;
+        builder = (_) => OtaUpgradePage(
+          state: state,
+          deviceId: otaDeviceId,
+        );
         break;
       case AppRoutes.figmaCarouselSettings:
-        builder = (_) => CarouselSettingsPage(state: state);
+        final carouselDeviceId = settings.arguments is String
+            ? settings.arguments as String
+            : state.selectedDeviceId;
+        builder = (_) => CarouselSettingsPage(
+          state: state,
+          deviceId: carouselDeviceId,
+        );
         break;
       case AppRoutes.figmaLanguageSettings:
         builder = (_) => LanguageSettingsPage(state: state);

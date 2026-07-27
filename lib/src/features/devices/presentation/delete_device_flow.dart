@@ -23,18 +23,18 @@ bool _deleteFlowBusy = false;
 Future<void> startDeleteDeviceFlow(
   BuildContext context,
   PhotoFrameState state,
+  String deviceId,
 ) async {
   if (_deleteFlowBusy) {
     return;
   }
-  final deviceId = state.selectedDeviceId;
   if (deviceId.isEmpty) {
     return;
   }
   _deleteFlowBusy = true;
   try {
     const deleteIcon = 'assets/images/device-detail-icon06.png';
-    if (state.deviceById(deviceId).connected) {
+    if (state.isDeviceActuallyConnected(deviceId)) {
       final proceed = await showAppConfirmDialog(
         context,
         iconAsset: deleteIcon,
