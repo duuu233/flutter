@@ -170,7 +170,8 @@ class AppRoutes {
         // release 下唯一入口 BindDebugEntryCard 已渲染为空，此处兜底为可返回的空页
         //（而不是 return null——无 onUnknownRoute 时那会直接抛「未知路由」异常）。
         builder = kDebugMode
-            ? (_) => const BleDebugPage()
+            // 带上 state：调试台底部的「AI生图入口暗门」跳 AI 页时要用（见 ai_entry.dart）。
+            ? (_) => BleDebugPage(state: state)
             : (_) => const Scaffold(body: SizedBox.shrink());
         break;
       case AppRoutes.blePerf:

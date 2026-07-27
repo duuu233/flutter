@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
-import 'package:image_cropper/image_cropper.dart';
+import 'package:flutter/services.dart';
 
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
@@ -10,45 +12,46 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble/frame_protocol.dart';
 // `screenType.code` 是 FrameScreenTypeDetails 扩展方法：扩展必须导入其定义库才能用。
 import '../../../device/frame_device_protocol.dart';
+import '../../../network/dithering_api.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../cast_image_editor.dart';
 import 'casting_progress_page.dart';
 
-/// 投屏预览页。功能对齐小程序 `photo-album/subpackages/projection/preview`，
-/// 但**实现方式取原生最优解**（见下）。
+/// 投屏预览页。**2026-07-25 按小程序 07-22 ~ 07-24 的三轮重构整页重写**
+/// （对齐 `photo-album/subpackages/projection/preview` + `docs/2026-07-22-照片预览需求调整.md`）。
 ///
-/// 选好图后先进这一页：左右滑动预览每张、可**裁剪 / 旋转 / 还原原图**，确认后再开始投屏。
+/// ## 交互模型（与小程序一一对应）
+/// - **常驻编辑**：进页 / 切图即自动对当前图开启编辑层，没有「进入编辑 / 保存」按钮，
+///   点「开始投屏」时才按取景框内所见烘焙上传。
+/// - **竖向 / 横向取景**：工具栏前两颗按钮切的是**可视区域（取景框）**——竖向 = 设备物理比例，
+///   横向 = 宽高对调（相框躺着摆）。图片本身位置/大小/角度不动，换框后用 zoom 反向补偿保住绝对显示尺寸。
+/// - **长按 2s 才拖拽**（[_kLongPress]，仿苹果相册长按取图）：单指按住几乎不动满 2s → 震动 +
+///   「拿起」放大回弹动画，此后单指移动才平移图片；按住期间位移超 [_kMoveCancelPx] 判为切图滑动。
+/// - **双指缩放 + 旋转**随时可用，不需长按；右上角悬浮按钮每点一次顺时针 +90°。
+/// - **左右滑动切图**：松手时按横向位移方向提交（[_kSwipeCommitPx]），PageView 只负责过场动画——
+///   触摸全部由上层 [Listener] 独占后在 JS 同款状态机里分流（小程序那边 swiper 无法与
+///   「同一根手指长按后转拖拽」共存，App 照抄这个取舍以保证两端手感一致）。
 ///
-/// ## 与小程序的实现差异（有意为之）
-/// 小程序用 canvas + touch 事件**手搓**了一整套裁剪框（拖拽/四角缩放/九宫格/离屏导出，783 行）——
-/// 那是被微信小程序沙箱逼出来的。App 直接用**原生裁剪器**（`image_cropper`：
-/// Android = Yalantis uCrop，iOS = TOCropViewController）：手势更跟手、自带旋转与网格、
-/// 能锁定宽高比并直接导出 JPEG，代码量和 bug 面都小一个量级。
+/// ## 导出铁律（改这里前先读完，错了不报错、设备直接花屏）
+/// 两种取景方向**恒导出竖向设备物理分辨率**（480×720 / 680×960）：
+/// - 竖向：画布坐标系直接对应取景框，放大系数 `k = outW / frameW`；
+/// - 横向：把框内所见整幅转 **[_kExportRotateDeg] = 270°** 再画进**竖向**画布
+///   （90° 进竖向 + 180° 真机倒置校正，2026-07-20 结论），`k = outH / frameW`。
 ///
-/// ## 功能上必须对齐小程序的地方（不要凭感觉改）
-/// - **裁剪框锁定设备宽高比**（3.7寸 480×720 → 2:3；5.89寸 680×960 → 17:24）。裁出来的就是设备上显示的样子。
-/// - 图片一律按**设备比例**的框 **aspectFill 铺满**展示 —— 预览所见 = 投屏所得。
-/// - **点「开始投屏」时每张图统一按设备分辨率做中心裁切 + 严格缩放**
-///   （[CastImageEditor.coverCropToSize]）：小程序的 canvas 导出画布就是设备像素尺寸，
-///   传给后端转码的源图恒为 480×720 / 680×960。裁剪产物（比例已对）经中心裁切等于
-///   无操作、只做缩放；旋转产物/未编辑图则先裁比例再缩放——单点收口，
-///   传给后端的图**永远是设备尺寸**，转码零缩放不变形（2026-07-17 对齐修复）。
-/// - 旋转是**预览态效果**，直到「保存」或进入裁剪时才真正烘焙进图片；烘焙失败必须留在编辑态。
-/// - 编辑态下「开始投屏」按钮置灰：必须先保存或还原退出编辑。
+/// **横向绝不能直接输出横向尺寸**（如 960×680）：像素总数与竖向相同、帧字节数(宽×高÷2)也相同，
+/// 所以 seekink 抖动接口不会报错——但设备按 680px 一行解析 960px 一行的数据会整幅错位，
+/// 表现为**花屏且无任何报错**。2026-07-22 当天曾短暂改成「对调分辨率直出」，同日即被用户拍板撤销。
 class CastPreviewPage extends StatefulWidget {
   const CastPreviewPage({
     super.key,
     this.state,
     required this.device,
     required this.imagePaths,
-    this.recastImgBle,
-    this.recastUpirId,
-    this.recastImgUrl,
   });
 
-  /// 投屏目标设备。裁剪比例取它的屏幕分辨率。
+  /// 投屏目标设备。取景框比例与导出分辨率都取它的屏幕分辨率。
   final DeviceItem device;
 
   /// 用于投屏完成后把真机最新内存同步回设备列表/详情。
@@ -57,64 +60,240 @@ class CastPreviewPage extends StatefulWidget {
   /// 待投屏的本地原图路径（已由 CastPhotoPicker 降采样到长边 1920）。
   final List<String> imagePaths;
 
-  /// 从投屏记录进入时携带的原设备帧。用户未编辑图片时可继续直传；
-  /// 一旦裁剪或旋转，必须改走普通上传/转码，保证投出去的是最后保存的图片。
-  final String? recastImgBle;
-  final Object? recastUpirId;
-  final String? recastImgUrl;
-
   @override
   State<CastPreviewPage> createState() => _CastPreviewPageState();
 }
 
-/// 预览页里的一张待投屏照片。
-class _PreviewPhoto {
-  _PreviewPhoto(this.originalPath) : path = originalPath;
+/// 取景方向（对齐小程序 ORIENT_PORTRAIT / ORIENT_LANDSCAPE）。
+enum _Orientation { portrait, landscape }
 
-  /// 最初选中的原图，供「原图」还原（对齐小程序 `_origSrc`）。
-  final String originalPath;
+/// 触摸状态机（对齐小程序 `this._mode`）。
+enum _Mode { none, idle, swipe, drag, pinch }
 
-  /// 当前生效的图片路径。编辑过则是导出的临时 JPEG。
-  String path;
+/// 单张图的编辑数值真值（对齐小程序 `this._edit` / `_states[index]`）。
+///
+/// 手势期间只读写这个对象，不读 setState 之后的异步字段；切图时整份快照进 `_states`，
+/// 切回来原样恢复（非破坏性编辑：**始终不落文件**，点「开始投屏」才统一烘焙）。
+class _EditState {
+  _EditState({
+    required this.src,
+    required this.natW,
+    required this.natH,
+    required this.stage,
+    required this.orientation,
+    required this.baseScale,
+    required this.frame,
+    required this.zoom,
+    required this.tx,
+    required this.ty,
+    required this.angle,
+  });
 
-  /// 编辑后的真实像素宽高；0 = 没编辑过（对齐小程序 `cropW`/`cropH`）。
-  int editedWidth = 0;
-  int editedHeight = 0;
+  /// 建立这份状态时的图片源。切图回来时源变了（还原过）就作废重建。
+  final String src;
 
-  bool get edited => editedWidth > 0 && editedHeight > 0;
+  /// 图片真实像素尺寸（取**解码后**的 ui.Image 尺寸，与展示、烘焙同源，见 [_CastPreviewPageState._decode]）。
+  final double natW;
+  final double natH;
 
-  void restoreOriginal() {
-    path = originalPath;
-    editedWidth = 0;
-    editedHeight = 0;
+  /// 舞台尺寸（编辑层可用区域）。换方向时重算取景框要用。
+  final Size stage;
+
+  _Orientation orientation;
+
+  /// 图片「铺满取景框(cover)」时的 显示px/原图px，作为 zoom=1 的基准。
+  double baseScale;
+
+  /// 取景框（可视区域）在舞台内的位置尺寸，锁定当前方向比例、居中不动。
+  Rect frame;
+
+  double zoom;
+  double tx;
+  double ty;
+
+  /// 用户旋转角（度，顺时针，可累加超过 360）。
+  double angle;
+
+  double get baseW => natW * baseScale;
+  double get baseH => natH * baseScale;
+
+  /// 「什么都没动」：方向仍是默认竖向、没缩放、没平移、旋转角为整圈。
+  /// 这类图与未编辑图完全等价，投屏时走 coverCropToSize 即可，不必过画布烘焙一遍
+  /// （对齐小程序 isPristineEdit）。
+  bool get pristine {
+    if (orientation != _Orientation.portrait) {
+      return false;
+    }
+    final a = ((angle % 360) + 360) % 360;
+    return (zoom - 1).abs() < 0.001 &&
+        tx.abs() < 0.5 &&
+        ty.abs() < 0.5 &&
+        (a < 0.01 || a > 359.99);
   }
 
-  void applyEdit(String newPath, int width, int height) {
-    path = newPath;
-    editedWidth = width;
-    editedHeight = height;
-  }
+  _EditState copy() => _EditState(
+    src: src,
+    natW: natW,
+    natH: natH,
+    stage: stage,
+    orientation: orientation,
+    baseScale: baseScale,
+    frame: frame,
+    zoom: zoom,
+    tx: tx,
+    ty: ty,
+    angle: angle,
+  );
 }
 
-enum _Tool { none, crop, rotate, origin }
+/// 双指基准（缩放 + 旋转 + 随中点平移）。
+class _PinchAnchor {
+  const _PinchAnchor({
+    required this.dist,
+    required this.ang,
+    required this.mid,
+    required this.zoom,
+    required this.tx,
+    required this.ty,
+    required this.angle,
+  });
 
-class _CastPreviewPageState extends State<CastPreviewPage> {
-  late final List<_PreviewPhoto> _photos = widget.imagePaths
-      .map(_PreviewPhoto.new)
-      .toList();
+  final double dist;
+  final double ang;
+  final Offset mid;
+  final double zoom;
+  final double tx;
+  final double ty;
+  final double angle;
+}
+
+/// 切图前烘焙出的预览成图：底层轮播过场时显示它，避免闪回未裁剪的原图。
+/// [landscape] 决定展示时要不要把「竖向文件、内容转过 270°」的成图反向转正。
+class _BakedPreview {
+  const _BakedPreview({
+    required this.path,
+    required this.key,
+    required this.landscape,
+  });
+
+  final String path;
+
+  /// 生成它时的编辑指纹，用于判断缓存是否仍新鲜。
+  final String key;
+  final bool landscape;
+}
+
+/// 拖拽基准（长按进入拖拽态时的起手点 + 当时的变换）。
+class _DragAnchor {
+  const _DragAnchor({
+    required this.origin,
+    required this.zoom,
+    required this.tx,
+    required this.ty,
+    required this.angle,
+  });
+
+  final Offset origin;
+  final double zoom;
+  final double tx;
+  final double ty;
+  final double angle;
+}
+
+/// 长按进入拖拽所需时长（对齐小程序 LONG_PRESS_MS）。
+/// 2026-07-25：2s 太久（按着像没反应），两端同步改 1s；改这里记得同步 `castEditHint` 文案。
+const Duration _kLongPress = Duration(milliseconds: 1000);
+
+/// 长按判定的位移容差(px)：按住期间移动超过它即认定用户在左右滑动切图，取消长按计时。
+const double _kMoveCancelPx = 12;
+
+/// 左右滑动切图的提交阈值(px)：单指横向滑动累计超过它，松手切到上一张/下一张。
+const double _kSwipeCommitPx = 50;
+
+/// 编辑态里图片相对「铺满取景框(cover)」还能再放大的上限倍数。
+const double _kMaxZoomFactor = 8;
+
+/// 横向导出时整幅构图的旋转量（度，顺时针）：90°（横转竖）+ 180°（真机倒置校正）。
+/// **唯一真源**，别在别处另写角度。
+const double _kExportRotateDeg = 270;
+const double _kExportRotateRad = _kExportRotateDeg * math.pi / 180;
+
+/// 切图过场时长（对齐小程序 swiper duration=300ms）。
+const Duration _kSlideDuration = Duration(milliseconds: 300);
+
+/// 「拿起」放大回弹动画时长（对齐小程序 clipPickup 0.34s）。
+const Duration _kPickupDuration = Duration(milliseconds: 340);
+
+/// 可视区域圆角（小程序 .edit-clip 40rpx = 20px）。
+const double _kClipRadius = 20;
+
+class _CastPreviewPageState extends State<CastPreviewPage>
+    with SingleTickerProviderStateMixin {
+  /// 待投屏原图路径。**全程不改写**：编辑是非破坏性的，烘焙产物只在 [_startCast] 里临时生成，
+  /// 记录/图库要用的原图仍是这份（对齐小程序 `_origSrc` 语义）。
+  late final List<String> _paths = List<String>.from(widget.imagePaths);
 
   final PageController _pager = PageController();
 
+  /// 每张图的编辑状态快照（index → 状态），切图存、切回恢复。
+  final Map<int, _EditState> _states = <int, _EditState>{};
+
+  /// 每张图的**预览缓存**（index → 切图前烘焙出的成图）：只给底层轮播的过场用，
+  /// 不改 [_paths]。点「开始投屏」时指纹仍匹配就直接复用，不重复出图。
+  final Map<int, _BakedPreview> _previews = <int, _BakedPreview>{};
+
+  /// 切图在途锁（切之前可能要先烘焙预览缓存，防连续快滑排队出图）。
+  bool _switching = false;
+
+  /// 活动指针（按下顺序），用于还原小程序 `e.touches[0] / [1]` 的语义。
+  final Map<int, Offset> _pointers = <int, Offset>{};
+  final List<int> _pointerOrder = <int>[];
+
   int _activeIndex = 0;
-  _Tool _tool = _Tool.none;
+
+  /// 当前图的编辑数值真值；null = 编辑层没起来（读图失败等），此时只做普通预览。
+  _EditState? _edit;
+
+  /// 当前图的解码结果：**展示与烘焙共用同一份**，避免「预览按 A 尺寸、导出按 B 尺寸」
+  /// 这类 EXIF 方向差异导致的静默错位。
+  ui.Image? _activeImage;
+  String? _activeImageSrc;
+
+  /// enterEdit 防串台序号：异步解码期间用户又切了图，旧流程作废。
+  int _editSeq = 0;
+
+  Size? _stageSize;
   bool _editing = false;
+  bool _sliding = false;
+  bool _dragging = false;
+  bool _projecting = false;
+  _Orientation _orientation = _Orientation.portrait;
 
-  /// 预览态旋转角（0/90/180/270）。「保存」或进入裁剪时才烘焙进图片。
-  int _rotation = 0;
+  _Mode _mode = _Mode.none;
+  Offset? _touchStart;
+  double _swipeDx = 0;
+  Timer? _lpTimer;
+  _PinchAnchor? _pinch;
+  _DragAnchor? _dragAnchor;
 
-  _PreviewPhoto get _active => _photos[_activeIndex];
+  late final AnimationController _pickup = AnimationController(
+    vsync: this,
+    duration: _kPickupDuration,
+  );
 
-  /// 设备屏幕分辨率 → 裁剪锁定的宽高比。
+  /// 「拿起」反馈：1 → 1.05 → 1（对齐小程序 @keyframes clipPickup）。
+  late final Animation<double> _pickupScale = TweenSequence<double>(<TweenSequenceItem<double>>[
+    TweenSequenceItem<double>(
+      tween: Tween<double>(begin: 1, end: 1.05).chain(CurveTween(curve: Curves.easeOut)),
+      weight: 45,
+    ),
+    TweenSequenceItem<double>(
+      tween: Tween<double>(begin: 1.05, end: 1).chain(CurveTween(curve: Curves.easeIn)),
+      weight: 55,
+    ),
+  ]).animate(_pickup);
+
+  /// 设备屏幕分辨率 → 取景比例与导出画布尺寸。
   ///
   /// 取 [FrameProtocol.screenTypes]（3.7寸 480×720 / 5.89寸 680×960）——这是权威表。
   /// **不要**用 `FrameScreenTypeDetails.width/height`：那是一组陈旧的错值（416×240 / 600×448）。
@@ -133,175 +312,526 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
     return size.width / size.height;
   }
 
+  /// 指定取景方向下的可视区域宽高：竖向 = 设备物理分辨率；横向 = 宽高对调。
+  Size _viewSize(_Orientation orientation) {
+    final dev = _deviceSize;
+    return orientation == _Orientation.landscape
+        ? Size(dev.height.toDouble(), dev.width.toDouble())
+        : Size(dev.width.toDouble(), dev.height.toDouble());
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // 进预览页即预热 seekink 抖动接口 token（对齐小程序 preview.js onLoad 的 prefetchAuthToken）：
+    // 用户构图的这几秒先把 token 取回会话缓存，点「开始投屏」出帧零等待；失败静默。
+    DitheringApi.prefetchAuthToken();
+  }
+
   @override
   void dispose() {
+    _clearLongPress();
+    _pickup.dispose();
     _pager.dispose();
+    _activeImage?.dispose();
     super.dispose();
   }
 
-  /// 切换图片即视为换了一张：退出编辑态并重置旋转（对齐小程序 onSwiperChange）。
-  void _onPageChanged(int index) {
-    setState(() {
-      _activeIndex = index;
-      _tool = _Tool.none;
-      _editing = false;
-      _rotation = 0;
-    });
+  // ── 编辑态几何 ───────────────────────────────────────────
+
+  /// 舞台内「指定方向可视区域比例」的最大居中矩形 = 固定取景框。
+  /// 区外内容由 [ClipRRect] 裁掉（对齐小程序 .edit-clip 的 overflow:hidden）。
+  Rect _frameFor(Size stage, _Orientation orientation) {
+    final view = _viewSize(orientation);
+    final ratio = view.width / view.height;
+    var fw = stage.width;
+    var fh = fw / ratio;
+    if (fh > stage.height) {
+      fh = stage.height;
+      fw = fh * ratio;
+    }
+    return Rect.fromLTWH((stage.width - fw) / 2, (stage.height - fh) / 2, fw, fh);
   }
 
-  // ── 工具栏 ───────────────────────────────────────────────
-
-  Future<void> _selectTool(_Tool tool) async {
-    switch (tool) {
-      case _Tool.crop:
-        await _crop();
-      case _Tool.rotate:
-        // 旋转是预览态可视效果（暂不写入图片），点一次 +90°。
-        setState(() {
-          _tool = _Tool.rotate;
-          _editing = true;
-          _rotation = (_rotation + 90) % 360;
-        });
-      case _Tool.origin:
-        await _restoreOrigin();
-      case _Tool.none:
-        break;
-    }
-  }
-
-  /// 裁剪：打开**原生裁剪器**，宽高比锁死为设备屏幕比例。
-  ///
-  /// 进入前先把已选旋转烘焙进图片（否则「先旋转再裁剪」会把旋转丢掉，对齐小程序 enterCrop）。
-  /// 原生裁剪器自己带旋转/网格/回弹，导出直接是 JPEG。
-  Future<void> _crop() async {
-    // 烘焙失败就别开裁剪器了：那样裁的是**没转过**的图，用户的旋转会被静默吞掉。
-    if (!await _bakeRotation() || !mounted) {
-      return;
-    }
-    final size = _deviceSize;
-
-    CroppedFile? cropped;
+  /// 解码图片：**展示与烘焙共用**这一份 ui.Image，天然规避 EXIF 方向导致的两处尺寸不一致。
+  Future<ui.Image?> _decode(String path) async {
     try {
-      cropped = await ImageCropper().cropImage(
-        sourcePath: _active.path,
-        // 锁定设备宽高比：裁出来的就是设备上显示的样子。
-        aspectRatio: CropAspectRatio(
-          ratioX: size.width.toDouble(),
-          ratioY: size.height.toDouble(),
-        ),
-        // 长边限幅（对齐小程序 MAX_EDGE=2000）：足够覆盖任何相框分辨率，又不至于过大拖慢上传。
-        maxWidth: CastImageEditor.maxEdge,
-        maxHeight: CastImageEditor.maxEdge,
-        compressFormat: ImageCompressFormat.jpg,
-        compressQuality: CastImageEditor.exportQuality,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: AppL10n.of(context).castCrop,
-            toolbarColor: const Color(0xFF111111),
-            toolbarWidgetColor: Colors.white,
-            activeControlsWidgetColor: const Color(0xFFFF5F1F),
-            lockAspectRatio: true,
-          ),
-          IOSUiSettings(
-            title: AppL10n.of(context).castCrop,
-            aspectRatioLockEnabled: true,
-          ),
-        ],
-      );
-    } catch (_) {
-      cropped = null;
-    }
-    if (!mounted || cropped == null) {
-      return; // 用户取消，或裁剪器异常：保持原样
-    }
-
-    // 裁剪器只给路径，尺寸得自己读（用于预览时按裁剪后比例铺满）。
-    final size2 = await _readImageSize(cropped.path);
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _active.applyEdit(
-        cropped!.path,
-        size2?.width ?? size.width,
-        size2?.height ?? size.height,
-      );
-      _tool = _Tool.none;
-      _editing = false;
-      _rotation = 0;
-    });
-    AppToast.show(context, AppL10n.of(context).castSaved);
-  }
-
-  /// 读图片像素尺寸。用 Flutter 自带的解码器（原生、快），不必为这点事再动 image 包。
-  Future<({int width, int height})?> _readImageSize(String path) async {
-    try {
-      // 只读图片头信息拿宽高（ImageDescriptor），不解码像素：原来
-      // decodeImageFromList 会把整张位图解出来（1920 长边 ≈ 8~16MB 瞬时分配）
-      // 又立刻 dispose，纯浪费。
       final bytes = await File(path).readAsBytes();
-      final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-      final descriptor = await ui.ImageDescriptor.encoded(buffer);
-      final result = (width: descriptor.width, height: descriptor.height);
-      descriptor.dispose();
-      buffer.dispose();
-      return result;
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      codec.dispose();
+      return frame.image;
     } catch (_) {
       return null;
     }
   }
 
-  /// 「保存」：把预览态的旋转真正烘焙进图片（对齐小程序 savePhoto 的旋转分支）。
-  /// 裁剪走的是原生裁剪器，确认即落盘，不经过这里。
-  Future<void> _save() async {
-    // 烘焙失败就留在编辑态（旋转角还在，预览里也还转着），让用户能重试。
-    // 这里若照样退出编辑态 + 提示「已保存」，投出去的就是没转过的图。
-    if (!await _bakeRotation() || !mounted) {
-      return;
+  /// 进入/重建常驻编辑态：解码当前图 → 摆好「固定取景框 + 铺满该框的图片」。
+  /// 已有编辑状态（[_states]）且图片源没变则原样恢复。
+  /// 失败不打扰用户：静默停在普通预览，投屏走未编辑链路（coverCropToSize）。
+  Future<bool> _enterEdit() async {
+    final stage = _stageSize;
+    final index = _activeIndex;
+    if (stage == null || index < 0 || index >= _paths.length) {
+      if (mounted && _editing) {
+        setState(() => _editing = false);
+      }
+      return false;
     }
-    setState(() {
-      _tool = _Tool.none;
-      _editing = false;
-    });
-    AppToast.show(context, AppL10n.of(context).castSaved);
-  }
-
-  /// 把当前预览态旋转角真正绘制进图片并导出（rotation=0 时是空操作，直接算成功）。
-  /// 对齐小程序 bakeRotation。
-  ///
-  /// 返回**是否烘焙成功**：失败时 [_rotation] 原样保留（预览里还转着），调用方必须就地中止，
-  /// 不能继续往下走 —— 否则旋转会被静默丢掉，而用户以为已经生效了。
-  Future<bool> _bakeRotation() async {
-    final angle = ((_rotation % 360) + 360) % 360;
-    if (angle == 0) {
+    final src = _paths[index];
+    // 已在编辑同一张图：直接复用当前变换，不重置
+    if (_editing && _edit != null && _edit!.src == src) {
       return true;
     }
-    AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
-    CastEditResult? result;
+    final seq = ++_editSeq;
+
+    ui.Image? image;
+    if (_activeImage != null && _activeImageSrc == src) {
+      image = _activeImage; // 还原原图等场景：同一张图不重复解码
+    } else {
+      image = await _decode(src);
+      if (seq != _editSeq || !mounted) {
+        image?.dispose();
+        return false;
+      }
+      final previous = _activeImage;
+      _activeImage = image;
+      _activeImageSrc = image == null ? null : src;
+      // 旧图还可能被本帧的 RawImage 引用着，等这帧过完再释放
+      if (previous != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => previous.dispose());
+      }
+    }
+    if (image == null) {
+      if (mounted) {
+        setState(() => _editing = false);
+      }
+      return false;
+    }
+
+    // 之前存过状态且图片源没变才恢复，否则从头来
+    final saved = _states[index];
+    final restored = (saved != null && saved.src == src) ? saved : null;
+    final orientation = restored?.orientation ?? _Orientation.portrait;
+    final frame = _frameFor(stage, orientation);
+    final natW = image.width.toDouble();
+    final natH = image.height.toDouble();
+    // cover：图片刚好铺满取景框的基准显示尺寸（zoom=1 时的 显示px/原图px）
+    final baseScale = math.max(frame.width / natW, frame.height / natH);
+
+    _edit = _EditState(
+      src: src,
+      natW: natW,
+      natH: natH,
+      stage: stage,
+      orientation: orientation,
+      baseScale: baseScale,
+      frame: frame,
+      zoom: restored?.zoom ?? 1,
+      tx: restored?.tx ?? 0,
+      ty: restored?.ty ?? 0,
+      angle: restored?.angle ?? 0,
+    );
+    _mode = _Mode.none;
+    _clearLongPress();
+    setState(() {
+      _editing = true;
+      _orientation = orientation;
+      _dragging = false;
+    });
+    final g = _edit!;
+    _applyEdit(g.zoom, g.tx, g.ty, g.angle);
+    return true;
+  }
+
+  /// 把当前图的编辑数值快照进 [_states]（整份存下来：烘焙要用 frame/baseScale 等几何量）。
+  void _saveEditState() {
+    final g = _edit;
+    if (g == null) {
+      return;
+    }
+    _states[_activeIndex] = g.copy();
+  }
+
+  /// 「竖向 / 横向」：只换取景框（可视区域），图片的位置/大小/角度原地保持不变——
+  /// 需求语义是「横竖切换改变的只是可视区域，对图片本身没有改动」。换框后 baseScale 变了，
+  /// 用 zoom 反向补偿保住绝对显示尺寸；[_clampTransform] 会在新框盖不满时自动把 zoom 顶上去。
+  void _setOrientation(_Orientation orientation) {
+    if (orientation == _orientation) {
+      return;
+    }
+    final g = _edit;
+    if (g == null) {
+      setState(() => _orientation = orientation); // 编辑层没起来：只记 UI 状态
+      return;
+    }
+    final frame = _frameFor(g.stage, orientation);
+    final newBaseScale = math.max(frame.width / g.natW, frame.height / g.natH);
+    final keepZoom = (g.baseScale * g.zoom) / newBaseScale;
+    g.orientation = orientation;
+    g.frame = frame;
+    g.baseScale = newBaseScale;
+    _mode = _Mode.none;
+    _clearLongPress();
+    setState(() => _orientation = orientation);
+    _applyEdit(keepZoom, g.tx, g.ty, g.angle);
+  }
+
+  /// 约束一组变换：① zoom 不小于「当前角度下铺满取景框」所需最小值（旋转后也不露白边），
+  /// 且不超过上限；② 平移不让取景框越出图片（把屏幕平移量转到图片本地坐标再夹取）。
+  ({double zoom, double tx, double ty}) _clampTransform(
+    double zoom,
+    double tx,
+    double ty,
+    double angle,
+  ) {
+    final g = _edit!;
+    final rad = angle * math.pi / 180;
+    final cosT = math.cos(rad);
+    final sinT = math.sin(rad);
+    final c = cosT.abs();
+    final s = sinT.abs();
+    final fw = g.frame.width;
+    final fh = g.frame.height;
+    // 旋转 angle 后，图片(baseW×baseH×zoom)要包住轴对齐的取景框(fw×fh)所需的最小 zoom
+    final minZoom = math.max(
+      (fw * c + fh * s) / g.baseW,
+      (fw * s + fh * c) / g.baseH,
+    );
+    var z = math.max(zoom, minZoom);
+    z = math.min(z, minZoom * _kMaxZoomFactor);
+    final w = g.baseW * z;
+    final h = g.baseH * z;
+    // 取景框旋转到图片本地坐标后的半宽/半高
+    final hx = (fw / 2) * c + (fh / 2) * s;
+    final hy = (fw / 2) * s + (fh / 2) * c;
+    // 屏幕平移(tx,ty) → 图片本地平移(lox,loy)
+    var lox = tx * cosT + ty * sinT;
+    var loy = -tx * sinT + ty * cosT;
+    final maxLox = math.max(0.0, w / 2 - hx);
+    final maxLoy = math.max(0.0, h / 2 - hy);
+    lox = lox.clamp(-maxLox, maxLox).toDouble();
+    loy = loy.clamp(-maxLoy, maxLoy).toDouble();
+    // 本地平移 → 屏幕平移
+    return (
+      zoom: z,
+      tx: lox * cosT - loy * sinT,
+      ty: lox * sinT + loy * cosT,
+    );
+  }
+
+  /// 应用一组变换：先夹取到合法范围，写回 [_edit]，再重建画面。
+  void _applyEdit(double zoom, double tx, double ty, double angle) {
+    final g = _edit;
+    if (g == null) {
+      return;
+    }
+    final clamped = _clampTransform(zoom, tx, ty, angle);
+    g.zoom = clamped.zoom;
+    g.tx = clamped.tx;
+    g.ty = clamped.ty;
+    g.angle = angle;
+    setState(() {});
+  }
+
+  /// 图右上角悬浮按钮：在当前角度基础上顺时针 +90°。
+  /// 夹取会自动把 zoom 提到「转 90° 后仍铺满取景框」所需值，不露白边。
+  void _rotate90() {
+    final g = _edit;
+    if (g == null) {
+      return;
+    }
+    _applyEdit(g.zoom, g.tx, g.ty, g.angle + 90);
+  }
+
+  // ── 触摸手势（1:1 移植小程序 07-24 的状态机）───────────────
+  //  单指：默认判为「左右滑动切图」；若按住几乎不动满 2s → 进入拖拽态后单指平移图片。
+  //  双指：随时进入缩放 + 旋转（不需长按），与切图/拖拽互不影响。
+
+  void _clearLongPress() {
+    _lpTimer?.cancel();
+    _lpTimer = null;
+  }
+
+  Offset _pointerAt(int slot) => _pointers[_pointerOrder[slot]]!;
+
+  void _beginPinch() {
+    final g = _edit;
+    if (g == null || _pointerOrder.length < 2) {
+      return;
+    }
+    final a = _pointerAt(0);
+    final b = _pointerAt(1);
+    final dist = (b - a).distance;
+    _mode = _Mode.pinch;
+    _pinch = _PinchAnchor(
+      dist: dist == 0 ? 1 : dist,
+      ang: math.atan2(b.dy - a.dy, b.dx - a.dx),
+      mid: (a + b) / 2,
+      zoom: g.zoom,
+      tx: g.tx,
+      ty: g.ty,
+      angle: g.angle,
+    );
+  }
+
+  void _beginDrag(Offset origin) {
+    final g = _edit;
+    if (g == null) {
+      return;
+    }
+    _mode = _Mode.drag;
+    _dragAnchor = _DragAnchor(
+      origin: origin,
+      zoom: g.zoom,
+      tx: g.tx,
+      ty: g.ty,
+      angle: g.angle,
+    );
+  }
+
+  /// 长按满 2s：进入拖拽态，给「拿起」反馈（放大回弹 + 震动，仿苹果相册）。
+  void _armDrag() {
+    _lpTimer = null;
+    final start = _touchStart;
+    if (_mode != _Mode.idle || _edit == null || start == null) {
+      return;
+    }
+    _beginDrag(start);
+    HapticFeedback.mediumImpact();
+    setState(() => _dragging = true);
+    _pickup.forward(from: 0);
+  }
+
+  void _onPointerDown(PointerDownEvent event) {
+    if (_edit == null) {
+      return;
+    }
+    _pointers[event.pointer] = event.localPosition;
+    _pointerOrder.add(event.pointer);
+    if (_pointerOrder.length >= 2) {
+      _clearLongPress();
+      _beginPinch();
+      return;
+    }
+    _mode = _Mode.idle;
+    _touchStart = event.localPosition;
+    _swipeDx = 0;
+    _clearLongPress();
+    _lpTimer = Timer(_kLongPress, _armDrag);
+  }
+
+  void _onPointerMove(PointerMoveEvent event) {
+    if (_edit == null || !_pointers.containsKey(event.pointer)) {
+      return;
+    }
+    _pointers[event.pointer] = event.localPosition;
+
+    // 双指：随时进入 / 保持缩放 + 旋转
+    if (_pointerOrder.length >= 2) {
+      if (_mode != _Mode.pinch) {
+        _clearLongPress();
+        _beginPinch(); // 单指途中落下第二指：改记双指基准
+        return;
+      }
+      final p = _pinch;
+      if (p == null) {
+        return;
+      }
+      final a = _pointerAt(0);
+      final b = _pointerAt(1);
+      final raw = (b - a).distance;
+      final dist = raw == 0 ? 1.0 : raw;
+      final ang = math.atan2(b.dy - a.dy, b.dx - a.dx);
+      final mid = (a + b) / 2;
+      _applyEdit(
+        p.zoom * (dist / p.dist),
+        p.tx + (mid.dx - p.mid.dx),
+        p.ty + (mid.dy - p.mid.dy),
+        p.angle + (ang - p.ang) * 180 / math.pi,
+      );
+      return;
+    }
+
+    final t = event.localPosition;
+    final start = _touchStart;
+    // 双指抬起一指后仍在移动：以剩余指改记拖拽基准，延续编辑
+    if (_mode == _Mode.pinch || start == null) {
+      _beginDrag(t);
+      return;
+    }
+    final dx = t.dx - start.dx;
+    final dy = t.dy - start.dy;
+
+    if (_mode == _Mode.idle) {
+      // 长按还没满就移动了 → 认定为「左右滑动切图」，取消长按计时
+      if (math.sqrt(dx * dx + dy * dy) > _kMoveCancelPx) {
+        _clearLongPress();
+        _mode = _Mode.swipe;
+      } else {
+        return; // 仍在原地按住，继续等长按
+      }
+    }
+
+    if (_mode == _Mode.drag) {
+      final a = _dragAnchor;
+      if (a == null) {
+        return;
+      }
+      _applyEdit(
+        a.zoom,
+        a.tx + (t.dx - a.origin.dx),
+        a.ty + (t.dy - a.origin.dy),
+        a.angle,
+      );
+      return;
+    }
+
+    if (_mode == _Mode.swipe) {
+      _swipeDx = dx; // 只记录，松手时按方向切图（PageView 负责滑动过场）
+    }
+  }
+
+  void _onPointerFinish(PointerEvent event) {
+    _clearLongPress();
+    _pointers.remove(event.pointer);
+    _pointerOrder.remove(event.pointer);
+    // 还有手指没抬（双指松掉一指）：以剩余单指继续拖拽（已在主动编辑中，不再要求长按）
+    if (_pointerOrder.isNotEmpty && _edit != null) {
+      _beginDrag(_pointerAt(0));
+      return;
+    }
+    final mode = _mode;
+    _mode = _Mode.none;
+    _pinch = null;
+    _touchStart = null;
+    if (_dragging) {
+      setState(() => _dragging = false);
+    }
+    if (mode == _Mode.swipe) {
+      _commitSwipe(_swipeDx);
+    }
+    _swipeDx = 0;
+  }
+
+  /// 松手时按横向滑动量切到上/下一张；向右滑 → 上一张，向左滑 → 下一张。
+  /// 2026-07-25：切之前先把当前图烘焙进预览缓存，过场里显示的就是刚构好的图（见 [_bakePreviewForActive]）。
+  void _commitSwipe(double dx) {
+    if (_paths.length <= 1 || dx.abs() < _kSwipeCommitPx) {
+      return;
+    }
+    final target = _activeIndex + (dx > 0 ? -1 : 1);
+    if (target < 0 || target >= _paths.length) {
+      return;
+    }
+    _switchWithBake(target);
+  }
+
+  /// 烘焙（如需要）后再切图。烘焙期间加在途锁，避免连续快滑排队出图。
+  Future<void> _switchWithBake(int index) async {
+    if (_switching) {
+      return;
+    }
+    _switching = true;
     try {
-      result = await CastImageEditor.rotate(path: _active.path, degrees: angle);
-    } catch (_) {
-      result = null;
+      await _bakePreviewForActive();
+    } finally {
+      _switching = false;
+    }
+    if (!mounted) {
+      return;
+    }
+    await _switchImage(index);
+  }
+
+  /// 切图前把当前图「按取景框内所见」烘焙成**预览缓存**（2026-07-25 修「左右滑动会闪回未裁剪原图」）。
+  ///
+  /// 过场里露出的底层轮播显示的一直是原图（编辑非破坏性、从不落文件），所以切图瞬间会闪一下
+  /// 未裁剪的构图。改为切之前先出一张图存进 [_previews]，轮播优先显示它：
+  ///   · 没编辑 / 没动过 → 不烘焙，直接无缝切（原图与编辑层所见本就一致），顺手清掉过期缓存；
+  ///   · 编辑过且指纹变了 → 「处理中」遮罩下烘焙一次。
+  ///
+  /// **缓存不覆盖 [_paths]**（关键）：原图仍是编辑基准，切回来能继续拖；否则横向烘焙图
+  /// （竖向文件、内容转过 270°）会被当成新原图，再进编辑层就是躺倒的。
+  Future<void> _bakePreviewForActive() async {
+    final index = _activeIndex;
+    final g = _edit;
+    if (g == null || g.pristine) {
+      if (_previews.remove(index) != null && mounted) {
+        setState(() {});
+      }
+      return;
+    }
+    final key = _signatureOf(g);
+    if (_previews[index]?.key == key) {
+      return; // 缓存仍新鲜
+    }
+    final image = _activeImage;
+    if (image == null) {
+      return;
+    }
+    AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
+    try {
+      final path = await _bake(g, image);
+      if (path != null && mounted) {
+        setState(() {
+          _previews[index] = _BakedPreview(
+            path: path,
+            key: key,
+            landscape: g.orientation == _Orientation.landscape,
+          );
+        });
+      }
     } finally {
       // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
       AppLoadingDialog.hide(context);
     }
-    if (!mounted) {
-      return false;
-    }
-    if (result == null) {
-      AppToast.show(context, AppL10n.of(context).castRotateFailed);
-      return false;
-    }
-    final edit = result;
-    setState(() {
-      _active.applyEdit(edit.path, edit.width, edit.height);
-      _rotation = 0;
-    });
-    return true;
   }
 
-  /// 「原图」：二次确认后还原到最初的图片。对齐小程序 restoreOrigin。
+  /// 一组编辑状态的指纹：变了才需要重新烘焙（预览缓存与投屏出图复用都靠它判定）。
+  String _signatureOf(_EditState g) => [
+    g.src,
+    g.orientation.name,
+    g.zoom.toStringAsFixed(4),
+    g.tx.toStringAsFixed(2),
+    g.ty.toStringAsFixed(2),
+    g.angle.toStringAsFixed(2),
+    g.frame.width.toStringAsFixed(2),
+    g.baseScale.toStringAsFixed(6),
+  ].join('|');
+
+  /// 切换到某张图：先存当前图的编辑状态（只记变换+方向，不落文件），
+  /// 过场期间隐藏编辑层露出 PageView 做轮播动画，动画结束再对新图重建编辑层。
+  Future<void> _switchImage(int index) async {
+    if (index < 0 || index >= _paths.length || index == _activeIndex) {
+      return;
+    }
+    _saveEditState();
+    _edit = null; // 置空使手势自动失效
+    _mode = _Mode.none;
+    _clearLongPress();
+    setState(() {
+      _activeIndex = index;
+      _editing = false; // 过场期间隐藏编辑层
+      _sliding = true;
+      _dragging = false;
+    });
+    if (_pager.hasClients) {
+      await _pager.animateToPage(
+        index,
+        duration: _kSlideDuration,
+        curve: Curves.easeOut,
+      );
+    }
+    if (!mounted) {
+      return;
+    }
+    setState(() => _sliding = false);
+    await _enterEdit();
+  }
+
+  /// 「原图」：二次确认后清掉当前图的全部编辑，回到最初的图片并重新进入编辑态。
+  /// 编辑是非破坏性的（从不落文件），所以还原 = 丢掉这张的编辑状态。
   Future<void> _restoreOrigin() async {
     final l10n = AppL10n.of(context);
     final confirmed = await showAppConfirmDialog(
@@ -314,54 +844,155 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
     if (confirmed != true || !mounted) {
       return;
     }
+    _states.remove(_activeIndex);
+    // 预览缓存一并作废，否则切图过场里还会闪出还原前的构图
+    _previews.remove(_activeIndex);
+    _edit = null;
+    _mode = _Mode.none;
+    _clearLongPress();
     setState(() {
-      _active.restoreOriginal();
-      _tool = _Tool.none;
+      _orientation = _Orientation.portrait;
+      _dragging = false;
       _editing = false;
-      _rotation = 0;
     });
+    await _enterEdit();
   }
 
-  // ── 开始投屏 ─────────────────────────────────────────────
+  // ── 开始投屏：按框内所见烘焙 ───────────────────────────────
 
-  /// 开始投屏前，把每张图统一处理成**设备像素尺寸**（中心裁切 + 严格缩放），再进投屏页。
+  /// 把一组编辑状态（取景框内所见：方向 + 平移 + 旋转 + 缩放）一次画布合成，
+  /// 烘焙为**竖向设备物理分辨率**的新图（导出铁律见类文档）。失败返回 null 由调用方回退。
   ///
-  /// 这一步不能省：预览里图是按设备比例铺满（中心裁切）显示的，如果把别的比例/尺寸的图
-  /// 传给后端，转码时会**压变形**或引入多余缩放，与用户看到的预览不符。
-  /// 对齐小程序 confirmProjection → coverCropUnedited / canvas 导出：小程序传给后端的
-  /// 源图恒为设备分辨率（480×720 / 680×960），App 此处单点收口保证一致
-  /// （裁剪产物比例已对，中心裁切等于无操作、只做缩放）。
-  Future<void> _startCast() async {
-    if (_editing) {
-      return; // 编辑态按钮置灰
+  /// 绘制顺序与小程序 canvas 完全一致（Flutter Canvas 与 CSS/微信 canvas 同为 y 轴向下、
+  /// 正角顺时针，矩阵语义可 1:1 照抄）：
+  /// `translate(画布中心) → [横向: rotate(270°)] → translate(tx*k, ty*k) → rotate(用户角) → scale(s)`
+  Future<String?> _bake(_EditState g, ui.Image image) async {
+    final dev = _deviceSize;
+    final outW = dev.width;
+    final outH = dev.height;
+    final landscape = g.orientation == _Orientation.landscape;
+    // 取景框 px → 画布 px 的放大系数：横向时取景框的「宽」对应画布的「高」
+    final k = landscape ? outH / g.frame.width : outW / g.frame.width;
+    // 原图 px → canvas px：baseScale(显示/原图) × zoom × k
+    final s = g.baseScale * g.zoom * k;
+    final rad = g.angle * math.pi / 180;
+
+    try {
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(
+        recorder,
+        Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+      );
+      // jpg 无 alpha 通道，先铺白底，避免透明像素被压成黑色（照片无 alpha，纯属兜底）
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, outW.toDouble(), outH.toDouble()),
+        Paint()..color = const Color(0xFFFFFFFF),
+      );
+      canvas.save();
+      // 先落到画布中心（横向再把整幅构图转 270°）：此后坐标系就等价于取景框，
+      // 图片相对取景框中心的平移(tx,ty)、用户自己的旋转、缩放都能原样套用。
+      canvas.translate(outW / 2, outH / 2);
+      if (landscape) {
+        canvas.rotate(_kExportRotateRad);
+      }
+      canvas.translate(g.tx * k, g.ty * k);
+      canvas.rotate(rad);
+      canvas.scale(s);
+      final w = image.width.toDouble();
+      final h = image.height.toDouble();
+      canvas.drawImageRect(
+        image,
+        Rect.fromLTWH(0, 0, w, h),
+        Rect.fromLTWH(-w / 2, -h / 2, w, h),
+        Paint()
+          ..isAntiAlias = true
+          ..filterQuality = FilterQuality.high,
+      );
+      canvas.restore();
+
+      final picture = recorder.endRecording();
+      final rendered = await picture.toImage(outW, outH);
+      picture.dispose();
+      final data = await rendered.toByteData(format: ui.ImageByteFormat.rawRgba);
+      rendered.dispose();
+      if (data == null) {
+        return null;
+      }
+      // dart:ui 的 toByteData 只能出 png/rawRgba，JPEG 编码交给 image 包（在 isolate 里跑）。
+      // 按 offset/length 取视图而不是整个 buffer：ByteData 未必从 0 开始。
+      return CastImageEditor.encodeRgbaToJpeg(
+        rgba: data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes),
+        width: outW,
+        height: outH,
+      );
+    } catch (error) {
+      debugPrint('[预览] 编辑烘焙失败，该图回退未编辑链路: $error');
+      return null;
     }
-    if (_photos.isEmpty) {
+  }
+
+  /// 取某张图用于烘焙的解码结果：当前图直接复用展示用的那份，其余现解现用完就释放。
+  Future<String?> _bakeIndex(int index, _EditState state) async {
+    final src = _paths[index];
+    if (_activeImage != null && _activeImageSrc == src) {
+      return _bake(state, _activeImage!);
+    }
+    final image = await _decode(src);
+    if (image == null) {
+      return null;
+    }
+    try {
+      return await _bake(state, image);
+    } finally {
+      image.dispose();
+    }
+  }
+
+  /// 投屏前统一出图（串行，避免同时占用大块位图内存）：
+  ///   ① 有编辑状态且真的动过 → 按「取景框内所见」烘焙成竖向设备分辨率新图；
+  ///   ② 没动过 / 从没看过的图 → [CastImageEditor.coverCropToSize] 按设备比例中心裁切 + 缩放，
+  ///      与预览所见（cover 铺满）一致；
+  ///   ③ 任一步失败都回退上一级，最差回退原图，**不阻断投屏**（对齐小程序）。
+  Future<void> _startCast() async {
+    if (_projecting) {
+      return; // 投屏中防连点
+    }
+    if (_paths.isEmpty) {
       AppToast.show(context, AppL10n.of(context).castKeepOnePhoto);
       return;
     }
-
-    final directRecast =
-        _photos.length == 1 &&
-        !_photos.single.edited &&
-        widget.recastImgBle != null &&
-        widget.recastImgBle!.isNotEmpty;
-
+    setState(() => _projecting = true);
     AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
-    final paths = <String>[];
-    final size = _deviceSize;
+
+    final dev = _deviceSize;
+    final outPaths = <String>[];
     try {
-      for (final photo in directRecast ? const <_PreviewPhoto>[] : _photos) {
-        try {
-          final result = await CastImageEditor.coverCropToSize(
-            path: photo.path,
-            width: size.width,
-            height: size.height,
-          );
-          // 处理失败不阻断投屏，回退原图（对齐小程序：任一张失败都 resolve 原图）。
-          paths.add(result?.path ?? photo.path);
-        } catch (_) {
-          paths.add(photo.path);
+      for (var i = 0; i < _paths.length; i++) {
+        final src = _paths[i];
+        // 当前图优先取活的 _edit（最新手势）；其余取快照
+        final state = (i == _activeIndex ? _edit : _states[i]);
+        final edited = state != null && state.src == src && !state.pristine;
+        String? out;
+        if (edited) {
+          // 滑动切图时已按同一组几何烘焙过、之后没再动过 → 直接复用，不重复出图
+          final cached = _previews[i];
+          out = cached != null && cached.key == _signatureOf(state)
+              ? cached.path
+              : await _bakeIndex(i, state);
         }
+        if (out == null) {
+          try {
+            final result = await CastImageEditor.coverCropToSize(
+              path: src,
+              width: dev.width,
+              height: dev.height,
+            );
+            out = result?.path;
+          } catch (_) {
+            out = null;
+          }
+        }
+        outPaths.add(out ?? src);
       }
     } finally {
       // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
@@ -381,11 +1012,10 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
           // 带上设备对象：投屏页的「继续投屏」要靠它跳回预览页。
           device: widget.device,
           deviceName: widget.device.name,
-          // 直传记录也保留预览图路径，失败后点「重新投屏」才能重新进入裁剪页。
-          imagePaths: directRecast ? [_photos.single.path] : paths,
-          recastImgBle: directRecast ? widget.recastImgBle : null,
-          recastUpirId: directRecast ? widget.recastUpirId : null,
-          recastImgUrl: directRecast ? widget.recastImgUrl : null,
+          imagePaths: outPaths,
+          // 投屏记录/图库存的是**原图**（对齐小程序 setUserProductUpload 传 _origSrc）：
+          // 烘焙产物只是设备帧的源图，拿它建记录会让图库里全是取景框裁剪后的小图。
+          originalPaths: List<String>.from(_paths),
         ),
       ),
     );
@@ -404,147 +1034,345 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
       body: Column(
         children: [
           _buildCounter(),
+          const SizedBox(height: 24), // .preview-stage margin-top 48rpx
           Expanded(child: _buildStage()),
+          const SizedBox(height: 12), // .preview-stage margin-bottom 24rpx
+          if (_paths.length > 1) _buildDots(),
           _buildToolBar(),
+          _buildGestureTip(),
+          const SizedBox(height: 20),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 23),
             child: FigmaPrimaryButton(
-              label: l10n.castStartCasting,
-              onPressed: _editing ? null : _startCast,
+              label: _projecting ? l10n.castCasting : l10n.castStartCasting,
+              onPressed: _projecting ? null : _startCast,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
         ],
       ),
     );
   }
 
-  /// 顶部：`n/总数` + 编辑态才出现的「保存」。
+  /// 顶部张数：居中药丸（对齐小程序 .preview-imageCount）。
   Widget _buildCounter() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(23, 4, 23, 8),
-      child: Row(
-        children: [
-          Text(
-            '${_activeIndex + 1}/${_photos.length}',
-            style: const TextStyle(
-              color: Color(0xFF2A2D32),
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+    if (_paths.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 2),
+        decoration: BoxDecoration(
+          color: const Color(0x142A2B2B),
+          borderRadius: BorderRadius.circular(62),
+        ),
+        child: Text(
+          '${_activeIndex + 1}/${_paths.length}',
+          style: const TextStyle(
+            color: Color(0xCC2A2B2B),
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
           ),
-          const Spacer(),
-          if (_editing)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: _save,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                child: Text(
-                  AppL10n.of(context).castSave,
-                  style: const TextStyle(
-                    color: Color(0xFFFF5F1F),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
 
-  /// 舞台：图片轮播。每张都按**设备比例**的框 aspectFill 铺满 —— 预览所见 = 投屏所得。
-  ///
-  /// 画框恒取设备比例（而不是「编辑后的比例」）：设备上显示出来就是这个形状，
-  /// 投屏前的中心裁切也是按它裁的（[_startCast]）。只旋转过、比例还不是设备比例的图，
-  /// 在这里被 aspectFill 中心裁切成什么样，投出去就是什么样。
-  ///
-  /// 旋转用 [RotatedBox] 而不是 `Transform.rotate`：后者只在**绘制期**转、不动布局，
-  /// 转 90° 会让图在框里上下留白、左右被切掉；[RotatedBox] 在**布局期**转（交换子节点约束），
-  /// 子节点按交换后的尺寸 aspectFill，转完正好铺满框 —— 这才等于烘焙后的真实结果。
+  /// 舞台：底层 PageView 只负责切图过场，上层是独占触摸的常驻编辑层。
   Widget _buildStage() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 23),
-      child: PageView.builder(
-        controller: _pager,
-        onPageChanged: _onPageChanged,
-        physics: const BouncingScrollPhysics(),
-        itemCount: _photos.length,
-        itemBuilder: (context, index) {
-          final photo = _photos[index];
-          // 旋转只作用于当前页（对齐小程序：只有 activeIndex 那张带 transform）。
-          final rotation = index == _activeIndex ? _rotation : 0;
-          return Center(
-            child: AspectRatio(
-              aspectRatio: _deviceRatio,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: RotatedBox(
-                  // _rotation 恒为 90 的整数倍；顺时针，与 img.copyRotate 一致。
-                  quarterTurns: rotation ~/ 90,
-                  child: Image.file(
-                    // key 带上路径：编辑会导出**新文件名**，换 key 强制重建、不吃旧缓存。
-                    key: ValueKey(photo.path),
-                    File(photo.path),
-                    fit: BoxFit.cover, // aspectFill
-                    // 预览区≈屏宽，按物理像素解码：源图长边虽已限 1920，仍能省约一半
-                    // 位图内存（PageView 预热相邻页时最多 3 张同驻）；裁剪走原生裁剪器
-                    // 读原文件，不受此影响。
-                    cacheWidth:
-                        (MediaQuery.sizeOf(context).width *
-                                MediaQuery.devicePixelRatioOf(context))
-                            .round(),
-                    errorBuilder: (context, error, stackTrace) => ColoredBox(
-                      color: const Color(0x11000000),
-                      child: Center(
-                        child: Text(
-                          AppL10n.of(context).castImageLoadFailed,
-                          style: const TextStyle(
-                            color: Color(0xFF828A95),
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stage = Size(constraints.maxWidth, constraints.maxHeight);
+          if (_stageSize != stage) {
+            _stageSize = stage;
+            // 首帧量到舞台（或尺寸变化）后再建编辑层：几何全依赖舞台尺寸。
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _enterEdit();
+              }
+            });
+          }
+          final g = _edit;
+          final editorUp = _editing && !_sliding && g != null;
+          return Stack(
+            children: [
+              // 编辑层起来时把底层轮播整条藏掉（2026-07-25，对齐小程序 .preview-swiper.is-hidden）：
+              // 横向取景框比竖向矮，不藏的话框上下会露出底层那张按竖向比例铺的图。
+              // 用 Visibility(maintain*) 而不是从树上摘掉——摘掉会断开 PageController、
+              // 图片也要重新解码，切图过场会闪。
+              Positioned.fill(
+                child: Visibility(
+                  visible: !editorUp,
+                  maintainState: true,
+                  maintainAnimation: true,
+                  maintainSize: true,
+                  child: _buildPager(),
                 ),
               ),
-            ),
+              if (editorUp) ...[
+                Positioned.fill(child: _buildEditLayer(g)),
+                _buildRotateFab(stage, g.frame),
+              ],
+            ],
           );
         },
       ),
     );
   }
 
-  /// 底部工具栏：裁剪 / 旋转 / 原图（对齐小程序 .tool-bar）。
-  Widget _buildToolBar() {
-    final l10n = AppL10n.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 23, vertical: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+  /// 底层轮播：只做切图过场动画，触摸全部被上层编辑层接管，
+  /// 所以 physics 恒为不可滑（对齐小程序「swiper 只负责过场、切图由 _commitSwipe 提交」的取舍）。
+  Widget _buildPager() {
+    if (_paths.isEmpty) {
+      return Center(
+        child: Text(
+          AppL10n.of(context).castNoPhotos,
+          style: const TextStyle(color: Color(0xFF9AA1AB), fontSize: 14),
+        ),
+      );
+    }
+    return PageView.builder(
+      controller: _pager,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: _paths.length,
+      itemBuilder: (context, index) {
+        final preview = _previews[index];
+        final path = preview?.path ?? _paths[index];
+        // 有预览缓存就按它的取景方向铺（横向 = 宽高对调），与编辑层里的取景框严丝合缝；
+        // 没有就按设备（竖向）比例铺 —— 未编辑图在编辑层里也正是 cover 铺满竖向框。
+        final ratio = preview != null && preview.landscape
+            ? 1 / _deviceRatio
+            : _deviceRatio;
+        Widget image = Image.file(
+          key: ValueKey(path),
+          File(path),
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Center(
+            child: Text(
+              AppL10n.of(context).castImageLoadFailed,
+              style: const TextStyle(color: Color(0xFF828A95), fontSize: 13),
+            ),
+          ),
+        );
+        if (preview != null && preview.landscape) {
+          // 横向成图是「竖向设备分辨率文件 + 内容顺时针转过 270°」，展示要转回来：
+          // -270° ≡ 顺时针 90° = quarterTurns 1。用 RotatedBox（布局期旋转、交换约束）
+          // 而不是 Transform.rotate（只在绘制期转，会上下留白左右被切）。
+          image = RotatedBox(quarterTurns: 1, child: image);
+        }
+        return Center(
+          child: AspectRatio(
+            aspectRatio: ratio,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(_kClipRadius),
+              child: ColoredBox(color: const Color(0xFFE6ECF4), child: image),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 常驻编辑层：铺满舞台的透明触摸面（[Listener] 独占全部指针），
+  /// 内部按 frame 摆一个 overflow:hidden 的可视区域，图片在框下自由变换。
+  Widget _buildEditLayer(_EditState g) {
+    final image = _activeImage;
+    if (image == null) {
+      return const SizedBox.shrink();
+    }
+    final frame = g.frame;
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerFinish,
+      onPointerCancel: _onPointerFinish,
+      child: Stack(
         children: [
-          _ToolButton(
-            label: l10n.castCrop,
-            icon: Icons.crop_rounded,
-            active: _tool == _Tool.crop,
-            onTap: () => _selectTool(_Tool.crop),
-          ),
-          _ToolButton(
-            label: l10n.castRotate,
-            icon: Icons.rotate_right_rounded,
-            active: _tool == _Tool.rotate,
-            onTap: () => _selectTool(_Tool.rotate),
-          ),
-          _ToolButton(
-            label: l10n.castOriginal,
-            icon: Icons.image_outlined,
-            active: _tool == _Tool.origin,
-            onTap: () => _selectTool(_Tool.origin),
+          Positioned(
+            left: frame.left,
+            top: frame.top,
+            width: frame.width,
+            height: frame.height,
+            child: AnimatedBuilder(
+              animation: _pickupScale,
+              builder: (context, child) => Transform.scale(
+                scale: _pickupScale.value,
+                child: child,
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(_kClipRadius),
+                  // 拖拽进行中加一点浮起阴影，强调「已拿起、可拖动」
+                  boxShadow: _dragging
+                      ? const [
+                          BoxShadow(
+                            color: Color(0x4711151C),
+                            blurRadius: 24,
+                            offset: Offset(0, 9),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(_kClipRadius),
+                  child: ColoredBox(
+                    color: const Color(0xFFE6ECF4),
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          left: frame.width / 2 - g.baseW / 2,
+                          top: frame.height / 2 - g.baseH / 2,
+                          width: g.baseW,
+                          height: g.baseH,
+                          child: Transform(
+                            alignment: Alignment.center,
+                            // 与 CSS `translate(tx,ty) rotate(a) scale(z)` 同序（T·R·S）
+                            transform: Matrix4.identity()
+                              ..translate(g.tx, g.ty)
+                              ..rotateZ(g.angle * math.pi / 180)
+                              ..scale(g.zoom),
+                            child: RawImage(
+                              image: image,
+                              width: g.baseW,
+                              height: g.baseH,
+                              // baseW/baseH 已是 cover 尺寸，直接拉满即可（对齐 scaleToFill）
+                              fit: BoxFit.fill,
+                              filterQuality: FilterQuality.medium,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// 图右上角悬浮：顺时针转 90°（跟随取景框右上角，自身右边缘对齐框内 12px 处）。
+  Widget _buildRotateFab(Size stage, Rect frame) {
+    return Positioned(
+      right: stage.width - (frame.right - 12),
+      top: frame.top + 12,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _rotate90,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: const Color(0x9911151C),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: const Color(0x4DFFFFFF), width: 0.5),
+          ),
+          child: const Text(
+            '↻ 90°',
+            style: TextStyle(color: Colors.white, fontSize: 13, height: 1),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 轮播小圆点（多图才显示，仿首页设备列表、尺寸略小）。
+  Widget _buildDots() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: List<Widget>.generate(_paths.length, (index) {
+          return Container(
+            width: 12,
+            height: 3,
+            margin: EdgeInsets.only(right: index == _paths.length - 1 ? 0 : 8),
+            decoration: BoxDecoration(
+              color: index == _activeIndex
+                  ? const Color(0xFFFF5F1F)
+                  : const Color(0xFFD7DCE3),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  /// 工具栏：竖向 / 横向 / 原图（对齐小程序 .tool-bar 玻璃卡片 + preview-icon 资源图）。
+  Widget _buildToolBar() {
+    if (_paths.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final l10n = AppL10n.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(23, 14, 23, 0),
+      child: Container(
+        // 卡片自身只留 4（对齐小程序 .tool-bar 8rpx）：高度由 _ToolButton 的点击区撑，
+        // 卡片总高与放大点击区之前基本持平。
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0x66FFFFFF),
+          border: Border.all(color: const Color(0xDBFFFFFF)),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x217991B2),
+              blurRadius: 27,
+              offset: Offset(0, 12),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _ToolButton(
+              label: l10n.castPortrait,
+              asset: 'assets/images/preview-icon01.png',
+              activeAsset: 'assets/images/preview-icon01-selected.png',
+              active: _orientation == _Orientation.portrait,
+              onTap: () => _setOrientation(_Orientation.portrait),
+            ),
+            _ToolButton(
+              label: l10n.castLandscape,
+              asset: 'assets/images/preview-icon02.png',
+              activeAsset: 'assets/images/preview-icon02-selected.png',
+              active: _orientation == _Orientation.landscape,
+              onTap: () => _setOrientation(_Orientation.landscape),
+            ),
+            _ToolButton(
+              label: l10n.castOriginal,
+              asset: 'assets/images/preview-icon03.png',
+              activeAsset: 'assets/images/preview-icon03-selected.png',
+              // 「原图」是二次确认的还原动作，不是取景方向，永远不高亮
+              active: false,
+              onTap: _restoreOrigin,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 手势说明（对齐小程序 .gesture-tip，放竖/横/原下方）。
+  Widget _buildGestureTip() {
+    if (_paths.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(23, 10, 23, 0),
+      child: Text(
+        AppL10n.of(context).castEditHint,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Color(0xFF8B9098),
+          fontSize: 12,
+          height: 1.5,
+        ),
       ),
     );
   }
@@ -553,13 +1381,15 @@ class _CastPreviewPageState extends State<CastPreviewPage> {
 class _ToolButton extends StatelessWidget {
   const _ToolButton({
     required this.label,
-    required this.icon,
+    required this.asset,
+    required this.activeAsset,
     required this.active,
     required this.onTap,
   });
 
   final String label;
-  final IconData icon;
+  final String asset;
+  final String activeAsset;
   final bool active;
   final VoidCallback onTap;
 
@@ -570,20 +1400,21 @@ class _ToolButton extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+        // 点击区就是这个盒子（2026-07-25 用户反馈「点击区域放大一点」，两端同步）：
+        // 对齐小程序 .tool 的 padding 20rpx 56rpx = 10×28（图标/文字视觉位置不变）。
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 24, color: color),
-            const SizedBox(height: 6),
-            Text(
-              label,
-              style: TextStyle(
-                color: color,
-                fontSize: 12,
-                fontWeight: active ? FontWeight.w600 : FontWeight.w400,
-              ),
+            Image.asset(
+              active ? activeAsset : asset,
+              width: 22,
+              height: 22,
+              errorBuilder: (context, error, stackTrace) =>
+                  Icon(Icons.crop_rounded, size: 22, color: color),
             ),
+            const SizedBox(height: 7),
+            Text(label, style: TextStyle(color: color, fontSize: 12)),
           ],
         ),
       ),

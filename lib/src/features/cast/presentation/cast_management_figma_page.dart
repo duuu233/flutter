@@ -12,7 +12,6 @@ import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'cast_preview_page.dart';
-import 'casting_progress_page.dart';
 
 /// 投屏管理（投屏记录），对照微信小程序 `photo-album/subpackages/projection/records`。
 ///
@@ -112,9 +111,11 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   List<CastRecord> get _records =>
       state.castRecords.where((record) => record.status == _tab).toList();
 
-  // 再次/重新投屏：对齐小程序 records.js retryProjection —— 重新进入「裁剪/预览」流程（用记录原图），
-  // 让用户可再裁剪/旋转/还原后再投，而不是直接 imgBle 直传。
-  // 先连设备；连上后把记录原图下载到本地进投屏预览页（裁剪流程）；拿不到原图才回退 imgBle 直传，保证仍能再投。
+  // 再次/重新投屏：对齐小程序 records.js retryProjection/doRetryProjection —— 与手选照片**完全同链路**。
+  // 先连设备；连上后把记录里的服务器图片下载到本地，带进投屏预览页构图，点「开始投屏」照常走
+  // 「抖动接口出帧 + setUserProductUpload 建记录」，每次再投都产生一条新记录。
+  // （2026-07-25：旧「拿不到原图就回退 imgBle 直传」的分支已删——后端不再生成 .bin，
+  //  CastingProgressPage 的 recastImgBle 系列参数也早在 07-23 随链路一并移除。）
   /// 再次投屏进行中标记：连接（可达 10s+）+ 原图下载（超时 20s）期间锁住重复点击，
   /// 否则连点会并发两次 connectDevice 并先后 push 两个预览页。
   bool _recasting = false;
@@ -124,9 +125,12 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
       return;
     }
     final l10n = AppL10n.of(context);
-    final imgBle = record.imgBle;
-    if (imgBle == null || imgBle.isEmpty) {
-      _showSnack(l10n.castRecordMissingFrame);
+    // 2026-07-25：门槛由「有 imgBle(.bin) 设备帧」改为「有服务器图片地址」——后端已不再生成/返回
+    // .bin，再次投屏与正常投屏完全同链路（下载原图 → 预览页 → 抖动接口出帧 → 图传），
+    // 对齐小程序 records.js doRetryProjection（07-23 起 imgBle 直传整链路删除）。
+    final recordImageUrl = record.imageUrl ?? record.thumbUrl;
+    if (recordImageUrl == null || recordImageUrl.isEmpty) {
+      _showSnack(l10n.castRecordNoImage);
       return;
     }
     // 重入锁在权限门禁之前上：授权框停留期间用户还能点其它记录的「再次投屏」，
@@ -154,10 +158,7 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
         return;
       }
       device = state.deviceById(record.deviceId);
-      final imageUrl = record.imageUrl;
-      localPath = (imageUrl != null && imageUrl.isNotEmpty)
-          ? await _downloadToTemp(imageUrl)
-          : null;
+      localPath = await _downloadToTemp(recordImageUrl);
     } finally {
       _recasting = false;
       AppLoadingDialog.hide(context);
@@ -168,29 +169,18 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     // 复制到新局部变量再判空：在 try 块内赋值的变量，流分析在 try 之后不做
     // 类型提升，直接用 localPath 会在闭包里报 String? 不能赋给 String。
     final path = localPath;
-    if (path != null) {
-      // 原图可用：进入裁剪/预览流程（与小程序一致），确认后由预览页走投屏。
-      await Navigator.of(context).push(
-        AppPageRoute(
-          builder: (_) => CastPreviewPage(device: device, imagePaths: [path]),
-        ),
-      );
-    } else {
-      // 原图不可用（无 URL 或下载失败）：回退到 imgBle 直传，避免完全无法再投。
-      await Navigator.of(context).push(
-        AppPageRoute(
-          builder: (_) => CastingProgressPage(
-            userProductId: record.deviceId,
-            deviceName: record.deviceName.isNotEmpty
-                ? record.deviceName
-                : state.deviceName(record.deviceId),
-            recastImgBle: imgBle,
-            recastUpirId: record.id,
-            recastImgUrl: record.imageUrl,
-          ),
-        ),
-      );
+    if (path == null) {
+      // 下载失败就只能中止：.bin 直传链路已随后端下线，没有第二条路可退。
+      _showSnack(l10n.castRecordImageDownloadFailed);
+      return;
     }
+    // 与手选照片完全同链路：进预览页构图 → 「开始投屏」出帧 + 建**新**记录。
+    await Navigator.of(context).push(
+      AppPageRoute(
+        builder: (_) =>
+            CastPreviewPage(state: state, device: device, imagePaths: [path]),
+      ),
+    );
     if (!mounted) {
       return;
     }

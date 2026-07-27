@@ -5,16 +5,50 @@
 // 图传时也会自动套用同样的连接间隔策略——这是微信小程序做不到、用来解决图传卡死的关键。
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import '../../../device/ble/device_ble.dart';
 import '../../../device/ble/frame_protocol.dart';
 import '../../../device/ble/image_codec.dart';
 import '../../../native_device_api.dart';
+import '../../../network/boltfox_api.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../state.dart';
+import '../../ai/ai_entry.dart';
+
+/// AI生图入口暗门口令：入口目前整体屏蔽（见 [kAiEntryEnabled]），
+/// 在调试台底部隐藏输入框输入此口令即显露入口按钮，供内部走查/验收用。
+/// 与小程序调试台 `AI_ENTRY_GATE_CODE` 同一口令。
+const String _kAiGateCode = kAiEntryGateCode;
+
+/// 第三方（seekink 抖动出帧接口）鉴权 token 的返回归一化：与 `DitheringApi._normalizeToken`
+/// 保持一致（那份是私有的，调试台单独复制一份，同小程序 debug.js 的做法）。
+/// 接口返回形态未定——可能直接是 token 串，也可能包在 token/xtyToken/... 字段里；
+/// 带 Bearer 前缀则剥掉，只留纯 token 串（正式出帧时由 DitheringApi 统一拼「Bearer 空格 token」）。
+String _normalizeAuthToken(dynamic data) {
+  final Object raw = data is String
+      ? data
+      : (data is Map
+            ? (data['token'] ??
+                      data['xtyToken'] ??
+                      data['userToken'] ??
+                      data['accessToken'] ??
+                      data['access_token'] ??
+                      '')
+                  as Object
+            : '');
+  return raw
+      .toString()
+      .replaceFirst(RegExp(r'^Bearer\s+', caseSensitive: false), '')
+      .trim();
+}
 
 class BleDebugPage extends StatefulWidget {
-  const BleDebugPage({super.key});
+  const BleDebugPage({super.key, this.state});
+
+  /// 仅「AI生图入口暗门」需要（跳 AI 页要带全局 state）；调试台其余功能与它无关。
+  final PhotoFrameState? state;
 
   @override
   State<BleDebugPage> createState() => _BleDebugPageState();
@@ -45,7 +79,16 @@ class _BleDebugPageState extends State<BleDebugPage> {
   String _uploadStatus = '';
 
 
+  // 第三方 Token（seekink 抖动出帧接口鉴权，GET /Client/Basic/getXTYUserToken）
+  String _authToken = ''; // 取到的 token 串，常驻展示并可复制
+  String _authTokenError = ''; // 获取失败原因，常驻展示便于排查
+  bool _fetchingToken = false; // 正在请求，避免并发点击
+
+  // AI生图入口暗门：入口整体屏蔽期间，输对口令才显露入口按钮
+  bool _aiGateUnlocked = false;
+
   final List<_LogEntry> _logs = [];
+  final TextEditingController _aiGateCtrl = TextEditingController();
   final TextEditingController _intervalCtrl = TextEditingController(text: '60');
   final TextEditingController _switchCtrl = TextEditingController(text: '0');
   final TextEditingController _deleteCtrl = TextEditingController();
@@ -61,6 +104,7 @@ class _BleDebugPageState extends State<BleDebugPage> {
   @override
   void dispose() {
     _client.disconnect();
+    _aiGateCtrl.dispose();
     _intervalCtrl.dispose();
     _switchCtrl.dispose();
     _deleteCtrl.dispose();
@@ -453,10 +497,145 @@ class _BleDebugPageState extends State<BleDebugPage> {
             _setCard(),
             _imageCard(),
           ],
+          _tokenCard(),
           _logCard(),
+          _aiGateCard(),
         ],
       ),
     );
+  }
+
+  // ── 第三方 Token ────────────────────────────────────────
+  // 调 /Client/Basic/getXTYUserToken 取 seekink 抖动出帧接口的鉴权 token 并展示（可复制）。
+  // 与正式投屏出帧（DitheringApi.requestFrameBin → ensureAuthToken）用的是同一接口、同一归一化逻辑，
+  // 方便在这里单独验证「token 能不能取到、长什么样」。纯网络请求，不依赖蓝牙连接。
+  // [forceNewLogin] 带 isNewLogin=1，强制后端重新登录取新 token（对应线上 401 自愈刷新那条路径）。
+  Future<void> _cmdFetchAuthToken({bool forceNewLogin = false}) async {
+    if (_fetchingToken) {
+      return;
+    }
+    setState(() {
+      _fetchingToken = true;
+      _authTokenError = '';
+    });
+    _log('act', '点击：获取第三方Token（isNewLogin=${forceNewLogin ? 1 : 0}）');
+    try {
+      final data = await BoltFoxApi.getXTYUserToken(
+        isNewLogin: forceNewLogin ? 1 : 0,
+      );
+      final token = _normalizeAuthToken(data);
+      if (token.isEmpty) {
+        throw StateError('接口返回为空（未解析到 token 字段）');
+      }
+      if (!mounted) {
+        return;
+      }
+      setState(() => _authToken = token);
+      _log('ok', '已获取第三方Token（${token.length} 字符）：$token');
+      _toast('已获取 Token');
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      final msg = e is StateError ? e.message : '$e';
+      setState(() => _authTokenError = '获取第三方Token失败：$msg');
+      _log('err', '获取第三方Token失败：$msg');
+      _toast(msg);
+    } finally {
+      if (mounted) {
+        setState(() => _fetchingToken = false);
+      }
+    }
+  }
+
+  Future<void> _copyAuthToken() async {
+    if (_authToken.isEmpty) {
+      _toast('暂无可复制的 Token');
+      return;
+    }
+    await Clipboard.setData(ClipboardData(text: _authToken));
+    _log('act', '已复制第三方Token到剪贴板');
+    _toast('已复制');
+  }
+
+  Widget _tokenCard() {
+    return _section('第三方 Token（抖动出帧接口鉴权）', [
+      Wrap(spacing: 10, runSpacing: 8, children: [
+        OutlinedButton(
+          onPressed: _fetchingToken ? null : () => _cmdFetchAuthToken(),
+          child: const Text('获取 Token'),
+        ),
+        OutlinedButton(
+          onPressed: _fetchingToken
+              ? null
+              : () => _cmdFetchAuthToken(forceNewLogin: true),
+          child: const Text('强制重新登录取 Token'),
+        ),
+        OutlinedButton(
+          onPressed: _authToken.isEmpty ? null : _copyAuthToken,
+          child: const Text('复制'),
+        ),
+      ]),
+      if (_authToken.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: SelectableText(
+            _authToken,
+            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+          ),
+        ),
+      if (_authTokenError.isNotEmpty)
+        Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            _authTokenError,
+            style: const TextStyle(fontSize: 12, color: Colors.red),
+          ),
+        ),
+    ]);
+  }
+
+  // ── AI生图入口暗门 ──────────────────────────────────────
+  // AI生图入口目前整体屏蔽（见 kAiEntryEnabled）。这里在调试台最底部放一个不显眼的输入框：
+  // 输入约定口令即显露「进入 AI生图」按钮，点按跳 AI 页，方便屏蔽期间内部走查/验收，
+  // 无需改开关重新编译。与小程序调试台同一做法、同一口令。
+  Widget _aiGateCard() {
+    return _section('', [
+      TextField(
+        controller: _aiGateCtrl,
+        decoration: const InputDecoration(border: OutlineInputBorder()),
+        onChanged: (value) {
+          final unlocked = value.trim() == _kAiGateCode;
+          final was = _aiGateUnlocked;
+          setState(() => _aiGateUnlocked = unlocked);
+          // 仅在锁定→解锁那一次提示，避免解锁后每次按键都弹
+          if (unlocked && !was) {
+            _toast('已解锁 AI生图入口');
+          }
+        },
+      ),
+      if (_aiGateUnlocked) ...[
+        const SizedBox(height: 8),
+        ElevatedButton(
+          onPressed: () {
+            final state = widget.state;
+            if (state == null) {
+              _toast('缺少全局状态，无法进入（请从正常入口打开调试台）');
+              return;
+            }
+            openAiChat(context, state);
+          },
+          child: const Text('进入 AI生图'),
+        ),
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text(
+            '入口已临时解锁；正式开放前 tabbar 中间 AI生图 入口仍处屏蔽状态。',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+          ),
+        ),
+      ],
+    ]);
   }
 
   Widget _section(String title, List<Widget> children) {

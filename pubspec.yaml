@@ -49,6 +49,9 @@ dependencies:
   flutter_blue_plus: ^2.3.8
   # BoltFox 后端接口请求（lib/src/network）：JSON 请求与 form-data 文件上传
   http: ^1.2.2
+  # http 的传递依赖，这里显式提升为直接依赖（同 flutter_cache_manager 的理由）：
+  # 抖动接口 multipart 文件字段要显式标 Content-Type: image/jpeg（MediaType 只能从这里导入）
+  http_parser: ^4.0.2
   # 密码等敏感字段 md5(32位小写) 加密后传输（对齐小程序 utils/md5.js）
   crypto: ^3.0.6
   # 拍照/相册选图，返回真实本地文件路径（投屏原图需上传后端转码，content:// 无法直接上传）

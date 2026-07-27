@@ -1,15 +1,17 @@
-// 服务器图片转换 + BLE 图传投屏服务 —— 由微信小程序版 `subpackages/projection/result/result.js` 移植。
+// 投屏服务（seekink 抖动出帧 + BLE 图传）—— 由微信小程序版 `subpackages/projection/result/result.js` 移植。
 //
-// 链路（画质相关计算放到服务器，避免受端上解码/缩放差异影响，见
-// docs `server-image-processing-ble-transfer.md`）：
-//   连接设备 → 读设备信息(0x01) → 逐张：
-//     原图传后端转换(setUserProductUpload，按设备宽高转成六色 4bpp 帧 .bin，得下载地址 + taskId；
-//       ⚠️ 响应 DTO BaseUploadApiOut 没有 upirId，后端靠 taskId 定位记录)
-//     → 下载 .bin 帧数据 → 校验长度==宽×高÷2 → 选空闲槽位 → BLE 图传(0x20/0x21/0x22)
-//     → 设备成功才编辑投屏记录(editUserProductImgRecord 置 deviceUploadState=1) → 刷新显示。
+// 链路（2026-07-23 对齐小程序 07-22 切换，见 photo-album docs `server-image-processing-ble-transfer.md`）：
+//   连接设备 → 读设备信息(0x01) → 逐张（两路网络并行，见 _acquireFrame）：
+//     ① 设备帧：预览处理后的设备分辨率图 → 统一压缩 → seekink 抖动接口出六色 4bpp 帧(DitheringApi，
+//        不再下载后端转码的 .bin)
+//     ② 投屏记录：原图（进预览页前未操作过的图）→ 同一套统一压缩 → setUserProductUpload 按
+//        「未成功(0)」建记录拿 taskId（⚠️ 响应 DTO BaseUploadApiOut 没有 upirId，后端靠 taskId 定位记录）
+//   → 校验帧长度==宽×高÷2 → 选空闲槽位 → BLE 图传(0x20/0x21/0x22)
+//   → 设备成功才编辑投屏记录(editUserProductImgRecord 置 deviceUploadState=1) → 刷新显示。
 //
-// App 端不再自研调色：与小程序一致，投屏只此一条链路——原图传接口，后端转成六色 4bpp 帧(.raw/.bin)，
-// App 下载后字节直传设备。端上六色量化(旧 BleController.uploadRgba)已移除。
+// 再次/重新投屏（2026-07-23 起与正常投屏同链路）：投屏管理页只带记录图片地址进预览页，与手选图片
+// 流程无差别；旧「imgBle .bin 直传 + addUserProductImgRecord 补记」(recastRecord) 已删除——
+// 后端不再生成/返回 .bin。App 端不做六色量化：出帧在 seekink 接口侧，App 拿帧字节直传设备。
 
 import 'dart:async';
 import 'dart:io';
@@ -22,8 +24,8 @@ import '../../device/ble/device_ble.dart';
 import '../../device/ble/frame_protocol.dart';
 import '../../device/ble_controller.dart';
 import '../../device/device_interaction_trace.dart';
-import '../../network/api_client.dart';
 import '../../network/boltfox_api.dart';
+import '../../network/dithering_api.dart';
 import '../../shared/l10n/app_l10n.dart';
 
 /// 投屏进度回调载荷。语义完全对齐小程序 `result.js`（进度页三段式：转码→处理→传输）。
@@ -103,18 +105,33 @@ class ServerImageProjectionService {
   final BleController _ble;
   final AppL10n? _l10n;
 
-  /// 逐张把 [filePaths] 里的原图经后端转换成设备帧并图传到设备。
+  /// 逐张把 [filePaths] 里的图（预览处理后的设备分辨率图）经 seekink 抖动接口出帧并图传到设备；
+  /// [recordFilePaths] 为逐张对应的原图（建投屏记录用，缺省回退 [filePaths]）。
   ///
   /// [userProductId] 为后端设备 id（写投屏记录用）。任一张失败即整单失败并返回失败原因；
   /// 已成功传到设备的张数保留在设备上（本张成功即物理写入）。
   Future<ProjectionResult> castImages({
     required Object userProductId,
     required List<String> filePaths,
+    List<String>? recordFilePaths,
     void Function(CastProgress)? onProgress,
     bool Function()? shouldAbort,
   }) async {
     final client = _ble.client;
-    final images = filePaths.where((p) => p.isNotEmpty).toList();
+    // [filePaths]=预览处理后的设备分辨率图（喂抖动接口出帧）；[recordFilePaths]=对应的原图
+    //（建投屏记录/后端存图，小程序 _origSrc 语义），缺省/缺项时回退用处理后的图。逐项配对，
+    // 空路径成对跳过，保证两列表下标始终对齐。
+    final images = <String>[];
+    final originals = <String>[];
+    for (var i = 0; i < filePaths.length; i++) {
+      final path = filePaths[i];
+      if (path.isEmpty) continue;
+      images.add(path);
+      final original = (recordFilePaths != null && i < recordFilePaths.length)
+          ? recordFilePaths[i]
+          : '';
+      originals.add(original.isNotEmpty ? original : path);
+    }
 
     if (!client.connected) {
       return const ProjectionResult(
@@ -209,6 +226,7 @@ class ServerImageProjectionService {
           () => _acquireFrame(
             client: client,
             filePath: images[idx],
+            originalPath: originals[idx],
             userProductId: userProductId,
             width: info.width,
             height: info.height,
@@ -427,276 +445,6 @@ class ServerImageProjectionService {
     }
   }
 
-  /// 再次/重新投屏：直接用投屏记录里的设备帧 .bin([imgBleUrl]) 图传到设备，
-  /// 不再走后端上传/转码([setUserProductUpload])。对齐小程序 records.js + result.js 的 imgBle 直传链路：
-  ///   读设备信息 → 下载 imgBle 帧 → 校验长度==宽×高÷2 → 选空闲槽位 → BLE 图传 → 只在成功后刷新显示(0x24)；
-  ///   设备图传成功(1)/失败(0)都调 [BoltFoxApi.addUserProductImgRecord] 新增一条投屏记录（尽力而为）。
-  ///
-  /// [userProductId] 后端设备 id、[upirId] 原记录 id、[imgUrl] 记账用原图地址，均随新记录带上。
-  Future<ProjectionResult> recastRecord({
-    required Object userProductId,
-    required String imgBleUrl,
-    Object? upirId,
-    String? imgUrl,
-    void Function(CastProgress)? onProgress,
-    bool Function()? shouldAbort,
-  }) async {
-    final client = _ble.client;
-
-    // 再次投屏是单张 imgBle 直传：不走后端转码，故没有「图片转码中」阶段之外的准备工作。
-    var stageTitle = _l10n?.castStageTranscoding ?? CastStage.transcoding;
-    var currentIndex = 0;
-
-    void emit(double percent, String message, {String? title, int? current}) {
-      if (title != null) stageTitle = title;
-      if (current != null) currentIndex = current;
-      onProgress?.call(
-        CastProgress(
-          percent: percent.clamp(0.0, 1.0).toDouble(),
-          current: currentIndex,
-          total: 1,
-          title: stageTitle,
-          message: message,
-        ),
-      );
-    }
-
-    if (!client.connected) {
-      return const ProjectionResult(
-        success: false,
-        uploaded: 0,
-        total: 1,
-        message: '设备未连接，请先连接设备后再投屏',
-        failureKind: FrameBleErrorKind.disconnected,
-      );
-    }
-    if (imgBleUrl.isEmpty) {
-      return const ProjectionResult(
-        success: false,
-        uploaded: 0,
-        total: 1,
-        message: '该记录缺少设备帧文件，无法再次投屏',
-      );
-    }
-
-    final trace = DeviceInteractionTrace('recast-image');
-    trace.mark(
-      'params-conn-${FrameBleClient.transferConnIntervalMs}ms-'
-      'pace-${FrameBleClient.transferPacketPaceMs}ms-'
-      'window-${FrameBleClient.transferWindowPackets}',
-    );
-    Future<void>? sessionReady;
-    Future<int>? lastRefresh;
-    try {
-      emit(0, _l10n?.castReadingDeviceInfo ?? '正在读取设备信息…');
-      final info = await trace.measure(
-        'read-core-info-0x01',
-        () => _readTransferInfoAwaitingIdle(
-          client,
-          onWaiting: () =>
-              emit(0, _l10n?.castDeviceRefreshing ?? '设备正在刷新，请稍候…'),
-        ),
-      ); // B2：精简读取，不带 0x03 固件版本
-      // 机型/尺寸分开判（对齐小程序 result.js）：0x03 才是不支持；尺寸 0 多为短暂断连，提示重连。
-      if (info.screenType == 0x03) {
-        throw FrameBleException('该型号暂不支持图传', kind: FrameBleErrorKind.unsupported);
-      }
-      if (info.width == 0 || info.height == 0) {
-        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏', kind: FrameBleErrorKind.disconnected);
-      }
-      final expected4bpp =
-          (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2
-
-      // 设备空间校验：至少要有 1 个空闲槽位。
-      final usedIndexes = FrameProtocol.maskToIndexes(info.imgMask);
-      if (info.capacity - usedIndexes.length < 1) {
-        throw FrameBleException('设备空间不足：设备已存满', kind: FrameBleErrorKind.storageFull);
-      }
-
-      // 直接下载记录里后端转换好的设备帧(.bin)，同时开始极速连接间隔协商。
-      // 两者互不占用资源，把 0x13 + 300ms 回读等待隐藏在网络下载中。
-      emit(
-        0,
-        _l10n?.castPreparingImageSingle ?? '正在准备图片…',
-        title: _l10n?.castStageProcessing ?? CastStage.processing,
-        current: 1,
-      );
-      final frameFuture = trace.measure(
-        'download-device-frame',
-        () => _downloadFrameBin(imgBleUrl),
-      );
-      sessionReady = trace.measure(
-        'set-fast-connection-interval',
-        client.beginTransferSession,
-      );
-      final frameData = await frameFuture;
-      if (frameData.length != expected4bpp) {
-        final head = FrameProtocol.bytesToHex(
-          frameData.sublist(0, frameData.length < 16 ? frameData.length : 16),
-        );
-        throw FrameBleException(
-          '记录里的设备帧与当前设备不匹配：收到 ${frameData.length} 字节(头16=$head)，'
-          '设备 ${info.width}×${info.height} 需要 $expected4bpp 字节',
-        );
-      }
-
-      final index = FrameProtocol.firstFreeIndex(
-        FrameProtocol.indexesToMask(usedIndexes),
-        info.capacity,
-      );
-      if (index < 0) throw FrameBleException('设备已存满', kind: FrameBleErrorKind.storageFull);
-
-      // D1/D2 图传预处理（整图 CRC32 + 预组 0x21 帧），失败回退不阻断本张。
-      PreparedTransfer? prepared;
-      try {
-        prepared = await trace.measure(
-          'prepare-image',
-          () => client.prepareImageTransfer(frameData),
-        );
-      } catch (_) {
-        prepared = null;
-      }
-
-      emit(
-        0,
-        _l10n?.castTransferringSingle ?? '正在投屏…',
-        title: _l10n?.castStageTransferring ?? CastStage.transferring,
-        current: 1,
-      );
-
-      // 图片准备完成时极速协商通常也已完成；传第一包前仅做正确性收口。
-      await sessionReady;
-
-      // 进度上报节流，同 castImages：BLE 每个 ACK 回调一次，不节流会有上千次 setState
-      // 抢占主 isolate、反过来拖慢图传。约 8 次/秒；100% 必发。
-      var lastPercent = -1;
-      var lastEmitMs = 0;
-      final stopwatch = Stopwatch()..start();
-
-      try {
-        await trace.measure(
-          'ble-transfer-image-1',
-          () => client.uploadImage(
-            screenType: info.screenType,
-            index: index,
-            width: info.width,
-            height: info.height,
-            data: frameData,
-            pace: FrameBleClient.transferPacketPaceMs,
-            window: FrameBleClient.transferWindowPackets,
-            prepared: prepared,
-            manageConnection: false,
-            shouldAbort: shouldAbort,
-            onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
-              final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
-              final percent = (frac * 100).floor().clamp(0, 100);
-              final nowMs = stopwatch.elapsedMilliseconds;
-              if (percent != 100 &&
-                  (percent == lastPercent || nowMs - lastEmitMs < 120)) {
-                return;
-              }
-              lastPercent = percent;
-              lastEmitMs = nowMs;
-              emit(
-                frac,
-                _l10n?.castTransferringSingle ?? '正在投屏…',
-                title: _l10n?.castStageTransferring ?? CastStage.transferring,
-                current: 1,
-              );
-            },
-          ),
-        );
-      } catch (error) {
-        await _rollbackDeviceImage(client, index);
-        rethrow;
-      }
-
-      // 单张再次投屏：传完刷新到这张（0x24）。fire-and-forget 不阻塞成功页；
-      // finally 会在刷屏后再恢复空闲连接间隔，避免 0x13 与刷屏忙状态冲突。
-      lastRefresh = client.refreshScreen(index).catchError((_) => 0xFF);
-
-      // 设备图传成功 → 新增一条成功记录（尽力而为，失败只忽略）。
-      // 带上本张占用的槽位 index：再次/重新投屏拿的是新空位，图库要靠它定位这条新记录。
-      unawaited(
-        _addRetryRecord(
-          userProductId: userProductId,
-          upirId: upirId,
-          imgUrl: imgUrl,
-          imgBle: imgBleUrl,
-          deviceUploadState: 1,
-          imgIndex: index,
-        ),
-      );
-      emit(1, _l10n?.castTransferredSingle ?? '投屏成功', current: 1);
-      trace.finish(success: true);
-      return ProjectionResult(
-        success: true,
-        uploaded: 1,
-        total: 1,
-        message: _l10n?.castTransferredSingle ?? '投屏成功',
-      );
-    } on ProjectionAbortedException {
-      // 中断也新增一条失败记录（对齐小程序：_retryImageInFlight 未清即补记失败）。
-      unawaited(
-        _addRetryRecord(
-          userProductId: userProductId,
-          upirId: upirId,
-          imgUrl: imgUrl,
-          imgBle: imgBleUrl,
-          deviceUploadState: 0,
-        ),
-      );
-      trace.finish(success: false, stage: 'aborted');
-      return const ProjectionResult(
-        success: false,
-        uploaded: 0,
-        total: 1,
-        message: '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。',
-        failureKind: FrameBleErrorKind.aborted,
-      );
-    } catch (error) {
-      final raw = error is FrameBleException ? error.message : error.toString();
-      final aborted =
-          (shouldAbort?.call() ?? false) || raw.contains('UPLOAD_ABORTED');
-      // 下载/图传失败也新增一条失败记录(deviceUploadState=0)。
-      unawaited(
-        _addRetryRecord(
-          userProductId: userProductId,
-          upirId: upirId,
-          imgUrl: imgUrl,
-          imgBle: imgBleUrl,
-          deviceUploadState: 0,
-        ),
-      );
-      trace.finish(success: false, stage: 'failed');
-      return ProjectionResult(
-        success: false,
-        uploaded: 0,
-        total: 1,
-        message: aborted ? '投屏已中断：上传时手机息屏/切到后台，蓝牙会被挂起。请保持亮屏后重新投屏。' : raw,
-        failureKind: aborted
-            ? FrameBleErrorKind.aborted
-            : (error is FrameBleException ? error.kind : null),
-      );
-    } finally {
-      // 不阻塞结果页：即使下载/校验提前失败，也会在极速协商收口后恢复省电档。
-      final ready = sessionReady;
-      if (ready != null) {
-        unawaited(
-          ready
-              .then((_) async {
-                final refresh = lastRefresh;
-                if (refresh != null) {
-                  await refresh;
-                }
-                await client.endTransferSession();
-              })
-              .catchError((_) {}),
-        );
-      }
-    }
-  }
-
   /// 读设备信息(0x01)，遇「设备忙(0x0B)」自动等待重试，直到设备空闲或超时。
   ///
   /// 🔑 治「投屏成功后立刻点『继续投屏』，跳到失败页却没有失败记录」（2026-07-19）。
@@ -737,54 +485,38 @@ class ServerImageProjectionService {
     }
   }
 
-  /// 再次/重新投屏记账：设备图传成功(1)/失败(0)后新增一条投屏记录。尽力而为，失败只忽略。
-  ///
-  /// [imgIndex]=本张写入设备的物理槽位，只在图传成功时才有意义——失败时设备上没有这张图，
-  /// 报上去会让图库把别人的槽位当成它的。故这里按 [deviceUploadState] 再挡一道。
-  Future<void> _addRetryRecord({
-    required Object userProductId,
-    Object? upirId,
-    String? imgUrl,
-    required String imgBle,
-    required int deviceUploadState,
-    int? imgIndex,
-  }) async {
-    try {
-      await BoltFoxApi.addUserProductImgRecord(
-        upirId: upirId,
-        userProductId: userProductId,
-        img: imgUrl,
-        imgBle: imgBle,
-        deviceUploadState: deviceUploadState,
-        imgIndex: deviceUploadState == 1 ? imgIndex : null,
-      );
-    } catch (error) {
-      // 同 editUserProductImgRecord：记账失败不影响投屏结果，但必须留痕——
-      // 静默吞掉的话，「投屏成功但图库没这张」在日志里完全查不到。
-      debugPrint(
-        '[投屏] ⚠️ 再次投屏记录写入失败（图库可能缺这张）：'
-        'state=$deviceUploadState imgIndex=$imgIndex $error',
-      );
-    }
-  }
-
-  /// 取本张要发给设备的六色 4bpp 帧 + 后端记录 id（原图传后端转换 → 下载 .bin → D1/D2 预处理）。
+  /// 取本张要发给设备的六色 4bpp 帧 + 后端记录 id（2026-07-23 对齐小程序 07-22 链路切换）。
+  /// 两路网络并行，任一失败本张失败——
+  ///   · 设备帧：预览处理后的设备分辨率图([filePath]) → 统一压缩 → seekink 抖动接口出帧；
+  ///   · 投屏记录：原图([originalPath]) → 同一套统一压缩 → setUserProductUpload 建记录拿 taskId。
+  /// 帧失败时记录可能已按「未成功(0)」建好，与旧链路「转码成功后图传失败」同态，无需回滚。
   /// 纯网络 + 纯计算、无 UI 副作用：可被主循环「预取下一张」提前并行调用（见 castImages 的预取流水线）。
   Future<_AcquiredFrame> _acquireFrame({
     required FrameBleClient client,
     required String filePath,
+    required String originalPath,
     required Object userProductId,
     required int width,
     required int height,
   }) async {
-    final converted = await _convertOnServer(
-      filePath: filePath,
+    final recordFuture = _uploadOriginalForRecord(
+      filePath: originalPath,
       userProductId: userProductId,
       width: width,
       height: height,
     );
-    final frameData = await _downloadFrameBin(converted.url);
-    // D1/D2 图传预处理（整图 CRC32 + 按会话分包预组 0x21 帧），与上一张 BLE 传输/本张下载重叠。
+    final frameFuture = _fetchDitheringFrame(
+      filePath: filePath,
+      width: width,
+      height: height,
+    );
+    // 并行等待：任一失败都抛给调用方；另一路的错误挂 ignore 丢弃监听，
+    // 避免「完成出错但无监听者」被 PlatformDispatcher.onError 记成未处理异步错误。
+    recordFuture.ignore();
+    frameFuture.ignore();
+    final record = await recordFuture;
+    final frameData = await frameFuture;
+    // D1/D2 图传预处理（整图 CRC32 + 按会话分包预组 0x21 帧），与上一张 BLE 传输/本张网络重叠。
     // 失败回退不阻断本张（uploadImage 拿不到 prepared 会现算现组）。
     PreparedTransfer? prepared;
     try {
@@ -794,17 +526,47 @@ class ServerImageProjectionService {
     }
     return _AcquiredFrame(
       frameData: frameData,
-      taskId: converted.taskId,
-      upirId: converted.upirId,
+      taskId: record.taskId,
+      upirId: record.upirId,
       prepared: prepared,
     );
   }
 
-  /// 本张照片传后端转换：上传原图 → 后端按设备宽高转换成设备帧并存 OSS，返回 url/taskId。
+  /// 设备帧：预览处理后的设备分辨率图 → 统一压缩（已是设备尺寸则原样通过，见 _prepareUploadSource
+  /// 的 400KB 触发门）→ seekink 抖动接口出六色 4bpp 帧（[DitheringApi.requestFrameBin]）。
+  Future<Uint8List> _fetchDitheringFrame({
+    required String filePath,
+    required int width,
+    required int height,
+  }) async {
+    final uploadPath = await _prepareUploadSource(
+      filePath: filePath,
+      targetWidth: width,
+      targetHeight: height,
+    );
+    try {
+      return await DitheringApi.requestFrameBin(
+        filePath: uploadPath,
+        type: DitheringApi.typeForDevice(width, height),
+      );
+    } finally {
+      if (uploadPath != filePath) {
+        try {
+          await File(uploadPath).delete();
+        } catch (_) {}
+      }
+    }
+  }
+
+  /// 投屏记录上传（2026-07-22 起改传原图，只为建记录）：上传原图 → 后端按「未成功(0)」建
+  /// 投屏记录并存图（图库/记录页展示的就是这张原图），返回 taskId/upirId；设备图传成功后再
+  /// editUserProductImgRecord（按 taskId）置 1，逻辑不变。接口仍会转码并返回 .bin url，
+  /// 但已不再下载使用——设备帧改由抖动接口生成（见 _fetchDitheringFrame）。
+  /// 失败抛出，让本张投屏判为失败（记录建不起来，设备成功了也没法记账）。
   ///
   /// ⚠️ `upirId` 实际取不到（响应 DTO `BaseUploadApiOut` 只有 base64Img/formatColors/name/taskId/url），
   /// 这里仍然解析是为了后端哪天补上就能直接用；调用方必须把它当**可能为 null** 处理。
-  Future<_ConvertResult> _convertOnServer({
+  Future<_RecordResult> _uploadOriginalForRecord({
     required String filePath,
     required Object userProductId,
     required int width,
@@ -834,15 +596,11 @@ class ServerImageProjectionService {
     // 单文件上传返回该对象；兼容数组返回。
     final item = res is List ? (res.isNotEmpty ? res.first : null) : res;
     final map = item is Map ? item : const {};
-    final url = (map['url'] ?? map['fileUrl'] ?? map['path'])?.toString() ?? '';
-    if (url.isEmpty) {
-      throw FrameBleException('服务器未返回转换结果');
+    if (map['taskId'] == null) {
+      // 没有 taskId 就无法在图传成功后 editUserProductImgRecord 记账，按建记录失败处理。
+      throw FrameBleException('服务器未返回投屏记录ID');
     }
-    return _ConvertResult(
-      url: url,
-      taskId: map['taskId'],
-      upirId: map['upirId'],
-    );
+    return _RecordResult(taskId: map['taskId'], upirId: map['upirId']);
   }
 
   /// 上传前兜底压缩，对齐小程序 2026-07-16 的 `compressForUpload`：
@@ -886,32 +644,6 @@ class ServerImageProjectionService {
     }
   }
 
-  /// 下载后端转换好的六色 4bpp 帧(.bin)，读成字节直接喂给 BLE 图传（弱网重试几次）。
-  Future<Uint8List> _downloadFrameBin(String url, {int attempts = 3}) async {
-    Object? lastError;
-    for (int i = 0; i < attempts; i++) {
-      try {
-        // 共用 ApiClient 的连接池（省一次 TLS 握手）；加超时——之前没有超时，
-        // 弱网半途挂起会让投屏永远卡在「图片处理中」（重试只在抛错后才触发）。
-        final resp = await ApiClient.instance.httpClient
-            .get(Uri.parse(url))
-            .timeout(const Duration(seconds: 20));
-        if (resp.statusCode == 200) {
-          return resp.bodyBytes;
-        }
-        // HTTP 状态码错误属确定性失败，不重试。
-        throw FrameBleException('转换结果下载失败(${resp.statusCode})');
-      } on FrameBleException {
-        rethrow;
-      } catch (error) {
-        lastError = error;
-        if (i < attempts - 1) {
-          await Future<void>.delayed(const Duration(milliseconds: 800));
-        }
-      }
-    }
-    throw FrameBleException('转换结果下载失败：${lastError ?? '网络异常'}');
-  }
 
   /// 单张投屏失败时的设备侧回滚：删掉本次刚传到设备的这张图（CMD 0x12）。回滚失败不覆盖原始失败原因。
   Future<void> _rollbackDeviceImage(FrameBleClient client, int index) async {
@@ -922,9 +654,8 @@ class ServerImageProjectionService {
   }
 }
 
-class _ConvertResult {
-  _ConvertResult({required this.url, this.taskId, this.upirId});
-  final String url;
+class _RecordResult {
+  _RecordResult({this.taskId, this.upirId});
   final Object? taskId;
   final Object? upirId;
 }

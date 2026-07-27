@@ -38,9 +38,7 @@ class CastingProgressPage extends StatefulWidget {
     // 空串占位：展示时在 build 里按当前语言兜底成「相框」（此处无 context 不能本地化）。
     this.deviceName = '',
     this.imagePaths = const [],
-    this.recastImgBle,
-    this.recastUpirId,
-    this.recastImgUrl,
+    this.originalPaths = const [],
   });
 
   final double progress;
@@ -58,24 +56,15 @@ class CastingProgressPage extends StatefulWidget {
   /// 投屏目标设备名，结果页信息卡「投屏设备」一行展示。
   final String deviceName;
 
-  /// 待投屏原图的本地文件路径。非空则进入真实投屏链路。
+  /// 待投屏图片的本地文件路径（预览页处理后的设备分辨率图）。非空则进入真实投屏链路。
   final List<String> imagePaths;
 
-  /// 再次/重新投屏：投屏记录里后端转换好的设备帧地址(imgBle)。非空则走「imgBle 直传」链路
-  /// （直接下载 .bin 图传，不走后端转码），见 [ServerImageProjectionService.recastRecord]。
-  final String? recastImgBle;
+  /// 与 [imagePaths] 逐张对应的**原图**路径（进预览页前未操作过的图，小程序 _origSrc 语义）：
+  /// 投屏记录/后端存图用它，设备帧用处理后的图。为空则记录也用处理后的图。
+  /// （2026-07-23：再次/重新投屏已并入正常链路，旧 recastImgBle 直传参数随 .bin 链路删除。）
+  final List<String> originalPaths;
 
-  /// 再次投屏记账用的原记录 id（upirId）。
-  final Object? recastUpirId;
-
-  /// 再次投屏记账用的原图地址（img）。
-  final String? recastImgUrl;
-
-  bool get _isRecast =>
-      recastImgBle != null && recastImgBle!.isNotEmpty && userProductId != null;
-
-  bool get _live =>
-      userProductId != null && (imagePaths.isNotEmpty || _isRecast);
+  bool get _live => userProductId != null && imagePaths.isNotEmpty;
 
   @override
   State<CastingProgressPage> createState() => _CastingProgressPageState();
@@ -107,8 +96,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   void initState() {
     super.initState();
     if (widget._live) {
-      // 再次投屏为单张（imgBle 直传），其余按待投原图张数。
-      _total = widget._isRecast ? 1 : widget.imagePaths.length;
+      _total = widget.imagePaths.length;
       WidgetsBinding.instance.addPostFrameCallback((_) => _runProjection());
     } else {
       // 纯展示：把外部给的整单进度当作进度条数值。
@@ -138,22 +126,16 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       });
     }
 
-    // 再次/重新投屏（记录页带入 imgBle）：走 imgBle 直传链路；否则走「后端转换 + 图传」链路。
-    final result = widget._isRecast
-        ? await service.recastRecord(
-            userProductId: widget.userProductId!,
-            imgBleUrl: widget.recastImgBle!,
-            upirId: widget.recastUpirId,
-            imgUrl: widget.recastImgUrl,
-            shouldAbort: () => _aborted,
-            onProgress: handleProgress,
-          )
-        : await service.castImages(
-            userProductId: widget.userProductId!,
-            filePaths: widget.imagePaths,
-            shouldAbort: () => _aborted,
-            onProgress: handleProgress,
-          );
+    // 2026-07-23 起再次/重新投屏与正常投屏同链路（抖动接口出帧 + 建记录），无 imgBle 直传分支。
+    final result = await service.castImages(
+      userProductId: widget.userProductId!,
+      filePaths: widget.imagePaths,
+      recordFilePaths: widget.originalPaths.isEmpty
+          ? null
+          : widget.originalPaths,
+      shouldAbort: () => _aborted,
+      onProgress: handleProgress,
+    );
     if (!mounted) return;
     if (widget.state != null && widget.userProductId != null) {
       await widget.state!.refreshConnectedDeviceInfo(
@@ -304,18 +286,20 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
     );
   }
 
-  /// 「重新投屏」：重新进入预览/裁剪流程（对齐小程序记录页与结果页）。
+  /// 「重新投屏」：重新进入预览/编辑流程（对齐小程序记录页与结果页）。
+  /// 回预览页优先带**原图**（originalPaths）：处理后的图只含取景框内内容，
+  /// 用它重编辑就再也拖不出上次裁掉的部分了。
   void _retry() {
+    final previewPaths = widget.originalPaths.isNotEmpty
+        ? widget.originalPaths
+        : widget.imagePaths;
     Navigator.of(context).pushReplacement(
       AppPageRoute<void>(
-        builder: (_) => widget.device != null && widget.imagePaths.isNotEmpty
+        builder: (_) => widget.device != null && previewPaths.isNotEmpty
             ? CastPreviewPage(
                 state: widget.state,
                 device: widget.device!,
-                imagePaths: widget.imagePaths,
-                recastImgBle: widget.recastImgBle,
-                recastUpirId: widget.recastUpirId,
-                recastImgUrl: widget.recastImgUrl,
+                imagePaths: previewPaths,
               )
             : CastingProgressPage(
                 state: widget.state,
@@ -323,9 +307,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
                 device: widget.device,
                 deviceName: widget.deviceName,
                 imagePaths: widget.imagePaths,
-                recastImgBle: widget.recastImgBle,
-                recastUpirId: widget.recastUpirId,
-                recastImgUrl: widget.recastImgUrl,
+                originalPaths: widget.originalPaths,
               ),
       ),
     );

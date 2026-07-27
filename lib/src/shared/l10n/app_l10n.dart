@@ -606,17 +606,12 @@ class AppL10n {
   // 产品要求下线，失败空态只保留标题；小程序 records.wxml 同步去掉。
   String get castPreviewTitle => _pick('照片预览', 'Preview', 'プレビュー');
   String get castStartCasting => _pick('开始投屏', 'Start Casting', 'キャスト開始');
-  String get castCrop => _pick('裁剪', 'Crop', '切り抜き');
-  String get castRotate => _pick('旋转', 'Rotate', '回転');
+  /// 「开始投屏」按钮的处理中态（对齐小程序 `projecting ? '投屏中' : '开始投屏'`）。
+  String get castCasting => _pick('投屏中', 'Casting…', 'キャスト中…');
+  String get castNoPhotos =>
+      _pick('暂无待投屏照片', 'No photos to cast', 'キャストする写真がありません');
   String get castOriginal => _pick('原图', 'Original', '元の写真');
-  String get castSave => _pick('保存', 'Save', '保存');
-  String get castSaved => _pick('已保存', 'Saved', '保存しました');
   String get castProcessing => _pick('处理中', 'Processing', '処理中');
-  String get castRotateFailed => _pick(
-    '旋转失败，请重试',
-    'Rotation failed. Please try again.',
-    '回転に失敗しました。再試行してください。',
-  );
   String get castRestore => _pick('还原', 'Restore', '戻す');
   String get castRestoreTitle => _pick('还原原图', 'Restore Original', '元の写真に戻す');
   String get castRestoreConfirm => _pick(
@@ -631,6 +626,181 @@ class AppL10n {
   );
   String get castImageLoadFailed =>
       _pick('图片加载失败', 'Failed to load image', '画像の読み込みに失敗しました');
+  // ── 预览页 2026-07-22 ~ 07-24 重构（常驻编辑 + 竖/横取景 + 长按拖拽 + 转90°）──
+  // 07-24 交互二次大改后「上一张/下一张」按钮已取消（切图回到左右滑动），
+  // 对应的 castPrevPhoto/castNextPhoto 两个键随之删除，勿再加回。
+  String get castPortrait => _pick('竖向', 'Portrait', '縦向き');
+  String get castLandscape => _pick('横向', 'Landscape', '横向き');
+  String get castEditHint => _pick(
+    '长按1秒后可拖拽图片、双指可缩放与旋转图片',
+    'Press and hold 1s to drag · Pinch with two fingers to zoom and rotate',
+    '1秒長押しでドラッグ · 2本指で拡大・回転',
+  );
+  String get castRecordNoImage => _pick(
+    '该记录没有可投屏的图片',
+    'This record has no image to cast.',
+    'この記録には投影できる画像がありません。',
+  );
+  String get castRecordImageDownloadFailed => _pick(
+    '图片下载失败，请稍后重试',
+    'Failed to download the image. Please try again later.',
+    '画像のダウンロードに失敗しました。後でもう一度お試しください。',
+  );
+
+  // ── AI 对话（星宝）2026-07-25 ──
+  // 错误码文案不在这里：那套按 code 索引的表在 `features/ai/ai_i18n.dart`（对齐小程序 ai-i18n.js）。
+  String get aiTitle => _pick('AI生图', 'AI Studio', 'AI生成');
+  String get aiNewChat => _pick('新对话', 'New Chat', '新しいチャット');
+  String get aiSessions => _pick('会话', 'Chats', '履歴');
+  String get aiSessionsTitle => _pick('会话历史', 'Chat History', 'チャット履歴');
+  String get aiWelcome => _pick(
+    '你好！我是星宝✨，你的AI创作伙伴。有什么我可以帮你的吗？',
+    'Hi! I am BoltStar ✨, your AI creative partner. How can I help?',
+    'こんにちは！AIパートナーの星宝✨です。何をお手伝いしましょう？',
+  );
+  String get aiWelcomeTip => _pick(
+    '试试：输入「画一只卡通猫」，或点 ＋ 一键生图',
+    'Try: “Draw a cartoon cat”, or tap ＋ for one-tap generation',
+    '「猫のイラストを描いて」と入力、または ＋ から一発生成',
+  );
+  String get aiInputHint => _pick('和星宝说点什么…', 'Say something to BoltStar…', '星宝に話しかけてみよう…');
+  String get aiInputWithImagesHint => _pick(
+    '描述你想对图片做什么…',
+    'Describe what to do with the images…',
+    '画像に対して何をしたいか入力…',
+  );
+  String get aiSend => _pick('发送', 'Send', '送信');
+  String get aiStopGenerating => _pick('停止生成', 'Stop', '生成を停止');
+  String get aiHoldToTalk => _pick('按住 说话', 'Hold to talk', '長押しで話す');
+  /// App 侧无录音/转写依赖（小程序那边是「同声传译」插件未开通），两端都只给占位提示。
+  String get aiVoicePending => _pick(
+    '语音转文字待接入',
+    'Voice input is not available yet.',
+    '音声入力は未対応です',
+  );
+  String get aiAlbum => _pick('相册', 'Album', 'アルバム');
+  String get aiCamera => _pick('拍照', 'Camera', '撮影');
+  String get aiGenerateImage => _pick('一键生图', 'Generate', '一発生成');
+  String get aiImageRatio => _pick('图片比例', 'Ratio', '画像比率');
+  String get aiPickStyle => _pick('选择生图模式', 'Choose a style', '生成スタイルを選択');
+  String get aiMessageActions => _pick('消息操作', 'Message actions', 'メッセージ操作');
+  String get aiDownload => _pick('下载', 'Download', 'ダウンロード');
+  String get aiCast => _pick('投屏', 'Cast', 'キャスト');
+  String get aiDelete => _pick('删除', 'Delete', '削除');
+  String get aiDeleted => _pick('已删除', 'Deleted', '削除しました');
+  /// ⚠️ 与小程序的差异：小程序保存进系统相册；Flutter 无内置相册写入能力（需额外插件），
+  /// 本轮只落到应用缓存目录，文案如实说明。
+  String get aiDownloaded => _pick(
+    '图片已下载到应用缓存（保存到系统相册待接入插件）',
+    'Image saved to app cache (system gallery support pending).',
+    'アプリのキャッシュに保存しました（システムアルバム保存は未対応）',
+  );
+  String get aiImageExpired => _pick(
+    '图片下载失败（生成图 24 小时后过期）',
+    'Download failed. Generated images expire after 24 hours.',
+    'ダウンロードに失敗しました（生成画像は24時間で失効）',
+  );
+  String get aiPreparingCast => _pick('准备投屏', 'Preparing cast…', 'キャストの準備中…');
+  String get aiPickCastDevice => _pick('选择投屏设备', 'Choose a device', 'キャスト先を選択');
+  String get aiDeviceConnected => _pick('已连接', 'Connected', '接続済み');
+  String get aiDeviceWillConnect => _pick(
+    '未连接，选择后自动连接',
+    'Not connected — will connect automatically',
+    '未接続（選択後に自動接続）',
+  );
+  String get aiNoBoundDevice => _pick(
+    '暂无已绑定设备，请先绑定设备',
+    'No bound device yet. Please bind one first.',
+    'バインド済みデバイスがありません。先に追加してください',
+  );
+  String get aiBindDeviceFirst => _pick(
+    '使用 AI 创作前请先绑定设备',
+    'Please bind a device before using AI.',
+    'AIを使う前にデバイスを追加してください',
+  );
+  String get aiGoBind => _pick('去绑定', 'Bind now', '追加する');
+  String get aiBack => _pick('返回', 'Back', '戻る');
+  String get aiNeedTextWithImages => _pick(
+    '请输入文字后再发送（图片不能单独发送）',
+    'Add a message — images cannot be sent alone.',
+    'テキストを入力してください（画像だけでは送信できません）',
+  );
+  String get aiImageUploading => _pick('图片上传中，请稍候…', 'Uploading images…', '画像をアップロード中…');
+  String get aiMaxImages => _pick(
+    '一次最多选择 4 张图片',
+    'You can select up to 4 images at a time.',
+    '一度に選べる画像は最大4枚です',
+  );
+  String get aiTokenEmptyTitle => _pick('Token 不足', 'Out of tokens', 'トークン不足');
+  String get aiTokenEmptyMessage => _pick(
+    '当前 Token 余额不足，请前往「个人中心-Token管理」购买后继续使用（支付模块开发中）',
+    'Your token balance is empty. Purchase more in Profile → Tokens (payment module in progress).',
+    'トークン残高が不足しています。「マイページ - トークン管理」で購入してください（決済機能は開発中）',
+  );
+  String get aiBannedBanner => _pick(
+    '账号已被限制，暂时无法使用 AI 对话',
+    'Your account is restricted; AI chat is unavailable.',
+    'アカウントが制限されています。AIチャットは利用できません',
+  );
+  String get aiBannedHint => _pick('账号已被限制', 'Account restricted', 'アカウント制限中');
+  String get aiKeep7Days => _pick(
+    '仅保留最近 7 天的会话',
+    'Only the last 7 days of chats are kept.',
+    '直近7日間のチャットのみ保持されます',
+  );
+  String get aiNoSessions => _pick('暂无会话', 'No chats yet', 'チャットはありません');
+  // ⚠️ 2026-07-25 起本模块**没有也不要再加**任何「清空」入口（对齐小程序）：接口无批量删除能力，
+  //    只能逐条串行 DELETE，中途失败会留下「删一半且无法回滚」的状态。原
+  //    aiClearAll/aiClear/aiClearing/aiCleared/aiClearAllTitle/aiClearAllMessage 六条文案随功能删除。
+  //    清理一律长按逐条删，列表底部有 [aiLongPressToDelete] 提示。
+  String get aiLongPressToDelete => _pick(
+    '长按会话可删除',
+    'Long-press a chat to delete it.',
+    '長押しでチャットを削除できます',
+  );
+  /// 20013 会话数达上限时把用户送去会话列表清理（对齐小程序「去清理」）。
+  String get aiGoCleanSessions => _pick('去清理', 'Manage chats', '整理する');
+  /// 已经停在「新对话」空态时再点＋的提示（不清输入草稿，只提示）。
+  String get aiAlreadyNewChat => _pick(
+    '已经在新对话中',
+    'You are already in a new chat.',
+    'すでに新しいチャットです',
+  );
+  String get aiDeleteSessionTitle => _pick('删除该会话', 'Delete this chat', 'このチャットを削除');
+  String get aiDeleteSessionMessage => _pick(
+    '删除后该会话的聊天记录不可恢复，确定删除？',
+    'The messages in this chat cannot be recovered. Delete it?',
+    'このチャットの履歴は復元できません。削除しますか？',
+  );
+  String aiMsgCount(int count) =>
+      _pick('$count 条消息', '$count messages', '$count 件');
+  /// 一键生图风格标签：key = cartoon / landscape / portrait / anime（需求文案：漫画/风景/肖像/动漫）。
+  String aiStyleLabel(String key) {
+    switch (key) {
+      case 'landscape':
+        return _pick('风景', 'Scenery', '風景');
+      case 'portrait':
+        return _pick('肖像', 'Portrait', '人物');
+      case 'anime':
+        return _pick('动漫', 'Anime', 'アニメ');
+      case 'cartoon':
+      default:
+        return _pick('漫画', 'Cartoon', '漫画');
+    }
+  }
+
+  /// 生图比例标签：key = vertical / horizontal / square（API `img_orientation` 值）。
+  String aiOrientationLabel(String key) {
+    switch (key) {
+      case 'horizontal':
+        return _pick('横向', 'Landscape', '横');
+      case 'square':
+        return _pick('方形', 'Square', '正方形');
+      case 'vertical':
+      default:
+        return _pick('竖向', 'Portrait', '縦');
+    }
+  }
 
   // ── 投屏结果/预览 ──
   String get cresMethodTitle => _pick('选择投屏方式', 'Select Casting Method', 'キャスト方法を選択');

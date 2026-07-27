@@ -7,11 +7,14 @@ import 'package:image/image.dart' as img;
 /// 投屏预览页的**程序化**图片处理，统一导出 **JPEG** 临时文件。
 ///
 /// 只负责两件不需要用户交互的事：
-///   ① [rotate]：工具栏「旋转」按钮的即时 90° 旋转；
-///   ② [coverCropToSize]：开始投屏时按设备分辨率做的 aspectFill 中心裁切 + 严格缩放。
+///   ① [coverCropToSize]：**未编辑**的图开始投屏时，按设备分辨率做 aspectFill 中心裁切 + 严格缩放；
+///   ② [encodeRgbaToJpeg]：把预览页画布烘焙出的 RGBA 像素编码成 JPEG（`dart:ui` 的
+///      `toByteData` 只出 png/rawRgba，JPEG 必须靠 `image` 包）。
 ///
-/// **交互式裁剪不在这里** —— 那个交给原生裁剪器（`image_cropper`：Android=uCrop / iOS=TOCropViewController）。
-/// 小程序是用 canvas + touch 事件手搓的裁剪框，那是被微信沙箱逼的；App 没必要照抄这个实现方式。
+/// **编辑后的出图不在这里**：2026-07-25 起预览页是常驻编辑层（竖/横取景 + 平移/缩放/旋转），
+/// 点「开始投屏」时由 `cast_preview_page.dart` 的 `_bake` 用 `ui.Canvas` 按与小程序 canvas
+/// **完全相同的绘制顺序**合成（含横向 270° 铁律），再调 [encodeRgbaToJpeg] 落文件。
+/// 交互式裁剪器（image_cropper）与预览态旋转烘焙（旧 `rotate`）随该重构一并下线。
 ///
 /// ## 为什么必须导出 JPEG
 /// 小程序 2026-07-13 专门把导出格式从 png 改成了 jpg：png 是同画质 jpg 的 5~10 倍体积
@@ -30,25 +33,21 @@ class CastImageEditor {
   /// 导出 JPEG 质量（对齐小程序 EXPORT_QUALITY = 0.92）。
   static const int exportQuality = 92;
 
-  /// 输出长边限幅（对齐小程序 MAX_EDGE）：2000px 足够覆盖任何相框分辨率，又不至于画布过大。
-  static const int maxEdge = 2000;
-
-  /// 把 [degrees]（90 / 180 / 270）真正绘制进图片并导出新文件。
-  /// [degrees] 为 0 时原样返回。对齐小程序 `bakeRotation`。
-  static Future<CastEditResult?> rotate({
-    required String path,
-    required int degrees,
+  /// 把预览页烘焙出的 **RGBA8888** 像素编码成 JPEG 临时文件，返回文件路径（失败返回 null）。
+  ///
+  /// [width]×[height] 恒为设备物理分辨率（竖向）——这是「上传图必须正好是设备像素」铁律的落点，
+  /// 调用方（`cast_preview_page._bake`）已按取景框把画布尺寸定死，这里只做编码不改尺寸。
+  static Future<String?> encodeRgbaToJpeg({
+    required Uint8List rgba,
+    required int width,
+    required int height,
   }) async {
-    final angle = ((degrees % 360) + 360) % 360;
-    if (angle == 0) {
-      return null;
-    }
-    final bytes = await File(path).readAsBytes();
-    final result = await compute(
-      _rotate,
-      _RotateRequest(bytes: bytes, degrees: angle),
+    final encoded = await compute(
+      _encodeRgba,
+      _RgbaRequest(rgba: rgba, width: width, height: height),
     );
-    return _write(result);
+    final result = await _write(encoded);
+    return result?.path;
   }
 
   /// 按设备分辨率 [width]×[height] 做 **aspectFill 中心裁切 + 严格缩放**并导出新文件。
@@ -111,11 +110,16 @@ class _EncodedImage {
   final int height;
 }
 
-class _RotateRequest {
-  const _RotateRequest({required this.bytes, required this.degrees});
+class _RgbaRequest {
+  const _RgbaRequest({
+    required this.rgba,
+    required this.width,
+    required this.height,
+  });
 
-  final Uint8List bytes;
-  final int degrees;
+  final Uint8List rgba;
+  final int width;
+  final int height;
 }
 
 class _CoverCropRequest {
@@ -130,14 +134,24 @@ class _CoverCropRequest {
   final int height;
 }
 
-_EncodedImage? _rotate(_RotateRequest req) {
-  final decoded = img.decodeImage(req.bytes);
-  if (decoded == null) {
-    return null;
-  }
-  // copyRotate 是顺时针角度，与小程序 canvas 的 ctx.rotate(正角=顺时针) 一致。
-  final rotated = img.copyRotate(decoded, angle: req.degrees);
-  return _encode(rotated);
+/// RGBA8888 → JPEG。`numChannels: 4` 时 `image` 包默认通道序就是 RGBA，
+/// 与 `dart:ui` 的 `ImageByteFormat.rawRgba` 一致，不需要额外换序。
+_EncodedImage? _encodeRgba(_RgbaRequest req) {
+  // Image.fromBytes 收的是整个 ByteBuffer：传进来的若是带偏移的视图，直接取 .buffer 会读到
+  // 错误的起始位置（画面整幅错位）。非「从 0 开始且铺满」的一律先拷成独立缓冲区。
+  final rgba = req.rgba;
+  final source =
+      (rgba.offsetInBytes == 0 && rgba.lengthInBytes == rgba.buffer.lengthInBytes)
+      ? rgba
+      : Uint8List.fromList(rgba);
+  final image = img.Image.fromBytes(
+    width: req.width,
+    height: req.height,
+    bytes: source.buffer,
+    numChannels: 4,
+  );
+  final bytes = img.encodeJpg(image, quality: CastImageEditor.exportQuality);
+  return _EncodedImage(bytes, req.width, req.height);
 }
 
 _EncodedImage? _coverCrop(_CoverCropRequest req) {
@@ -175,20 +189,4 @@ _EncodedImage? _coverCrop(_CoverCropRequest req) {
         );
   final bytes = img.encodeJpg(sized, quality: CastImageEditor.exportQuality);
   return _EncodedImage(bytes, sized.width, sized.height);
-}
-
-/// 长边限幅到 [CastImageEditor.maxEdge] 后编码成 JPEG。
-_EncodedImage _encode(img.Image source) {
-  var out = source;
-  final longEdge = out.width > out.height ? out.width : out.height;
-  if (longEdge > CastImageEditor.maxEdge) {
-    final k = CastImageEditor.maxEdge / longEdge;
-    out = img.copyResize(
-      out,
-      width: (out.width * k).round().clamp(1, CastImageEditor.maxEdge),
-      height: (out.height * k).round().clamp(1, CastImageEditor.maxEdge),
-    );
-  }
-  final bytes = img.encodeJpg(out, quality: CastImageEditor.exportQuality);
-  return _EncodedImage(bytes, out.width, out.height);
 }

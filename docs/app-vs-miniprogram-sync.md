@@ -29,8 +29,9 @@
 | 设备调试 | `subpackages/device/debug` | `features/devices/presentation/ble_debug_page.dart` | 🔶 | 两端均保留硬件调试能力；App 使用 Flutter BLE 调试实现 |
 | 轮播设置 | `subpackages/device/slideshow` | `features/devices/presentation/carousel_settings_page.dart` | ✅ | 设置时断线自动重连、`0x10` 播放模式/间隔、失败回滚一致；成功不弹提示 |
 | OTA 升级 | `subpackages/device/ota` | `features/devices/presentation/ota_upgrade_page.dart` | ✅ | 入口连接门控、版本检查、确认弹窗及 DFU 协议一致 |
-| 投屏预览 | `subpackages/projection/preview` | `features/cast/presentation/cast_preview_page.dart` | ✅🔶 | 左右预览、裁剪、旋转、还原原图、**按设备分辨率中心裁切+缩放**（`coverCropToSize`，非仅比例裁切）、JPEG 92% 一致；App 用原生裁剪器，交互更适合原生平台 |
+| 投屏预览 | `subpackages/projection/preview` | `features/cast/presentation/cast_preview_page.dart` | ✅⚠️ | **2026-07-25 整页重写，已与小程序 07-22~07-25 的模型对齐**：常驻编辑层（单指长按 1s 拖拽 / 双指缩放+旋转 / 右上角转90°）、竖向·横向取景框、左右滑动切图（切前先烘焙进预览缓存，无缝过场）、点「开始投屏」才按框内所见烘焙。**导出铁律**：两方向恒导出竖向设备物理分辨率，横向整幅转 270° 进竖向画布。原生裁剪器（image_cropper）与预览态旋转烘焙随之下线。⚠️本机无 Flutter SDK，未编译/未真机 |
 | 投屏过程/结果 | `subpackages/projection/result` | `casting_progress_page.dart` + `projection_service.dart` | ✅ | 后端转六色帧、部分成功、设备空间、记录回写、失败回滚、连接间隔优化、BLE 图传一致 |
+| AI 对话（星宝） | `subpackages/ai/{chat,sessions}` | `features/ai/presentation/ai_{chat,sessions}_page.dart` | ✅⚠️ | 2026-07-25 移植，**2026-07-27 已追平小程序 07-25 二次 ~ 07-27 全部改动**：接口对齐 v1.0.4（`new_session` 废弃 / `clearHistory` 删除 / 20013 会话上限引导）、**建会话收敛到「首次发送」唯一时机**、会话列表「原路径返回」+ 删会话点对点通知、「清空全部」整功能下线（改长按逐条删）、`msg_count` 恒 0 的前端补数兜底、**AI 回复图文合并进一个气泡**、上传前压到 ~100KB、图片按 `img_orientation` 预占高宽、打字机 16ms 递归 Timer + 贴底不再用动画、首屏「先渲染→贴底→再显形」、AI 气泡去头像铺满屏宽、＋工具栏点外面收起。入口仍与小程序一样**整体屏蔽**（`kAiEntryEnabled=false`），屏蔽期走调试台底部暗门（口令同小程序）。⚠️ **语音输入仍是占位**（微信「同声传译」是小程序独有，App 需另加录音+STT 依赖）、「下载」仍只落应用缓存目录。差异与细节见文末 07-27 日志 |
 | 投屏记录 | `subpackages/projection/records` | `cast_management_figma_page.dart` | ✅ | 成功/失败分页拉取、再次投屏、删除与页面重入刷新一致 |
 | 图库 | `subpackages/album/list` | `features/gallery/presentation/gallery_page.dart` | ✅ | 单设备图库、筛选、批量删除、清空状态提示、刷屏 `0x24`、跨设备保护与删后对账一致 |
 | 设置首页 | `subpackages/settings/index` | `features/settings/presentation/settings_page.dart` | ✅ | 联系方式、隐私、协议、注销、退出登录入口和失败留页逻辑一致 |
@@ -202,3 +203,171 @@
     - ⚠️ 不要拿 `UserProfile.imgCount`（`state.dart:81`）去「优化」这里：那是账号级总数，用上去正好复刻小程序刚修掉的 bug。
     - ⏳ **两端共有的遗留问题（本轮均未改）**：`refreshAlbum` 只拉一页 `pageSize:100` 且无滚动加载，这 100 条是所有设备**共享**预算，账号总照片超 100 时单设备计数会静默偏小（3 台各 60 张 → 只加载 100 条 → 某台可能显示「共 20 张」）。App 侧已有正确范式可抄：`refreshFaq`（`state.dart:2789-2842`）按信封的 `pageCount`/`recordCount` 翻页，而 `refreshAlbum` 把这两个字段丢掉了。修的话给 `refreshAlbum` 加翻页循环、保持全量拉取+客户端过滤，爆炸半径最小。
   - **本轮未验证**：本机无 Flutter SDK，`dart analyze` / 真机均未跑，仅人工核对了符号签名（`BleController.advertisingOf` 为 static、`FrameAdvertising.deviceId` 存在、`devDeviceId` l10n key 存在、`FigmaBindDeviceCard` 全项目仅一处调用、删除的参数无悬空引用）。
+- 2026-07-24（seekink 抖动 token 401 自愈加 `isNewLogin` + 预览页预热；对齐小程序同日改动）：
+  - **`getXTYUserToken` 新增入参 `isNewLogin`**（`BoltFoxApi.getXTYUserToken({int isNewLogin=0})` 走 query，`_uri` 对 int `0` 会保留成 `isNewLogin=0`）。语义：`0`=复用后端已有会话（默认，首取/预热）；`1`=强制重新登录取新 token。用途：抖动接口 `imageDitheringBinDownload` 回 **401**（`{"msg":"…认证失败，无法访问系统资源","code":401}`，token 过期）时，`DitheringApi.requestFrameBin` 先清会话缓存、带 `isNewLogin=1` 重取一次 token 再重发出帧请求——否则后端可能把刚过期的**同一会话**原样返回、重试仍 401 死循环。
+    - 落点：`DitheringApi.ensureAuthToken({bool forceNewLogin=false})`（强制刷新时不复用可能属旧会话的在途请求，另起一发确保 `isNewLogin=1` 生效）+ `requestFrameBin` 的 `run` 循环用 `forceNewLogin` 变量，在 `authFailed && !authRetried` 分支置真后 continue；刷新只做一次（`authRetried`），不消耗网络退避重试次数。与小程序 `utils/dithering.js`/`utils/api.js` 一一对应。
+  - **`CastPreviewPage.initState` 补上 `DitheringApi.prefetchAuthToken()` 预热**（对齐小程序 `preview.js` onLoad，2026-07-23 那条 dithering 同步时**漏了这一处**——预览页进入即前置取 token，点「开始投屏」出帧零等待；失败静默）。
+  - **本轮未验证**：本机无 Flutter SDK，`dart analyze` / 真机均未跑。仅人工核对：`_http.getJson` 支持 `query:`（`getBasicData` 同款）、`_uri` 过滤条件 `value.toString().isNotEmpty` 对 int `0` 成立、`DitheringApi` 已在 `cast_preview_page.dart` 相对路径 `../../../network/dithering_api.dart` 可达、`prefetchAuthToken` 为 static。
+- 2026-07-23（补记：昨日 dithering 管线同步，当时漏记本日志）：seekink 抖动接口整链路已落 App —— `dithering_api.dart`（手拼 multipart + 裸 httpClient 收 arraybuffer、会话级 token 缓存/在途去重/401 刷新、`typeForDevice` 判 3.7/5.8 寸）、`projection_service.dart _acquireFrame` 两路网络并行（设备帧走 `DitheringApi.requestFrameBin`、记录走 `setUserProductUpload` 传原图只建记录）、再次/重新投屏并入正常链路（旧 imgBle 直传 `recastRecord` 已删）。对齐小程序 `docs/server-image-processing-ble-transfer.md` 07-22/07-23。
+  - ⏳ **仍未同步（本轮明确不做，理由见下）——投屏预览页 07-22「照片预览需求调整」大改**（小程序 `docs/2026-07-22-照片预览需求调整.md`）：
+    - 需求：删「裁剪/旋转/保存」按钮只留「原图」；新增 **竖向/横向分段控制器**（el-segmented 式滑块，横向=宽高对调可视区、图不动靠拖动取景）；**常驻编辑**（默认双指缩放+旋转，无需先点进入编辑态）；**按张编辑状态**切图保存/恢复；图右上角**「转90°」FAB**；去掉左右滑动切图、改「上一张/下一张」按钮；点「开始投屏」才按框内所见烘焙。
+    - **导出铁律（务必照搬，get反了会花屏且接口不报错）**：两方向恒导出**竖向设备物理分辨率**；竖向直画；横向把框内所见整幅转 **270°** 进竖向画布（90° 进竖向 + 180° 真机倒置校正）。**横向绝不能直接输出横向尺寸**（字节数相同、设备按竖向行宽解析必整幅花屏）。imgBle 直传判定/`cropW>0` 未编辑判定不能走样。
+    - **为何本轮不做**：App 现状 `cast_preview_page.dart` 是 `PageView` 左右滑 + 原生 `image_cropper` 裁剪 + `RotatedBox` 预览旋转的**旧模型**，与新交互是两套架构；改造 = 用 `GestureDetector`(scale/rotate/pan via Matrix4) 手搓常驻编辑层 + 分段控制器 + 按张 transform 态 + 烘焙管线（很可能用 `RepaintBoundary.toImage(pixelRatio)` 把编辑视图渲成设备分辨率，含 270° 横向规则）+ 新增 4 条 l10n（竖向/横向/上一张/下一张），约 400~600 行新代码。**本机无 Flutter SDK 无法编译/真机验证**，而烘焙几何（尤其横向 270°）是「错了不报错、设备直接花屏」的静默失败——盲改替换一个能用的页面风险过高。建议接入编译器/真机后单独一轮做，届时对照本条铁律逐项验证。
+
+- 2026-07-25（三项同步：投屏预览页大改 + AI 对话模块 + 调试台第三方 Token；另修一处**已存在的编译错误**）：
+  - **⚠️ 先修编译错误**：`cast_management_figma_page.dart` 与 `cast_preview_page.dart` 仍在向 `CastingProgressPage`
+    传 `recastImgBle / recastUpirId / recastImgUrl`，而这三个参数早在 07-23「再次投屏并入正常链路」时就随
+    .bin 链路删掉了 —— 该状态下项目**无法编译**（07-23 那轮无 SDK、未跑 analyze 才漏掉）。本轮一并清理：
+    投屏记录页「再次投屏」的门槛由「有 imgBle 设备帧」改为「有服务器图片地址」（对齐小程序 records.js
+    doRetryProjection），下载失败直接提示中止（`castRecordImageDownloadFailed`），不再有 imgBle 直传回退分支。
+  - **投屏预览页整页重写**（`cast_preview_page.dart`，对齐小程序 07-22 ~ 07-25 三轮重构）：
+    - 交互：常驻编辑层用 `Listener` 独占指针，1:1 复刻小程序的手势状态机（none/idle/swipe/drag/pinch）——
+      单指默认判「左右滑动切图」，按住几乎不动满 **1s** 进拖拽（震动 + 「拿起」放大回弹），双指随时缩放+旋转；
+      底层 `PageView` 只做过场动画（`NeverScrollableScrollPhysics`），切图由 `_commitSwipe` 提交。
+      **不用 GestureDetector 的 onScale**：那套仲裁与「同一根手指长按后转拖拽」冲突，且与小程序手感对不齐。
+    - 几何：`_frameFor`（取景框）/`_clampTransform`（最小 zoom 包住旋转后的框 + 平移夹取）与小程序逐行同构。
+    - **烘焙导出铁律照搬**：`ui.PictureRecorder` + `Canvas` 按与小程序 canvas **完全相同的绘制顺序**合成
+      （`translate(中心) → [横向 rotate(270°)] → translate(tx*k,ty*k) → rotate(用户角) → scale(s)`），
+      画布恒为竖向设备物理分辨率；JPEG 编码走 `CastImageEditor.encodeRgbaToJpeg`（dart:ui 只出 png/rawRgba）。
+      **横向绝不能直接输出横向尺寸**（字节数相同、接口不报错、设备按竖向行宽解析必花屏）。
+    - **展示与烘焙共用同一份 `ui.Image`**（解码一次、`RawImage` 渲染）：规避「ImageDescriptor 的尺寸未必
+      带 EXIF 方向、而 Image 组件显示的是带方向的」这类静默错位。
+    - 同步小程序 07-25 的 4 项修复：① 编辑层起来时底层轮播整条隐藏（`Visibility(maintain*)`），
+      否则横向取景框上下会露出竖向底图；② 竖/横/原点击区放大（`_ToolButton` padding 28×10）；
+      ③ 长按 2s→1s（含 `castEditHint` 文案）；④ 切图前先烘焙进预览缓存（`_previews`，有编辑才出图并弹
+      「处理中」，无编辑无缝切），指纹 `_signatureOf` 与投屏出图共用，命中即复用不重复出图。
+    - 顺带：`_startCast` 补传 `originalPaths`（投屏记录/图库存**原图**，对齐小程序 `setUserProductUpload` 传 `_origSrc`）；
+      `CastImageEditor.rotate` 与 `image_cropper` 调用下线（pubspec 依赖暂留，等真机验证后再决定摘不摘）；
+      l10n 删 `castPrevPhoto/castNextPhoto`（07-24 需求已取消上/下一张按钮），新增 `castCasting/castNoPhotos`。
+  - **AI 对话模块（星宝）移植**（新增 `network/boltstar_ai_api.dart`、`features/ai/{ai_i18n,ai_entry}.dart`、
+    `features/ai/presentation/ai_{chat,sessions}_page.dart`）：
+    - 接口层独立于 `ApiClient`（第三方 FC，响应结构/错误码体系完全不同），失败统一抛 `AiApiException`；
+      `AiCall.abort()` 用 `http.Client.close()`（IOClient 是 force close）实现「停止生成」。
+    - 与小程序同样**走非流式 URL + 客户端打字机 30ms/字**：App 本可以走 SSE，但先与小程序保持同一条链路，
+      少一处联调面；流式地址留在 `streamBaseUrl` 备用。
+    - 已覆盖：会话新建/切换/历史（10001 过期提示）、图文多模态（相册多选≤4 张→立即上传→缩略图停在输入框内、
+      纯图片不可发）、一键生图 + 比例、长按下载/投屏/删除、封禁 22002/22003、Token 余额本地模拟、无绑定设备拦截。
+    - **投屏复用现有链路**：AI 图下载成本地文件 → （必要时选设备并连接）→ 进 `CastPreviewPage`，与手选照片同链路。
+    - **入口按小程序现状屏蔽**：`kAiEntryEnabled = false`；开放时改这一处，并在 `home_page`/`mine_page`
+      各自的自绘 tab 栏中间调 `openAiChat`（两处都要）。屏蔽期入口 = 调试台底部暗门（口令与小程序一致）。
+    - ⚠️ **两处有意差异**（无对应端能力，未擅自加依赖）：① 语音输入——小程序录音后提示「转文字插件待接入」，
+      App 无录音/转写依赖，只给同语义占位提示；② 「下载」——Flutter 无内置相册写入能力（需 gal 之类插件），
+      本轮只落到应用缓存目录，文案如实说明。要补齐这两项需先确认可加依赖。
+    - ⚠️ 小程序 `checkDeviceBound` 的「去绑定」直接跳绑定页；App 的绑定流程是首页内嵌浮层、没有独立路由，
+      故只能退回上一页由用户在首页「添加设备」绑定。
+  - **调试台第三方 Token 卡片**（`ble_debug_page.dart`，对齐小程序 07-24 debug 改动）：
+    「获取 Token」(`isNewLogin=0`) / 「强制重新登录取 Token」(`isNewLogin=1`) 两颗按钮 + 常驻展示 + 复制，
+    失败原因也常驻；归一化逻辑与 `DitheringApi._normalizeToken` 一致（那份私有，这里复制一份，同小程序做法）。
+    纯网络请求、不依赖蓝牙连接。同页底部加 AI 入口暗门（输对口令才显露按钮）。
+    ⚠️ 调试台整页仅 `kDebugMode` 可达（`app_routes`），所以 release 包里 AI 页暂时**没有任何入口**——
+    这与小程序略有差异（小程序调试台在正式包里仍可达），入口正式开放后即消失。
+  - **本轮未验证**：本机无 Flutter SDK，`dart analyze` / `flutter test` / 真机**均未跑**。仅人工核对了符号与签名
+    （l10n 键、`BoltFoxApi.getXTYUserToken({isNewLogin})`、`CastPhotoPicker.pickFromAlbum(limit:)`、
+    `state.currentUser/devices/refreshDevices/connectDevice/deviceById`、`FigmaScreen/FigmaPrimaryButton/PageLoading`
+    参数、`showAppConfirmDialog` 具名参数）。**接入编译器后请优先跑一次 `dart analyze lib`**，
+    再按上面的铁律逐项真机验证横向投屏是否花屏。
+- **2026-07-27（AI 模块追平小程序 07-25 二次 ~ 07-27 全部改动）**。小程序侧首版移植（07-25）之后又改了七轮，
+  本轮把 AI 模块**整体追平**。落点：`network/boltstar_ai_api.dart`、`features/ai/ai_i18n.dart`、
+  新增 `features/ai/ai_image_compress.dart`、`features/ai/presentation/ai_{chat,sessions}_page.dart`、
+  `shared/l10n/app_l10n.dart`。⚠️ 本机无 Flutter SDK，`dart analyze` / 真机**均未跑**。
+
+  ### 接口层（对齐 API 文档 v1.0.3 → v1.0.4）
+  - `chat()` 删掉 `new_session` 参数（v1.0.4 废弃，会话是不是新的由后端自判）。本项目从没有调用方传过它，
+    属清理死代码，运行行为不变。
+  - 删掉 `clearHistory()`（`DELETE /chat/history/clear`）——**本模块不再提供任何清空能力**，原处留注释挡回加。
+  - `newSession()` 补 20013 `MAX_SESSIONS_REACHED`（每用户上限 20 个会话）说明。
+  - 「你好，我是星宝✨」接口不再返回，明确为前端静态展示：App 本来就是静态招呼语，无需改，只记注释
+    免得以后有人去剥前缀。
+
+  ### 错误分发
+  - `ai_i18n` 补 `error.20013` 四语种；`handleError` 新增 `onSessionLimit` 分支——重试对它没意义，
+    传了回调就弹「去清理」确认框把人送到会话列表页删旧的（没传退回 toast，与 30xxx 的 onRetry 同套路）。
+
+  ### 会话创建时机收敛（小程序 07-25 三 + 五，两次拍板）
+  - **建会话只剩「首次发送」一个时机**：`initState` 不再 `_createSession()`（那是「点进 AI 页就凭空多一条
+    空会话」的根因）、`_resetToNewSession()` 也不建。点「新对话」只把界面退回空态；**已经在空态再点就
+    toast「已经在新对话中」**（判据 `isPristineNewSession` = 无 sessionId 且无消息，**不看输入草稿**，
+    只提示不清草稿）。
+  - `_onSendTap` 改「**先建会话、再清输入框**」：顺序反了的话建会话一失败（网络 / 20013），
+    用户打的字和选的图就白没了。
+  - `_createSession` 加在途去重 `_createReq`：await 期间 `_sending` 仍 false、输入框也没清，
+    连点发送会看到两次 `_sessionId` 为空 → 建出两条会话（后一条还是空的）。
+  - 标题本地同步按 `_kSessionTitleMax = 20` 截断（v1.0.4 §二后端只取前 20 字），
+    否则列表页重拉后标题会突然变短、两处对不上。
+
+  ### 会话列表「原路径返回」（小程序 07-25 六·二）
+  - 点会话 / 点「新建对话」都改成**列表页自己 push 一页新聊天页**，列表留在栈里 → 新聊天页的返回键
+    天然原路退回列表。原实现是 `pop(AiSessionPick)` 让下层聊天页就地换会话，返回键会直接退出 AI，
+    点「新建对话」还会把下层那段对话抹掉。`AiSessionPick` 整个类删除。
+    下层已是同一条会话 / 已是干净空态时不叠页，直接 pop。
+  - **删会话改点对点通知**：`AiChatPage.notifySessionDeleted(sessionId)` 遍历「活着的聊天页」注册表
+    （`_livePages`，initState 注册 / dispose 注销），只让**正打开这条会话**的那一页退回空态。
+    等价于小程序用 `getCurrentPages()` 找页面实例的做法；广播式标记会被新 push 的聊天页吃掉，
+    导致刚打开的会话瞬间被清成空白页。
+  - 列表页因此**常驻页面栈**，补了从聊天页退回时的静默刷新（不显整页 loading、失败不打扰、
+    保持已翻到的行数），并只把「刚聊过那条」从 `_counted` 里剔除重新补条数。
+  - 🔶 小程序还有一套「页面栈 ≥9 层就降级成就地换会话」的兜底（微信硬上限 10 层）；Flutter 没有这个
+    限制，直接 push，故 `applySessionFromList` 那条降级路径**不移植**。
+
+  ### 「清空全部」整功能下线（小程序 07-25 六）
+  - 删 `_clearAll()`、标题栏右上角「清空」入口、`aiClearAll/aiClear/aiClearing/aiCleared/
+    aiClearAllTitle/aiClearAllMessage` 六条文案。理由（记下来别再加回去）：接口**没有批量删除能力**，
+    只能 for 循环串行 `DELETE /session`（最坏 20 个请求），中途任一条失败就留下「删了一半且无法回滚」的状态。
+  - 改为长按逐条删，列表底部补 `aiLongPressToDelete` 提示。
+
+  ### 「N 条消息」恒为 0 的前端兜底（小程序 07-25 四）
+  - 结论是**后端 `msg_count` 本身回 0**（前端取值无误：同一对象的 title/updated_at 都正常）。
+    新增 `_fillMsgCounts()`：对 0 的行逐条取 `/chat/history?page=1&page_size=1` 的 `total` 补数。
+    代价是 N+1 请求，故严格设限：只补**已渲染出来的行**、并发 4、失败静默、每条只试一次（`_counted`）、
+    结果攒齐后只 setState 一次。
+  - 列表展示同步改成：条数未知时**只显示时间**，不摆一个明知是错的「0 条消息」。
+  - ⚠️ 后端修好 `msg_count` 后，把 `_fillMsgCounts/_counted/_kHistoryFillConcurrency` 及两处调用整块删掉即可。
+
+  ### 2026-07-27 六组体验修复
+  1. **上传前压到 ~100KB**：新增 `AiImageCompress.toTarget()`（`compute` 里跑，理由同 `CastImageEditor`：
+     解码+重编码几百毫秒，放 UI isolate 会掉帧）。策略**先缩分辨率（长边≤1600）再逐档降质**
+     （80/62/48/36/26，第 3 档起每轮再砍一半分辨率）——降质会糊掉文字细节、AI 反而看不清，缩分辨率对
+     「看懂内容」几乎无损。解码失败/压完更大/抛异常一律回原图，绝不因压缩失败发不出图。
+     - ⚠️ **别和 `CastImageEditor.coverCropToSize` 混用**，两者目标相反：那套是「缩到设备物理分辨率
+       **保画质**」（六色帧靠它出细节）、不看体积；这套是「压到目标字节数」省流量。两边注释都写了这条。
+     - 顺带把压缩时**白拿的像素尺寸**带回来（`AiCompressedImage.width/height`）给用户图片气泡预占高宽——
+       App 的 `CastPhotoPicker` 只回路径、拿不到相册宽高（小程序能拿到），这是等效替代。
+  2. **图片按 `img_orientation` 预占高宽**：`AspectRatio(100 / pad)` 先把高度占住（pad = 高/宽×100），
+     图加载完再用**真实尺寸**校正（`_AiBubbleImage` 自己 resolve 一遍同一个 `CachedNetworkImageProvider`，
+     命中同一份缓存不多下一次；只在被真的构建出来时才 resolve，所以屏幕外的几十张历史图不会被一次性拉下来）。
+     - 🔴 **待后端确认的比例分歧**：用户口述 `{square 1:1, landscape 16:9, portrait 9:16}`，但 API 文档 v1.0.4
+       写的是 `1104×1472(3:4) / 1472×1104(4:3) / 1328×1328(1:1)`，横竖比例对不上。**按文档取值**
+       （同文档 20007 明确「仅 horizontal/square/vertical」，传 landscape/portrait 必报错）。
+       真改成 16:9/9:16 只需动 `_kOrientationPad` 三个数（横 56.25 / 竖 177.78）。
+     - 另加 `_kOrientationAlias` + `_normalizedOrientation`：不管界面用哪套叫法，发给接口的永远是它认的三个值。
+  3. **打字机更顺滑**：`Timer.periodic(30ms)`×3 字 → **递归 `Timer`(16ms)** 每帧 1 字起
+     （periodic 遇 setState 变慢会**堆帧**、追上来一次吐一大段＝「卡一下蹦一截」）；
+     每帧字数 = `ceil(总字数/420)`，长回复自动加快、整段最长 ~6.7s。
+     顺手修真 bug：切字从 `split('')` 改 `runes` —— `split('')` 按 UTF-16 码元切，会把 emoji 的**代理对
+     劈成两半**，打到一半渲染乱码方块（星宝回复里 ✨ 相当常见）。
+  4. **滚动跟不上**：`_scrollToBottom` 每次 `animateTo(180ms)` 在 60fps 出字下必然越追越远。改 `_stickToBottom`：
+     打字期间 `jumpTo` + 80ms 节流、**关动画**，发消息/打完才 `animateTo`；并加「用户上翻（距底 > 60px）
+     就别拽回来」（Flutter 直接有 `maxScrollExtent`，不必像小程序那样先量聊天区高度）。
+     🔶 小程序的「底部内容被『停止生成』浮标遮住」不适用：那颗是 `position: fixed` 悬浮件，App 这颗在
+     Column 里占正常一行，不存在遮挡，故**不移植**底部留白。
+  5. **AI 回复图文合并进一个气泡**：`_MsgKind.rich` + `_AiMessage.images`，图不再各自成一条消息；
+     占位气泡（三点 loading）就是最终那个气泡。**历史消息同样合并**（连着的 assistant 图片行并回前一条，
+     一轮 = 1 user + 1 assistant 文字 + N 图，故前提成立），重进会话与刚回复时长得一样。
+     ⚠️ 一条消息因此可能对应**多个 message_id**，`_deleteMessage` 逐个删，漏一个重进只剩半条。
+     长按分两层：气泡本体 = 删整条 / 气泡里某张图 = 下载·投屏·只删这张。
+  6. **首屏「先渲染 → 贴底 → 再显形」**：`_chatReady` 为 false 时列表 `Opacity(0)` **但已渲染**
+     （`wx:if`/`if` 换掉就没有布局、滚都滚不动），两层 `addPostFrameCallback` 串「有布局 → jumpTo → 显形」，
+     用户就看不到「从最老一条一路飞到最新」那一下；loading 改成盖在列表上（`Stack`）而不是替换列表。
+  7. **气泡样式**：AI 侧**去头像** + 气泡 `width: double.infinity` 铺满、气泡里的图跟着铺满气泡宽度；
+     用户侧一行未动（右对齐、按内容宽、图片 maxWidth 220）。
+  8. **＋ 工具栏点外面收起**（小程序 07-27 追加）：`_closeTools()` 挂三处——消息区 tap、顶部工具行 tap、
+     输入框 onTap（键盘和工具栏不该同时占着底部）。**故意不做全屏遮罩**：遮罩会把拖动一起吃掉、
+     工具栏开着时聊天记录就滑不动；挂容器 onTap 只吃点击，拖动仍归 ListView。气泡里的图有自己的 onTap
+     （要看大图），点图不收工具栏，与小程序一致。
+
+  ### 仍然有意不同（无对应端能力，未擅自加依赖）
+  - **语音输入**：小程序已接微信「同声传译」插件（按住说话、上滑取消、松手直发、动效盖住整个输入区、
+    录音期间不显示识别文字）。**这套插件是小程序独有**，App 要做得引入录音插件 + 第三方 STT 服务，
+    本轮不擅自加依赖，按住仍只给同语义占位提示（`aiVoicePending`）。要补齐请先确认可以加依赖。
+  - **保存到系统相册**：Flutter 无内置相册写入能力（需 gal / image_gallery_saver），「下载」仍只落应用缓存目录。
+  - **小程序侧的滚动条隐藏**（`::-webkit-scrollbar`）是 WebView 专属问题，App 无需同步。

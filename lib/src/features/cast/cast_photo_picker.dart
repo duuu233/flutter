@@ -63,12 +63,17 @@ class CastPhotoPicker {
   /// 进相册前先过 [PermissionGate.ensurePhotoAccess]：Android 13+ 的系统选择器
   /// 本身不要求权限也能打开相册，但产品要求必须先经用户授权（拒绝弹「去设置」引导）。
   /// 全部投屏选图入口统一走这里，权限门槛只需守这一处。
-  static Future<List<String>> pickFromAlbum(BuildContext context) async {
+  /// [limit]：本次最多可选张数，缺省 [maxBatch]。AI 对话的图文多模态一次最多 4 张，
+  /// 且要按「已选了几张」动态收紧，所以开放为参数（会被夹到 1..[maxBatch]）。
+  static Future<List<String>> pickFromAlbum(
+    BuildContext context, {
+    int? limit,
+  }) async {
     if (!await PermissionGate.ensurePhotoAccess(context)) {
       return const [];
     }
     final files = await _picker.pickMultiImage(
-      limit: maxBatch,
+      limit: (limit ?? maxBatch).clamp(1, maxBatch),
       maxWidth: _maxLongEdge,
       maxHeight: _maxLongEdge,
       imageQuality: _quality,
