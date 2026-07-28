@@ -22,12 +22,14 @@ class LegalDocumentView extends StatelessWidget {
     required this.updatedAt,
     required this.effectiveAt,
     required this.sections,
+    this.intro,
   });
 
   final String title;
   final String updatedAt;
   final String effectiveAt;
   final List<LegalSection> sections;
+  final String? intro;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +57,10 @@ class LegalDocumentView extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
+            if (intro != null && intro!.trim().isNotEmpty) ...[
+              Text(intro!, style: _DocStyles.body),
+              const SizedBox(height: 16),
+            ],
             for (final section in sections) ...[
               Text(section.heading, style: _DocStyles.heading),
               const SizedBox(height: 8),

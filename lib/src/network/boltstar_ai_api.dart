@@ -35,6 +35,25 @@ class BoltStarAiApi {
   static const Duration defaultTimeout = Duration(seconds: 15);
   static const Duration generateTimeout = Duration(seconds: 120);
 
+  /// 阿里云网关 JWT 缺失错误的大写字段签名。
+  ///
+  /// BoltStar 自身使用 `{success, code, data, params, detail}`，这里仅对产品确认过
+  /// 的固定 Code + Message 生成可展示文案。其它未知响应仍走标准兜底，不能借此
+  /// 把任意网关字段或 [AiApiException.detail] 透传给用户。
+  static const String _jwtTokenMissingCode = 'JWTTokenIsMissing';
+  static const String _jwtTokenMissingMessage = 'the jwt token is missing';
+
+  static String? gatewayErrorMessage(Map<String, dynamic>? body) {
+    if (body == null ||
+        body['Code'] != _jwtTokenMissingCode ||
+        body['Message'] != _jwtTokenMissingMessage) {
+      return null;
+    }
+    final requestId = body['RequestId']?.toString().trim() ?? '';
+    return 'JWTTokenIsMissing：the jwt token is missing'
+        '${requestId.isEmpty ? '' : '（RequestId: $requestId）'}';
+  }
+
   /// 由用户 id 拼 AI 侧 user_id；[rawUserId] 为空时回退演示 id。
   static String userIdOf(String? rawUserId) {
     final id = (rawUserId ?? '').trim();
@@ -95,7 +114,17 @@ class BoltStarAiApi {
       } catch (_) {
         json = null;
       }
-      if (response.statusCode == 200 && json != null && json['success'] == true) {
+      final gatewayMessage = gatewayErrorMessage(json);
+      if (gatewayMessage != null) {
+        throw AiApiException(
+          code: 31001,
+          detail: gatewayMessage,
+          userMessage: gatewayMessage,
+        );
+      }
+      if (response.statusCode == 200 &&
+          json != null &&
+          json['success'] == true) {
         return json;
       }
       final code = json == null ? null : json['code'];
@@ -315,20 +344,27 @@ class AiCall<T> {
 
 /// AI 接口错误：`code` 决定提示文案与处理方式（见 `features/ai/ai_i18n.dart`）。
 /// [detail] 是**排障信息，严禁展示给用户**（文档红线），只打日志。
+/// [userMessage] 只允许由请求层对白名单网关响应生成，不接受任意服务端详情。
 class AiApiException implements Exception {
-  const AiApiException({required this.code, this.params, this.detail})
-    : aborted = false;
+  const AiApiException({
+    required this.code,
+    this.params,
+    this.detail,
+    this.userMessage,
+  }) : aborted = false;
 
   /// 用户主动「停止生成」：调用方应静默处理，不弹任何提示。
   const AiApiException.aborted()
     : code = 0,
       params = null,
       detail = 'aborted',
+      userMessage = null,
       aborted = true;
 
   final int code;
   final Map<String, dynamic>? params;
   final String? detail;
+  final String? userMessage;
   final bool aborted;
 
   @override

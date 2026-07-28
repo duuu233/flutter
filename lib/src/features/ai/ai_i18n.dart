@@ -238,11 +238,27 @@ class AiI18n {
       return; // 双保险：用户主动停止，静默
     }
     final code = ai?.code ?? 31001;
-    final message = textForCode(code, ai?.params);
+    final userMessage = ai?.userMessage?.trim() ?? '';
+    final message = userMessage.isNotEmpty
+        ? userMessage
+        : textForCode(code, ai?.params);
 
     // detail 是开发者排障信息，严禁展示给用户，只打日志
     if (ai?.detail != null) {
       debugPrint('[BoltStar] code=$code ${ai!.detail}');
+    }
+
+    // userMessage 只由网络层对白名单中的固定网关字段签名生成。它必须直接 toast，
+    // 并保留 RequestId 供用户截图后定位；不能退化成展示任意 detail。
+    if (userMessage.isNotEmpty) {
+      if (context.mounted) {
+        AppToast.show(
+          context,
+          '接口-$message',
+          duration: const Duration(seconds: 5),
+        );
+      }
+      return;
     }
 
     final l10n = AppL10n.of(context);

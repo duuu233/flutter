@@ -115,7 +115,10 @@ BoltStar 当前使用三套不同的远端服务：
   “BoltStar AI服务协议”；拒绝后允许继续输入/浏览，但所有发送入口持续拦截并再次引导。
 - 同意状态由 `AiServiceConsent` 按“协议版本 + 用户 ID”写入 `SharedPreferences`，不允许跨账号复用；
   退出、注销成功或 401/406 登录态失效后清除。
-- 完整四语种条款位于设置页 `AiServiceAgreementPage`；协议版本当前为 `2026-07-28`。
+- 完整四语种条款位于设置页 `AiServiceAgreementPage`；协议版本当前为 `2026-07-28-v2`。
+- 阿里云网关返回固定大写字段错误 `Code=JWTTokenIsMissing`、
+  `Message=the jwt token is missing` 时，AI 网络层生成受信用户文案，toast 展示错误码、
+  Message 与动态 `RequestId`。其它 `detail` 仍只允许写日志，不得展示。
 - 正式用户入口当前由 `kAiEntryEnabled=false` 屏蔽；调试暗门保留。
 - 语音输入仍是占位；下载只写应用缓存目录。
 

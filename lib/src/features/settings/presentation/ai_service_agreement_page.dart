@@ -27,8 +27,27 @@ class AiServiceAgreementPage extends StatelessWidget {
         ),
         updatedAt: date,
         effectiveAt: date,
+        intro: _introFor(l10n),
         sections: _sectionsFor(l10n),
       ),
+    );
+  }
+
+  String _introFor(AppL10n l10n) {
+    return l10n.pick(
+      '欢迎使用AI服务。本协议是您（以下称“用户”）与 [启和明(深圳)新能源科技有限公司] '
+          '（以下称“我们”）之间，关于使用我们提供的AI功能（以下称“本服务”）的法律协议。'
+          '请您在使用本服务前仔细阅读。',
+      'Welcome to the AI Service. This Agreement is a legal agreement between '
+          'you (the “User”) and [Qihe Ming (Shenzhen) New Energy Technology '
+          'Co., Ltd.] (“we”, “us” or “our”) concerning your use of the AI '
+          'features we provide (the “Service”). Please read it carefully '
+          'before using the Service.',
+      'AIサービスへようこそ。本規約は、お客様（以下「ユーザー」といいます）と'
+          '[Qihe Ming (Shenzhen) New Energy Technology Co., Ltd.]'
+          '（以下「当社」といいます）との間で、当社が提供するAI機能'
+          '（以下「本サービス」といいます）の利用について定める法的な規約です。'
+          '本サービスをご利用になる前に、よくお読みください。',
     );
   }
 
@@ -37,24 +56,19 @@ class AiServiceAgreementPage extends StatelessWidget {
       LegalSection(
         heading: l10n.pick('1. 服务说明', '1. Service Description', '1. サービス内容'),
         body: l10n.pick(
-          '本协议适用于你使用本应用提供的AI相关功能，包括但不限于：\n'
-              '• AI文本对话\n'
-              '• AI图片生成（文生图）\n'
-              '• AI图片美化（图生图）\n\n'
-              '上述功能由阿里云百炼（阿里云计算有限公司）提供底层AI技术服务。',
-          'This Agreement applies to the AI features provided by the App, '
-              'including but not limited to:\n'
-              '• AI text chat\n'
-              '• AI image generation (text-to-image)\n'
-              '• AI image enhancement (image-to-image)\n\n'
-              'The underlying AI technology for these features is provided '
-              'by Alibaba Cloud Model Studio (Alibaba Cloud Computing Co., Ltd.).',
-          '本規約は、本アプリが提供する以下のAI関連機能に適用されます。\n'
-              '• AIテキスト対話\n'
-              '• AI画像生成（テキストから画像）\n'
-              '• AI画像加工（画像から画像）\n\n'
-              'これらの機能の基盤AI技術は、Alibaba Cloud Computing Co., Ltd.'
-              'のAlibaba Cloud Model Studioによって提供されます。',
+          '1.1 本服务基于“阿里云百炼”大模型服务平台提供技术支持，为您提供包括文本对话、'
+              'AI图片生成、AI图片美化等功能。\n\n'
+              '1.2 本服务仅限您在同意本协议后，于我们指定的小程序或App内使用。',
+          '1.1 The Service is technically supported by the Alibaba Cloud Model '
+              'Studio foundation-model platform and provides features including '
+              'text chat, AI image generation, and AI image enhancement.\n\n'
+              '1.2 You may use the Service only after agreeing to this Agreement '
+              'and only within a mini program or App designated by us.',
+          '1.1 本サービスは、Alibaba Cloud Model Studioの大規模モデルサービス'
+              'プラットフォームによる技術支援に基づき、テキスト対話、AI画像生成、'
+              'AI画像加工などの機能を提供します。\n\n'
+              '1.2 本サービスは、本規約に同意した後、当社が指定するミニプログラム'
+              'またはアプリ内でのみ利用できます。',
         ),
       ),
       LegalSection(
@@ -64,135 +78,179 @@ class AiServiceAgreementPage extends StatelessWidget {
           '2. データの利用と許諾',
         ),
         body: l10n.pick(
-          '为了向你提供AI服务，你需要知悉并授权以下内容：\n'
-              '• 数据传输：你发送的文字或图片内容，将被传输至阿里云百炼AI服务进行处理。\n'
-              '• 数据处理：你发送的内容仅用于本次AI处理操作，不会被存储或用于模型训练。\n'
-              '• 数据用途：阿里云百炼仅作为技术处理方，不会将你的内容用于任何其他目的。\n\n'
-              '你授权本应用将你主动提交的内容传输至阿里云百炼进行处理，授权仅在你使用AI功能时生效。',
-          'To provide the AI services, you acknowledge and authorize the following:\n'
-              '• Data transfer: Text or images you send will be transmitted '
-              'to Alibaba Cloud Model Studio for processing.\n'
-              '• Data processing: Your content is used only for the current '
-              'AI operation and will not be stored or used for model training.\n'
-              '• Data purpose: Alibaba Cloud Model Studio acts only as a '
-              'technical processor and will not use your content for any other purpose.\n\n'
-              'You authorize the App to transmit content you actively submit '
-              'to Alibaba Cloud Model Studio. This authorization applies only '
-              'while you use AI features.',
-          'AIサービスの提供にあたり、以下の内容を確認し、許諾する必要があります。\n'
-              '• データ送信：送信したテキストまたは画像は、処理のためAlibaba Cloud '
-              'Model Studioへ送信されます。\n'
-              '• データ処理：送信内容は今回のAI処理にのみ使用され、保存またはモデル学習に'
-              '利用されることはありません。\n'
-              '• データ用途：Alibaba Cloud Model Studioは技術処理者としてのみ機能し、'
-              '送信内容をその他の目的に利用しません。\n\n'
-              'お客様は、能動的に送信した内容を本アプリがAlibaba Cloud Model Studioへ'
-              '送信することを許諾します。この許諾はAI機能の利用時にのみ有効です。',
+          '2.1 授权：为提供本服务，您授权我们将您主动提交的文字或图片内容传输至'
+              '“阿里云百炼”AI服务进行处理。\n\n'
+              '2.2 数据处理：您明确知悉并同意，您发送的内容仅用于处理您本次的AI请求，'
+              '不会被存储，也不会被用于任何模型训练或优化。\n\n'
+              '2.3 技术提供方：本服务的底层AI技术由阿里云计算有限公司（或其关联公司）提供。',
+          '2.1 Authorization: To provide the Service, you authorize us to '
+              'transmit text or images that you actively submit to Alibaba '
+              'Cloud Model Studio AI services for processing.\n\n'
+              '2.2 Data processing: You expressly acknowledge and agree that '
+              'content you send is used only to process your current AI request, '
+              'will not be stored, and will not be used for any model training '
+              'or optimization.\n\n'
+              '2.3 Technology provider: The underlying AI technology for the '
+              'Service is provided by Alibaba Cloud Computing Co., Ltd. or its affiliates.',
+          '2.1 許諾：本サービスを提供するため、お客様は、自ら送信したテキスト'
+              'または画像を処理のためAlibaba Cloud Model StudioのAIサービスへ'
+              '送信することを当社に許諾します。\n\n'
+              '2.2 データ処理：送信内容は今回のAIリクエストの処理にのみ使用され、'
+              '保存されず、いかなるモデルの学習または最適化にも使用されないことを、'
+              'お客様は明確に理解し同意するものとします。\n\n'
+              '2.3 技術提供者：本サービスの基盤AI技術は、Alibaba Cloud Computing '
+              'Co., Ltd.またはその関連会社が提供します。',
         ),
       ),
       LegalSection(
-        heading: l10n.pick('3. 使用规范', '3. Acceptable Use', '3. 利用ルール'),
+        heading: l10n.pick('3. 用户使用规范', '3. Acceptable Use', '3. ユーザーの利用ルール'),
         body: l10n.pick(
-          '使用AI功能时，你承诺不提交、不传播以下内容：\n'
-              '• 违反法律法规的内容\n'
-              '• 色情、低俗内容\n'
-              '• 暴力、恐怖内容\n'
-              '• 侮辱、诽谤他人内容\n'
-              '• 其他违法违规或违背公序良俗的内容\n\n'
-              '本应用已接入阿里云内容安全审核服务，所有提交内容均会自动进行合规检测。',
-          'When using AI features, you agree not to submit or distribute:\n'
-              '• Content that violates laws or regulations\n'
-              '• Pornographic or vulgar content\n'
-              '• Violent or terrorist content\n'
-              '• Content that insults or defames others\n'
-              '• Other illegal content or content contrary to public order and good morals\n\n'
-              'The App uses Alibaba Cloud content moderation. All submitted '
-              'content is automatically checked for compliance.',
-          'AI機能の利用時、以下の内容を送信または拡散しないことに同意するものとします。\n'
-              '• 法令に違反する内容\n'
-              '• わいせつまたは低俗な内容\n'
-              '• 暴力的またはテロに関する内容\n'
-              '• 他者を侮辱または中傷する内容\n'
-              '• その他、違法または公序良俗に反する内容\n\n'
-              '本アプリはAlibaba Cloudのコンテンツ安全審査サービスを導入しており、'
-              'すべての送信内容は自動的に適合性チェックを受けます。',
+          '您承诺在使用本服务时，不会提交、生成或传播以下内容：\n'
+              '3.1 违反中华人民共和国法律法规及政策的内容；\n'
+              '3.2 色情、低俗、淫秽或性暗示内容；\n'
+              '3.3 暴力、恐怖、血腥或宣扬犯罪的内容；\n'
+              '3.4 侮辱、诽谤、威胁、骚扰或侵害他人合法权益的内容；\n'
+              '3.5 其他违背公序良俗、社会公德或可能损害本服务声誉的内容。',
+          'When using the Service, you agree not to submit, generate, or distribute:\n'
+              '3.1 Content that violates the laws, regulations, or policies of '
+              'the People’s Republic of China;\n'
+              '3.2 Pornographic, vulgar, obscene, or sexually suggestive content;\n'
+              '3.3 Violent, terrorist, bloody, or crime-promoting content;\n'
+              '3.4 Content that insults, defames, threatens, harasses, or '
+              'infringes the lawful rights of others;\n'
+              '3.5 Other content contrary to public order, good morals, or '
+              'social ethics, or that may harm the reputation of the Service.',
+          '本サービスの利用時、以下の内容を送信、生成または拡散しないことを約束します。\n'
+              '3.1 中華人民共和国の法令または政策に違反する内容\n'
+              '3.2 わいせつ、低俗、卑わい、または性的な示唆を含む内容\n'
+              '3.3 暴力、テロ、流血、または犯罪を助長する内容\n'
+              '3.4 他者を侮辱、中傷、脅迫、嫌がらせし、または他者の適法な権利を'
+              '侵害する内容\n'
+              '3.5 その他、公序良俗や社会道徳に反し、または本サービスの信用を'
+              '損なうおそれのある内容',
         ),
       ),
       LegalSection(
         heading: l10n.pick('4. 违规处理', '4. Enforcement', '4. 違反時の措置'),
         body: l10n.pick(
-          '为维护良好的使用环境，对于违反使用规范的用户，将采取以下处理措施：\n\n'
+          '为维护良好使用环境，对于违反本协议第3条规范的账号，我们将采取以下阶梯式处理：\n\n'
               '违规次数｜处理措施\n'
-              '第1次｜警告提醒，AI功能封禁24小时\n'
+              '第1次｜AI功能封禁24小时\n'
               '第2次｜AI功能封禁24小时\n'
               '第3次｜AI功能封禁24小时\n'
               '累计3次后，每新增1次｜AI功能封禁24小时\n'
               '累计满9次｜AI功能永久封禁\n\n'
-              '说明：封禁仅针对AI功能，不影响你使用应用的其他功能。'
-              '如对封禁有异议，可联系客服申诉。',
-          'To maintain a safe environment, violations are handled as follows:\n\n'
+              '说明：封禁仅针对本AI服务，不影响您使用小程序/App的其他功能。'
+              '您可通过指定渠道申诉。',
+          'To maintain a safe environment, accounts that violate Section 3 '
+              'will be handled on the following graduated basis:\n\n'
               'Violation count | Action\n'
-              '1st | Warning and 24-hour AI feature suspension\n'
+              '1st | 24-hour AI feature suspension\n'
               '2nd | 24-hour AI feature suspension\n'
               '3rd | 24-hour AI feature suspension\n'
               'After 3 total, each additional violation | 24-hour AI feature suspension\n'
               '9 total | Permanent AI feature suspension\n\n'
-              'Suspensions apply only to AI features and do not affect other '
-              'App functions. You may contact customer support to appeal.',
-          '安全な利用環境を維持するため、違反には以下の措置を適用します。\n\n'
+              'Suspensions apply only to this AI Service and do not affect '
+              'other mini program/App features. You may appeal through the designated channel.',
+          '良好な利用環境を維持するため、第3条に違反したアカウントには'
+              '以下の段階的措置を適用します。\n\n'
               '違反回数｜措置\n'
-              '1回目｜警告およびAI機能の24時間停止\n'
-              '2回目｜AI機能の24時間停止\n'
-              '3回目｜AI機能の24時間停止\n'
-              '累計3回以降、新たな違反ごと｜AI機能の24時間停止\n'
-              '累計9回｜AI機能の永久停止\n\n'
-              '停止対象はAI機能のみで、その他のアプリ機能には影響しません。'
-              '異議がある場合はカスタマーサポートへ申し立てることができます。',
-        ),
-      ),
-      LegalSection(
-        heading: l10n.pick('5. 免责声明', '5. Disclaimer', '5. 免責事項'),
-        body: l10n.pick(
-          '• AI生成内容仅供参考，本应用不对AI生成内容的准确性、完整性、合法性承担保证责任。\n'
-              '• 你应对使用AI功能产生的内容自行判断和负责。\n'
-              '• 本应用保留随时修改、暂停或终止AI服务的权利，会尽可能提前通知。',
-          '• AI-generated content is for reference only. The App does not '
-              'guarantee its accuracy, completeness, or legality.\n'
-              '• You are responsible for evaluating and using content produced '
-              'through AI features.\n'
-              '• The App may modify, suspend, or terminate AI services at any '
-              'time and will provide advance notice where reasonably possible.',
-          '• AI生成内容は参考情報です。本アプリはその正確性、完全性、合法性を保証しません。\n'
-              '• AI機能で生成された内容については、お客様自身が判断し責任を負うものとします。\n'
-              '• 本アプリはAIサービスを随時変更・停止・終了する権利を留保し、'
-              '可能な限り事前に通知します。',
+              '1回目｜AI機能を24時間停止\n'
+              '2回目｜AI機能を24時間停止\n'
+              '3回目｜AI機能を24時間停止\n'
+              '累計3回以降、新たな違反ごと｜AI機能を24時間停止\n'
+              '累計9回｜AI機能を永久停止\n\n'
+              '停止対象は本AIサービスのみで、ミニプログラムまたはアプリの'
+              'その他の機能には影響しません。指定された窓口から異議を申し立てることができます。',
         ),
       ),
       LegalSection(
         heading: l10n.pick(
-          '6. 协议的变更',
-          '6. Changes to this Agreement',
-          '6. 規約の変更',
+          '5. AI生成内容标识',
+          '5. AI-Generated Content Labeling',
+          '5. AI生成コンテンツの表示',
         ),
         body: l10n.pick(
-          '本应用可能根据法律法规变化或服务升级需要，适时更新本协议。'
-              '更新后的协议会在本页面发布，并在你下次使用AI功能时提醒你查阅。',
-          'The App may update this Agreement in response to legal or regulatory '
-              'changes or service upgrades. The revised Agreement will be '
-              'published on this page, and you will be reminded to review it '
-              'the next time you use AI features.',
-          '法令の変更またはサービス更新に応じて、本規約を改定する場合があります。'
-              '改定後の規約は本ページに掲載し、次回AI機能を利用する際に確認を促します。',
+          '5.1 您知悉并同意，为遵守法律法规，由本服务生成的图片或文本内容，'
+              '可能带有“AI生成”等显著标识。\n\n'
+              '5.2 您在发布或传播由本服务生成的非真实信息时，应依法自行进行显著标识。',
+          '5.1 You acknowledge and agree that, to comply with applicable laws '
+              'and regulations, images or text generated by the Service may '
+              'carry a prominent label such as “AI-generated.”\n\n'
+              '5.2 When publishing or distributing non-authentic information '
+              'generated by the Service, you must add a prominent label as required by law.',
+          '5.1 法令を遵守するため、本サービスが生成した画像またはテキストには、'
+              '「AI生成」などの明確な表示が付される場合があることを理解し、同意するものとします。\n\n'
+              '5.2 本サービスが生成した事実ではない情報を公開または拡散する場合、'
+              '法令に従って自ら明確な表示を付けなければなりません。',
         ),
       ),
       LegalSection(
-        heading: l10n.pick('7. 联系方式', '7. Contact', '7. お問い合わせ'),
+        heading: l10n.pick('6. 免责声明', '6. Disclaimer', '6. 免責事項'),
         body: l10n.pick(
-          '如对本协议有任何疑问，或对封禁处理有异议，可通过邮箱方式联系我们：'
-              'boltstarservice@boltstar.net',
-          'For questions about this Agreement or to appeal a suspension, '
-              'contact us by email: boltstarservice@boltstar.net',
-          '本規約に関するご質問または利用停止への異議申し立ては、'
+          '6.1 由于人工智能技术的局限性，本服务生成的内容不保证绝对准确、可靠或完整，'
+              '仅供您参考，不代表我们的立场或观点。\n\n'
+              '6.2 对于任何专业领域问题（如医疗、法律、金融等），请咨询专业人士，'
+              '我们不承担因依赖本服务生成内容而产生的任何直接或间接损失。\n\n'
+              '6.3 您应对使用本服务的行为及后果独立承担全部责任。',
+          '6.1 Due to the limitations of artificial intelligence, content '
+              'generated by the Service is not guaranteed to be completely '
+              'accurate, reliable, or complete. It is for reference only and '
+              'does not represent our position or views.\n\n'
+              '6.2 For professional matters such as medical, legal, or financial '
+              'issues, consult a qualified professional. We are not liable for '
+              'any direct or indirect loss arising from reliance on content '
+              'generated by the Service.\n\n'
+              '6.3 You bear full and independent responsibility for your use '
+              'of the Service and its consequences.',
+          '6.1 AI技術の限界により、本サービスが生成する内容の絶対的な正確性、'
+              '信頼性または完全性は保証されません。参考情報にすぎず、当社の立場'
+              'または見解を示すものではありません。\n\n'
+              '6.2 医療、法律、金融などの専門分野に関する問題は、専門家へご相談ください。'
+              '本サービスの生成内容を信頼したことにより生じる直接または間接の損失について、'
+              '当社は責任を負いません。\n\n'
+              '6.3 本サービスの利用行為およびその結果について、お客様が単独で'
+              'すべての責任を負うものとします。',
+        ),
+      ),
+      LegalSection(
+        heading: l10n.pick('7. 知识产权', '7. Intellectual Property', '7. 知的財産権'),
+        body: l10n.pick(
+          '7.1 您上传至本服务的原始内容的知识产权归您所有。\n\n'
+              '7.2 在现行法律允许的范围内，本服务基于您指令生成的内容，其知识产权由您享有，'
+              '您应自行判断其是否具有知识产权及权利归属，并承担相应责任。',
+          '7.1 You retain the intellectual property rights in original content '
+              'that you upload to the Service.\n\n'
+              '7.2 To the extent permitted by applicable law, you own any '
+              'intellectual property rights in content generated by the Service '
+              'from your instructions. You must determine for yourself whether '
+              'such rights exist and who owns them, and bear the corresponding responsibility.',
+          '7.1 本サービスにアップロードした原コンテンツの知的財産権は、'
+              'お客様に帰属します。\n\n'
+              '7.2 現行法で認められる範囲において、お客様の指示に基づき本サービスが'
+              '生成した内容の知的財産権はお客様に帰属します。その内容に知的財産権が'
+              '成立するか、および権利の帰属については自ら判断し、相応の責任を負うものとします。',
+        ),
+      ),
+      LegalSection(
+        heading: l10n.pick(
+          '8. 协议变更与联系方式',
+          '8. Changes and Contact',
+          '8. 規約の変更とお問い合わせ',
+        ),
+        body: l10n.pick(
+          '8.1 我们可能根据法律法规或服务升级需要，适时更新本协议。'
+              '更新后的协议将在此页面公布。\n\n'
+              '8.2 如您对本协议有任何疑问，或对违规处理有异议，'
+              '可通过邮箱联系我们：boltstarservice@boltstar.net',
+          '8.1 We may update this Agreement as necessary due to legal or '
+              'regulatory changes or service upgrades. The updated Agreement '
+              'will be published on this page.\n\n'
+              '8.2 For questions about this Agreement or objections to an '
+              'enforcement action, contact us by email: boltstarservice@boltstar.net',
+          '8.1 法令の変更またはサービス更新の必要に応じて、本規約を改定する場合があります。'
+              '改定後の規約は本ページに掲載します。\n\n'
+              '8.2 本規約に関するご質問または違反措置への異議申し立ては、'
               'boltstarservice@boltstar.net までメールでお問い合わせください。',
         ),
       ),

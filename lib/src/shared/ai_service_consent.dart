@@ -8,7 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class AiServiceConsent {
   AiServiceConsent._();
 
-  static const String version = '2026-07-28';
+  static const String version = '2026-07-28-v2';
   static const String _keyPrefix = 'boltstar.aiServiceConsent.$version.';
 
   static String _normalizeUserId(String userId) => userId.trim();
