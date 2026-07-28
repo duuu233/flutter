@@ -231,25 +231,27 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       // 连接读信息成功：不再 hide、也不再 800ms 停留，直接进入绑定（loading 继续覆盖）。
 
       final info = _ble.info;
-      // 提交后端的硬件序列号：对齐小程序 api.bindDevice 的 productDeviceId 优先级 ——
-      // 固件 0x01 读到的 6 字节 Device_ID → 扫描广播的 4 字节 Device_ID → BLE deviceId(MAC) 兜底。
-      final serial = [
-        info?.deviceId ?? '',
-        _ble.broadcastDeviceId,
-        result.device.remoteId.str,
-      ].firstWhere((s) => s.isNotEmpty, orElse: () => result.device.remoteId.str);
+      // 稳定设备身份只允许使用固件 0x01 返回的完整 6 字节 Device_ID。
+      // 广播 4 字节短 ID 与 BLE remoteId 都只是本次连接的候选/句柄，不得绑定入库。
+      final serial = canonicalDeviceSerial(info?.deviceId);
+      if (serial.isEmpty) {
+        AppLoadingDialog.hide(context);
+        await _ble.disconnect();
+        if (!mounted) {
+          return;
+        }
+        setState(() => _binding = false);
+        _toast(AppL10n.of(context).bleIncompleteDeviceIdentity);
+        return;
+      }
       final name = BleController.displayName(result);
-      final serials = [
-        _ble.broadcastDeviceId,
-        info?.deviceId ?? '',
-      ].where((s) => s.isNotEmpty).toList();
+      final serials = <String>[serial];
       // 本机屏幕类型码（优先固件 0x01 读到的，其次广播）：判重时按型号一票否决，
       // 防广播 4 字节与后端 6 字节偶合，把新设备(如 3.7寸)误判成已绑定的别台(如 5.89寸)而不新建绑定。
       final scannedScreen = info?.screenType ?? _ble.broadcastScreenType;
 
-      // 绑定判重（移植小程序 bind.js findBoundDevice）：把这台设备的两个序列号
-      //（广播 4 字节 + 固件 6 字节 Device_ID）与已绑定记录容错比对（互为子串也算同一台），
-      // 已绑定的不再新建记录——否则同一台相框会在设备列表反复出现（重复绑定记录）。
+      // 绑定判重（移植小程序 bind.js findBoundDevice）：只用 0x01 完整 6 字节 ID
+      // 与后端完整 ID 精确比对。已绑定的不再新建记录，广播短 ID 不参与判重。
       // 先尽力刷新一次列表再判；刷新失败沿用本地列表，不把老设备误判成新设备。
       await widget.state.refreshDevices();
       if (!mounted) {
@@ -311,13 +313,20 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     }
   }
 
-  /// 在已绑定设备列表里按序列号容错交叉匹配 + 型号一票否决，找出这台已绑定记录（无则 null）。
+  /// 在已绑定设备列表里按完整 6 字节 ID 精确匹配 + 型号一票否决，
+  /// 找出这台已绑定记录（无则 null）。
   DeviceItem? _findBound(List<String> serials, int scannedScreen) {
+    final completeSerials = serials.where(isCompleteDeviceSerial).toList();
+    if (completeSerials.isEmpty) {
+      return null;
+    }
     for (final device in widget.state.devices) {
       if (!sameScreenCode(scannedScreen, device.screenType.code)) {
         continue;
       }
-      if (serials.any((s) => serialsMatch(s, device.serialNumber))) {
+      if (completeSerials.any(
+        (serial) => verifiedDeviceSerialMatch(serial, device.serialNumber),
+      )) {
         return device;
       }
     }

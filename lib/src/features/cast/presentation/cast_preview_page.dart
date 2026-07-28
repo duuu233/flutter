@@ -27,7 +27,7 @@ import 'casting_progress_page.dart';
 ///   点「开始投屏」时才按取景框内所见烘焙上传。
 /// - **竖向 / 横向取景**：工具栏前两颗按钮切的是**可视区域（取景框）**——竖向 = 设备物理比例，
 ///   横向 = 宽高对调（相框躺着摆）。图片本身位置/大小/角度不动，换框后用 zoom 反向补偿保住绝对显示尺寸。
-/// - **长按 2s 才拖拽**（[_kLongPress]，仿苹果相册长按取图）：单指按住几乎不动满 2s → 震动 +
+/// - **长按 1s 才拖拽**（[_kLongPress]，仿苹果相册长按取图）：单指按住几乎不动满 1s → 震动 +
 ///   「拿起」放大回弹动画，此后单指移动才平移图片；按住期间位移超 [_kMoveCancelPx] 判为切图滑动。
 /// - **双指缩放 + 旋转**随时可用，不需长按；右上角悬浮按钮每点一次顺时针 +90°。
 /// - **左右滑动切图**：松手时按横向位移方向提交（[_kSwipeCommitPx]），PageView 只负责过场动画——
@@ -282,16 +282,23 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   );
 
   /// 「拿起」反馈：1 → 1.05 → 1（对齐小程序 @keyframes clipPickup）。
-  late final Animation<double> _pickupScale = TweenSequence<double>(<TweenSequenceItem<double>>[
-    TweenSequenceItem<double>(
-      tween: Tween<double>(begin: 1, end: 1.05).chain(CurveTween(curve: Curves.easeOut)),
-      weight: 45,
-    ),
-    TweenSequenceItem<double>(
-      tween: Tween<double>(begin: 1.05, end: 1).chain(CurveTween(curve: Curves.easeIn)),
-      weight: 55,
-    ),
-  ]).animate(_pickup);
+  late final Animation<double> _pickupScale =
+      TweenSequence<double>(<TweenSequenceItem<double>>[
+        TweenSequenceItem<double>(
+          tween: Tween<double>(
+            begin: 1,
+            end: 1.05,
+          ).chain(CurveTween(curve: Curves.easeOut)),
+          weight: 45,
+        ),
+        TweenSequenceItem<double>(
+          tween: Tween<double>(
+            begin: 1.05,
+            end: 1,
+          ).chain(CurveTween(curve: Curves.easeIn)),
+          weight: 55,
+        ),
+      ]).animate(_pickup);
 
   /// 设备屏幕分辨率 → 取景比例与导出画布尺寸。
   ///
@@ -350,7 +357,12 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       fh = stage.height;
       fw = fh * ratio;
     }
-    return Rect.fromLTWH((stage.width - fw) / 2, (stage.height - fh) / 2, fw, fh);
+    return Rect.fromLTWH(
+      (stage.width - fw) / 2,
+      (stage.height - fh) / 2,
+      fw,
+      fh,
+    );
   }
 
   /// 解码图片：**展示与烘焙共用**这一份 ui.Image，天然规避 EXIF 方向导致的两处尺寸不一致。
@@ -513,11 +525,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     lox = lox.clamp(-maxLox, maxLox).toDouble();
     loy = loy.clamp(-maxLoy, maxLoy).toDouble();
     // 本地平移 → 屏幕平移
-    return (
-      zoom: z,
-      tx: lox * cosT - loy * sinT,
-      ty: lox * sinT + loy * cosT,
-    );
+    return (zoom: z, tx: lox * cosT - loy * sinT, ty: lox * sinT + loy * cosT);
   }
 
   /// 应用一组变换：先夹取到合法范围，写回 [_edit]，再重建画面。
@@ -590,7 +598,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     );
   }
 
-  /// 长按满 2s：进入拖拽态，给「拿起」反馈（放大回弹 + 震动，仿苹果相册）。
+  /// 长按满 1s：进入拖拽态，给「拿起」反馈（放大回弹 + 震动，仿苹果相册）。
   void _armDrag() {
     _lpTimer = null;
     final start = _touchStart;
@@ -913,7 +921,9 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       final picture = recorder.endRecording();
       final rendered = await picture.toImage(outW, outH);
       picture.dispose();
-      final data = await rendered.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final data = await rendered.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       rendered.dispose();
       if (data == null) {
         return null;
@@ -1198,10 +1208,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             height: frame.height,
             child: AnimatedBuilder(
               animation: _pickupScale,
-              builder: (context, child) => Transform.scale(
-                scale: _pickupScale.value,
-                child: child,
-              ),
+              builder: (context, child) =>
+                  Transform.scale(scale: _pickupScale.value, child: child),
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(_kClipRadius),

@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 
 import 'device/ble_controller.dart';
 import 'device/ble/frame_protocol.dart';
+import 'device/battery_cache.dart';
 import 'device/device_interaction_trace.dart';
 import 'device/frame_device_protocol.dart';
+import 'device/serial_match.dart';
 import 'network/api_exception.dart';
 import 'network/api_rows.dart';
 import 'network/api_session.dart';
@@ -105,6 +107,7 @@ class DeviceItem {
     this.downloadPath = '',
     this.firmwareSize = 0,
     this.isPlaceholder = false,
+    this.batteryUpdatedAt,
   });
 
   /// 是否 `_findDevice` 兜底生成的占位设备（id 已不在列表）。
@@ -117,6 +120,17 @@ class DeviceItem {
   String kind;
   FrameScreenType screenType;
   int batteryLevel;
+
+  /// 最近一次 0x04 返回有效电量的时间。null 表示从未成功读取，页面显示 `--`。
+  ///
+  /// 不能用 [batteryLevel] 是否大于 0 判断：真机 0% 是合法值。
+  DateTime? batteryUpdatedAt;
+
+  bool get hasBatteryReading =>
+      batteryUpdatedAt != null && batteryLevel >= 0 && batteryLevel <= 100;
+
+  String get batteryLabel => hasBatteryReading ? '$batteryLevel%' : '--';
+
   bool charging;
   bool connected;
   DeviceRole role;
@@ -355,6 +369,7 @@ class PhotoFrameState extends ChangeNotifier {
   UserProfile _currentUser;
   final Map<PermissionKind, bool> _permissions;
   final List<DeviceItem> _devices;
+  final DeviceBatteryCache _batteryCache = DeviceBatteryCache();
   final List<AlbumPhoto> _albumPhotos;
   final List<CastRecord> _castRecords;
   final List<FaqArticle> _faqArticles = _seedFaqArticles();
@@ -557,8 +572,8 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 连接设备（真实 BLE，移植小程序「按需手动连接」模型）：先设为当前选中设备，
   /// 再经 [BleController.connectBoundDevice] 复用活动会话或扫描匹配连接。
-  /// 连接已绑定设备只按硬件序列号容错匹配（广播 4 字节 vs 后端 6 字节互为子串
-  /// 也算同一台），与设备名无关——改名不影响连接、也不影响「已连接」显示。
+  /// 后端记录必须具备完整 6 字节设备 ID；广播 4 字节 ID 只用于扫描候选，
+  /// 建连后仍以 0x01 完整 ID 精确验身。设备名不参与物理身份判断。
   Future<ActionFeedback> connectDevice(String deviceId) async {
     DeviceItem? device;
     for (final item in _devices) {
@@ -571,6 +586,16 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+      );
+    }
+    if (!isCompleteDeviceSerial(device.serialNumber)) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '当前设备记录缺少完整的6字节设备ID，请删除后重新绑定。',
+          en: 'This device record has no complete 6-byte device ID. Remove it and bind the device again.',
+          ja: 'このデバイス記録には完全な6バイトIDがありません。削除して再度追加してください。',
+        ),
       );
     }
     _selectedDeviceId = deviceId;
@@ -599,7 +624,11 @@ class PhotoFrameState extends ChangeNotifier {
           ? ActionFeedback(success: false, message: error)
           : ActionFeedback(
               success: true,
-              message: tr(zh: '已连接设备。', en: 'Device connected.', ja: '端末に接続しました。'),
+              message: tr(
+                zh: '已连接设备。',
+                en: 'Device connected.',
+                ja: '端末に接続しました。',
+              ),
             );
     }
     if (error != null) {
@@ -611,9 +640,11 @@ class PhotoFrameState extends ChangeNotifier {
       item.connected = identical(item, device);
     }
     // 连接 loading 内只把真机 0x01 核心字段回填到本地设备
-    // （电量/内存/播放模式/间隔/当前张）。固件版本保留后端值，不让 0x03 挡住连接页。
+    // （内存/播放模式/间隔/当前张）。电量独立走 0x04 后台刷新；
+    // 固件版本保留后端值，不让 0x03 挡住连接页。
     _applyConnectedInfo(device, ble.info);
     notifyListeners();
+    unawaited(_refreshDeviceBattery(deviceId));
     return ActionFeedback(
       success: true,
       message: tr(zh: '已连接设备。', en: 'Device connected.', ja: '端末に接続しました。'),
@@ -685,15 +716,22 @@ class PhotoFrameState extends ChangeNotifier {
   /// 对齐小程序 app.onShow → reconcileConnections 落到 UI 的那一步）。
   void reconcileConnectionFlags() {
     var changed = false;
+    String? connectedDeviceId;
     for (final device in _devices) {
       final live = _sessionMatches(device);
       if (device.connected != live) {
         device.connected = live;
         changed = true;
       }
+      if (live) {
+        connectedDeviceId = device.id;
+      }
     }
     if (changed) {
       notifyListeners();
+    }
+    if (connectedDeviceId != null) {
+      unawaited(_refreshDeviceBattery(connectedDeviceId));
     }
   }
 
@@ -746,6 +784,10 @@ class PhotoFrameState extends ChangeNotifier {
     } catch (_) {
       // 读失败静默（与小程序 loadDetail 的 catch 一致），保持旧值。
       trace.finish(success: false);
+    } finally {
+      // 电量使用独立 0x04 + 15 秒缓存；等 0x01 结束后再后台发起，避免两条设备
+      // 指令并发交错。不阻塞页面返回，也不先清空旧值。
+      unawaited(_refreshDeviceBattery(deviceId));
     }
   }
 
@@ -775,8 +817,9 @@ class PhotoFrameState extends ChangeNotifier {
     if (old == null) {
       return; // 新绑定的设备：没有旧值可搬，等连接后 BLE 回填
     }
-    if (fresh.batteryLevel <= 0) {
+    if (!fresh.hasBatteryReading && old.hasBatteryReading) {
       fresh.batteryLevel = old.batteryLevel;
+      fresh.batteryUpdatedAt = old.batteryUpdatedAt;
     }
     fresh.charging = old.charging;
     fresh.liveImageCount ??= old.liveImageCount;
@@ -802,14 +845,14 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 把真机 0x01 读到的 [FrameDeviceInfo] 合并进本地 [device]（对齐小程序 applyConnectedDevice）。
+  /// 把真机 0x01 读到的 [FrameDeviceInfo] 合并进本地 [device]。
+  ///
+  /// 电量不在这里处理：页面电量统一由 [_refreshDeviceBattery] 通过 0x04 获取，
+  /// 以免 0x01 与 15 秒缓存形成两个互相覆盖的数据源。
   /// 调用方负责 notifyListeners()。[info] 为空（读取失败）时不改动，页面按 connected=false 显示 --。
   void _applyConnectedInfo(DeviceItem device, FrameDeviceInfo? info) {
     if (info == null) {
       return;
-    }
-    if (info.battery > 0) {
-      device.batteryLevel = info.battery;
     }
     // 真机内存（真机容量最多 95 槽，超出 int 掩码范围，直接采用上报计数/容量）。
     // 这里**不能**像电量/容量那样加 `> 0` 守卫：0 张是合法状态（设备被清空），
@@ -827,6 +870,55 @@ class PhotoFrameState extends ChangeNotifier {
     }
     if (info.firmwareVersion.isNotEmpty) {
       device.firmwareVersion = info.firmwareVersion;
+    }
+  }
+
+  /// 按物理设备完整 ID 获取电量：15 秒内复用，过期后台读 0x04，并发调用共享一次读取。
+  ///
+  /// 读取失败/非法值保持最近一次有效值；从未成功读取时保持未知，由页面显示 `--`。
+  Future<void> _refreshDeviceBattery(
+    String deviceId, {
+    bool force = false,
+  }) async {
+    final device = _deviceByIdOrNull(deviceId);
+    if (device == null || !_sessionMatches(device)) {
+      return;
+    }
+    final serialKey = normalizeSerial(device.serialNumber);
+    if (!isCompleteDeviceSerial(serialKey)) {
+      return;
+    }
+    final fallback = device.hasBatteryReading
+        ? DeviceBatteryReading(
+            value: device.batteryLevel,
+            updatedAt: device.batteryUpdatedAt!,
+          )
+        : null;
+    final reading = await _batteryCache.readLatest(
+      key: serialKey,
+      read: BleController.instance.client.readBattery,
+      fallback: fallback,
+      force: force,
+    );
+    if (reading == null) {
+      return;
+    }
+
+    // BLE await 期间设备列表可能被接口刷新整体替换，也可能已切换到另一台会话。
+    final target = _deviceByIdOrNull(deviceId);
+    if (target == null ||
+        !_sessionMatches(target) ||
+        normalizeSerial(target.serialNumber) != serialKey) {
+      return;
+    }
+    final changed =
+        !target.hasBatteryReading ||
+        target.batteryLevel != reading.value ||
+        target.batteryUpdatedAt != reading.updatedAt;
+    target.batteryLevel = reading.value;
+    target.batteryUpdatedAt = reading.updatedAt;
+    if (changed) {
+      notifyListeners();
     }
   }
 
@@ -1742,16 +1834,15 @@ class PhotoFrameState extends ChangeNotifier {
         .toList();
 
     // 参与排队的也只剩「同样没有索引」的照片，两边一一对应才不会错位。
-    final pending =
-        devicePhotos.where((item) => item.imageIndex < 0).toList()
-          ..sort((a, b) {
-            final ai = int.tryParse(a.id);
-            final bi = int.tryParse(b.id);
-            if (ai != null && bi != null && ai != bi) {
-              return ai.compareTo(bi);
-            }
-            return a.uploadedAt.compareTo(b.uploadedAt);
-          });
+    final pending = devicePhotos.where((item) => item.imageIndex < 0).toList()
+      ..sort((a, b) {
+        final ai = int.tryParse(a.id);
+        final bi = int.tryParse(b.id);
+        if (ai != null && bi != null && ai != bi) {
+          return ai.compareTo(bi);
+        }
+        return a.uploadedAt.compareTo(b.uploadedAt);
+      });
     final pos = pending.indexWhere((item) => item.id == photo.id);
     if (pos < 0) {
       return -1;
@@ -2010,6 +2101,17 @@ class PhotoFrameState extends ChangeNotifier {
     String screen = '',
     String scanName = '',
   }) async {
+    final completeSerial = canonicalDeviceSerial(productSerialNo);
+    if (completeSerial.isEmpty) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '绑定失败：未读取到完整的6字节设备ID，请重新连接后再试。',
+          en: 'Binding failed because the complete 6-byte device ID was not read. Reconnect and try again.',
+          ja: '完全な6バイトのデバイスIDを取得できなかったため追加できません。再接続してお試しください。',
+        ),
+      );
+    }
     final resolved = await _resolveProductId(
       model: model,
       screen: screen,
@@ -2022,7 +2124,7 @@ class PhotoFrameState extends ChangeNotifier {
       await BoltFoxApi.addUserProduct(
         productId: resolved.productId!,
         productName: productName,
-        productSerialNo: productSerialNo,
+        productSerialNo: completeSerial,
       );
       await refreshDevices();
       return ActionFeedback(
@@ -2416,6 +2518,7 @@ class PhotoFrameState extends ChangeNotifier {
     // 清空列表还不够：照片本体还在内存/磁盘两层图片缓存里（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
     // 退出登录同样清空上个账号的列表与首屏加载态，避免换账号后先看到上一个人的数据/空态。
+    _batteryCache.clear();
     _devices.clear();
     _albumPhotos.clear();
     _castRecords.clear();
@@ -2453,6 +2556,7 @@ class PhotoFrameState extends ChangeNotifier {
     ImageCacheCleanup.clearAll();
     // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
     // 并把首屏加载态复位，下个账号进来才会重新走一次 loading 而不是直接看到上个账号的空态。
+    _batteryCache.clear();
     _albumPhotos.clear();
     _castRecords.clear();
     _devices.clear();
@@ -2672,9 +2776,9 @@ class PhotoFrameState extends ChangeNotifier {
   DeviceItem _deviceFromJson(Map<String, dynamic> data) {
     final id = (data['userProductId'] ?? _nextId('dev')).toString();
     final name = (data['productName'] ?? '相框').toString();
-    // 序列号（用于与广播 4 字节 / 固件 6 字节 Device_ID 交叉匹配）：后端字段就叫 deviceId，
-    // 返回 6 字节 Device_ID（如 E9:48:C2:1E:D4:28）。取不到则连接复用 / 绑定判重都会失效。
-    final serial = (data['deviceId'] ?? '').toString();
+    // 后端稳定身份只接收完整 6 字节 Device_ID；历史短 ID/占位值归为空，
+    // 页面会明确提示删除记录后重新绑定，不再让短 ID 参与会话认领。
+    final serial = canonicalDeviceSerial(data['deviceId']);
     final isUpdate = _asInt(data['isUpdate']);
     final newVersionNo = (data['newVersionNo'] ?? '').toString();
     final downloadPath = (data['downloadPath'] ?? '').toString();
@@ -2781,7 +2885,6 @@ class PhotoFrameState extends ChangeNotifier {
     }
     return null;
   }
-
 
   /// 常见问题列表：`/Client/Product/getProductFaqList`，映射为 [FaqArticle]。
   ///
@@ -3075,6 +3178,7 @@ class PhotoFrameState extends ChangeNotifier {
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 与 logout 同等对待：会话已失效，上个账号的照片不该留在本机（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
+    _batteryCache.clear();
     _devices.clear();
     _albumPhotos.clear();
     _castRecords.clear();

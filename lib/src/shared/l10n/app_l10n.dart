@@ -148,14 +148,23 @@ class AppL10n {
     'Network connection failed. Please try again later.',
     'ネットワーク接続に失敗しました。しばらくしてから再試行してください。',
   );
-  String get netSessionExpired =>
-      _pick('登录已过期', 'Session expired. Please log in again.', 'ログインの有効期限が切れました。');
-  String get netServerError =>
-      _pick('服务器异常', 'Server error. Please try again later.', 'サーバーエラーが発生しました。');
+  String get netSessionExpired => _pick(
+    '登录已过期',
+    'Session expired. Please log in again.',
+    'ログインの有効期限が切れました。',
+  );
+  String get netServerError => _pick(
+    '服务器异常',
+    'Server error. Please try again later.',
+    'サーバーエラーが発生しました。',
+  );
   String get netRequestFailed =>
       _pick('业务处理失败', 'Request failed. Please try again.', '処理に失敗しました。');
-  String get netUploadFileRequired =>
-      _pick('请选择上传文件', 'Please choose a file to upload.', 'アップロードするファイルを選択してください。');
+  String get netUploadFileRequired => _pick(
+    '请选择上传文件',
+    'Please choose a file to upload.',
+    'アップロードするファイルを選択してください。',
+  );
   // 上传源文件已被系统清理/移动（区别于网络失败，提示用户重新选择而非查网络）。
   String get netUploadFileMissing => _pick(
     '文件不存在或已被清理，请重新选择',
@@ -185,10 +194,10 @@ class AppL10n {
   String get deleteAccount => _pick('用户注销', 'Delete Account', 'アカウント削除');
 
   /// 设置页「语种设置」行右侧的当前语言短标签。
-  String get currentLanguageLabel =>
-      _pick('简中', 'English', '日本語', '繁中');
+  String get currentLanguageLabel => _pick('简中', 'English', '日本語', '繁中');
 
-  String get checkingUpdate => _pick('正在检查更新…', 'Checking for updates…', '更新を確認中…');
+  String get checkingUpdate =>
+      _pick('正在检查更新…', 'Checking for updates…', '更新を確認中…');
   String checkUpdateFailed(Object error) => _pick(
     '检查更新失败：$error',
     'Update check failed: $error',
@@ -238,7 +247,8 @@ class AppL10n {
     'Deleting your account permanently erases all account data. Please clear your device photos first, or they cannot be removed after deletion.',
     'アカウントを削除するとすべてのデータが完全に削除されます。先に端末の写真を消去してください。削除後は端末の写真を消せなくなります。',
   );
-  String get deleteAccountConfirmTitle => _pick('确认注销', 'Confirm Deletion', '削除の確認');
+  String get deleteAccountConfirmTitle =>
+      _pick('确认注销', 'Confirm Deletion', '削除の確認');
   String get deleteAccountWarn2 => _pick(
     '我已了解设备照片需自行处理的说明，并确认继续注销。',
     'I understand I must handle device photos myself and confirm the deletion.',
@@ -246,12 +256,15 @@ class AppL10n {
   );
 
   // ── 语种设置页 ──────────────────────────────────────────────────────────
-  String get langSimplifiedChinese => _pick('简体中文', 'Simplified Chinese', '簡体字中国語');
-  String get langTraditionalChinese => _pick('繁体中文', 'Traditional Chinese', '繁体字中国語');
+  String get langSimplifiedChinese =>
+      _pick('简体中文', 'Simplified Chinese', '簡体字中国語');
+  String get langTraditionalChinese =>
+      _pick('繁体中文', 'Traditional Chinese', '繁体字中国語');
   String get langEnglish => 'English';
   String get langJapanese => _pick('日本语', 'Japanese', '日本語');
   String get saveSettings => _pick('保存设置', 'Save', '保存');
-  String get languageSaved => _pick('语种设置已保存', 'Language settings saved', '言語設定を保存しました');
+  String get languageSaved =>
+      _pick('语种设置已保存', 'Language settings saved', '言語設定を保存しました');
 
   // ── 账号 ──
   String get accAgreementRequired => _pick(
@@ -264,16 +277,23 @@ class AppL10n {
     'WeChat login is not available yet',
     'WeChatログインはまだご利用いただけません',
   );
-  String get accWechatLogin => _pick('微信授权登录', 'Sign in with WeChat', 'WeChatでログイン');
+  String get accWechatLogin =>
+      _pick('微信授权登录', 'Sign in with WeChat', 'WeChatでログイン');
   String get accWechatNotInstalled => _pick(
     '请先安装微信后再使用微信授权登录。',
     'Please install WeChat before signing in with WeChat.',
     'WeChatをインストールしてからWeChatログインをご利用ください。',
   );
-  String get accWechatCanceled =>
-      _pick('已取消微信授权。', 'WeChat authorization canceled.', 'WeChat認証をキャンセルしました。');
-  String get accWechatDenied =>
-      _pick('微信授权被拒绝。', 'WeChat authorization was denied.', 'WeChat認証が拒否されました。');
+  String get accWechatCanceled => _pick(
+    '已取消微信授权。',
+    'WeChat authorization canceled.',
+    'WeChat認証をキャンセルしました。',
+  );
+  String get accWechatDenied => _pick(
+    '微信授权被拒绝。',
+    'WeChat authorization was denied.',
+    'WeChat認証が拒否されました。',
+  );
   String get accWechatVersionUnsupported => _pick(
     '当前微信版本不支持授权登录。',
     'This WeChat version does not support sign-in.',
@@ -295,20 +315,20 @@ class AppL10n {
     'Please enter a valid email address',
     '正しいメールアドレスを入力してください',
   );
-  String get accPasswordHint => _pick('请输入密码', 'Enter your password', 'パスワードを入力してください');
-  String get accPasswordEmpty => _pick('密码不能为空', 'Password cannot be empty', 'パスワードは空にできません');
+  String get accPasswordHint =>
+      _pick('请输入密码', 'Enter your password', 'パスワードを入力してください');
+  String get accPasswordEmpty =>
+      _pick('密码不能为空', 'Password cannot be empty', 'パスワードは空にできません');
   // 密码规则（注册 / 忘记密码 / 修改密码设置新密码时用；登录页不校验规则）。
-  String get accPasswordRuleHint => _pick(
-    '请输入6-12位数字加英文密码',
-    '6-12 chars, letters/numbers',
-    '6〜12桁の英数字',
-  );
+  String get accPasswordRuleHint =>
+      _pick('请输入6-12位数字加英文密码', '6-12 chars, letters/numbers', '6〜12桁の英数字');
   String get accPasswordRuleError => _pick(
     '密码需为6-12位数字和英文字母组合',
     'Password must be 6-12 characters and contain both letters and digits.',
     'パスワードは英字と数字を含む6〜12桁で入力してください',
   );
-  String get accForgotPasswordLink => _pick('忘记密码?', 'Forgot password?', 'パスワードをお忘れですか？');
+  String get accForgotPasswordLink =>
+      _pick('忘记密码?', 'Forgot password?', 'パスワードをお忘れですか？');
   String get accWelcome => _pick('欢迎使用', 'Welcome to', 'ようこそ');
   String get accLoginSubtitle => _pick(
     '使用邮箱密码登录或注册',
@@ -316,27 +336,25 @@ class AppL10n {
     'メールアドレスとパスワードでログインまたは登録',
   );
   String get accLoginButton => _pick('登 录', 'Log In', 'ログイン');
-  String get accNoAccount => _pick('没有账户？', "Don't have an account?", 'アカウントをお持ちでないですか？');
+  String get accNoAccount =>
+      _pick('没有账户？', "Don't have an account?", 'アカウントをお持ちでないですか？');
   String get accGoRegister => _pick(' 去注册', ' Sign up', ' 登録する');
-  String get accAgreementPrefix => _pick('我已阅读并同意', 'I have read and agree to', '以下に同意します');
+  String get accAgreementPrefix =>
+      _pick('我已阅读并同意', 'I have read and agree to', '以下に同意します');
   String get accUserAgreementLink => _pick('《用户协议》', 'User Agreement', '利用規約');
   String get accAnd => _pick('和', 'and', 'および');
-  String get accPrivacyPolicyLink => _pick('《隐私政策》', 'Privacy Policy', 'プライバシーポリシー');
-  String get accPasswordMismatch => _pick('密码不一致', 'Passwords do not match', 'パスワードが一致しません');
+  String get accPrivacyPolicyLink =>
+      _pick('《隐私政策》', 'Privacy Policy', 'プライバシーポリシー');
+  String get accPasswordMismatch =>
+      _pick('密码不一致', 'Passwords do not match', 'パスワードが一致しません');
   String get accCreateAccount => _pick('创建账户', 'Create Account', 'アカウント作成');
   String get accEmail => _pick('邮箱', 'Email', 'メールアドレス');
-  String get accEmailAddressHint => _pick(
-    '请输入邮箱地址',
-    'Enter your email address',
-    'メールアドレスを入力してください',
-  );
+  String get accEmailAddressHint =>
+      _pick('请输入邮箱地址', 'Enter your email address', 'メールアドレスを入力してください');
   String get accPassword => _pick('密码', 'Password', 'パスワード');
   String get accConfirmPassword => _pick('确认密码', 'Confirm Pwd', 'パスワード確認');
-  String get accConfirmPasswordHint => _pick(
-    '请确认密码',
-    'Re-enter password',
-    'パスワードを再入力',
-  );
+  String get accConfirmPasswordHint =>
+      _pick('请确认密码', 'Re-enter password', 'パスワードを再入力');
   String get accPasswordMismatchReconfirm => _pick(
     '密码不一致，请重新确认密码',
     'Passwords do not match. Please re-enter the confirmation.',
@@ -345,9 +363,11 @@ class AppL10n {
   String get accRegisterButton => _pick('注 册', 'Sign Up', '登録');
   String get accShowPassword => _pick('显示密码', 'Show password', 'パスワードを表示');
   String get accHidePassword => _pick('隐藏密码', 'Hide password', 'パスワードを非表示');
-  String get accHaveAccount => _pick('已有账户？', 'Already have an account?', 'すでにアカウントをお持ちですか？');
+  String get accHaveAccount =>
+      _pick('已有账户？', 'Already have an account?', 'すでにアカウントをお持ちですか？');
   String get accGoLogin => _pick(' 去登录', ' Log in', ' ログイン');
-  String get accForgotPasswordTitle => _pick('忘记密码', 'Forgot Password', 'パスワードを忘れた');
+  String get accForgotPasswordTitle =>
+      _pick('忘记密码', 'Forgot Password', 'パスワードを忘れた');
   String get accConfirmButton => _pick('确认', 'Confirm', '確認');
   String get accPasswordMismatchTwice => _pick(
     '两次输入的密码不一致',
@@ -356,8 +376,7 @@ class AppL10n {
   );
   // 验证码组件（忘记密码 / 修改密码 / 修改邮箱共用 FigmaVerificationField；注册页为登录风格胶囊行）。
   String get accVerifyCodeLabel => _pick('验证码', 'Code', 'コード');
-  String get accVerifyCodeHint =>
-      _pick('请输入验证码', 'Enter code', 'コードを入力');
+  String get accVerifyCodeHint => _pick('请输入验证码', 'Enter code', 'コードを入力');
   String get accGetVerifyCode => _pick('获取验证码', 'Send', '送信');
   String get accSendingCode => _pick('发送中…', 'Sending…', '送信中…');
   // 注册页副标题（注册页与登录页共用标题组风格，见 auth_widgets.dart）。
@@ -370,18 +389,16 @@ class AppL10n {
   String get accModifyEmailTitle => _pick('修改邮箱', 'Change Email', 'メールアドレス変更');
   String get accCurrentEmail => _pick('当前邮箱', 'Current Email', '現在のメールアドレス');
   String get accNewEmail => _pick('新邮箱', 'New Email', '新しいメールアドレス');
-  String get accNewEmailHint => _pick(
-    '请输入新的邮箱地址',
-    'Enter your new email address',
-    '新しいメールアドレスを入力してください',
-  );
+  String get accNewEmailHint =>
+      _pick('请输入新的邮箱地址', 'Enter your new email address', '新しいメールアドレスを入力してください');
   String get accConfirmModify => _pick('确认修改', 'Confirm Change', '変更を確定');
   String get accPasswordMismatchRetry => _pick(
     '两次输入的密码不一致，请重新输入。',
     'The two passwords do not match. Please try again.',
     '入力した2つのパスワードが一致しません。もう一度入力してください。',
   );
-  String get accModifyPasswordTitle => _pick('修改密码', 'Change Password', 'パスワード変更');
+  String get accModifyPasswordTitle =>
+      _pick('修改密码', 'Change Password', 'パスワード変更');
   // 已登录改密走 changePassword：验证码只能发到账号绑定邮箱，未绑定时引导先绑定。
   String get accModifyPasswordNeedEmail => _pick(
     '请先绑定邮箱后再修改密码。',
@@ -391,12 +408,15 @@ class AppL10n {
   String get accNewPassword => _pick('新密码', 'New Pwd', '新パスワード');
   String get accProfileTitle => _pick('个人信息', 'Profile', '個人情報');
   String get accNickname => _pick('昵称', 'Nickname', 'ニックネーム');
-  String get accNicknameHint => _pick('请输入昵称', 'Enter your nickname', 'ニックネームを入力してください');
+  String get accNicknameHint =>
+      _pick('请输入昵称', 'Enter your nickname', 'ニックネームを入力してください');
   String get accSaveProfile => _pick('保存资料', 'Save Profile', 'プロフィールを保存');
   String get accNotBound => _pick('暂未绑定', 'Not bound', '未連携');
   String get accAvatar => _pick('头像', 'Avatar', 'アバター');
-  String get accAvatarUploading => _pick('头像上传中…', 'Uploading avatar…', 'アバターをアップロード中…');
-  String get accAvatarUpdated => _pick('头像已更新', 'Avatar updated', 'アバターを更新しました');
+  String get accAvatarUploading =>
+      _pick('头像上传中…', 'Uploading avatar…', 'アバターをアップロード中…');
+  String get accAvatarUpdated =>
+      _pick('头像已更新', 'Avatar updated', 'アバターを更新しました');
   String get accAvatarUpdateFailed =>
       _pick('头像更新失败', 'Failed to update avatar', 'アバターの更新に失敗しました');
   String get accCannotReadAlbum => _pick(
@@ -432,11 +452,9 @@ class AppL10n {
       _pick('图片处理中', 'Processing Image', '画像を処理中');
   String get castStageTransferring =>
       _pick('图片传输中', 'Transferring Image', '画像を転送中');
-  String get castReadingDeviceInfo => _pick(
-    '正在读取设备信息…',
-    'Reading device information…',
-    'デバイス情報を読み込んでいます…',
-  );
+  String get castReadingDeviceInfo =>
+      _pick('正在读取设备信息…', 'Reading device information…', 'デバイス情報を読み込んでいます…');
+
   /// 刚投完屏、设备正在刷新（0x24）时对任何指令都回忙(0x0B)。这几秒是可等的短暂
   /// 状态，投屏入口会自动等它刷完再继续，期间给用户这条提示。
   String get castDeviceRefreshing => _pick(
@@ -471,8 +489,7 @@ class AppL10n {
   );
   String get castPreparingImageSingle =>
       _pick('正在准备图片…', 'Preparing image…', '画像を準備中…');
-  String get castTransferringSingle =>
-      _pick('正在投屏…', 'Casting…', 'キャスト中…');
+  String get castTransferringSingle => _pick('正在投屏…', 'Casting…', 'キャスト中…');
   String get castTransferredSingle =>
       _pick('投屏成功', 'Cast successful', 'キャストに成功しました');
   String get castResultSuccessTitle => _pick('投屏完成', 'Cast Complete', 'キャスト完了');
@@ -606,6 +623,7 @@ class AppL10n {
   // 产品要求下线，失败空态只保留标题；小程序 records.wxml 同步去掉。
   String get castPreviewTitle => _pick('照片预览', 'Preview', 'プレビュー');
   String get castStartCasting => _pick('开始投屏', 'Start Casting', 'キャスト開始');
+
   /// 「开始投屏」按钮的处理中态（对齐小程序 `projecting ? '投屏中' : '开始投屏'`）。
   String get castCasting => _pick('投屏中', 'Casting…', 'キャスト中…');
   String get castNoPhotos =>
@@ -663,7 +681,8 @@ class AppL10n {
     'Try: “Draw a cartoon cat”, or tap ＋ for one-tap generation',
     '「猫のイラストを描いて」と入力、または ＋ から一発生成',
   );
-  String get aiInputHint => _pick('和星宝说点什么…', 'Say something to BoltStar…', '星宝に話しかけてみよう…');
+  String get aiInputHint =>
+      _pick('和星宝说点什么…', 'Say something to BoltStar…', '星宝に話しかけてみよう…');
   String get aiInputWithImagesHint => _pick(
     '描述你想对图片做什么…',
     'Describe what to do with the images…',
@@ -672,12 +691,10 @@ class AppL10n {
   String get aiSend => _pick('发送', 'Send', '送信');
   String get aiStopGenerating => _pick('停止生成', 'Stop', '生成を停止');
   String get aiHoldToTalk => _pick('按住 说话', 'Hold to talk', '長押しで話す');
+
   /// App 侧无录音/转写依赖（小程序那边是「同声传译」插件未开通），两端都只给占位提示。
-  String get aiVoicePending => _pick(
-    '语音转文字待接入',
-    'Voice input is not available yet.',
-    '音声入力は未対応です',
-  );
+  String get aiVoicePending =>
+      _pick('语音转文字待接入', 'Voice input is not available yet.', '音声入力は未対応です');
   String get aiAlbum => _pick('相册', 'Album', 'アルバム');
   String get aiCamera => _pick('拍照', 'Camera', '撮影');
   String get aiGenerateImage => _pick('一键生图', 'Generate', '一発生成');
@@ -688,6 +705,7 @@ class AppL10n {
   String get aiCast => _pick('投屏', 'Cast', 'キャスト');
   String get aiDelete => _pick('删除', 'Delete', '削除');
   String get aiDeleted => _pick('已删除', 'Deleted', '削除しました');
+
   /// ⚠️ 与小程序的差异：小程序保存进系统相册；Flutter 无内置相册写入能力（需额外插件），
   /// 本轮只落到应用缓存目录，文案如实说明。
   String get aiDownloaded => _pick(
@@ -725,7 +743,8 @@ class AppL10n {
     'Add a message — images cannot be sent alone.',
     'テキストを入力してください（画像だけでは送信できません）',
   );
-  String get aiImageUploading => _pick('图片上传中，请稍候…', 'Uploading images…', '画像をアップロード中…');
+  String get aiImageUploading =>
+      _pick('图片上传中，请稍候…', 'Uploading images…', '画像をアップロード中…');
   String get aiMaxImages => _pick(
     '一次最多选择 4 张图片',
     'You can select up to 4 images at a time.',
@@ -753,20 +772,17 @@ class AppL10n {
   //    只能逐条串行 DELETE，中途失败会留下「删一半且无法回滚」的状态。原
   //    aiClearAll/aiClear/aiClearing/aiCleared/aiClearAllTitle/aiClearAllMessage 六条文案随功能删除。
   //    清理一律长按逐条删，列表底部有 [aiLongPressToDelete] 提示。
-  String get aiLongPressToDelete => _pick(
-    '长按会话可删除',
-    'Long-press a chat to delete it.',
-    '長押しでチャットを削除できます',
-  );
+  String get aiLongPressToDelete =>
+      _pick('长按会话可删除', 'Long-press a chat to delete it.', '長押しでチャットを削除できます');
+
   /// 20013 会话数达上限时把用户送去会话列表清理（对齐小程序「去清理」）。
   String get aiGoCleanSessions => _pick('去清理', 'Manage chats', '整理する');
+
   /// 已经停在「新对话」空态时再点＋的提示（不清输入草稿，只提示）。
-  String get aiAlreadyNewChat => _pick(
-    '已经在新对话中',
-    'You are already in a new chat.',
-    'すでに新しいチャットです',
-  );
-  String get aiDeleteSessionTitle => _pick('删除该会话', 'Delete this chat', 'このチャットを削除');
+  String get aiAlreadyNewChat =>
+      _pick('已经在新对话中', 'You are already in a new chat.', 'すでに新しいチャットです');
+  String get aiDeleteSessionTitle =>
+      _pick('删除该会话', 'Delete this chat', 'このチャットを削除');
   String get aiDeleteSessionMessage => _pick(
     '删除后该会话的聊天记录不可恢复，确定删除？',
     'The messages in this chat cannot be recovered. Delete it?',
@@ -774,6 +790,7 @@ class AppL10n {
   );
   String aiMsgCount(int count) =>
       _pick('$count 条消息', '$count messages', '$count 件');
+
   /// 一键生图风格标签：key = cartoon / landscape / portrait / anime（需求文案：漫画/风景/肖像/动漫）。
   String aiStyleLabel(String key) {
     switch (key) {
@@ -803,11 +820,14 @@ class AppL10n {
   }
 
   // ── 投屏结果/预览 ──
-  String get cresMethodTitle => _pick('选择投屏方式', 'Select Casting Method', 'キャスト方法を選択');
+  String get cresMethodTitle =>
+      _pick('选择投屏方式', 'Select Casting Method', 'キャスト方法を選択');
   String get cresMethodCamera => _pick('拍照', 'Take Photo', '撮影');
   String get cresMethodAlbum => _pick('相册', 'Album', 'アルバム');
-  String get cresMethodCameraDesc => _pick('调用手机相机拍照', 'Take a photo with your camera', 'スマホのカメラで撮影');
-  String get cresMethodAlbumDesc => _pick('从手机相册选择照片', 'Choose a photo from your album', 'アルバムから写真を選択');
+  String get cresMethodCameraDesc =>
+      _pick('调用手机相机拍照', 'Take a photo with your camera', 'スマホのカメラで撮影');
+  String get cresMethodAlbumDesc =>
+      _pick('从手机相册选择照片', 'Choose a photo from your album', 'アルバムから写真を選択');
   String get cresFailedTitle => _pick('投屏失败', 'Casting Failed', 'キャスト失敗');
   String get cresFailedDesc => _pick(
     '设备连接中断，请检查设备状态后重试',
@@ -837,7 +857,8 @@ class AppL10n {
   String get cresCrop => _pick('裁剪', 'Crop', 'トリミング');
   String get cresRotate => _pick('旋转', 'Rotate', '回転');
   String get cresOriginal => _pick('原图', 'Original', '原本');
-  String get cresImagePlaceholder => _pick('图片占位', 'Image Placeholder', '画像プレースホルダー');
+  String get cresImagePlaceholder =>
+      _pick('图片占位', 'Image Placeholder', '画像プレースホルダー');
 
   // ── 绑定设备 ──
   String get bindDeviceTitle => _pick('绑定设备', 'Bind Device', 'デバイスの追加');
@@ -853,11 +874,8 @@ class AppL10n {
   String get bindRescan => _pick('重新扫描', 'Rescan', '再スキャン');
   String get bindScanHelpLink =>
       _pick('扫描不到怎么办？', "Can't find your device?", 'スキャンできない場合は？');
-  String get bindSearchingTitle => _pick(
-    '正在搜索附近设备',
-    'Searching for nearby devices',
-    '近くのデバイスを検索中',
-  );
+  String get bindSearchingTitle =>
+      _pick('正在搜索附近设备', 'Searching for nearby devices', '近くのデバイスを検索中');
   String get bindSearchingHint => _pick(
     '请尽量将手机靠近需要添加的设备...',
     'Please keep your phone close to the device you want to add...',
@@ -879,11 +897,8 @@ class AppL10n {
         '3. デバイスのBluetoothは正常に動作し、スマートフォンのBluetoothはオンですか？\n'
         '4. デバイスが遠すぎたり、遮蔽物がありませんか？',
   );
-  String get bindBtPermissionTitle => _pick(
-    '需要蓝牙权限',
-    'Bluetooth Permission Required',
-    'Bluetoothの権限が必要です',
-  );
+  String get bindBtPermissionTitle =>
+      _pick('需要蓝牙权限', 'Bluetooth Permission Required', 'Bluetoothの権限が必要です');
   String get bindBtPermissionMessage => _pick(
     '搜索附近相框需要「蓝牙」与「附近设备」权限。请在系统设置中开启后，点「重新扫描」重试。',
     'Searching for nearby frames requires "Bluetooth" and "Nearby devices" permissions. Please enable them in Settings, then tap "Rescan" to try again.',
@@ -954,6 +969,11 @@ class AppL10n {
     'Device not found. Make sure it is powered on and nearby.',
     'デバイスが見つかりません。電源が入っていて近くにあることを確認してください。',
   );
+  String get bleIncompleteDeviceIdentity => _pick(
+    '未读取到完整的6字节设备ID，请重新连接后再试',
+    'The complete 6-byte device ID was not read. Reconnect and try again.',
+    '完全な6バイトのデバイスIDを取得できませんでした。再接続してお試しください。',
+  );
   // 连接重入护栏：并发触发连接时第二路的提示（见 BleController.connect）。
   String get bleBusyConnecting => _pick(
     '正在连接设备，请稍候',
@@ -999,8 +1019,7 @@ class AppL10n {
       _pick('电量$battery%', 'Battery $battery%', 'バッテリー$battery%');
   String bindSignalLabel(String signal) =>
       _pick('信号 $signal', 'Signal $signal', '信号 $signal');
-  String get carouselTitle =>
-      _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
+  String get carouselTitle => _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
   String get carouselEnable =>
       _pick('开启轮播', 'Enable Slideshow', 'スライドショーを有効にする');
   String get carouselTip => _pick(
@@ -1008,8 +1027,7 @@ class AppL10n {
     'The slideshow advances to the next photo 24 hours after it is turned on.',
     'スライドショーを有効にしてから24時間後に次の写真へ切り替わります。',
   );
-  String get carouselMode =>
-      _pick('轮播方式', 'Slideshow Mode', 'スライドショー方式');
+  String get carouselMode => _pick('轮播方式', 'Slideshow Mode', 'スライドショー方式');
   String get carouselSequence => _pick('顺序轮播', 'Sequential', '順番に再生');
   String get carouselRandom => _pick('随机轮播', 'Random', 'ランダム再生');
   String get devicesConnecting => _pick('连接设备中…', 'Connecting…', '接続中…');
@@ -1024,9 +1042,11 @@ class AppL10n {
   String get devMyDevicesTitle => _pick('我的设备', 'My Devices', 'マイデバイス');
   String get devRenameTitle => _pick('重命名设备', 'Rename Device', 'デバイス名を変更');
   String get devDeviceNameTitle => _pick('设备名称', 'Device Name', 'デバイス名');
-  String get devNameHint => _pick('请输入设备名称', 'Enter a device name', 'デバイス名を入力してください');
+  String get devNameHint =>
+      _pick('请输入设备名称', 'Enter a device name', 'デバイス名を入力してください');
   String get devConfirm => _pick('确认', 'Confirm', '確認');
-  String get devConnecting => _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
+  String get devConnecting =>
+      _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
   String get devConnectFirst =>
       _pick('请先连接设备', 'Please connect the device first', '先にデバイスを接続してください');
   String get devDisconnecting => _pick('断开中', 'Disconnecting…', '切断中…');
@@ -1039,10 +1059,12 @@ class AppL10n {
   String get devDisconnected => _pick('未连接', 'Not Connected', '未接続');
   String get devCast => _pick('投屏', 'Cast', 'キャスト');
   String get devDisconnect => _pick('断开连接', 'Disconnect', '接続を切断');
-  String get devConnectBluetooth => _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetoothに接続');
+  String get devConnectBluetooth =>
+      _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetoothに接続');
   String get devDisconnectShort => _pick('断开', 'Disconnect', '切断');
   String get devConnectShort => _pick('连接', 'Connect', '接続');
-  String get devCarouselSetting => _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
+  String get devCarouselSetting =>
+      _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
   String get devCarouselDisabled => _pick('未启用', 'Off', '無効');
   String get devCarouselRandom => _pick('随机轮播', 'Shuffle', 'ランダム再生');
   String get devCarouselSequential => _pick('顺序轮播', 'In Order', '順番再生');
@@ -1064,11 +1086,8 @@ class AppL10n {
   );
   String get devDeleteDevice => _pick('删除设备', 'Delete Device', 'デバイスを削除');
   String get devDeleting => _pick('删除中', 'Deleting…', '削除中…');
-  String get devDeleteDeviceValue => _pick(
-    '删除后将无法恢复',
-    'Cannot be undone once deleted',
-    '削除すると元に戻せません',
-  );
+  String get devDeleteDeviceValue =>
+      _pick('删除后将无法恢复', 'Cannot be undone once deleted', '削除すると元に戻せません');
   String get devEmptyTitle => _pick('暂无设备', 'No Devices', 'デバイスがありません');
   String get devEmptySubtitle => _pick(
     '请先搜索并绑定附近的智能相框。',
@@ -1101,7 +1120,8 @@ class AppL10n {
 
   // ── OTA 升级 ──
   String get otaTitle => _pick('OTA升级', 'OTA Update', 'OTAアップデート');
-  String get otaFirmwareUpgrade => _pick('固件升级', 'Firmware Update', 'ファームウェア更新');
+  String get otaFirmwareUpgrade =>
+      _pick('固件升级', 'Firmware Update', 'ファームウェア更新');
   String get otaAlreadyLatestContent => _pick(
     '当前固件已是最新版本',
     'Your firmware is already up to date.',
@@ -1110,9 +1130,12 @@ class AppL10n {
   String get otaKnow => _pick('知道了', 'Got it', '了解');
   String get otaLater => _pick('稍后', 'Later', '後で');
   String get otaUpdateNow => _pick('立刻更新', 'Update Now', '今すぐ更新');
-  String get otaConnecting => _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
-  String get otaCheckingVersion => _pick('检测版本中', 'Checking version…', 'バージョンを確認中…');
-  String get otaDeviceNotFound => _pick('设备不存在', 'Device not found', 'デバイスが見つかりません');
+  String get otaConnecting =>
+      _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
+  String get otaCheckingVersion =>
+      _pick('检测版本中', 'Checking version…', 'バージョンを確認中…');
+  String get otaDeviceNotFound =>
+      _pick('设备不存在', 'Device not found', 'デバイスが見つかりません');
   String get otaMissingDeviceInfo => _pick(
     '缺少设备信息，无法检查固件版本。',
     'Device info is missing; cannot check the firmware version.',
@@ -1128,11 +1151,16 @@ class AppL10n {
     'The firmware download URL is not a valid .bin file. Please try again later.',
     'ファームウェアのダウンロードURLが有効な .bin ファイルではありません。後でもう一度お試しください。',
   );
-  String get otaDefaultDeviceName => _pick('智能相框', 'Smart Frame', 'スマートフォトフレーム');
-  String get otaConfirmAfterDownload => _pick('下载后确认', 'Confirm after download', 'ダウンロード後に確認');
-  String get otaCannotUpgrade => _pick('无法升级', 'Cannot upgrade', 'アップグレードできません');
-  String get otaNewVersionFound => _pick('发现新版本', 'New version available', '新しいバージョンあり');
-  String get otaDeviceNotConnected => _pick('设备未连接', 'Device not connected', 'デバイス未接続');
+  String get otaDefaultDeviceName =>
+      _pick('智能相框', 'Smart Frame', 'スマートフォトフレーム');
+  String get otaConfirmAfterDownload =>
+      _pick('下载后确认', 'Confirm after download', 'ダウンロード後に確認');
+  String get otaCannotUpgrade =>
+      _pick('无法升级', 'Cannot upgrade', 'アップグレードできません');
+  String get otaNewVersionFound =>
+      _pick('发现新版本', 'New version available', '新しいバージョンあり');
+  String get otaDeviceNotConnected =>
+      _pick('设备未连接', 'Device not connected', 'デバイス未接続');
   String get otaConnectFirstHint => _pick(
     '请先在详情页连接设备，并在升级过程中保持设备在线。',
     'Please connect the device on the details page first, and keep it online during the upgrade.',
@@ -1146,11 +1174,15 @@ class AppL10n {
   );
   String get otaDryRunning => _pick('干跑中', 'Dry run…', 'ドライラン中…');
   String get otaUpgrading => _pick('升级中', 'Upgrading…', 'アップグレード中…');
-  String get otaPreparingDryRun => _pick('准备干跑', 'Preparing dry run…', 'ドライランを準備中…');
-  String get otaPreparingUpgrade => _pick('准备升级', 'Preparing upgrade…', 'アップグレードを準備中…');
+  String get otaPreparingDryRun =>
+      _pick('准备干跑', 'Preparing dry run…', 'ドライランを準備中…');
+  String get otaPreparingUpgrade =>
+      _pick('准备升级', 'Preparing upgrade…', 'アップグレードを準備中…');
   String get otaDryRunPassed => _pick('干跑通过', 'Dry run passed', 'ドライラン成功');
-  String get otaUnconfirmedRetry => _pick('未确认(请重试)', 'Unconfirmed (retry)', '未確認（再試行）');
-  String get otaUpgradeComplete => _pick('升级完成', 'Upgrade complete', 'アップグレード完了');
+  String get otaUnconfirmedRetry =>
+      _pick('未确认(请重试)', 'Unconfirmed (retry)', '未確認（再試行）');
+  String get otaUpgradeComplete =>
+      _pick('升级完成', 'Upgrade complete', 'アップグレード完了');
   String get otaDryRunFailed => _pick('干跑失败', 'Dry run failed', 'ドライラン失敗');
   String get otaUpgradeFailed => _pick('升级失败', 'Upgrade failed', 'アップグレード失敗');
   String get otaInterrupted => _pick(
@@ -1168,7 +1200,8 @@ class AppL10n {
     'Leaving now will interrupt the firmware transfer; the upgrade will fail and must be restarted. Leave anyway?',
     '今終了するとファームウェア転送が中断され、アップグレードは失敗し、最初からやり直しになります。終了しますか？',
   );
-  String get otaExitConfirmStay => _pick('继续升级', 'Keep Upgrading', 'アップグレードを続ける');
+  String get otaExitConfirmStay =>
+      _pick('继续升级', 'Keep Upgrading', 'アップグレードを続ける');
   String get otaExitConfirmLeave => _pick('退出', 'Leave', '終了する');
 
   String get otaRecheck => _pick('重新检查', 'Check Again', '再確認');
@@ -1184,11 +1217,8 @@ class AppL10n {
     'Upgrade failed. Please try again.',
     'アップグレードに失敗しました。再試行してください。',
   );
-  String get otaCheckingFirmware => _pick(
-    '正在检查固件版本...',
-    'Checking firmware version…',
-    'ファームウェアバージョンを確認中…',
-  );
+  String get otaCheckingFirmware =>
+      _pick('正在检查固件版本...', 'Checking firmware version…', 'ファームウェアバージョンを確認中…');
   String get otaKeepPoweredHint => _pick(
     '升级过程中请保持设备供电、手机屏幕常亮，并避免切换到后台。',
     'During the upgrade, keep the device powered, keep your phone screen on, and avoid switching to the background.',
@@ -1199,35 +1229,29 @@ class AppL10n {
     'Dry Run Test (mock firmware)',
     'ドライランテスト（モックファームウェア）',
   );
-  String get otaReadyToUpgrade => _pick('可开始升级', 'Ready to upgrade', 'アップグレード可能');
-  String get otaNoUpgradeNeeded => _pick('无需升级', 'No upgrade needed', 'アップグレード不要');
+  String get otaReadyToUpgrade =>
+      _pick('可开始升级', 'Ready to upgrade', 'アップグレード可能');
+  String get otaNoUpgradeNeeded =>
+      _pick('无需升级', 'No upgrade needed', 'アップグレード不要');
   String get otaUpgradeContent => _pick('升级内容', 'Update Details', '更新内容');
-  String get otaNoReleaseNotes => _pick('暂无升级说明', 'No release notes', '更新説明はありません');
+  String get otaNoReleaseNotes =>
+      _pick('暂无升级说明', 'No release notes', '更新説明はありません');
   String otaNewVersionConfirm(String version) => _pick(
     '检测到新版本：$version，是否升级？',
     'New version $version found. Update now?',
     '新しいバージョン $version が見つかりました。更新しますか？',
   );
-  String otaNewVersionNote(String version) => _pick(
-    '发现新版本：$version',
-    'New version: $version',
-    '新しいバージョン：$version',
-  );
-  String otaCurrentVersion(String version) => _pick(
-    '当前版本 $version',
-    'Current version $version',
-    '現在のバージョン $version',
-  );
+  String otaNewVersionNote(String version) =>
+      _pick('发现新版本：$version', 'New version: $version', '新しいバージョン：$version');
+  String otaCurrentVersion(String version) =>
+      _pick('当前版本 $version', 'Current version $version', '現在のバージョン $version');
   String otaFirmwareVersion(String version) => _pick(
     '固件版本 $version',
     'Firmware version $version',
     'ファームウェアバージョン $version',
   );
-  String otaPackageSize(String size) => _pick(
-    '升级包 $size',
-    'Package $size',
-    'パッケージ $size',
-  );
+  String otaPackageSize(String size) =>
+      _pick('升级包 $size', 'Package $size', 'パッケージ $size');
   String otaDryRunPassedDetail(int size, int packets, int chunk) => _pick(
     '干跑通过：$size 字节 / $packets 包 / 每包 $chunk 字节',
     'Dry run passed: $size bytes / $packets packets / $chunk bytes each',
@@ -1238,21 +1262,15 @@ class AppL10n {
     'Firmware size: $size bytes',
     'ファームウェアサイズ：$size バイト',
   );
-  String otaLocalCrc32Note(String crc) => _pick(
-    '本地 CRC32：$crc',
-    'Local CRC32: $crc',
-    'ローカル CRC32：$crc',
-  );
+  String otaLocalCrc32Note(String crc) =>
+      _pick('本地 CRC32：$crc', 'Local CRC32: $crc', 'ローカル CRC32：$crc');
   String otaChunkingNote(int packets, int chunk, int prn) => _pick(
     '分包：$packets 包 × $chunk 字节，PRN=$prn',
     'Chunks: $packets packets × $chunk bytes, PRN=$prn',
     '分割：$packets パケット × $chunk バイト、PRN=$prn',
   );
-  String otaStartFrameNote(String hex) => _pick(
-    'START 帧：$hex',
-    'START frame: $hex',
-    'START フレーム：$hex',
-  );
+  String otaStartFrameNote(String hex) =>
+      _pick('START 帧：$hex', 'START frame: $hex', 'START フレーム：$hex');
   String otaFirstDataFrameNote(String hex) => _pick(
     '首个 DATA 帧：$hex …',
     'First DATA frame: $hex …',
@@ -1265,7 +1283,8 @@ class AppL10n {
   );
 
   // ── 首页 ──
-  String get homeNoDeviceTitle => _pick('暂未绑定设备', 'No Device Bound', '端末が未登録です');
+  String get homeNoDeviceTitle =>
+      _pick('暂未绑定设备', 'No Device Bound', '端末が未登録です');
   String get homeNoDeviceMessage => _pick(
     '当前暂无可投屏设备，请先绑定相框设备',
     'No device to cast to. Please bind a photo frame first.',
@@ -1290,48 +1309,61 @@ class AppL10n {
     '写真を投影する前にフォトフレームを登録してください。',
   );
   String get homeBindDevice => _pick('绑定设备', 'Bind Device', '端末を登録');
-  String get homeCastSheetTitle => _pick('选择投屏方式', 'Choose Cast Method', '投影方法を選択');
+  String get homeCastSheetTitle =>
+      _pick('选择投屏方式', 'Choose Cast Method', '投影方法を選択');
   String get homeCastCameraTitle => _pick('拍照', 'Camera', '撮影');
   String get homeCastAlbumTitle => _pick('相册', 'Album', 'アルバム');
-  String get homeCastCameraCardSubtitle => _pick('拍摄照片并投屏', 'Take a photo and cast it', '写真を撮って投影');
-  String get homeCastAlbumCardSubtitle => _pick('选择照片并投屏', 'Pick a photo and cast it', '写真を選んで投影');
-  String get homeBindSearchingTitle => _pick('正在搜索附近设备', 'Searching for nearby devices', '近くの端末を検索中');
+  String get homeCastCameraCardSubtitle =>
+      _pick('拍摄照片并投屏', 'Take a photo and cast it', '写真を撮って投影');
+  String get homeCastAlbumCardSubtitle =>
+      _pick('选择照片并投屏', 'Pick a photo and cast it', '写真を選んで投影');
+  String get homeBindSearchingTitle =>
+      _pick('正在搜索附近设备', 'Searching for nearby devices', '近くの端末を検索中');
   String get homeBindSearchingSubtitle => _pick(
     '请尽量将手机靠近需要添加的设备...',
     'Keep your phone close to the device you want to add...',
     '追加したい端末にスマホをできるだけ近づけてください...',
   );
   String get homeBindCancelScan => _pick('取消扫描', 'Cancel Scan', 'スキャンを中止');
-  String get homeBindNotFoundTitle => _pick('未发现设备', 'No Device Found', '端末が見つかりません');
+  String get homeBindNotFoundTitle =>
+      _pick('未发现设备', 'No Device Found', '端末が見つかりません');
   String get homeBindNotFoundSubtitle => _pick(
     '设备连接中断，请检查设备状态后重试',
     'The connection was interrupted. Check the device and try again.',
     '接続が中断されました。端末の状態を確認して再試行してください。',
   );
   String get homeRescan => _pick('重新扫描', 'Scan Again', '再スキャン');
-  String get homeScanHelpTitle => _pick('扫描不到怎么办?', "Can't find your device?", 'スキャンできない場合は？');
+  String get homeScanHelpTitle =>
+      _pick('扫描不到怎么办?', "Can't find your device?", 'スキャンできない場合は？');
   String get homeNearbyDevices => _pick('附近设备', 'Nearby Devices', '近くの端末');
-  String get homeScanHelpChecklistTitle => _pick('请检查：', 'Please check:', '確認してください：');
+  String get homeScanHelpChecklistTitle =>
+      _pick('请检查：', 'Please check:', '確認してください：');
   String get homeScanHelpBody => _pick(
     '1.设备是否有电?\n'
-    '2.当前设备是否被占用?\n'
-    '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
-    '4.设备是否与手机距离过远，隔离或有其他遮挡物',
+        '2.当前设备是否被占用?\n'
+        '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
+        '4.设备是否与手机距离过远，隔离或有其他遮挡物',
     '1. Is the device powered on?\n'
-    '2. Is the device already in use?\n'
-    "3. Is the device's Bluetooth working, and is your phone's Bluetooth on?\n"
-    '4. Is the device too far, isolated, or otherwise obstructed?',
+        '2. Is the device already in use?\n'
+        "3. Is the device's Bluetooth working, and is your phone's Bluetooth on?\n"
+        '4. Is the device too far, isolated, or otherwise obstructed?',
     '1. 端末の電源は入っていますか？\n'
-    '2. 端末が他で使用中ではありませんか？\n'
-    '3. 端末のBluetoothは正常で、スマホのBluetoothはオンですか？\n'
-    '4. 端末がスマホから離れすぎたり、遮蔽物はありませんか？',
+        '2. 端末が他で使用中ではありませんか？\n'
+        '3. 端末のBluetoothは正常で、スマホのBluetoothはオンですか？\n'
+        '4. 端末がスマホから離れすぎたり、遮蔽物はありませんか？',
   );
-  String get homeCastCameraSheetSubtitle => _pick('调用手机相机拍照', 'Use your phone camera to take a photo', 'スマホのカメラで撮影');
-  String get homeCastAlbumSheetSubtitle => _pick('从手机相册选择照片', 'Choose a photo from your phone album', 'スマホのアルバムから選択');
+  String get homeCastCameraSheetSubtitle =>
+      _pick('调用手机相机拍照', 'Use your phone camera to take a photo', 'スマホのカメラで撮影');
+  String get homeCastAlbumSheetSubtitle => _pick(
+    '从手机相册选择照片',
+    'Choose a photo from your phone album',
+    'スマホのアルバムから選択',
+  );
   String get homeGreetingWelcome => _pick('欢迎使用 ', 'Welcome to ', 'ようこそ ');
   String get homeConnected => _pick('已连接', 'Connected', '接続済み');
   String get homeDisconnected => _pick('未连接', 'Not Connected', '未接続');
-  String get homeConnectBluetooth => _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetooth接続');
+  String get homeConnectBluetooth =>
+      _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetooth接続');
 
   // ── 图库 ──
   String get galTitle => _pick('我的图库', 'My Gallery', 'マイギャラリー');
@@ -1360,11 +1392,8 @@ class AppL10n {
     'Delete the $count selected photo(s)? They will be removed from this device gallery and cannot be recovered.',
     '選択した$count枚の写真を削除しますか？現在のデバイスのギャラリーから削除され、復元できません。',
   );
-  String get galEmptyTitle => _pick(
-    '当前没有可查看的设备照片',
-    'No device photos to view',
-    '表示できるデバイスの写真がありません',
-  );
+  String get galEmptyTitle =>
+      _pick('当前没有可查看的设备照片', 'No device photos to view', '表示できるデバイスの写真がありません');
   String get galEmptySubtitle => _pick(
     '你可以重新投屏照片到设备',
     'You can cast photos to the device again',
@@ -1373,19 +1402,16 @@ class AppL10n {
 
   // ── 引导 ──
   String get guideTitle => _pick('操作指南', 'User Guide', '操作ガイド');
-  String get guideEmpty =>
-      _pick('暂无常见问题', 'No FAQs yet', 'よくある質問はありません');
+  String get guideEmpty => _pick('暂无常见问题', 'No FAQs yet', 'よくある質問はありません');
 
   // ── 我的 ──
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
-  String get mineServiceHelp =>
-      _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
+  String get mineServiceHelp => _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
   // 日语「マイギャラリー」在「我的」宫格卡（102 宽）里过长换行，缩为「ギャラリー」。
   String get mineMyGallery => _pick('我的图库', 'My Gallery', 'ギャラリー');
   String get mineMyDevices => _pick('我的设备', 'My Devices', 'マイデバイス');
   // 英语「Cast Management」在「我的」宫格卡（102 宽）里过长换行，缩为单词「Casting」。
-  String get mineCastManagement =>
-      _pick('投屏管理', 'Casting', 'キャスト管理');
+  String get mineCastManagement => _pick('投屏管理', 'Casting', 'キャスト管理');
   String get mineGuide => _pick('操作指南', 'User Guide', '操作ガイド');
   String get mineSettings => _pick('设置', 'Settings', '設定');
   String mineUserId(String id) => _pick('ID：$id', 'ID: $id', 'ID：$id');
@@ -1401,17 +1427,13 @@ class AppL10n {
   );
 
   // ── 设置 ──
-  String get setPrivacyTitle =>
-      _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');
+  String get setPrivacyTitle => _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');
   String get setAgreementTitle => _pick('用户协议', 'User Agreement', '利用規約');
   String get setUpdateBoltStar =>
       _pick('更新BoltStar', 'Update BoltStar', 'BoltStarを更新');
   String get setUpdateNow => _pick('立即更新', 'Update Now', '今すぐ更新');
-  String get setUpdatedToLatest => _pick(
-    '已更新到最新版本',
-    'Updated to the latest version',
-    '最新バージョンに更新しました',
-  );
+  String get setUpdatedToLatest =>
+      _pick('已更新到最新版本', 'Updated to the latest version', '最新バージョンに更新しました');
   String get setCheckingUpdate =>
       _pick('正在检查更新…', 'Checking for updates…', '更新を確認中…');
   String get setCheckUpdateFailed => _pick(

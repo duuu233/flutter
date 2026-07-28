@@ -26,19 +26,26 @@
 | DTO | 方向 | 用途 |
 | --- | --- | --- |
 | `ClientUserProductImgRecordEditApiIn` | 入参 | 正常投屏成功 → `editUserProductImgRecord` |
-| `UserProductImgRecordAddApiIn` | 入参 | 再次/重新投屏成功 → `addUserProductImgRecord` |
 | `ClientUserProductImgApiOut` | 出参 | 图库列表 → `AlbumPhoto.imageIndex` |
 | `UserProductImgRecordApiOut` | 出参 | 投屏记录 → `CastRecord.imageIndex`（仅透传备查，页面不读） |
 
 后端类型是 **String**；App 内部统一用 **int，-1 表示无索引**。
 
+`UserProductImgRecordAddApiIn` / `addUserProductImgRecord` 仍保留在 API 封装中，但属于旧
+`imgBle` 设备帧直传链路，当前业务流程不调用。
+
 ## 三、代码落点
 
-**写**（`features/cast/projection_service.dart`）——三条链路都要：
+**写**（`features/cast/projection_service.dart`）：
 
-- 正常投屏：`castImages` 图传成功后 `editUserProductImgRecord(imgIndex: index)`。
-- 再次/重新投屏：`recastRecord` 成功路径 `_addRetryRecord(imgIndex: index)`；两条失败补记不带索引（`index` 也确实在 catch 作用域外）。
-- `_addRetryRecord` 内按 `deviceUploadState == 1` 再挡一道：图传失败时设备上没有这张图，报上去会让图库把别人的槽位当成它的。
+- 普通投屏与再次/重新投屏最终都进入 `castImages`。
+- 每张图先通过 `setUserProductUpload` 创建一条新记录并取得 `taskId`，同时由 seekink
+  生成新的设备帧。
+- BLE 图传成功后调用 `editUserProductImgRecord(taskId, deviceUploadState: 1,
+  imgIndex: index)`。
+- 再次/重新投屏先下载历史记录的服务器图片，进入预览编辑，然后走上述同一链路；
+  不再下载历史 `imgBle`，也不再调用 `_addRetryRecord` /
+  `addUserProductImgRecord`。
 
 **序列化**（`network/boltfox_api.dart`）：`_imgIndexParam(int?)` → `String?`，null/负数返回 null 由 `?` 展开丢弃该键。
 

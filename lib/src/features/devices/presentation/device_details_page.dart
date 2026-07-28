@@ -395,20 +395,22 @@ class DeviceDetailsBody extends StatelessWidget {
                         ),
                         if (connected) ...[
                           const SizedBox(width: 15),
-                          Image.asset(
-                            _batteryAsset(device.batteryLevel),
-                            width: 24,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) =>
-                                const Icon(
-                                  Icons.battery_4_bar_rounded,
-                                  size: 16,
-                                  color: Color(0xFF777E88),
-                                ),
-                          ),
-                          const SizedBox(width: 5),
+                          if (device.hasBatteryReading) ...[
+                            Image.asset(
+                              _batteryAsset(device.batteryLevel),
+                              width: 24,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) =>
+                                  const Icon(
+                                    Icons.battery_4_bar_rounded,
+                                    size: 16,
+                                    color: Color(0xFF777E88),
+                                  ),
+                            ),
+                            const SizedBox(width: 5),
+                          ],
                           Text(
-                            '${device.batteryLevel}%',
+                            device.batteryLabel,
                             style: const TextStyle(
                               color: Color(0xFF777E88),
                               fontSize: 12,
@@ -533,9 +535,9 @@ class DeviceDetailsBody extends StatelessWidget {
                 fallbackIcon: Icons.system_update_alt_rounded,
                 label: AppL10n.of(context).devOtaUpgrade,
                 value: device.hasFirmwareUpdate
-                    ? AppL10n.of(context).devFirmwareNewVersion(
-                        device.newVersionNo,
-                      )
+                    ? AppL10n.of(
+                        context,
+                      ).devFirmwareNewVersion(device.newVersionNo)
                     : (device.firmwareVersion.isEmpty
                           ? '-'
                           : device.firmwareVersion),

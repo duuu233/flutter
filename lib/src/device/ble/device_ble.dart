@@ -812,7 +812,10 @@ class FrameBleClient {
     return _queueConnInterval(() async {
       // 阴性对照(B 组)：完全不发 0x13，看链路跑在系统自选参数上有多慢。
       if (BleTuning.skipConnIntervalRequest) {
-        _perfLog('connInterval', 'connInterval SKIPPED by tuning (control group B)');
+        _perfLog(
+          'connInterval',
+          'connInterval SKIPPED by tuning (control group B)',
+        );
         return;
       }
       // Android 侧的系统级请求与设备侧的 0x13 不冲突，两个一起上效果最好。
@@ -857,7 +860,10 @@ class FrameBleClient {
       try {
         await setConnectionIntervalMs(idleConnIntervalMs);
       } catch (error) {
-        _perfLog('connInterval', 'set idle connInterval failed (harmless): $error');
+        _perfLog(
+          'connInterval',
+          'set idle connInterval failed (harmless): $error',
+        );
       }
     });
   }
@@ -1140,15 +1146,26 @@ class FrameBleClient {
   Future<int> readBattery() async {
     try {
       final ack = await request(FrameProtocol.cmdGetBattery);
-      return FrameProtocol.parseBattery(ack.data);
+      return _parseValidatedBattery(ack.data);
     } on FrameBleException catch (e) {
       // 与 25s 保活心跳（同为 0x04）撞车时不要把「指令正在等待应答」这类内部措辞
       // 抛给用户：心跳超时上限 2s，稍候一次重试即可覆盖。
       if (e.kind != FrameBleErrorKind.commandPending) rethrow;
       await Future<void>.delayed(const Duration(milliseconds: 2200));
       final ack = await request(FrameProtocol.cmdGetBattery);
-      return FrameProtocol.parseBattery(ack.data);
+      return _parseValidatedBattery(ack.data);
     }
+  }
+
+  int _parseValidatedBattery(List<int> data) {
+    if (data.isEmpty) {
+      throw FrameBleException('电量应答数据为空');
+    }
+    final value = FrameProtocol.parseBattery(data);
+    if (value < 0 || value > 100) {
+      throw FrameBleException('电量应答超出有效范围：$value');
+    }
+    return value;
   }
 
   /// 空闲保活心跳：发一条最轻的读电量(0x04)在链路上制造流量。
@@ -1388,7 +1405,10 @@ class FrameBleClient {
 
       while (_lastImgAck < totalPackets - 1) {
         if (shouldAbort?.call() ?? false) {
-          throw FrameBleException('UPLOAD_ABORTED', kind: FrameBleErrorKind.aborted);
+          throw FrameBleException(
+            'UPLOAD_ABORTED',
+            kind: FrameBleErrorKind.aborted,
+          );
         }
         // 卡住重试时收敛：窗口逐步缩到 1 包、每包间隔逐步拉大，专门救「设备只收按序包、忙时丢包」。
         final curWindow = retries == 0
@@ -1402,7 +1422,10 @@ class FrameBleClient {
         while (nextSeq < totalPackets &&
             nextSeq - _lastImgAck - 1 < curWindow) {
           if (shouldAbort?.call() ?? false) {
-            throw FrameBleException('UPLOAD_ABORTED', kind: FrameBleErrorKind.aborted);
+            throw FrameBleException(
+              'UPLOAD_ABORTED',
+              kind: FrameBleErrorKind.aborted,
+            );
           }
           final seq = nextSeq;
           final frame = prebuilt != null

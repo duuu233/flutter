@@ -58,9 +58,8 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
 
   /// 后端列表 + 已连接设备的真机实时值。
   ///
-  /// 电量/内存是**蓝牙**字段，后端不下发；只调 refreshDevices 的话列表永远显示
-  /// 上一次 BLE 读到的缓存值（修好覆盖 bug 之前更是直接显示 0%）。这里对当前
-  /// 连接中的那台补一次 0x01 回读，页面进来就是实时电量。
+  /// 电量/内存是**蓝牙**字段，后端不下发。这里对当前连接设备补一次核心信息刷新；
+  /// 内存走 0x01，电量由状态层按 15 秒缓存策略在后台走 0x04，旧值持续可见。
   Future<void> _reload() async {
     await widget.state.refreshDevices();
     if (!mounted) {
@@ -91,7 +90,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
                   id: device.id,
                   name: device.name,
                   connected: device.connected,
-                  battery: '${device.batteryLevel}%',
+                  battery: device.batteryLabel,
                 ),
               )
               .toList(),

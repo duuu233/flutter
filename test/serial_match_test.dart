@@ -20,6 +20,22 @@ void main() {
     });
   });
 
+  group('完整设备 ID', () {
+    test('只接受有效的 6 字节十六进制值', () {
+      expect(isCompleteDeviceSerial('e9:48:c2:1e:d4:28'), isTrue);
+      expect(isCompleteDeviceSerial('E948C21ED428'), isTrue);
+      expect(isCompleteDeviceSerial('C21ED428'), isFalse);
+      expect(isCompleteDeviceSerial('E948C21ED42Z'), isFalse);
+      expect(isCompleteDeviceSerial('000000000000'), isFalse);
+      expect(isCompleteDeviceSerial('FFFFFFFFFFFF'), isFalse);
+    });
+
+    test('canonicalDeviceSerial 统一为冒号分隔格式', () {
+      expect(canonicalDeviceSerial('e9-48-c2-1e-d4-28'), 'E9:48:C2:1E:D4:28');
+      expect(canonicalDeviceSerial('C21ED428'), isEmpty);
+    });
+  });
+
   group('serialsMatch', () {
     test('归一化后完全相等 → 同一台（后端 6 字节 vs 固件 6 字节）', () {
       expect(serialsMatch('E9:48:C2:1E:D4:28', 'e948c21ed428'), isTrue);
@@ -76,8 +92,9 @@ void main() {
       expect(verifiedDeviceSerialMatch(fullA, sharedShort), isFalse);
     });
 
-    test('后端只有短 ID 时保留旧设备兼容', () {
-      expect(verifiedDeviceSerialMatch(sharedShort, fullA), isTrue);
+    test('后端短 ID 不再具备稳定身份资格', () {
+      expect(verifiedDeviceSerialMatch(sharedShort, fullA), isFalse);
+      expect(sessionSerialsMatch([sharedShort, fullA], sharedShort), isFalse);
     });
 
     test('完整后端 ID 不得仅凭会话广播短 ID 复用', () {

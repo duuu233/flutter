@@ -21,15 +21,15 @@ class _HomeBackground extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Stack(
-    fit: StackFit.expand,
-    children: [
-      const ColoredBox(color: Color(0xFFF5F9FF)),
-      _AssetImage(
-        path: asset,
-        fallback: const _SoftBackgroundPainterWidget(),
-      ),
-    ],
-  );
+      fit: StackFit.expand,
+      children: [
+        const ColoredBox(color: Color(0xFFF5F9FF)),
+        _AssetImage(
+          path: asset,
+          fallback: const _SoftBackgroundPainterWidget(),
+        ),
+      ],
+    );
   }
 }
 
@@ -372,8 +372,8 @@ class _Avatar extends StatelessWidget {
                 imageUrl: url,
                 fit: BoxFit.cover,
                 // 36lp 圆形头像，按物理像素解码，避免原图全尺寸位图进内存。
-                memCacheWidth:
-                    (36 * MediaQuery.devicePixelRatioOf(context)).round(),
+                memCacheWidth: (36 * MediaQuery.devicePixelRatioOf(context))
+                    .round(),
                 errorWidget: (context, imageUrl, error) => Image.asset(
                   'assets/images/mine-header.jpg',
                   fit: BoxFit.cover,
@@ -647,103 +647,101 @@ class _ConnectedDeviceCard extends StatelessWidget {
     // 不再用「整卡 GestureDetector 外层包裹」——那样与按钮的 GestureDetector 嵌套竞争，
     // 某些布局/裁剪下整卡手势会盖过按钮，点「连接蓝牙」反而跳进设备列表（用户反馈的 bug）。
     return Stack(
-        clipBehavior: Clip.none,
-        fit: StackFit.expand,
-        children: [
-          // 整幅底图（含投影）按比例往卡面盒子外溢出：横向各 (726-654)/2、
-          // 纵向按 28:44 分配。用 Fractionally 而非写死的 -18px，是为了在任何
-          // 屏宽下溢出量都随卡片一起缩放——固定 px 在宽屏上会和图对不上。
-          // 盒子比例已等于图的比例，BoxFit.fill 此处等价于 cover/contain。
-          // 不用 FilterQuality.high（三次立方采样）：底图本就接近显示尺寸，
-          // 视觉无差异，但轮播滑动时每帧重采样的 GPU 成本显著更高。
-          Positioned.fill(
-            child: FractionallySizedBox(
-              widthFactor: _kArtW / _kCardW,
-              heightFactor: _kArtH / _kCardH,
-              alignment: const Alignment(0, _kCardAlignY),
-              child: Image.asset(
-                'assets/images/home-bg03.png',
-                fit: BoxFit.fill,
+      clipBehavior: Clip.none,
+      fit: StackFit.expand,
+      children: [
+        // 整幅底图（含投影）按比例往卡面盒子外溢出：横向各 (726-654)/2、
+        // 纵向按 28:44 分配。用 Fractionally 而非写死的 -18px，是为了在任何
+        // 屏宽下溢出量都随卡片一起缩放——固定 px 在宽屏上会和图对不上。
+        // 盒子比例已等于图的比例，BoxFit.fill 此处等价于 cover/contain。
+        // 不用 FilterQuality.high（三次立方采样）：底图本就接近显示尺寸，
+        // 视觉无差异，但轮播滑动时每帧重采样的 GPU 成本显著更高。
+        Positioned.fill(
+          child: FractionallySizedBox(
+            widthFactor: _kArtW / _kCardW,
+            heightFactor: _kArtH / _kCardH,
+            alignment: const Alignment(0, _kCardAlignY),
+            child: Image.asset('assets/images/home-bg03.png', fit: BoxFit.fill),
+          ),
+        ),
+        // 整卡点击（非按钮区域）进设备列表：透明手势层，压在内容之下、背景之上。
+        // 上方的连接按钮(opaque)会拦截落在自己身上的点击，不会漏到这层。
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onOpenDevices,
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: [
+              // 左侧圆环图标（home-icon02.png，166rpx≈83）。
+              Image.asset(
+                'assets/images/home-icon02.png',
+                width: 83,
+                height: 83,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) {
+                  return const SizedBox(
+                    width: 78,
+                    height: 78,
+                    child: _DeviceOrbitMark(),
+                  );
+                },
               ),
-            ),
-          ),
-          // 整卡点击（非按钮区域）进设备列表：透明手势层，压在内容之下、背景之上。
-          // 上方的连接按钮(opaque)会拦截落在自己身上的点击，不会漏到这层。
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: onOpenDevices,
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                // 左侧圆环图标（home-icon02.png，166rpx≈83）。
-                Image.asset(
-                  'assets/images/home-icon02.png',
-                  width: 83,
-                  height: 83,
-                  fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const SizedBox(
-                      width: 78,
-                      height: 78,
-                      child: _DeviceOrbitMark(),
-                    );
-                  },
-                ),
-                // 右侧设备信息。
-                SizedBox(
-                  width: 138,
-                  height: 110,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        device.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: _HomeTextStyles.deviceCardTitle,
-                      ),
-                      const SizedBox(height: 9),
+              // 右侧设备信息。
+              SizedBox(
+                width: 138,
+                height: 110,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      device.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: _HomeTextStyles.deviceCardTitle,
+                    ),
+                    const SizedBox(height: 9),
+                    Row(
+                      children: [
+                        Image.asset(
+                          device.connected
+                              ? 'assets/images/bluetooth-icon.png'
+                              : 'assets/images/bluetooth-icon-not.png',
+                          width: 11,
+                          height: 14,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) {
+                            return Icon(
+                              Icons.bluetooth_rounded,
+                              color: device.connected
+                                  ? const Color(0xFF4A98FF)
+                                  : const Color(0xFF777E88),
+                              size: 14,
+                            );
+                          },
+                        ),
+                        const SizedBox(width: 7),
+                        Text(
+                          device.connected
+                              ? AppL10n.of(context).homeConnected
+                              : AppL10n.of(context).homeDisconnected,
+                          style: _HomeTextStyles.deviceMeta.copyWith(
+                            color: device.connected
+                                ? const Color(0xFF287DFF)
+                                : null,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (device.connected) ...[
+                      const SizedBox(height: 11),
                       Row(
                         children: [
-                          Image.asset(
-                            device.connected
-                                ? 'assets/images/bluetooth-icon.png'
-                                : 'assets/images/bluetooth-icon-not.png',
-                            width: 11,
-                            height: 14,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                Icons.bluetooth_rounded,
-                                color: device.connected
-                                    ? const Color(0xFF4A98FF)
-                                    : const Color(0xFF777E88),
-                                size: 14,
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 7),
-                          Text(
-                            device.connected
-                                ? AppL10n.of(context).homeConnected
-                                : AppL10n.of(context).homeDisconnected,
-                            style: _HomeTextStyles.deviceMeta.copyWith(
-                              color: device.connected
-                                  ? const Color(0xFF287DFF)
-                                  : null,
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (device.connected) ...[
-                        const SizedBox(height: 11),
-                        Row(
-                          children: [
+                          if (device.hasBatteryReading) ...[
                             Image.asset(
                               _batteryIconAsset(device.batteryLevel),
                               width: 26,
@@ -757,24 +755,25 @@ class _ConnectedDeviceCard extends StatelessWidget {
                               },
                             ),
                             const SizedBox(width: 7),
-                            Text(
-                              '${device.batteryLevel}%',
-                              style: _HomeTextStyles.deviceMeta,
-                            ),
                           ],
-                        ),
-                      ] else ...[
-                        const SizedBox(height: 22),
-                        _HomeConnectButton(onTap: onConnect),
-                      ],
+                          Text(
+                            device.batteryLabel,
+                            style: _HomeTextStyles.deviceMeta,
+                          ),
+                        ],
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 22),
+                      _HomeConnectButton(onTap: onConnect),
                     ],
-                  ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      );
+        ),
+      ],
+    );
   }
 }
 

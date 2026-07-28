@@ -4,7 +4,7 @@
 > 状态：Active  
 > 最后核验：2026-07-28  
 > 对照仓库：`D:\Work\learn\photo-album`  
-> 覆盖说明：矩阵吸收了截至 2026-07-27 的增量同步；上一次从头逐页完整复核为
+> 覆盖说明：矩阵吸收了截至 2026-07-28 的增量同步；上一次从头逐页完整复核为
 > 2026-07-14，后续仍应安排下一次完整复核。
 
 ## 1. 对齐原则
@@ -22,12 +22,12 @@
 | 首页 | `pages/home` | `features/home` | ✅ | 已绑定/未绑定、多设备轮播、头像、投屏与绑定入口一致 |
 | 登录 | `pages/login` | `features/account` | 🔶 | 小程序微信快捷登录；App 支持邮箱和移动应用微信登录 |
 | 我的 | `pages/mine` | `features/mine` | ✅ | 资料、计数、图库、设备、投屏记录、指南和设置入口一致 |
-| 绑定设备 | `subpackages/device/bind` | `features/devices/.../bind_device_flow.dart` | ✅ | 权限、白名单、扫描、候选连接、完整 ID 验身、绑定与返回一致 |
+| 绑定设备 | `subpackages/device/bind` | `features/devices/.../bind_device_flow.dart` | ✅ | 只允许 0x01 完整 6 字节 ID 判重/入库；广播短 ID 与 BLE 句柄不兜底 |
 | 设备列表 | `subpackages/device/list` | `devices_page.dart` / `my_devices_page.dart` | ✅ | 列表、选择、连接/断开、投屏和重命名一致 |
 | 设备详情 | `subpackages/device/detail` | `device_details_page.dart` | ✅ | 连接、投屏、轮播、清空、删除和 OTA 入口一致 |
 | BLE 调试 | `subpackages/device/debug` | `ble_debug_page.dart` | 🔶 | 两端均保留工程调试能力，release 用户入口受控 |
 | 轮播 | `subpackages/device/slideshow` | `carousel_settings_page.dart` | ✅ | 断线重连、0x10 模式/间隔与失败回滚一致 |
-| OTA | `subpackages/device/ota` | `ota_upgrade_page.dart` | ✅ | 连接门控、版本检查、确认与 DFU 流程一致 |
+| OTA | `subpackages/device/ota` | `ota_upgrade_page.dart` | ✅⚠️ | 两端当前源码流程一致；小程序新协议文档与两端源码冲突，修正文档前不可据其改协议 |
 | 投屏预览 | `subpackages/projection/preview` | `cast_preview_page.dart` | ✅⚠️ | 2026-07-25 起使用常驻编辑层；横竖取景、多图切换、旋转和 Canvas 烘焙规则一致，仍需真机回归 |
 | 投屏过程 | `subpackages/projection/result` | `projection_service.dart` / `casting_progress_page.dart` | ✅ | 服务端六色帧、部分成功、空间检查、记录回写与 BLE 图传一致 |
 | 投屏记录 | `subpackages/projection/records` | `cast_management_figma_page.dart` | ✅ | 成功/失败分页、再次投屏、删除与重入刷新一致 |
@@ -49,7 +49,8 @@
 | 公共请求参数 | ✅ | BoltFox 请求注入 `terminal/language/device/userToken` |
 | 密码/验证码 | ✅ | 密码小写 MD5；验证码统一 `sendEmail` |
 | 设备名称 | ✅ | 去首尾空格、非空、最多 6 个 Unicode 码点 |
-| 设备身份 | ✅ | 广播短 ID 只筛候选；建连后完整 ID 验身 |
+| 设备身份 | ✅ | 后端/绑定/会话只认完整 6 字节 ID；广播短 ID 只筛候选 |
+| 设备电量 | ✅ | `0x04` 单一数据源、15 秒缓存、并发合并、失败保留旧值、0% 合法 |
 | 单连接 | ✅ | 新目标会话建立前回收旧连接，展示状态只认活动会话 |
 | BLE 主协议 | ✅ | 帧头、CRC、236 字节分包、ACK、屏型/格式一致 |
 | 图传参数 | ✅ | 默认 pace 3ms、窗口 10、累计 ACK、自适应节奏 |
@@ -75,6 +76,9 @@
 - 投屏常驻编辑层、iOS BLE 性能和多设备验身需要持续保留真机回归。
 - 后端需确认同一设备 `imgIndex` 唯一性。
 - AI 正式入口启用前需补齐语音/下载产品规则并完成发布级验收。
+- 小程序 `docs/protocols/ota-dfu.md` 与当前 `utils/ota-ble.js` / Flutter
+  `ota_ble.dart` 在 DATA 帧序号、`0xF3` 方向和最小固件大小上冲突。修正文档前以两端
+  已运行源码和真机协议为准，不同步冲突文字。
 
 ## 6. 维护规则
 

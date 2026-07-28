@@ -133,7 +133,9 @@ UI / PhotoFrameState
 
 - `BleController` 统一权限、扫描、连接、身份确认、设备信息、图传、OTA、保活与租约。
 - `FrameBleClient` 管理 GATT、MTU、连接间隔、指令、ACK、分包和重试。
-- 广播短 ID 只用于筛选候选；绑定设备连接后必须读取完整 ID 做最终验身。
+- `DeviceBatteryCache` 以完整设备 ID 缓存 15 秒电量并合并并发 `0x04` 读取。
+- 广播短 ID 只用于筛选候选；后端记录、绑定入库与活动会话认领必须使用完整
+  6 字节 ID，建连后再次读取 0x01 做最终验身。
 - 同一时刻只维护一个目标设备会话，连接切换必须先清理旧连接状态。
 
 长期规则见 `BLE_CONNECTION_AND_IDENTITY.md`。
@@ -163,6 +165,7 @@ UI / PhotoFrameState
 - 跨业务组件放 `shared/widgets`，跨业务工具放 `shared`。
 - 用户可见文案必须进入 `AppL10n`；工程调试页可明确标注为不接 i18n。
 - 设备名称不是物理身份；设备身份以协议返回的完整 ID 为准。
+- 电量只以 `0x04` 为页面数据源；0% 合法、未知显示 `--`、失败保留旧值。
 - 网络 DTO/接口变化更新 API 文档，BLE 语义变化更新对应 Decision 文档。
 - 当前符号位置、调用链和影响范围以 CodeGraph 为准，不在 Markdown 复制完整源码索引。
 
@@ -173,6 +176,7 @@ UI / PhotoFrameState
 - `api_rows_test.dart`
 - `auth_page_test.dart`
 - `ble_connection_lease_test.dart`
+- `device_battery_cache_test.dart`
 - `frame_device_protocol_test.dart`
 - `language_settings_test.dart`
 - `serial_match_test.dart`

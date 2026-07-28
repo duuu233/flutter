@@ -153,7 +153,10 @@ class BleController extends ChangeNotifier {
     uploadStatus = '';
   }
 
-  /// 当前会话登记的序列号（广播 4 字节 + 固件 6 字节，可能只有其一）。
+  /// 当前会话登记的序列号（广播短 ID + 固件完整 ID，可能只有其一）。
+  ///
+  /// 广播短 ID 仅供扫描候选筛选；[sessionMatchesSerial] 会过滤它，只允许
+  /// 0x01 完整 ID 认领后端记录。
   List<String> get sessionSerials => [
     if (broadcastDeviceId.isNotEmpty) broadcastDeviceId,
     if ((info?.deviceId ?? '').isNotEmpty) info!.deviceId,
@@ -164,12 +167,12 @@ class BleController extends ChangeNotifier {
       info != null ? info!.screenType : broadcastScreenType;
 
   /// 这台后端记录的序列号是否指向当前活动会话。
-  /// 后端已有 6 字节完整 ID 时，必须由会话 0x01 完整 ID 精确确认；
+  /// 后端记录与会话都必须有 6 字节完整 ID 并精确相等；
   /// 不能仅凭可能重复的广播 4 字节短 ID 复用会话。
   /// [screenCode]：设备记录的屏幕类型码（FrameScreenType.code）。传入后先按型号一票否决，
   /// 防「序列号 4/6 字节偶合」把不同型号设备误认成当前会话（跨型号串台）。
   bool sessionMatchesSerial(String serial, {int screenCode = 0}) {
-    if (!connected || serial.isEmpty) {
+    if (!connected || !isCompleteDeviceSerial(serial)) {
       return false;
     }
     if (!sameScreenCode(screenCode, sessionScreenCode)) {
@@ -256,7 +259,7 @@ class BleController extends ChangeNotifier {
   /// 序列号用 serialsMatch 容错比对（广播 4 字节 vs 后端 6 字节互为子串也算同一台）；
   /// 连接已绑定设备不按名称匹配——设备名可随意改，广播名始终是产品名（EF6-370 等），
   /// 按名匹配在改名后必然「搜不到设备/连接不上」，且同型号广播名相同可能连错台。
-  /// 名称兜底仅限没有序列号的老记录。
+  /// 没有完整序列号的历史记录不再按名称兜底；需要删除记录后重新绑定。
   static ScanResult? matchScannedDevice(
     List<ScanResult> found, {
     required String serial,
@@ -264,7 +267,7 @@ class BleController extends ChangeNotifier {
     int screenCode = 0,
     Set<String> excludedDeviceIds = const {},
   }) {
-    if (serial.trim().isNotEmpty) {
+    if (isCompleteDeviceSerial(serial)) {
       for (final result in found) {
         if (excludedDeviceIds.contains(result.device.remoteId.str)) {
           continue;
@@ -282,18 +285,6 @@ class BleController extends ChangeNotifier {
         }
       }
       return null;
-    }
-    final target = name.trim();
-    if (target.isEmpty) {
-      return null;
-    }
-    for (final result in found) {
-      if (excludedDeviceIds.contains(result.device.remoteId.str)) {
-        continue;
-      }
-      if (displayName(result).trim() == target) {
-        return result;
-      }
     }
     return null;
   }
@@ -448,8 +439,8 @@ class BleController extends ChangeNotifier {
     required String serial,
     required int screenCode,
   }) async {
-    if (serial.trim().isEmpty) {
-      return true; // 没有稳定 ID 的旧记录沿用名称扫描兼容路径。
+    if (!isCompleteDeviceSerial(serial)) {
+      return false;
     }
     if (!sameScreenCode(screenCode, sessionScreenCode)) {
       return false;
@@ -493,6 +484,9 @@ class BleController extends ChangeNotifier {
     // 同 [connect] 的重入护栏：连接编排进行中不接受第二路。
     if (connecting) {
       return _l10n.bleBusyConnecting;
+    }
+    if (!isCompleteDeviceSerial(serial)) {
+      return _l10n.bleIncompleteDeviceIdentity;
     }
     final trace = DeviceInteractionTrace('connect-bound-device');
     if (sessionMatchesSerial(serial, screenCode: screenCode)) {
@@ -643,10 +637,7 @@ class BleController extends ChangeNotifier {
       throw OtaException('设备未连接，请先在详情页连接设备后再升级');
     }
     if (expectedSerial.isEmpty ||
-        !sessionMatchesSerial(
-          expectedSerial,
-          screenCode: expectedScreenCode,
-        )) {
+        !sessionMatchesSerial(expectedSerial, screenCode: expectedScreenCode)) {
       throw OtaException('当前连接的不是要升级的设备，请返回详情页重新连接');
     }
 

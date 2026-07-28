@@ -242,13 +242,15 @@ Permission gate
   -> BLE scan and incrementally display candidates
   -> user selects a ScanResult (default UI choice is strongest RSSI)
   -> BleController establishes the persistent physical session
-  -> read device core information, including the protocol identity
+  -> read device core information and require a valid 0x01 six-byte identity
   -> resolve required productId from product model/screen/scan data
-  -> BoltFoxApi.addUserProduct(productId, name, serial)
+  -> BoltFoxApi.addUserProduct(productId, name, canonical full identity)
   -> refresh bound-device list
 ```
 
-Binding aborts if `productId` cannot be resolved; it must not send an incomplete backend request.
+Binding aborts if `productId` cannot be resolved or the complete six-byte identity is unavailable;
+it must not send an incomplete backend request. Broadcast short IDs and BLE `remoteId` values must
+never be used as binding persistence fallbacks.
 The scan-session `remoteId`, user-visible broadcast device ID, editable device name, and protocol
 full device ID are different concepts.
 
@@ -266,9 +268,28 @@ Snapshot the user-selected backend device record
 ```
 
 Current code limits same-short-ID verification to four candidates and uses 12-second scan windows.
-An editable device name is never identity evidence.
+An editable device name is never identity evidence. Backend records with an old four-byte ID,
+all-zero/all-F identity, or invalid format are not compatible records: connecting them must fail
+with a rebind instruction.
 
-### 5. Image selection, editing, and projection
+### 5. Device battery refresh
+
+```text
+Connected, fully verified device
+  -> show the last valid reading immediately, if one exists
+  -> reuse it while younger than 15 seconds
+  -> after expiry, issue command 0x04 in the background
+  -> merge concurrent refreshes for the same full device ID
+  -> valid 0..100 response: update in place
+  -> failure/invalid response: retain the old value
+  -> no successful reading yet: show `--`
+```
+
+Battery display is connected-only. Command `0x01` is not a page-battery source; using both `0x01`
+and `0x04` would allow competing values and break the cache contract. A real `0%` is valid and must
+not be treated as “missing”.
+
+### 6. Image selection, editing, and projection
 
 ```text
 Camera/gallery selection
@@ -295,7 +316,7 @@ device state is retried for up to 12 seconds at 800 ms intervals before becoming
 failure. Failure classification uses `FrameBleErrorKind`; it must not depend on matching translated
 message substrings.
 
-### 6. Gallery deletion and device refresh
+### 7. Gallery deletion and device refresh
 
 - The backend gallery response is already user-scoped by `userToken`; state must not re-filter it by
   a concurrently refreshed local owner ID.
@@ -306,7 +327,7 @@ message substrings.
   index may use constrained inference.
 - Slot `0` is valid. Missing/invalid slot is represented by `-1`, never by truthiness.
 
-### 7. BLE/application lifecycle
+### 8. BLE/application lifecycle
 
 ```text
 Connected foreground session
@@ -328,9 +349,10 @@ BLE connection because background disconnect callbacks may have been missed.
 
 1. **One shared state and one BLE session.** Pages consume the root-owned `PhotoFrameState` and
    `BleController`; competing page-owned clients would corrupt session identity and callbacks.
-2. **Physical identity is protocol identity.** Broadcast short ID and screen type only select
-   candidates. Command `0x01` full ID is required for final verification when the backend stores a
-   full six-byte ID.
+2. **Physical identity is always a complete protocol identity.** Backend records, binding,
+   deduplication, and active-session ownership require the valid six-byte ID returned by command
+   `0x01`. Broadcast short ID and screen type only select candidates; old short-ID backend records
+   must be removed and rebound.
 3. **The selected target is immutable during an async operation.** Connection, projection, delete,
    clear, and OTA flows snapshot the backend device ID and must not silently switch when UI selection
    changes.
@@ -374,25 +396,28 @@ BLE connection because background disconnect callbacks may have been missed.
 5. Preserve the root-owned `PhotoFrameState` and `BleController` boundaries. UI pages should not
    create replacement business-state or long-lived BLE-client instances.
 6. Never use device name as physical identity. Preserve full-ID verification, screen-type conflict
-   checks, wrong-candidate disconnect, and candidate exclusion behavior.
+   checks, wrong-candidate disconnect, candidate exclusion behavior, and the rejection of
+   incomplete backend records.
 7. Preserve target-device snapshots through asynchronous business flows.
 8. Handle `imgIndex` with explicit numeric comparisons. `0` is a valid slot; unknown is `-1`.
 9. Keep BoltFox, seekink, and AI authentication/response handling separate. Do not display AI
    service `detail` directly to users.
-10. User-visible text belongs in `AppL10n`. Engineering-only debug pages may be explicitly exempt.
-11. New cast/recast temporary-file prefixes must be registered in `TempCacheSweeper` and documented
+10. Keep page battery reads on command `0x04` through `DeviceBatteryCache`. Preserve the 15-second
+    TTL, in-flight deduplication, valid `0%`, old-value fallback, and `--` unknown state.
+11. User-visible text belongs in `AppL10n`. Engineering-only debug pages may be explicitly exempt.
+12. New cast/recast temporary-file prefixes must be registered in `TempCacheSweeper` and documented
     in `docs/architecture/RESOURCE_LIFECYCLE.md`.
-12. Do not change BLE pacing, window, MTU/chunk, ACK, connection-interval, or timeout values as a
+13. Do not change BLE pacing, window, MTU/chunk, ACK, connection-interval, or timeout values as a
     cosmetic refactor. Use the iOS performance runbook and real hardware evidence.
-13. Restore `BleTuning` defaults after diagnostics; saved experimental values affect ordinary casts.
-14. Do not remove Android foreground-service/wake-lock or renderer configuration without verifying
+14. Restore `BleTuning` defaults after diagnostics; saved experimental values affect ordinary casts.
+15. Do not remove Android foreground-service/wake-lock or renderer configuration without verifying
     lifecycle deadlines and affected release devices.
-15. Regular project documentation belongs under `docs/`. `AGENTS.md` and this explicitly requested
+16. Regular project documentation belongs under `docs/`. `AGENTS.md` and this explicitly requested
     `AI_CONTEXT.md` are root-level AI control/context exceptions.
-16. Update the Active owner document when a change alters architecture, API contracts, BLE identity,
+17. Update the Active owner document when a change alters architecture, API contracts, BLE identity,
     slot semantics, resource lifecycle, cross-client behavior, platform setup, release steps, or
     user-facing multilingual content.
-17. Normal validation is:
+18. Normal validation is:
 
     ```bash
     dart analyze lib test
@@ -401,7 +426,7 @@ BLE connection because background disconnect callbacks may have been missed.
 
     BLE transfer, connection intervals, OTA, camera/gallery, WeChat login, background behavior, and
     release-only platform configuration require real-device validation.
-18. Android release builds require complete `android/key.properties`; do not add signing secrets to
+19. Android release builds require complete `android/key.properties`; do not add signing secrets to
     Git. iOS release setup and WeChat values are external build inputs.
 
 ## Known Risks
@@ -412,6 +437,14 @@ BLE connection because background disconnect callbacks may have been missed.
   parsing, serial matching, connection leases, API rows, localization/widgets, and auth UI.
 - **Same-short-ID devices can cross-connect if identity rules regress.** The full-ID verification and
   wrong-candidate exclusion path is safety-critical.
+- **Historical short-ID backend records are intentionally blocked.** They cannot be safely mapped
+  to one physical frame. Product/support migration must delete and rebind them; restoring a
+  short-ID compatibility path would reintroduce cross-device ownership.
+- **The mini-program OTA document currently contradicts both implementations.**
+  `photo-album/docs/protocols/ota-dfu.md` disagrees with the current mini-program
+  `utils/ota-ble.js` and Flutter `ota_ble.dart` about DATA sequence bytes, the direction of `0xF3`,
+  and minimum firmware size. Do not change Flutter OTA from that document until the mini-program
+  owner corrects the source-of-truth conflict and real-device behavior is reconfirmed.
 - **Backend slot uniqueness is not confirmed.** If two records for one device can retain the same
   `imgIndex`, an old "ghost" record may point at a newly reused physical slot and delete/display the
   wrong image. The client mask check cannot distinguish this case.
@@ -492,12 +525,12 @@ Current history groups include:
 - 2026-07-20 resource and single-connection audits;
 - 2026-07-22 iOS projection-performance changes;
 - 2026-07-27 device-identity/battery review;
+- 2026-07-28 strict device-identity and `0x04` battery-cache synchronization;
 - the July runbook change digest.
 
 ## AI Working Notes
 
-1. At the time of this document's creation, `codegraph status` reports an up-to-date index:
-   143 indexed files, 3,538 nodes, 9,840 edges, 11.64 MB, with no pending synchronization.
+1. Re-run `codegraph status` instead of relying on copied counts; the index changes with source.
 2. High-value first CodeGraph queries:
    - `main.dart BoltStarApp PhotoFrameState AppShell AppRoutes`
    - `BleController FrameBleClient serial_match connectBoundDevice`
@@ -530,11 +563,13 @@ Current history groups include:
   `AppRoutes`.
 - Network/service relationships: `ApiClient`, `BoltFoxApi`, `DitheringApi`, `BoltStarAiApi`.
 - BLE identity and lifecycle: `BleController`, `FrameBleClient`, `BleConnectionLease`,
-  `serial_match.dart`.
+  `serial_match.dart`, `battery_cache.dart`.
 - Projection call path: `CastingProgressPage`, `ServerImageProjectionService.castImages`,
   `CastImageEditor`, transfer information/rollback paths.
 - Binding call path: `BindDeviceFlowPage`, `PhotoFrameState.bindDevice`,
   `BoltFoxApi.addUserProduct`.
+- Battery call path: page refresh -> `PhotoFrameState.refreshConnectedDeviceInfo` /
+  `_refreshDeviceBattery` -> `DeviceBatteryCache` -> `FrameBleClient.readBattery`.
 
 ### Source and configuration
 
