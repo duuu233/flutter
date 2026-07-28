@@ -64,6 +64,8 @@
 ## 4. 有意的平台差异
 
 - 登录：小程序微信快捷登录；App 为邮箱体系 + 微信开放平台移动应用 OAuth。
+- 相册选图：小程序使用微信选择媒体能力；Android App 使用系统 Photo Picker，只授权用户
+  选中的图片，不申请整个媒体库读取权限。
 - 图片编辑：两端交互/输出规则一致，但 App 使用 Flutter 手势层、Canvas 和 isolate。
 - HTML：小程序 `rich-text`；App 使用 `SimpleHtmlText` 支持受控标签子集。
 - 版本升级：App 使用后端版本接口与系统下载/安装能力。

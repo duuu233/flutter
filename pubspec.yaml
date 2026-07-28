@@ -56,6 +56,10 @@ dependencies:
   crypto: ^3.0.6
   # 拍照/相册选图，返回真实本地文件路径（投屏原图需上传后端转码，content:// 无法直接上传）
   image_picker: ^1.1.2
+  # Android 相册统一使用系统 Photo Picker；显式依赖平台实现与接口，以便在 main() 启用。
+  # Photo Picker 只授权用户选中的图片，不需要 READ_MEDIA_IMAGES / READ_EXTERNAL_STORAGE。
+  image_picker_android: ^0.8.13+17
+  image_picker_platform_interface: ^2.11.1
   # 版本更新：跳转浏览器/应用商店下载新版 APK
   url_launcher: ^6.3.0
   # 读取当前 App 版本号，供 getLastVersion 比对是否有新版本

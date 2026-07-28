@@ -52,6 +52,8 @@ OpenHarmony/HAP is not integrated.
 | `http_parser` | `^4.0.2` | Explicit multipart media types |
 | `crypto` | `^3.0.6` | Lowercase 32-character MD5 for password-compatible requests |
 | `image_picker` | `^1.1.2` | Camera and gallery source selection |
+| `image_picker_android` | `^0.8.13+17` | Enables Android system Photo Picker for all gallery entry points |
+| `image_picker_platform_interface` | `^2.11.1` | Access to the registered picker implementation during startup configuration |
 | `image` | `4.9.1` | Isolate-side crop/resize and JPEG encoding |
 | `cached_network_image` | `^3.4.1` | Memory/disk-backed network image display |
 | `flutter_cache_manager` | `^3.4.1` | Explicit disk cache cleanup |
@@ -72,8 +74,12 @@ OpenHarmony/HAP is not integrated.
   than fixed to numeric values in the repository.
 - Native code is Kotlin. It provides the Flutter device method channel, a BLE connected-device
   foreground service, wake-lock lifetime handling, and Android crash logging.
-- The main manifest declares version-specific Bluetooth/media permissions, camera, network,
-  foreground-service, wake-lock, and notification permissions.
+- The main manifest declares version-specific Bluetooth permissions, camera, network,
+  foreground-service, wake-lock, and notification permissions. It deliberately does not declare
+  `READ_MEDIA_IMAGES`, `READ_MEDIA_VISUAL_USER_SELECTED`, or `READ_EXTERNAL_STORAGE`.
+- `main()` enables `ImagePickerAndroid.useAndroidPhotoPicker` before `runApp()`. Gallery and avatar
+  selection receive URI access only for user-selected images and must not be preceded by a
+  photo-library permission request.
 - The Android renderer is deliberately kept on a compatibility path:
   `EnableImpeller=false` plus `ImpellerBackend=opengles`, due to recorded Vulkan-driver crashes on
   some devices. Do not remove these flags without release-device regression evidence.
@@ -293,6 +299,7 @@ not be treated as “missing”.
 
 ```text
 Camera/gallery selection
+  -> Android gallery uses system Photo Picker without broad media permission
   -> CastPreviewPage persistent editor
        -> pan / zoom / rotate / portrait-landscape viewport
        -> bake edited canvas at exact device pixel dimensions
@@ -382,6 +389,9 @@ BLE connection because background disconnect callbacks may have been missed.
     Current intentional App differences are documented in `docs/integration/APP_VS_MINIPROGRAM.md`.
 14. **Documentation has lifecycle semantics.** Active documents define current long-lived knowledge;
     Historical documents are frozen evidence; Superseded documents cannot be used as current rules.
+15. **Android gallery access is selection-scoped.** `main()` globally enables the system Photo
+    Picker for `image_picker`. Projection, AI, home-avatar, and profile-avatar flows must not request
+    broad photo-library access or reintroduce Android media-read permissions.
 
 ## Development Rules
 
@@ -412,12 +422,16 @@ BLE connection because background disconnect callbacks may have been missed.
 14. Restore `BleTuning` defaults after diagnostics; saved experimental values affect ordinary casts.
 15. Do not remove Android foreground-service/wake-lock or renderer configuration without verifying
     lifecycle deadlines and affected release devices.
-16. Regular project documentation belongs under `docs/`. `AGENTS.md` and this explicitly requested
+16. Keep Android gallery access on the system Photo Picker. Do not add `READ_MEDIA_IMAGES`,
+    `READ_MEDIA_VISUAL_USER_SELECTED`, `READ_EXTERNAL_STORAGE`, or a pre-gallery
+    `requestPhotoPermission` gate unless the product gains a real full-library use case and the
+    privacy/release decision is revisited.
+17. Regular project documentation belongs under `docs/`. `AGENTS.md` and this explicitly requested
     `AI_CONTEXT.md` are root-level AI control/context exceptions.
-17. Update the Active owner document when a change alters architecture, API contracts, BLE identity,
+18. Update the Active owner document when a change alters architecture, API contracts, BLE identity,
     slot semantics, resource lifecycle, cross-client behavior, platform setup, release steps, or
     user-facing multilingual content.
-18. Normal validation is:
+19. Normal validation is:
 
     ```bash
     dart analyze lib test
@@ -426,7 +440,7 @@ BLE connection because background disconnect callbacks may have been missed.
 
     BLE transfer, connection intervals, OTA, camera/gallery, WeChat login, background behavior, and
     release-only platform configuration require real-device validation.
-19. Android release builds require complete `android/key.properties`; do not add signing secrets to
+20. Android release builds require complete `android/key.properties`; do not add signing secrets to
     Git. iOS release setup and WeChat values are external build inputs.
 
 ## Known Risks

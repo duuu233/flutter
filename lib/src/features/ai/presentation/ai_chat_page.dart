@@ -864,7 +864,7 @@ class _AiChatPageState extends State<AiChatPage> {
     try {
       files = camera
           ? await CastPhotoPicker.takePhoto()
-          : await CastPhotoPicker.pickFromAlbum(context, limit: remain);
+          : await CastPhotoPicker.pickFromAlbum(limit: remain);
     } catch (_) {
       return; // 用户取消选图
     }

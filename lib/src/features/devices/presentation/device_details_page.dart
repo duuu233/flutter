@@ -226,7 +226,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
       imagePaths = (source == ImageSourceType.camera)
           ? await CastPhotoPicker.takePhoto()
-          : await CastPhotoPicker.pickFromAlbum(context);
+          : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (context.mounted) {
         _snack(context, AppL10n.of(context).devPhotoReadFailed);

@@ -4,6 +4,8 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:BoltStar/src/app.dart';
 import 'package:BoltStar/src/device/ble/ble_tuning.dart';
 import 'package:BoltStar/src/device/ble/device_ble.dart';
@@ -12,6 +14,7 @@ import 'package:BoltStar/src/shared/temp_cache_sweeper.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  _configureAndroidPhotoPicker();
   _installCrashHandlers();
   // 热重启/异常退出残留清扫（best-effort）：Dart 侧单例重建后 connected=false，
   // 但原生侧的连接保活前台服务可能仍在跑——表现为热重启后通知栏保活常驻、
@@ -43,6 +46,17 @@ void main() {
     ),
   );
   runApp(const BoltStarApp());
+}
+
+/// Android 相册入口统一走系统 Photo Picker。
+///
+/// 该配置作用于进程内所有 ImagePicker 相册调用（投屏、首页头像、资料头像），
+/// 只向 App 授予用户主动选中的图片，不需要整库读取权限。
+void _configureAndroidPhotoPicker() {
+  final implementation = ImagePickerPlatform.instance;
+  if (implementation is ImagePickerAndroid) {
+    implementation.useAndroidPhotoPicker = true;
+  }
 }
 
 /// 收窄 Flutter 全局图片解码缓存的上限。

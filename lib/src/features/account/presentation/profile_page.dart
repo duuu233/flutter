@@ -9,7 +9,6 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/avatar_upload.dart';
 import '../../../shared/l10n/app_l10n.dart';
-import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
 
 /// 账户资料页：查看与编辑个人信息（头像、昵称、邮箱等）。
@@ -147,10 +146,6 @@ class _ProfilePageState extends State<ProfilePage> {
   /// 点头像仅选择并本地回显；与小程序一致，头像和昵称在点「保存资料」时一起提交。
   /// 尺寸/体积约束与兜底压缩统一走 [AvatarUpload]（与首页换头像入口共用）。
   Future<void> _pickAvatar() async {
-    // 进相册前先过照片权限（拒绝弹「去设置」引导并中止）。
-    if (!await PermissionGate.ensurePhotoAccess(context) || !mounted) {
-      return;
-    }
     final picker = ImagePicker();
     final XFile? file;
     try {

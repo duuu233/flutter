@@ -104,9 +104,11 @@ flutter build ipa --release --export-method app-store \
 1. `pubspec.yaml` 版本号递增：`1.0.0+1` → `1.0.1+2`（`+N` 是 versionCode/CFBundleVersion，
    Play/TestFlight **不允许重复**）。
 2. 开发机先跑 `flutter analyze`（本次改动较多，务必过一遍零告警再打包）。
-3. **release 包**真机回归四条链路（debug 包正常不代表 release 正常，混淆/权限差异都在 release 才暴露）：
+3. **release 包**真机回归以下重点链路（debug 包正常不代表 release 正常，混淆/权限差异都在 release 才暴露）：
    - 登录 + 任一接口连通（验证 INTERNET 权限）；
    - 微信授权完整往返（验证 URL Scheme / Universal Link / 签名 MD5 / R8 keep）；
+   - Android 投屏多选、AI 多选、首页头像和资料头像均打开系统 Photo Picker，且不会先弹
+     照片/媒体整库授权框；
    - 投屏预览常驻编辑层：平移、缩放、旋转、横竖取景与最终设备分辨率导出；
    - BLE 扫描 → 连接 → 投屏 → OTA（重点回归本次的 OTA 提速与 ACK 事件驱动改动）。
    - 如有 Android 10/11 旧设备，验证首次扫描会弹**定位授权**且能搜到设备（本次修复项）。

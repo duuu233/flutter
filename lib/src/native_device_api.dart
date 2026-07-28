@@ -6,7 +6,6 @@ class DevicePermissionStatus {
     required this.bluetoothEnabled,
     required this.bluetoothPermissionGranted,
     required this.locationPermissionGranted,
-    required this.photoPermissionGranted,
     required this.cameraPermissionGranted,
   });
 
@@ -14,7 +13,6 @@ class DevicePermissionStatus {
   final bool bluetoothEnabled;
   final bool bluetoothPermissionGranted;
   final bool locationPermissionGranted;
-  final bool photoPermissionGranted;
   final bool cameraPermissionGranted;
 
   bool get bluetoothReady =>
@@ -27,7 +25,6 @@ class DevicePermissionStatus {
       bluetoothEnabled: map['bluetoothEnabled'] == true,
       bluetoothPermissionGranted: map['bluetoothPermissionGranted'] == true,
       locationPermissionGranted: map['locationPermissionGranted'] == true,
-      photoPermissionGranted: map['photoPermissionGranted'] == true,
       cameraPermissionGranted: map['cameraPermissionGranted'] == true,
     );
   }
@@ -92,13 +89,6 @@ class NativeDeviceApi {
   static Future<DevicePermissionStatus> requestLocationPermission() async {
     final result = await _channel.invokeMapMethod<String, dynamic>(
       'requestLocationPermission',
-    );
-    return DevicePermissionStatus.fromMap(result);
-  }
-
-  static Future<DevicePermissionStatus> requestPhotoPermission() async {
-    final result = await _channel.invokeMapMethod<String, dynamic>(
-      'requestPhotoPermission',
     );
     return DevicePermissionStatus.fromMap(result);
   }

@@ -47,11 +47,6 @@ class MainActivity : FlutterActivity() {
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION),
                 4102,
             )
-            "requestPhotoPermission" -> requestRuntimePermissions(
-                result,
-                photoPermissions(),
-                4103,
-            )
             "requestCameraPermission" -> requestRuntimePermissions(
                 result,
                 arrayOf(Manifest.permission.CAMERA),
@@ -345,7 +340,6 @@ class MainActivity : FlutterActivity() {
 
     private fun buildStatus(): Map<String, Boolean> {
         val bluetoothAdapter = bluetoothAdapter()
-        val photoGranted = photoPermissions().any { isGranted(it) }
         val bluetoothPermissionGranted = bluetoothPermissions().all { isGranted(it) }
         val bluetoothEnabled = try {
             bluetoothAdapter?.isEnabled == true
@@ -357,7 +351,6 @@ class MainActivity : FlutterActivity() {
             "bluetoothEnabled" to bluetoothEnabled,
             "bluetoothPermissionGranted" to bluetoothPermissionGranted,
             "locationPermissionGranted" to isGranted(Manifest.permission.ACCESS_FINE_LOCATION),
-            "photoPermissionGranted" to photoGranted,
             "cameraPermissionGranted" to isGranted(Manifest.permission.CAMERA),
         )
     }
@@ -385,19 +378,6 @@ class MainActivity : FlutterActivity() {
                 // 12+ 由 BLUETOOTH_SCAN(neverForLocation) 覆盖，无需定位。
                 Manifest.permission.ACCESS_FINE_LOCATION,
             )
-        }
-    }
-
-    private fun photoPermissions(): Array<String> {
-        return when {
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE -> arrayOf(
-                Manifest.permission.READ_MEDIA_IMAGES,
-                Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED,
-            )
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU -> arrayOf(
-                Manifest.permission.READ_MEDIA_IMAGES,
-            )
-            else -> arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE)
         }
     }
 

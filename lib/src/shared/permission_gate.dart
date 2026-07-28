@@ -4,44 +4,16 @@ import '../native_device_api.dart';
 import 'l10n/app_l10n.dart';
 import 'widgets/app_dialog.dart';
 
-/// 运行时权限门卫：在进入相册 / 蓝牙设备操作**之前**先完成系统授权。
+/// 蓝牙运行时权限门卫：在设备操作**之前**先完成系统授权并确认蓝牙已开启。
 ///
 /// 产品要求（2026-07 反馈）：
-/// 1. 相册必须先授权再访问——Android 13+ 的系统选择器本身不要求权限，
-///    也照样要先弹授权框；未授权不得进入相册。
-/// 2. 授权框要先于「设备操作」（扫描/连接的 loading、雷达动画）单独出现，二者不同屏。
-/// 3. 用户拒绝时弹「去设置」引导框；在系统设置里手动关闭后再次使用，
+/// 1. 授权框要先于「设备操作」（扫描/连接的 loading、雷达动画）单独出现，二者不同屏。
+/// 2. 用户拒绝时弹「去设置」引导框；在系统设置里手动关闭后再次使用，
 ///    这里会重新弹系统授权框（每次都按当前真实状态请求，同拍照的行为）。
+///
+/// 相册不经过本门卫：Android 使用系统 Photo Picker，只读取用户主动选中的图片。
 class PermissionGate {
   PermissionGate._();
-
-  /// 相册（照片/媒体）权限。已授权直接放行；未授权先弹系统授权框；
-  /// 拒绝后弹「去设置」引导并返回 false（调用方中止进相册）。
-  static Future<bool> ensurePhotoAccess(BuildContext context) async {
-    DevicePermissionStatus status;
-    try {
-      // 原生层已授权时直接返回现状（不弹窗），未授权则拉起系统授权框。
-      status = await NativeDeviceApi.requestPhotoPermission();
-    } catch (_) {
-      // 通道不可用（iOS 未注册 / 桌面端 / 测试环境）不拦截：
-      // 交给系统相册选择器自身的权限机制，不能让这些平台选不了图。
-      return true;
-    }
-    if (status.photoPermissionGranted) {
-      return true;
-    }
-    if (context.mounted) {
-      final l10n = AppL10n.of(context);
-      await showPermissionGuideDialog(
-        context,
-        title: l10n.permPhotoTitle,
-        message: l10n.permPhotoMessage,
-        actionLabel: l10n.bindGoSettings,
-        onAction: NativeDeviceApi.openAppSettings,
-      );
-    }
-    return false;
-  }
 
   /// 蓝牙权限（Android 12+「附近设备」；Android 11- 含定位）+ 蓝牙开关。
   ///

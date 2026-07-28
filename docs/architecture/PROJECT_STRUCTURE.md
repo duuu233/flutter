@@ -100,7 +100,8 @@ lib/
 
 ### 应用与状态
 
-- `main.dart` 初始化缓存、BLE 调优和插件日志级别后启动 `BoltStarApp`。
+- `main.dart` 先全局启用 Android 系统 Photo Picker，再初始化缓存、BLE 调优和插件日志级别，
+  最后启动 `BoltStarApp`。
 - `BoltStarApp` 持有 `PhotoFrameState`、生命周期观察、路由和崩溃现场提示。
 - `PhotoFrameState` 是页面共享的业务状态门面，负责账号、设备、图库、投屏记录和网络动作。
 - 生命周期通过 `BleConnectionLease` 区分前台、切出和息屏，管理 BLE 宽限与回收。
@@ -142,7 +143,9 @@ UI / PhotoFrameState
 
 ### 投屏与图片
 
-- `CastPhotoPicker` 使用系统相机/相册并在入口控制源图尺寸。
+- `CastPhotoPicker` 使用系统相机/相册并在入口控制源图尺寸。Android 的投屏、AI 和头像相册
+  入口统一由 `main()` 配置为系统 Photo Picker，只获取用户选中图片的访问权，不经过
+  `PermissionGate`，也不声明媒体整库读取权限。
 - `CastPreviewPage` 使用常驻编辑层支持平移、缩放、旋转、横竖取景框和多图切换。
 - 编辑结果由 Canvas 按设备物理分辨率烘焙；横向内容按 270° 规则写入竖向设备画布。
 - `CastImageEditor` 负责未编辑图片的中心裁切缩放及 RGBA → JPEG 92% 编码。

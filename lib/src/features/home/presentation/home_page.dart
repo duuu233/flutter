@@ -297,10 +297,6 @@ class _HomePageState extends State<HomePage> {
     if (_updatingAvatar) {
       return;
     }
-    // 进相册前先过照片权限（拒绝弹「去设置」引导并中止）。
-    if (!await PermissionGate.ensurePhotoAccess(context) || !mounted) {
-      return;
-    }
     XFile? file;
     try {
       // 与「账户资料」页同参数（AvatarUpload）：原生降采样到 512px/JPEG85。
@@ -402,7 +398,7 @@ class _HomePageState extends State<HomePage> {
       // 避免把 4~12MB 的相机原图整个传给后端（投屏耗时大头在上传，不在 BLE）。
       imagePaths = (source == ImageSourceType.camera)
           ? await CastPhotoPicker.takePhoto()
-          : await CastPhotoPicker.pickFromAlbum(context);
+          : await CastPhotoPicker.pickFromAlbum();
     } catch (_) {
       if (mounted) {
         _showFeedback(AppL10n.of(context).homeReadPhotoFailed);

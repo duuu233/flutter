@@ -5,8 +5,8 @@
 > 最后核验：2026-07-28  
 > 目录约束：项目 Markdown 统一存放在 `docs/` 下
 
-根目录 `AGENTS.md` 是代理执行规则，不属于项目文档，必须留在仓库根目录以保持工具发现机制；
-它是本目录约束的唯一 Markdown 例外。
+根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
+普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
 ## 1. 阅读入口
 
@@ -76,6 +76,7 @@
 | [`history/2026-07/2026-07-22-iOS投屏性能优化.md`](history/2026-07/2026-07-22-iOS投屏性能优化.md) | Historical Change Record |
 | [`history/2026-07/2026-07-27-同尺寸设备身份校验与电量缓存.md`](history/2026-07/2026-07-27-同尺寸设备身份校验与电量缓存.md) | Historical Decision Record |
 | [`history/2026-07/2026-07-28-小程序近期修复同步.md`](history/2026-07/2026-07-28-小程序近期修复同步.md) | Historical Change Record |
+| [`history/2026-07/2026-07-28-Android纯Photo-Picker迁移.md`](history/2026-07/2026-07-28-Android纯Photo-Picker迁移.md) | Historical Change Record |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责

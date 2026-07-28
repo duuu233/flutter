@@ -2,7 +2,6 @@ import Flutter
 import UIKit
 import CoreBluetooth
 import CoreLocation
-import Photos
 import PhotosUI
 import AVFoundation
 
@@ -38,12 +37,12 @@ import AVFoundation
 
 /// iOS 侧「设备 API」通道实现，逐一对齐 `android/.../MainActivity.kt`：
 /// getStatus / requestBluetoothPermissions / requestLocationPermission /
-/// requestPhotoPermission / requestCameraPermission / openGallery /
+/// requestCameraPermission / openGallery /
 /// decodeImageRgba / openBluetoothSettings / openAppSettings。
 ///
 /// 返回给 Dart 的状态字段与 `DevicePermissionStatus.fromMap` 完全一致：
 /// bluetoothAvailable / bluetoothEnabled / bluetoothPermissionGranted /
-/// locationPermissionGranted / photoPermissionGranted / cameraPermissionGranted。
+/// locationPermissionGranted / cameraPermissionGranted。
 final class DeviceApiHandler: NSObject {
   // 蓝牙适配器状态只能通过 CBCentralManager 实例读取；ShowPowerAlert=false 避免系统弹「请开蓝牙」。
   // 首次创建/使用会触发系统蓝牙权限弹窗（即 requestBluetoothPermissions 的语义）。
@@ -84,8 +83,6 @@ final class DeviceApiHandler: NSObject {
       requestBluetooth(result)
     case "requestLocationPermission":
       requestLocation(result)
-    case "requestPhotoPermission":
-      requestPhoto(result)
     case "requestCameraPermission":
       requestCamera(result)
     case "openGallery":
@@ -116,7 +113,6 @@ final class DeviceApiHandler: NSObject {
       "bluetoothEnabled": btEnabled,
       "bluetoothPermissionGranted": btPermission,
       "locationPermissionGranted": isLocationGranted(),
-      "photoPermissionGranted": isPhotoGranted(),
       "cameraPermissionGranted": AVCaptureDevice.authorizationStatus(for: .video) == .authorized,
     ]
   }
@@ -170,29 +166,6 @@ final class DeviceApiHandler: NSObject {
     }
   }
 
-  // MARK: - 相册权限
-
-  private func isPhotoGranted() -> Bool {
-    if #available(iOS 14, *) {
-      let status = PHPhotoLibrary.authorizationStatus(for: .readWrite)
-      return status == .authorized || status == .limited
-    } else {
-      return PHPhotoLibrary.authorizationStatus() == .authorized
-    }
-  }
-
-  private func requestPhoto(_ result: @escaping FlutterResult) {
-    if #available(iOS 14, *) {
-      PHPhotoLibrary.requestAuthorization(for: .readWrite) { [weak self] _ in
-        DispatchQueue.main.async { result(self?.buildStatus()) }
-      }
-    } else {
-      PHPhotoLibrary.requestAuthorization { [weak self] _ in
-        DispatchQueue.main.async { result(self?.buildStatus()) }
-      }
-    }
-  }
-
   // MARK: - 相机权限
 
   private func requestCamera(_ result: @escaping FlutterResult) {
@@ -204,7 +177,7 @@ final class DeviceApiHandler: NSObject {
   // MARK: - 系统设置
 
   private func openAppSettings(_ result: @escaping FlutterResult) {
-    // iOS 无公开 API 直达「蓝牙设置」；统一跳到本 App 的系统设置页，用户在此开启蓝牙/定位/相册权限。
+    // iOS 无公开 API 直达「蓝牙设置」；统一跳到本 App 的系统设置页，用户在此开启蓝牙/定位权限。
     if let url = URL(string: UIApplication.openSettingsURLString) {
       UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
