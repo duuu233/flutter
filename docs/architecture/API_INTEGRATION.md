@@ -1,0 +1,128 @@
+# BoltStar 接口与服务集成
+
+> 文档类型：Integration Architecture  
+> 状态：Active  
+> 最后核验：2026-07-28  
+> 维护责任：网络层、账号、设备、投屏与 AI 模块维护者  
+> 事实来源：`lib/src/network/`、后端 Swagger、跨端对齐结论
+
+## 1. 服务边界
+
+BoltStar 当前使用三套不同的远端服务：
+
+| 服务 | 客户端入口 | 用途 | 响应/鉴权 |
+| --- | --- | --- | --- |
+| BoltFox API | `BoltFoxApi` / `ApiClient` | 账号、产品、设备、图库、投屏记录、版本、文件上传 | `retCode/retMsg/retData`；业务 token |
+| seekink 抖动服务 | `DitheringApi` | 原图转设备六色 `.bin` 帧 | Bearer token；token 由 BoltFox `getXTYUserToken` 获取 |
+| BoltStar AI | `BoltStarAiApi` | 星宝会话、图文对话、图片增强 | 独立 `{success,code,data,params,detail}`；不走 `ApiClient` |
+
+三套服务不得因为“都是 HTTP”而合并响应模型。特别是 AI 的 `detail` 只允许写工程日志，不能直接
+展示给用户。
+
+## 2. BoltFox 公共规则
+
+- Base URL：`https://api.boltfox.cn`
+- 客户端封装：`lib/src/network/api_client.dart`
+- 业务接口：`lib/src/network/boltfox_api.dart`
+- `retCode=200` 表示成功；鉴权失效由 `ApiException.isAuthError` 识别 401/406。
+- 公共参数 `device`、`terminal`、`language`、`userToken` 由网络层注入。
+- `terminal`：Android=1、iOS=2、小程序=3。
+- App 保留版本检查和 Android 下载接口；`userOffPC` 仅 PC 使用，App 跳过。
+- 密码在客户端使用小写 32 位 MD5；服务端参数名仍以 Swagger DTO 为准。
+
+## 3. BoltFox 当前接口
+
+### 基础能力
+
+| 能力 | 接口 | 客户端方法 | 关键规则 |
+| --- | --- | --- | --- |
+| 邮箱验证码 | `POST /Client/Basic/sendEmail` | `sendEmail` | sendType：1 注册、2 找回/改密、3 改邮箱 |
+| 版本检查 | `GET /Client/Basic/getLastVersion` | `getLastVersion` | Android/iOS 均使用 |
+| Android 下载 | `GET /Client/Basic/getAndroidDownload` | `getAndroidDownload` | 仅 Android 安装引导 |
+| 基础数据 | `GET /Client/Basic/getBasicData` | `getBasicData` | 配置/字典 |
+| 抖动 token | `GET /Client/Basic/getXTYUserToken` | `getXTYUserToken` | `isNewLogin=1` 用于 401 后强制刷新 |
+| 通用文件上传 | `POST /Client/Basic/setFileUpload` | `setFileUpload` | form-data 字段 `fileParam` |
+| 投屏原图上传 | `POST /Client/Basic/setUserProductUpload` | `setUserProductUpload` | 建记录并上传原图 |
+
+### 账号
+
+| 能力 | 接口 | 客户端方法 | 关键规则 |
+| --- | --- | --- | --- |
+| 微信移动应用登录 | `POST /Client/User/setWechatAppLogin` | `weChatMobileLogin` | 只提交 SDK 一次性 code |
+| 邮箱注册 | `POST /Client/User/userRegister` | `userRegister` | `userEmail/verifyCode/password/confirmPassword` |
+| 邮箱登录 | `POST /Client/User/userLogin` | `userLogin` | 成功后写入 `ApiSession` |
+| 用户资料 | `GET /Client/User/getUserInfo` | `getUserInfo` | 昵称、头像、邮箱、用户 ID |
+| 修改昵称/头像 | `POST changeNickName/changeAvatar` | 同名方法 | 头像先走通用上传 |
+| 绑定/修改邮箱 | `POST /Client/User/changeUserEmail` | `changeUserEmail` | sendType=3 |
+| 忘记密码 | `POST /Client/User/resetPassword` | `resetPassword` | 未登录流程，sendType=2 |
+| 已登录改密 | `POST /Client/User/changePassword` | `changePassword` | userToken 定位账号，无邮箱字段 |
+| 邮箱存在校验 | `POST /Client/User/chkUserEmailNotExist` | `chkUserEmailNotExist` | 注册前置 |
+| 退出登录 | `POST /Client/User/loginOut` | `loginOut` | 随后清会话与图片缓存 |
+| 用户注销 | `POST /Client/User/userOff` | `userOff` | 随后清会话与图片缓存 |
+
+`userOffPC` 不属于 App。
+
+### 产品、设备与图库
+
+| 能力 | 接口 | 客户端方法/落点 |
+| --- | --- | --- |
+| 产品列表/广播白名单 | `GET /Client/Product/getProductList` | `getProductList` / `getProductBroadcastIds` |
+| FAQ | `GET /Client/Product/getProductFaqList` | `getProductFaqList` |
+| 绑定设备 | `POST /Client/UserProduct/addUserProduct` | `addUserProduct` |
+| 设备列表/详情 | `GET getUserProductList/getUserProductDetail` | 同名方法 |
+| 修改/删除设备 | `POST editUserProduct/delUserProduct` | 同名方法 |
+| 清空设备记录 | `POST clearUserProductImg` | `clearUserProductImg` |
+| 图库列表/删除 | `GET getUserProductImgList` / `POST delUserProductImg` | 同名方法 |
+| 投屏记录列表/删除 | `GET getUserProductImgRecordList` / `POST delUserProductImgRecord` | 同名方法 |
+| 投屏记录新增/更新 | UserProduct 图片记录接口 | `ProjectionService` 成功/失败回写 |
+
+设备扫描、连接、电量、轮播、刷屏、清空物理存储和 OTA 的核心动作是 BLE 端能力，不应在接口
+清单中伪装成后端接口。
+
+## 4. FAQ 读取规则
+
+- Client FAQ 接口不带 `productId`，因此按语言读取全局 FAQ，不做设备过滤。
+- 必须依据 `recordCount`/`pageCount` 翻页读完，不能用“返回条数小于 pageSize”提前停止。
+- `grade` 只存在于后台 DTO，客户端保持后端顺序，不自行重排。
+- 切换语言后重新拉取；空结果同样覆盖旧列表，避免旧语种残留。
+- FAQ HTML 子集由 `SimpleHtmlText` 渲染。
+
+用户可见内容见 `../content/操作手册与常见问题-四语种.md`。
+
+## 5. 图片槽位与抖动服务
+
+- 投屏成功时把设备物理槽位 `imgIndex` 回写到后端记录。
+- 删除与刷屏优先使用真实 `imgIndex`；无索引的旧记录才允许回退推算。
+- `imgIndex=0` 是合法槽位，判空只能使用 `<0`/`>=0`。
+- seekink token 会话级缓存；抖动接口 401 时只强制刷新一次并重试，防止循环。
+- 投屏记录上传与设备帧获取可以并行，但只有 BLE 成功后才能把记录标记为成功。
+
+槽位长期规则见 `IMAGE_SLOT_INDEX.md`。
+
+## 6. BoltStar AI
+
+实现：`lib/src/network/boltstar_ai_api.dart`
+
+- 非流式 Base URL：`https://boltstaat-agent-fwdomalzks.ap-southeast-1.fcapp.run`
+- 普通请求超时 15 秒；对话/图片增强 120 秒。
+- `user_id` 由 BoltFox 用户 ID 派生；未登录使用受控 demo ID。
+- 会话：新建、列表、删除。
+- 历史：读取、逐条删除。
+- 对话：`POST /chat`，支持最多 4 张公网图片 URL。
+- 图片增强：`POST /image/enhance`。
+- 图片先压缩并通过 BoltFox `setFileUpload` 获得公网 URL，再提交 AI。
+- 正式用户入口当前由 `kAiEntryEnabled=false` 屏蔽；调试暗门保留。
+- 语音输入仍是占位；下载只写应用缓存目录。
+
+## 7. 已知待确认
+
+- `getXTYUserToken` 的所有返回字段仍应以真机联调和最新 Swagger 为准。
+- 后端需要保证同一设备同一 `imgIndex` 的记录唯一性，避免旧记录幽灵指向已复用槽位。
+- AI 接口版本变化必须同时核对会话创建时机、错误码和图片消息结构。
+- 发布前必须验证微信、版本检查、图片上传、抖动 token 刷新和注销清理。
+
+## 8. 维护规则
+
+- 当前契约只维护在本文；阶段性接入过程不再写回 Active 文档操作日志。
+- 接口方法、DTO 或公共参数变化时更新对应章节，并用 CodeGraph 检查调用方。
+- 历史接口表与接入过程位于 `../history/2026-07/`。

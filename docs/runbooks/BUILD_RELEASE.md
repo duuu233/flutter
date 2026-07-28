@@ -1,8 +1,9 @@
 # BoltStar 打包发布指南（Android + iOS）
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
-
-
+> 文档类型：Release Runbook  
+> 状态：Active  
+> 最后核验：2026-07-28  
+> 微信登录的完整平台配置见 `../integration/WECHAT_LOGIN_SETUP.md`。
 > 2026-07-16 全面审查后整理。本次审查已修复的构建阻断项：
 > ① 主 Manifest 缺 `INTERNET` 权限（release 包全部网络请求失败）；
 > ② iOS 缺微信回调 `CFBundleURLTypes` 与 Associated Domains entitlements；
@@ -106,7 +107,7 @@ flutter build ipa --release --export-method app-store \
 3. **release 包**真机回归四条链路（debug 包正常不代表 release 正常，混淆/权限差异都在 release 才暴露）：
    - 登录 + 任一接口连通（验证 INTERNET 权限）；
    - 微信授权完整往返（验证 URL Scheme / Universal Link / 签名 MD5 / R8 keep）；
-   - 投屏预览页「裁剪」（uCrop / TOCropViewController）；
+   - 投屏预览常驻编辑层：平移、缩放、旋转、横竖取景与最终设备分辨率导出；
    - BLE 扫描 → 连接 → 投屏 → OTA（重点回归本次的 OTA 提速与 ACK 事件驱动改动）。
    - 如有 Android 10/11 旧设备，验证首次扫描会弹**定位授权**且能搜到设备（本次修复项）。
 4. iOS 真机确认微信回调经 Scene 生命周期可达（fluwx 5.7.7 早于 scene 适配期，
@@ -127,8 +128,3 @@ flutter build ipa --release --export-method app-store \
 - BLE/OTA 深层协议错误文案仍为中文（服务层，项目既定暂缓项）；`ble_debug_page` 为内部调试页未翻译。
 - 图库批量删除最长约 180s 的阻断 loading 尚无 x/N 进度展示。
 
----
-
-## 操作日志
-
-- 2026-07（本轮）：Android 自适应图标已从"橙底"更正为"白底 #FFFFFF + inset30%"（橙底会吞掉透明白色 LOGO，勿改回）。

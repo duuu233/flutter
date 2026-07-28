@@ -1,5 +1,11 @@
 # 2026-07-19 操作指南 / 常见问题 五项反馈（App + 小程序双端）
 
+> 文档类型：Historical Change Record  
+> 状态：Historical  
+> 适用时间：2026-07-19  
+> FAQ 当前接口规则见 `../../architecture/API_INTEGRATION.md`，用户内容见
+> `../../content/操作手册与常见问题-四语种.md`。
+
 > 本机无构建链，**静态实施未编译**。合入前请在开发机执行 `flutter analyze` + `flutter test`，
 > 小程序侧用微信开发者工具真机预览。
 
@@ -108,7 +114,7 @@ App/小程序均补了空态与加载态文案。
 | `lib/src/state.dart` | `refreshFaq` 全量翻页 + 语种打标；新增 `_faqLanguage`/`faqNeedsRefresh` |
 | `lib/src/shared/l10n/app_l10n.dart` | 新增 `guideEmpty` |
 | `test/simple_html_text_test.dart` | 新增解析用例 |
-| `docs/接口清单.md`、`docs/app-vs-miniprogram-sync.md` | 同步「不分设备/全量/权重归后端」的定版 |
+| `../../architecture/API_INTEGRATION.md`、`../../integration/APP_VS_MINIPROGRAM.md` | 同步「不分设备/全量/权重归后端」的定版 |
 
 **小程序（photo-album/）**
 
@@ -119,7 +125,7 @@ App/小程序均补了空态与加载态文案。
 | `utils/system.js` | 语种逻辑转发到 language 模块（补齐 ja） |
 | `subpackages/settings/language/language.js` | 保存时真正落盘；进入时回显当前语种 |
 | `subpackages/settings/guide/guide.{js,wxml,wxss}` | 全量翻页、默认收起、scroll-view 滚动、空/加载态、onShow 按语种重拉 |
-| `docs/接口清单.md` | 同上 |
+| `../../architecture/API_INTEGRATION.md` | 同上 |
 
 ## 待验证（开发机）
 

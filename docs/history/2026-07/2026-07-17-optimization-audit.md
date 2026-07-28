@@ -1,7 +1,9 @@
 # 2026-07-17 全维度审查与修复记录
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
-
+> 文档类型：Historical Audit  
+> 状态：Historical  
+> 适用时间：2026-07-17  
+> 本文保留当时的审查、实施和风险上下文，不再作为当前架构或待办清单。
 
 > 五个维度（架构/状态、BLE、网络、UI 稳定性/性能、可维护性）静态审查产出约 40 项发现，
 > 按批次实施完毕。本文档是**修复后的精简版**：已改什么、没改什么、剩什么风险。
@@ -75,7 +77,7 @@
 
 ### 附带（非审查项，用户另行指定）
 
-- **changePassword 接口对接**（2026-07-17）：已登录"修改密码"从复用 `resetPassword` 切换到 swagger 专用的 `/Client/User/changePassword`（verifyCode/password/confirmPassword，userToken 定位账号）；邮箱行改只读；未绑邮箱有引导文案；`docs/接口清单.md` 同步更正。
+- **changePassword 接口对接**（2026-07-17）：已登录"修改密码"从复用 `resetPassword` 切换到 swagger 专用的 `/Client/User/changePassword`（verifyCode/password/confirmPassword，userToken 定位账号）；邮箱行改只读；未绑邮箱有引导文案；当前接口文档 `../../architecture/API_INTEGRATION.md` 已吸收最终规则。
 
 ---
 

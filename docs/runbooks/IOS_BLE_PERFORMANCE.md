@@ -1,9 +1,33 @@
-# iOS 投屏性能测试指南
+# iOS BLE 投屏性能与诊断
+
+> 文档类型：Diagnostic Runbook  
+> 状态：Active  
+> 最后核验：2026-07-28  
+> 维护责任：BLE、投屏和 iOS 平台维护者
 
 > 目的：定位「iOS 投屏比 Android 明显慢」的根因，并**判定 0x13 请求的 15ms 连接间隔是否真的生效**。
 >
 > 埋点已落在 `lib/src/device/ble/device_ble.dart`，日志前缀统一为 `[BLEPerf]`。
 > 创建日期：2026-07-20 ｜ 更新：2026-07-22
+
+---
+
+## 当前实现基线
+
+以下能力已经是当前实现的一部分，不再作为“待实施方案”：
+
+- 正式包隐藏入口：设置 → 更新 BoltStar → 3 秒内连点版本号 7 次。
+- 自检页展示 MTU、每包字节、写方式、连接间隔请求值、RTT 对照和纯 BLE 吞吐。
+- `BleTuning` 可在一个包内切换连接间隔、pace、窗口和写方式，测试后必须恢复默认。
+- MTU 在服务发现后协商；iOS 轮询等待 `mtuNow > 23`，失败时保持真实 23 而不臆造。
+- release 关闭 flutter_blue_plus 高频日志，debug/profile 保留 warning。
+- 空闲连接间隔与图传连接间隔通过串行队列协调，避免空闲档覆盖图传档。
+- iOS 工程声明 `UIBackgroundModes: bluetooth-central`。
+- `BlePerfLog` 在 release 中保留最近 300 条内存记录并支持复制，不落盘。
+
+历史实施背景见
+`../history/2026-07/2026-07-22-iOS投屏性能优化.md`；早期性能对比见
+`../history/2026-07/2026-07-17-连接投屏性能对比分析.md`。
 
 ---
 
@@ -23,7 +47,8 @@
 | 第 7 节主判据 throughput | 自检页第③块「纯 BLE 吞吐测速」（本地彩条帧，不联网、不经后端转码） |
 | 第 9 节 PacketLogger | 自检页第②块「**连接间隔自检（RTT 探针）**」——不依赖任何私有 API 的间接判据 |
 
-RTT 探针的原理与判读见 `docs/2026-07-22-iOS投屏性能优化.md` 第二章②。
+RTT 探针的原理与判读见
+`../history/2026-07/2026-07-22-iOS投屏性能优化.md` 第二章②。
 同一份文档还记录了本轮已落地的 iOS 侧优化（MTU 读取时机、FBP 日志级别、空闲档不再阻塞连接、
 `UIBackgroundModes`），**其中 MTU 那条极可能就是本次「iOS 特别慢」的真凶**，请先看第 7 节的
 `mtu` / `chunk` 两行。
@@ -161,7 +186,7 @@ idevicesyslog | grep -i BLEPerf
 > 一路仍是 `debugPrint`（gate 在 `!kReleaseMode`，理由见坑 2），另一路写进 `BlePerfLog`
 > **任何构建都记录**，供自检页显示/复制。埋点①的位置也从「connect 里 MTU 协商后」
 > 挪到了「服务发现之后」（iOS 的 `mtuNow` 要等原生推上来，读早了拿到初值 23，
-> 见 `docs/2026-07-22-iOS投屏性能优化.md` 第三章 A）。
+> 见 `../history/2026-07/2026-07-22-iOS投屏性能优化.md` 第三章 A）。
 
 | # | 位置 | 输出 |
 |---|---|---|
@@ -239,7 +264,7 @@ iOS 上尤其危险：若固件下发的参数违反 Apple 规范被系统拒绝
 > （有应答写天然有背压、绝不静默丢包，若 `retries` 由此归零就是无应答写在丢包），
 > 并且 `paceFloor` 也做成了可调（0/1/2ms）；② ③ 仍在固件侧，App 改不了。
 > 另外本轮补了一条本节没写到的 iOS 独有开销：**flutter_blue_plus 默认逐包打日志**，
-> release 已关（见 `docs/2026-07-22-iOS投屏性能优化.md` 第三章 B）。
+> release 已关（见 `../history/2026-07/2026-07-22-iOS投屏性能优化.md` 第三章 B）。
 
 ### ① iOS 的 `writeWithoutResponse` 是否有背压
 

@@ -1,8 +1,10 @@
 # 微信开放平台移动应用登录接入
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
-
-
+> 文档类型：Integration Runbook  
+> 状态：Active  
+> 最后核验：2026-07-28  
+> 当前接口总览见 `../architecture/API_INTEGRATION.md`，发版检查见
+> `../runbooks/BUILD_RELEASE.md`。
 当前登录链路为：Flutter 拉起微信客户端授权（`snsapi_userinfo`）→ 获得一次性 `code` →
 `POST /Client/User/setWechatAppLogin` → 后端返回 BoltStar `userToken` 和用户信息。
 
@@ -40,8 +42,3 @@ flutter run \
 页面只依赖 `WeChatAuthorizationClient`。新 SDK 只需实现其 `authorize()`，返回微信一次性 code，
 再把 `defaultWeChatAuthorizationClient` 指向新实现即可；页面、后端请求和登录态代码无需改动。
 
----
-
-## 操作日志
-
-- 2026-07（本轮）核对：微信配置(terminal/setWechatAppLogin/回调)与代码一致，无变更。

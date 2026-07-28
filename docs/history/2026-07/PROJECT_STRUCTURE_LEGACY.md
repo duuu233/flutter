@@ -1,7 +1,10 @@
-# 项目目录结构说明（BoltStar）
+# 项目目录结构说明（BoltStar）— 2026-07 历史快照
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
-
+> 文档类型：Historical Architecture Snapshot  
+> 状态：Historical  
+> 归档日期：2026-07-28  
+> 当前架构以 `../../architecture/PROJECT_STRUCTURE.md` 和 CodeGraph 为准。本文保留当时的改造进度、
+> 待办和操作日志，不再作为当前目录或模块清单。
 
 BoltStar 是一个 Flutter 智能相框 App。整体采用 **按业务领域分模块（feature-first）** 的结构：
 每个业务模块放在 `lib/src/features/<feature>/presentation/` 下，公共能力（状态、设备协议、

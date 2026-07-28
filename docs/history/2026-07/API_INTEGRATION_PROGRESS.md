@@ -1,7 +1,11 @@
 # API Integration Progress (App / BoltStar)
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
-
+> 文档类型：Historical Ledger  
+> 状态：Historical  
+> 归档日期：2026-07-28  
+> 本文保留 API 接入、页面联调和功能移植过程。当前接口契约见
+> `../../architecture/API_INTEGRATION.md`，当前跨端结论见
+> `../../integration/APP_VS_MINIPROGRAM.md`。
 
 接口文档：https://api.boltfox.cn/swagger-ui.html#/
 
@@ -10,7 +14,8 @@
 当前项目：BoltStar Flutter App（iOS / Android）
 
 > **2026-07-14 状态说明**：本文件保留早期按日期推进的历史记录，历史段落中的“待接/未实现/本机无 SDK”
-> 不代表当前状态。当前逐页结论和最新变更以 [`app-vs-miniprogram-sync.md`](app-vs-miniprogram-sync.md) 为准；
+> 不代表当前状态。当前逐页结论以
+> [`APP_VS_MINIPROGRAM.md`](../../integration/APP_VS_MINIPROGRAM.md) 为准；
 > 本轮已执行 `dart analyze lib test`（**No issues found**）和 `flutter test`（**7 项全部通过**）。
 
 ## 对接规则

@@ -1,7 +1,10 @@
-# App ↔ 小程序逐页对比与同步日志
+# App ↔ 小程序逐页对比与同步日志 — 2026-07 历史台账
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
-
+> 文档类型：Historical Cross-client Ledger  
+> 状态：Historical  
+> 归档日期：2026-07-28  
+> 本文混合了当时的当前矩阵与逐日同步日志，其中部分中间状态已被后续条目覆盖。
+> 当前跨端结论只维护在 `../../integration/APP_VS_MINIPROGRAM.md`。
 
 > 基准项目：`D:\Work\learn\photo-album`（微信小程序当前工作区）。
 >
@@ -172,7 +175,7 @@
 ## 操作日志
 
 - 2026-07（本轮）：投屏预览/预处理改为 `coverCropToSize` 恒缩到设备分辨率(480×720/680×960)，非仅"设备比例中心裁切"；400KB 长边2倍仅为极端兜底。
-- 2026-07-18：接入设备槽位索引 imgIndex（对齐小程序同日改动）。投屏成功上报物理槽位，图库删除/刷屏改为「优先真实索引、无索引才回退推算」，根治「删错图/指定刷新的图不对」的槽位推断错位。落点与四处有意差异见 `docs/图片索引-imgIndex方案.md`；问题 A（幽灵记录）仍待后端唯一性规则。
+- 2026-07-18：接入设备槽位索引 imgIndex（对齐小程序同日改动）。投屏成功上报物理槽位，图库删除/刷屏改为「优先真实索引、无索引才回退推算」，根治「删错图/指定刷新的图不对」的槽位推断错位。当前规则见 `../../architecture/IMAGE_SLOT_INDEX.md`；问题 A（幽灵记录）仍待后端唯一性规则。
 - 2026-07-18（三项反馈）：
   - **更新 BoltStar 去掉下载进度环**（`update_boltstar_page.dart`、`app_routes.dart`、`app_l10n.dart`）。原 `downloading` 态是一个 6 秒**假**动画（`AnimationController` 空跑，与真实下载无关），会让用户误以为 App 在自己下载。现改为三态 `checking / upToDate / updateAvailable`：进页真实检查版本，有更新才显示「立即更新」，点击直接用 `launchUrl(externalApplication)` 交给应用商店/浏览器并停留本页。同时删除 `_DownloadProgressRing`/`_RingPainter`、演示路由 `figmaUpdateBoltStarProgress` 和 `setUpdating`/`setDownloading` 文案。
   - **顺带补回 scheme 白名单**：`downloadUrl` 来自后端，旧的 `{https, market, itms-apps}` 白名单只留在 `settings_page.dart` 那条**已停用**的弹窗式旧路径里，现行页面是裸 `Uri.tryParse` + 任意 scheme 直拉。已在 `_startUpdate` 补回白名单与 `PlatformException` 兜底（无商店 ROM 上 `market://` 会抛 ActivityNotFoundException）。
@@ -184,7 +187,7 @@
   - 弹窗关不掉：`barrierDismissible:false` + `PopScope(canPop:false)`，只有一个通栏「立即更新」，点了去应用商店但**弹窗不关**（用户没真升级就回来仍被挡住）。三条兜底防止误锁死用户：版本检查失败静默放行、`downloadPath` 为空不弹（否则按钮打不开商店而弹窗又关不掉＝彻底卡死）、闪屏期间不弹。scheme 白名单同 `update_boltstar_page.dart`。
   - 非强制升级（2/3/4）**不弹任何提示**，按产品要求由用户自己去「设置 → 更新BoltStar」手动更新。
   - **登录/注册页错误提示不再顶动页面**（`auth_widgets.dart` 新增 `AuthErrorSlot`，`auth_page.dart` 2 处 / `register_page.dart` 4 处替换）。原来是 `if (error) Padding(...)` + 其后 `SizedBox(height:16)`，错误一出现就把下方所有内容顶下去。现在改为「输入框之间的间距**恒定预留**一行错误高度」：`AuthErrorSlot(text: cond ? msg : null, gap: …)` 无论有无错误都占住 `top 8 + minHeight 16 + gap`。用 `minHeight` 而非固定高度——中文文案全部单行、零位移；EN/JA 个别长文案（`accPasswordRuleError`、`accPasswordMismatchReconfirm`）会换到第二行并轻微下移，宁可位移也不裁切文案。两页都在 `SingleChildScrollView + IntrinsicHeight + Spacer` 内，多出的高度由 Spacer 吸收、不够则滚动。
-- 2026-07-19（十二项反馈，详见 `docs/2026-07-19-bugfix-round.md`）。与小程序的关系分三类：
+- 2026-07-19（十二项反馈，详见同目录 `2026-07-19-bugfix-round.md`）。与小程序的关系分三类：
   - **两端同步改**：投屏记录失败空态去掉「投屏失败时会保留原因，方便排查。」小字（App `cast_management_figma_page.dart` 条件渲染 + l10n key `castEmptyFailedDesc` 删除；小程序 `subpackages/projection/records/records.wxml` 用 `wx:if` 整块不渲染——都不要改成「文案置空」，那会留下一个带间距的空节点）。
   - **新增有意差异 —— App 先行**：
     - **设备刷屏中投屏改为「等它刷完」**。小程序 `result.js` 是把首张预取放在读设备信息之前（用设备记录里缓存的 width/height），因此设备忙时后端仍会落一条失败记录；App 没照抄这条（缓存尺寸与实读不一致就会白传一张，见 memory 里「上传与 BLE 连接并行」的风险条），改为 `_readTransferInfoAwaitingIdle` 遇忙重试最长 12s。效果更好：刷屏这几秒等过去投屏就正常继续，压根不产生失败记录。
@@ -385,4 +388,4 @@
   `DeviceItem.batteryLevel` + `_carryOverBleFields` 保留旧值，页面刷新 `0x01` 前不清空，
   读取成功后原位更新、失败保持旧值，因此没有 `-- → 真值` 闪烁，无需改成先清空。
 - 详细根因、规则和真机验收见
-  `docs/2026-07-27-同尺寸设备身份校验与电量缓存.md`。
+  同目录 `2026-07-27-同尺寸设备身份校验与电量缓存.md`。

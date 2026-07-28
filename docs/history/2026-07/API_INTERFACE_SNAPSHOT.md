@@ -1,7 +1,10 @@
-# 接口清单（App / BoltStar）
+# 接口清单（App / BoltStar）— 2026-07 历史快照
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
-
+> 文档类型：Historical API Snapshot  
+> 状态：Historical  
+> 归档日期：2026-07-28  
+> 当前接口契约已整理到 `../../architecture/API_INTEGRATION.md`。本文保留原始接口表、
+> 操作日志和阶段性联调说明，不再追加当前状态。
 
 > 来源：产品《接口清单02.png》 + 后端 Swagger（https://api.boltfox.cn/swagger-ui.html）对照整理。
 >
@@ -98,10 +101,10 @@
   同样要求完整 ID，名称不参与物理身份。新增 `serialSetsMatch` / `verifiedDeviceSerialMatch` /
   `sessionSerialsMatch` 及单测。同步复核电量：Flutter 当前已是旧值持续显示、后台刷新成功再原位更新，
   不存在小程序“先清成 `--`”的路径。详见
-  `docs/2026-07-27-同尺寸设备身份校验与电量缓存.md`。
+  同目录 `2026-07-27-同尺寸设备身份校验与电量缓存.md`。
 - 2026-07-24：`getXTYUserToken` 新增入参 `isNewLogin`（`BoltFoxApi.getXTYUserToken({int isNewLogin=0})`，query 传递）。抖动接口（`imageDitheringBinDownload`）回 401（形如 `{"msg":"…认证失败，无法访问系统资源","code":401}`，token 过期）时，`DitheringApi.ensureAuthToken(forceNewLogin:true)` 清缓存后**带 `isNewLogin=1` 强制后端重新登录取新 token** 再重发出帧请求（否则后端可能把刚过期的同一会话原样返回、重试仍 401 打转）。刷新只做一次防打转，不消耗网络退避重试次数。另：`CastPreviewPage.initState` 补上 `DitheringApi.prefetchAuthToken()` 预热（对齐小程序 preview.js onLoad，昨日 07-23 dithering 同步时漏掉）。对齐小程序 2026-07-24 改动。落点 `boltfox_api.dart`、`dithering_api.dart`、`cast_preview_page.dart`。**未验证**：本机无 Flutter SDK。
 - 2026-07-23（补记）：seekink 抖动接口 token 由写死联调改为 `getXTYUserToken` 动态获取（`dithering_api.dart` 会话级缓存/在途去重/401 刷新，`BoltFoxApi.getXTYUserToken`）；正常/再次投屏设备帧改由抖动接口 `imageDitheringBinDownload` 出六色 4bpp 帧（`DitheringApi.requestFrameBin`，落点 `projection_service.dart _acquireFrame`），`setUserProductUpload` 改传原图只建记录。对齐小程序 07-22/07-23。
 - 2026-07（本轮）：userRegister/resetPassword/changeUserEmail 字段名更正为 swagger 权威名(userEmail/verifyCode/password/confirmPassword)；`sendEmailToken` 行改为 App 已统一走 `sendEmail`。
-- 2026-07-19：操作指南 `getProductFaqList` 改为**全量翻页读取**（按 `recordCount`/`pageCount` 判停，**不再用「返回条数 < 请求 pageSize」**——后端可能无视 pageSize 按默认 10 条分页，那样第一页就停、只能拿到 10 条，正是「只显示几条」的成因）。同时明确：Client 侧接口无 `productId`，**不做设备过滤**；权重 `grade` 只在后台 DTO `ProductFaqApiOut`，Client 侧取不到，**排序归后端**，前端不重排；列表随 `language` 走并按语种缓存。落点 `state.dart refreshFaq()` / `features/guide`。详见 `docs/2026-07-19-faq-guide-round.md`。
-- 2026-07-19：新增《操作手册与常见问题-四语种》(`docs/操作手册与常见问题-四语种.md`)，供运营录入后端 FAQ；其附录记录了 6 项待确认事项 + 1 个 App 繁中转换表缺字缺陷。
+- 2026-07-19：操作指南 `getProductFaqList` 改为**全量翻页读取**（按 `recordCount`/`pageCount` 判停，**不再用「返回条数 < 请求 pageSize」**——后端可能无视 pageSize 按默认 10 条分页，那样第一页就停、只能拿到 10 条，正是「只显示几条」的成因）。同时明确：Client 侧接口无 `productId`，**不做设备过滤**；权重 `grade` 只在后台 DTO `ProductFaqApiOut`，Client 侧取不到，**排序归后端**，前端不重排；列表随 `language` 走并按语种缓存。落点 `state.dart refreshFaq()` / `features/guide`。详见同目录 `2026-07-19-faq-guide-round.md`。
+- 2026-07-19：新增《操作手册与常见问题-四语种》（当前位于 `../../content/操作手册与常见问题-四语种.md`），供运营录入后端 FAQ；其附录记录了 6 项待确认事项 + 1 个 App 繁中转换表缺字缺陷。
 - 2026-07-25：新增**第三方 AI 服务（BoltStar / 星宝）接口层** `lib/src/network/boltstar_ai_api.dart`，与本清单里的 BoltFox 后端**不是同一套**：Base URL 是阿里云 FC（非流式 `https://boltstaat-agent-fwdomalzks.ap-southeast-1.fcapp.run`），响应结构 `{success, code, data, params, detail}`，公共参数（userToken/language 头）不适用，故不走 `ApiClient`。已接：`POST /session/new`、`GET /session/list`、`DELETE /session`、`GET /chat/history`、`DELETE /chat/history`、`DELETE /chat/history/clear`、`POST /chat`（含 v1.0.3 图文多模态 `image_urls`≤4）、`POST /image/enhance`。错误码文案表在 `features/ai/ai_i18n.dart`（四语种，源自 `photo-album/assets/ai/BoltStar-i18n-Errors.json`），**`detail` 只打日志、严禁展示给用户**。另：`BoltFoxApi.setFileUpload` 新增调用方（AI 图文多模态先上传图片拿公网 URL）。对齐小程序 2026-07-24/25 的 AI 模块。**未验证**：本机无 Flutter SDK。

@@ -1,6 +1,9 @@
 # 2026-07-20 回收机制审查 + 缓存治理三项修复
 
-> **📌 文档维护约定**：本文档随代码演进——**每次修复问题 / 改动后，务必回到对应 .md 在文末「操作日志」追加一条**（日期 + 改了什么 + 对应代码符号/文件），防止文档滞后于代码、误导后续把已修的 bug 又改回去。
+> 文档类型：Historical Audit  
+> 状态：Historical  
+> 适用时间：2026-07-20  
+> 当前资源回收、缓存和隐私清理规则见 `../../architecture/RESOURCE_LIFECYCLE.md`。
 
 > ⚠️ 本机无 Flutter 工具链（见 memory `no-toolchain-on-linux-box`），本轮全部为**静态实施，未编译未运行**。
 > 合入前必须在开发机执行：`flutter pub get`（**本轮新增了依赖**）→ `flutter analyze` → `flutter test` → 按文末回归清单真机手测。
