@@ -4,8 +4,9 @@ import '../state.dart';
 
 /// 运行期会话状态：登录 token 与语言码。
 ///
-/// [ApiClient] 在发起请求时从这里读取公共 header（`userToken` / `language` / `device`）。
-/// 登录成功后调用 [setToken]；退出登录 / 注销 / 鉴权失效时调用 [clear]。
+/// [ApiClient] 在发起请求时从这里读取公共 header
+/// （`userToken` / `jwtToken` / `language` / `device`）。
+/// 登录成功后调用 [setTokens]；退出登录 / 注销 / 鉴权失效时调用 [clear]。
 ///
 /// token 同步持久化到本地（shared_preferences）：Android 后台进程被系统回收后
 /// 冷启动是常态（尤其国产 ROM 切出后一分钟内就可能杀进程），登录态必须跨进程存活，
@@ -16,11 +17,15 @@ class ApiSession {
   static final ApiSession instance = ApiSession._();
 
   static const String _tokenPrefsKey = 'boltstar.userToken';
+  static const String _jwtTokenPrefsKey = 'boltstar.jwtToken';
 
-  /// 登录态 token，空字符串表示未登录。
+  /// 业务 token，继续用于 `userToken` 公共参数与兼容的 Authorization 头。
   String _userToken = '';
 
-  /// 持久化写串行队列：setToken/clear 是同步接口，落盘异步执行；
+  /// 登录接口返回的 JWT，仅用于 `Authentication: Bearer <jwtToken>`。
+  String _jwtToken = '';
+
+  /// 持久化写串行队列：setTokens/clear 是同步接口，落盘异步执行；
   /// 链式排队保证「先 set 后 clear」这类快速连续调用不会乱序落盘。
   Future<void> _persistQueue = Future<void>.value();
 
@@ -35,23 +40,28 @@ class ApiSession {
 
   String get userToken => _userToken;
 
+  String get jwtToken => _jwtToken;
+
   int get languageCode => _languageCode;
 
   AppLanguage get language => _language;
 
-  bool get isLoggedIn => _userToken.isNotEmpty;
+  bool get isLoggedIn => _userToken.isNotEmpty && _jwtToken.isNotEmpty;
 
-  void setToken(String token) {
-    _userToken = token;
-    _enqueuePersist(token);
+  void setTokens({required String userToken, required String jwtToken}) {
+    _userToken = userToken;
+    _jwtToken = jwtToken;
+    _enqueuePersist(userToken, jwtToken);
   }
 
   void clear() {
     _userToken = '';
-    _enqueuePersist('');
+    _jwtToken = '';
+    _enqueuePersist('', '');
   }
 
-  /// 冷启动恢复持久化的登录 token。返回是否恢复出了有效（非空）token。
+  /// 冷启动恢复持久化的登录凭证。两个 token 必须同时存在才是有效会话；
+  /// 仅有旧版 userToken 的半会话会被清理并要求用户重新登录。
   /// 读失败按未登录处理——宁可让用户重登一次，不能让启动流程卡死。
   Future<bool> restore() async {
     // 先排空落盘队列：若 restore 前已有 setToken/clear 在途，直接读磁盘会拿到旧值
@@ -61,20 +71,30 @@ class ApiSession {
     try {
       final prefs = await SharedPreferences.getInstance();
       _userToken = prefs.getString(_tokenPrefsKey) ?? '';
+      _jwtToken = prefs.getString(_jwtTokenPrefsKey) ?? '';
+      if (!isLoggedIn) {
+        _userToken = '';
+        _jwtToken = '';
+        await prefs.remove(_tokenPrefsKey);
+        await prefs.remove(_jwtTokenPrefsKey);
+      }
     } catch (_) {
       _userToken = '';
+      _jwtToken = '';
     }
-    return _userToken.isNotEmpty;
+    return isLoggedIn;
   }
 
-  void _enqueuePersist(String token) {
+  void _enqueuePersist(String userToken, String jwtToken) {
     _persistQueue = _persistQueue.then((_) async {
       try {
         final prefs = await SharedPreferences.getInstance();
-        if (token.isEmpty) {
+        if (userToken.isEmpty || jwtToken.isEmpty) {
           await prefs.remove(_tokenPrefsKey);
+          await prefs.remove(_jwtTokenPrefsKey);
         } else {
-          await prefs.setString(_tokenPrefsKey, token);
+          await prefs.setString(_tokenPrefsKey, userToken);
+          await prefs.setString(_jwtTokenPrefsKey, jwtToken);
         }
       } catch (_) {
         // 落盘失败只影响下次冷启动的自动登录，不阻断当前会话。

@@ -139,10 +139,10 @@ class BoltFoxApi {
 
   // ==================== 用户接口（邮箱登录体系）====================
 
-  /// 邮箱登录。成功后返回 retData（含登录 token，字段以后端为准）。
+  /// 邮箱登录。成功后返回 retData（含 userToken 与 jwtToken）。
   ///
-  /// 拿到 token 后请调用 `ApiSession.instance.setToken(token)` 写入登录态，
-  /// 后续接口才会带上 `userToken` / `Authorization` header。
+  /// 两种凭证写入 ApiSession 后，后续接口会带上 `userToken` /
+  /// `Authorization`，以及 `Authentication: Bearer <jwtToken>`。
   static Future<dynamic> userLogin({
     required String email,
     required String password,
@@ -159,7 +159,8 @@ class BoltFoxApi {
   /// 微信开放平台「移动应用微信登录」。
   ///
   /// [code] 来自移动端微信 SDK 的 `snsapi_userinfo` 授权回调。AppSecret、code 换
-  /// access_token 以及用户身份合并都必须在服务端完成；客户端只接收业务 userToken。
+  /// access_token 以及用户身份合并都必须在服务端完成；客户端只接收业务 userToken
+  /// 与用于请求鉴权的 jwtToken。
   /// 后端可根据公共 header 中的 terminal（Android=1 / iOS=2）与小程序（3）区分流程。
   static Future<dynamic> weChatMobileLogin({required String code}) {
     return _http.postJson(

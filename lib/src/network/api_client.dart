@@ -13,7 +13,8 @@ import 'api_session.dart';
 /// 全局请求入口（App 版），对齐小程序端 `utils/request.js`。
 ///
 /// 职责：
-/// - 注入公共 header：`terminal` / `language` / `device` / `userToken`（及 `Authorization`）。
+/// - 注入公共 header：`terminal` / `language` / `device` / `userToken`，
+///   并分别附加兼容的 `Authorization` 与 JWT `Authentication`。
 /// - 统一解析 BoltFox 响应：`retCode=200` 成功并返回 `retData`，否则抛 [ApiException]。
 /// - 鉴权失效（HTTP 401 或 retCode 401/406）时清除本地登录态并抛出。
 ///
@@ -49,6 +50,9 @@ class ApiClient {
     if (auth && session.userToken.isNotEmpty) {
       headers['userToken'] = session.userToken;
       headers['Authorization'] = 'Bearer ${session.userToken}';
+    }
+    if (auth && session.jwtToken.isNotEmpty) {
+      headers['Authentication'] = 'Bearer ${session.jwtToken}';
     }
     if (extra != null) {
       headers.addAll(extra);

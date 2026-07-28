@@ -20,6 +20,7 @@ void main() {
   ) async {
     SharedPreferences.setMockInitialValues({
       'boltstar.userToken': 'widget-test-token',
+      'boltstar.jwtToken': 'widget-test-jwt-token',
     });
 
     await tester.pumpWidget(const BoltStarApp());

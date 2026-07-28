@@ -957,8 +957,8 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 邮箱密码登录入口。
   ///
-  /// 调用 `/Client/User/userLogin`，成功后把返回的登录 token 写入
-  /// [ApiSession]（后续接口才会带上 `userToken` header），并尽力拉取一次用户信息。
+  /// 调用 `/Client/User/userLogin`，成功后把返回的 userToken 与 jwtToken 写入
+  /// [ApiSession]（后续接口会带上业务公共参数与 Authentication 头）。
   Future<ActionFeedback> loginWithPassword(
     String email,
     String password,
@@ -991,20 +991,24 @@ class PhotoFrameState extends ChangeNotifier {
         password: password,
       );
       final token = _readToken(data);
-      // 登录成功必须同时拿到会话凭证。原来 token 缺失时仍把本地状态切成
+      final jwtToken = _readJwtToken(data);
+      // 登录成功必须同时拿到两种会话凭证。原来 token 缺失时仍把本地状态切成
       // “已登录”，首页随即并发请求设备列表并收到 401/406，再触发回登录页与
       // BLE 清理；在真机上表现为刚进首页就退出/崩溃。与微信登录保持同一门槛。
-      if (token == null || token.isEmpty) {
+      if (token == null ||
+          token.isEmpty ||
+          jwtToken == null ||
+          jwtToken.isEmpty) {
         return ActionFeedback(
           success: false,
           message: tr(
-            zh: '登录响应缺少登录凭证，请稍后重试。',
-            en: 'The login response did not contain a session token.',
-            ja: 'ログイン応答にセッショントークンがありません。',
+            zh: '登录响应缺少 userToken 或 jwtToken，请稍后重试。',
+            en: 'The login response did not contain all required credentials.',
+            ja: 'ログイン応答に必要な認証情報がありません。',
           ),
         );
       }
-      ApiSession.instance.setToken(token);
+      ApiSession.instance.setTokens(userToken: token, jwtToken: jwtToken);
       _sessionEpoch++; // 新会话开始，作废上一会话的在途响应
       _isLoggedIn = true;
       _currentUser.email = target;
@@ -1030,7 +1034,8 @@ class PhotoFrameState extends ChangeNotifier {
   /// 微信开放平台「移动应用微信登录」入口。
   ///
   /// [code] 由移动端微信 SDK 返回，只能使用一次；服务端负责用 AppSecret 换取微信身份并返回
-  /// BoltStar 的 userToken。客户端绝不保存微信 access_token / refresh_token / AppSecret。
+  /// BoltStar 的 userToken 与 jwtToken。客户端绝不保存微信 access_token /
+  /// refresh_token / AppSecret。
   Future<ActionFeedback> loginWithWeChatCode(String code) async {
     final authorizationCode = code.trim();
     if (authorizationCode.isEmpty) {
@@ -1047,18 +1052,22 @@ class PhotoFrameState extends ChangeNotifier {
     try {
       final data = await BoltFoxApi.weChatMobileLogin(code: authorizationCode);
       final token = _readToken(data);
-      if (token == null || token.isEmpty) {
+      final jwtToken = _readJwtToken(data);
+      if (token == null ||
+          token.isEmpty ||
+          jwtToken == null ||
+          jwtToken.isEmpty) {
         return ActionFeedback(
           success: false,
           message: tr(
-            zh: '微信登录响应缺少登录凭证，请稍后重试。',
-            en: 'The WeChat login response did not contain a session token.',
-            ja: 'WeChat ログイン応答にセッショントークンがありません。',
+            zh: '微信登录响应缺少 userToken 或 jwtToken，请稍后重试。',
+            en: 'The WeChat login response did not contain all required credentials.',
+            ja: 'WeChat ログイン応答に必要な認証情報がありません。',
           ),
         );
       }
 
-      ApiSession.instance.setToken(token);
+      ApiSession.instance.setTokens(userToken: token, jwtToken: jwtToken);
       _sessionEpoch++; // 新会话开始，作废上一会话的在途响应
       _isLoggedIn = true;
       _applyUserInfo(data);
@@ -2675,6 +2684,20 @@ class PhotoFrameState extends ChangeNotifier {
         'access_token',
         'Authorization',
       ]) {
+        final value = data[key];
+        if (value is String && value.isNotEmpty) {
+          return value;
+        }
+      }
+    }
+    return null;
+  }
+
+  /// 从登录接口 retData 中提取 JWT。该凭证与业务 userToken 分开保存，
+  /// 仅用于 `Authentication: Bearer <jwtToken>`。
+  String? _readJwtToken(dynamic data) {
+    if (data is Map) {
+      for (final key in const ['jwtToken', 'jwt_token', 'JwtToken']) {
         final value = data[key];
         if (value is String && value.isNotEmpty) {
           return value;
