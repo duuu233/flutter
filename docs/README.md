@@ -77,6 +77,7 @@
 | [`history/2026-07/2026-07-27-同尺寸设备身份校验与电量缓存.md`](history/2026-07/2026-07-27-同尺寸设备身份校验与电量缓存.md) | Historical Decision Record |
 | [`history/2026-07/2026-07-28-小程序近期修复同步.md`](history/2026-07/2026-07-28-小程序近期修复同步.md) | Historical Change Record |
 | [`history/2026-07/2026-07-28-Android纯Photo-Picker迁移.md`](history/2026-07/2026-07-28-Android纯Photo-Picker迁移.md) | Historical Change Record |
+| [`history/2026-07/2026-07-28-AI服务协议.md`](history/2026-07/2026-07-28-AI服务协议.md) | Historical Change Record |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责

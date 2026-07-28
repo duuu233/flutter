@@ -189,6 +189,36 @@ class AppL10n {
   String get contactUs => _pick('联系我们', 'Contact Us', 'お問い合わせ');
   String get privacyPolicy => _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');
   String get userAgreement => _pick('用户协议', 'User Agreement', '利用規約');
+  String get aiServiceAgreement =>
+      _pick('AI服务协议', 'AI Service Agreement', 'AIサービス規約');
+  String get aiServiceAgreementTitle => _pick(
+    'BoltStar AI服务协议',
+    'BoltStar AI Service Agreement',
+    'BoltStar AIサービス規約',
+  );
+  String get aiServiceAgreementRequired => _pick(
+    '请先同意BoltStar AI服务协议',
+    'Please agree to the BoltStar AI Service Agreement first',
+    '先にBoltStar AIサービス規約に同意してください',
+  );
+  String get aiServiceAgreementSummary => _pick(
+    '为了使用 AI 服务（包括文本对话、根据文字生成图片、以及上传图片进行美化），'
+        '我们需要将你当前发送的内容（文字或图片）传输至“阿里云百炼”AI 服务进行处理，'
+        '该服务由阿里云计算有限公司提供。\n\n'
+        '你发送的内容仅用于本次操作，不会被存储或用于模型训练。',
+    'To use AI services—including text chat, generating images from text, '
+        'and enhancing uploaded images—we need to transmit the text or images '
+        'you send to Alibaba Cloud Model Studio for processing. This service '
+        'is provided by Alibaba Cloud Computing Co., Ltd.\n\n'
+        'Your content is used only for the current operation and will not be '
+        'stored or used for model training.',
+    'テキスト対話、テキストからの画像生成、アップロード画像の加工を含むAIサービスを'
+        '利用するため、送信されたテキストまたは画像を、Alibaba Cloud Computing Co., Ltd.'
+        'が提供する「Alibaba Cloud Model Studio」AIサービスへ送信して処理します。\n\n'
+        '送信内容は今回の処理にのみ使用され、保存またはモデル学習に利用されることはありません。',
+  );
+  String get agree => _pick('同意', 'Agree', '同意する');
+  String get disagree => _pick('不同意', 'Disagree', '同意しない');
   String get checkUpdate => _pick('检查更新', 'Check for Updates', 'アップデート確認');
   String get logout => _pick('退出登录', 'Log Out', 'ログアウト');
   String get deleteAccount => _pick('用户注销', 'Delete Account', 'アカウント削除');

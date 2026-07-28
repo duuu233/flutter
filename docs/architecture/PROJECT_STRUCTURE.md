@@ -69,6 +69,7 @@ lib/
     ├── shared/
     │   ├── l10n/
     │   ├── widgets/
+    │   ├── ai_service_consent.dart
     │   ├── avatar_upload.dart
     │   ├── image_cache_cleanup.dart
     │   ├── permission_gate.dart
@@ -93,8 +94,8 @@ lib/
 | `cast` | 选图、预览编辑、后端转帧、BLE 图传、结果页和投屏记录 |
 | `gallery` | 用户图库、设备筛选、批量删除、刷屏与再次投屏 |
 | `guide` | FAQ/操作指南的全量分页、语种刷新和 HTML 子集展示 |
-| `settings` | 语言、协议、隐私、版本检查、退出与注销 |
-| `ai` | 星宝会话、图文对话、图片压缩/增强和四语种错误映射 |
+| `settings` | 语言、用户/隐私/AI 服务协议、版本检查、退出与注销 |
+| `ai` | 星宝会话、按用户授权、图文对话、图片压缩/增强和四语种错误映射 |
 
 ## 4. 跨模块架构
 
@@ -119,6 +120,8 @@ lib/
 - `BoltFoxApi` 封装账号、产品、设备、图库、投屏记录和版本接口。
 - `DitheringApi` 负责 seekink 图片抖动/六色帧服务及 token 缓存、401 刷新。
 - `BoltStarAiApi` 是独立第三方 AI 服务，不复用 BoltFox 的响应壳和公共参数。
+- `AiServiceConsent` 以协议版本和 BoltFox 用户 ID 隔离本地同意状态；AI 发送前统一检查，
+  退出、注销成功和登录态失效时由 `PhotoFrameState` 清理。
 
 当前接口契约见 `API_INTEGRATION.md`。
 

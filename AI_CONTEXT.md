@@ -24,8 +24,9 @@ The product currently covers:
   English, and Japanese content;
 - BLE engineering diagnostics, an in-app iOS transfer performance self-test, and Android crash
   evidence capture;
-- an implemented AI chat/image-enhancement subsystem whose normal production entry is currently
-  disabled by `kAiEntryEnabled=false`; a debug entry remains.
+- an implemented AI chat/image-enhancement subsystem with per-user AI-service consent and a
+  multilingual legal page; its normal production entry is currently disabled by
+  `kAiEntryEnabled=false`, while a debug entry remains.
 
 The declared product release targets are Android and iOS. The Web, Windows, macOS, and Linux
 directories are Flutter-generated shells and are not current product release targets.
@@ -198,8 +199,8 @@ Inside `lib/src/features/`, the current domains are `account`, `ai`, `cast`, `de
 | Account feature | Email/WeChat auth, registration, password/email/profile maintenance, local email history | `lib/src/features/account/` |
 | Gallery feature | User image list, device filtering, delete, display refresh, and recast entry | `lib/src/features/gallery/` |
 | Home and Mine | Primary product entry points, selected-device summary, account statistics, navigation cards | `lib/src/features/home/`, `lib/src/features/mine/` |
-| Settings and guide | Language, legal documents, version/update, logout/deletion, FAQ pagination and HTML-subset rendering | `lib/src/features/settings/`, `lib/src/features/guide/`, `lib/src/shared/l10n/` |
-| AI feature | Sessions, chat history, up to four public image URLs, image compression/upload/enhancement, localized error mapping | `lib/src/features/ai/`, `lib/src/network/boltstar_ai_api.dart` |
+| Settings and guide | Language, multilingual legal documents including the AI service agreement, version/update, logout/deletion, FAQ pagination and HTML-subset rendering | `lib/src/features/settings/`, `lib/src/features/guide/`, `lib/src/shared/l10n/` |
+| AI feature | Sessions, chat history, up to four public image URLs, image compression/upload/enhancement, localized error mapping, and per-user/version consent gating before requests | `lib/src/features/ai/`, `lib/src/network/boltstar_ai_api.dart`, `lib/src/shared/ai_service_consent.dart` |
 | Resource/native infrastructure | Image-cache privacy cleanup, temporary-file cold-start sweep, permission/native bridge, Android foreground service and crash capture | `lib/src/shared/image_cache_cleanup.dart`, `lib/src/shared/temp_cache_sweeper.dart`, `lib/src/native_device_api.dart`, `android/app/src/main/kotlin/com/boltfox/boltstar/`, `ios/Runner/AppDelegate.swift` |
 
 ## Data Flow
@@ -352,6 +353,24 @@ Connected foreground session
 The lease is swept every 60 seconds. Returning to foreground reconciles memory state with the real
 BLE connection because background disconnect callbacks may have been missed.
 
+### 9. AI consent and request flow
+
+```text
+Enter AI page
+  -> AiServiceConsent checks SharedPreferences by agreement version + raw user ID
+       accepted    -> continue
+       not accepted -> show localized agree/disagree dialog
+  -> check bound-device prerequisite
+  -> every send/style-generation path checks consent again
+       declined -> keep input/pending images and make no AI request
+       accepted -> create session when needed -> BoltStarAiApi -> render response
+
+Logout / successful account deletion / session expiry
+  -> capture current user ID
+  -> remove that user's AI consent key
+  -> clear the rest of the session
+```
+
 ## Important Design Decisions
 
 1. **One shared state and one BLE session.** Pages consume the root-owned `PhotoFrameState` and
@@ -392,6 +411,10 @@ BLE connection because background disconnect callbacks may have been missed.
 15. **Android gallery access is selection-scoped.** `main()` globally enables the system Photo
     Picker for `image_picker`. Projection, AI, home-avatar, and profile-avatar flows must not request
     broad photo-library access or reintroduce Android media-read permissions.
+16. **AI-service consent is versioned and user-scoped.** `AiServiceConsent` stores acceptance under
+    agreement version plus raw login user ID. A missing cache blocks requests, account switching
+    never inherits another user's choice, and logout/deletion/session expiry remove the current
+    user's key before identity is cleared.
 
 ## Development Rules
 
@@ -426,12 +449,14 @@ BLE connection because background disconnect callbacks may have been missed.
     `READ_MEDIA_VISUAL_USER_SELECTED`, `READ_EXTERNAL_STORAGE`, or a pre-gallery
     `requestPhotoPermission` gate unless the product gains a real full-library use case and the
     privacy/release decision is revisited.
-17. Regular project documentation belongs under `docs/`. `AGENTS.md` and this explicitly requested
+17. Preserve the AI-service consent gate before session creation, draft clearing, image upload, and
+    every BoltStar AI request path. User-visible dialog and agreement text must remain localized.
+18. Regular project documentation belongs under `docs/`. `AGENTS.md` and this explicitly requested
     `AI_CONTEXT.md` are root-level AI control/context exceptions.
-18. Update the Active owner document when a change alters architecture, API contracts, BLE identity,
+19. Update the Active owner document when a change alters architecture, API contracts, BLE identity,
     slot semantics, resource lifecycle, cross-client behavior, platform setup, release steps, or
     user-facing multilingual content.
-19. Normal validation is:
+20. Normal validation is:
 
     ```bash
     dart analyze lib test
@@ -440,7 +465,7 @@ BLE connection because background disconnect callbacks may have been missed.
 
     BLE transfer, connection intervals, OTA, camera/gallery, WeChat login, background behavior, and
     release-only platform configuration require real-device validation.
-20. Android release builds require complete `android/key.properties`; do not add signing secrets to
+21. Android release builds require complete `android/key.properties`; do not add signing secrets to
     Git. iOS release setup and WeChat values are external build inputs.
 
 ## Known Risks

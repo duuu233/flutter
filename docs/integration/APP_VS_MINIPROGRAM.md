@@ -32,8 +32,8 @@
 | 投屏过程 | `subpackages/projection/result` | `projection_service.dart` / `casting_progress_page.dart` | ✅ | 服务端六色帧、部分成功、空间检查、记录回写与 BLE 图传一致 |
 | 投屏记录 | `subpackages/projection/records` | `cast_management_figma_page.dart` | ✅ | 成功/失败分页、再次投屏、删除与重入刷新一致 |
 | 图库 | `subpackages/album/list` | `gallery_page.dart` | ✅ | 设备筛选、批量删除、清空提示、0x24 刷屏和跨设备保护一致 |
-| AI 星宝 | `subpackages/ai` | `features/ai` | ✅⚠️ | 会话与图文消息已对齐；两端正式入口均关闭，语音输入仍为 App 占位 |
-| 设置 | `subpackages/settings/index` | `settings_page.dart` | ✅ | 联系、协议、隐私、退出、注销和失败留页一致 |
+| AI 星宝 | `subpackages/ai` | `features/ai` | ✅⚠️ | 会话、图文消息及按用户 ID 隔离的 AI 服务协议确认已对齐；两端正式入口均关闭，语音输入仍为 App 占位 |
+| 设置 | `subpackages/settings/index` | `settings_page.dart` | ✅ | 联系、用户/隐私/AI 服务协议、退出、注销和失败留页一致；App 协议正文为四语种 |
 | 个人资料 | `subpackages/settings/profile` | `profile_page.dart` | ✅ | 进入刷新、头像本地预览与保存时提交一致 |
 | 邮箱 | `bind-email/change-email` | `bind_email_*` / `modify_email_page.dart` | ✅ | 验证码和 `changeUserEmail` 参数一致 |
 | 语言 | `subpackages/settings/language` | `language_settings_page.dart` | ✅🔶 | 四项 UI 一致；App 同时切换本地内置文案 |

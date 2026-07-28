@@ -13,6 +13,7 @@ import 'network/api_rows.dart';
 import 'network/api_session.dart';
 import 'network/boltfox_api.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import 'shared/ai_service_consent.dart';
 import 'shared/image_cache_cleanup.dart';
 import 'shared/l10n/chinese_script.dart';
 
@@ -2513,6 +2514,9 @@ class PhotoFrameState extends ChangeNotifier {
     } catch (_) {
       // 退出登录接口失败时仍清除本地态。
     }
+    // 必须在 currentUser 被清理前按当前用户 ID 删除 AI 协议同意记录；
+    // 下次登录（即使还是同一账号）也需要重新确认。
+    await AiServiceConsent.clear(_currentUser.id);
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 清空列表还不够：照片本体还在内存/磁盘两层图片缓存里（见 ImageCacheCleanup）。
@@ -2550,6 +2554,7 @@ class PhotoFrameState extends ChangeNotifier {
     } catch (_) {
       // The backend account has already been deleted; continue local cleanup.
     }
+    await AiServiceConsent.clear(_currentUser.id);
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 账号已在服务端删除，本地缓存的照片本体更不该留（见 ImageCacheCleanup）。
@@ -3174,6 +3179,8 @@ class PhotoFrameState extends ChangeNotifier {
       return;
     }
     unawaited(BleController.instance.disconnect());
+    // 登录态失效与主动退出同等处理；先捕获当前用户 ID，再异步清掉其协议缓存。
+    unawaited(AiServiceConsent.clear(_currentUser.id));
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 与 logout 同等对待：会话已失效，上个账号的照片不该留在本机（见 ImageCacheCleanup）。

@@ -146,6 +146,15 @@ class SettingsPage extends StatelessWidget {
                 _SettingsRow(
                   iconAsset: 'assets/images/set-icon04.png',
                   iconBg: const Color(0x1A287DFF),
+                  title: l10n.aiServiceAgreement,
+                  onTap: () => Navigator.of(
+                    context,
+                  ).pushNamed<void>(AppRoutes.figmaAiServiceAgreement),
+                ),
+                const _SettingsDivider(),
+                _SettingsRow(
+                  iconAsset: 'assets/images/set-icon04.png',
+                  iconBg: const Color(0x1A287DFF),
                   title: l10n.userAgreement,
                   onTap: () => Navigator.of(
                     context,

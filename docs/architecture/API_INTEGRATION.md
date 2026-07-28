@@ -111,6 +111,11 @@ BoltStar 当前使用三套不同的远端服务：
 - 对话：`POST /chat`，支持最多 4 张公网图片 URL。
 - 图片增强：`POST /image/enhance`。
 - 图片先压缩并通过 BoltFox `setFileUpload` 获得公网 URL，再提交 AI。
+- 文本、生成提示词和用户图片提交给阿里云百炼前，客户端必须确认当前 BoltFox 用户已同意
+  “BoltStar AI服务协议”；拒绝后允许继续输入/浏览，但所有发送入口持续拦截并再次引导。
+- 同意状态由 `AiServiceConsent` 按“协议版本 + 用户 ID”写入 `SharedPreferences`，不允许跨账号复用；
+  退出、注销成功或 401/406 登录态失效后清除。
+- 完整四语种条款位于设置页 `AiServiceAgreementPage`；协议版本当前为 `2026-07-28`。
 - 正式用户入口当前由 `kAiEntryEnabled=false` 屏蔽；调试暗门保留。
 - 语音输入仍是占位；下载只写应用缓存目录。
 

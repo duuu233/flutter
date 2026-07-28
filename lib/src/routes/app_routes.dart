@@ -25,6 +25,7 @@ import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
 import '../features/guide/presentation/guide_page.dart';
+import '../features/settings/presentation/ai_service_agreement_page.dart';
 import '../features/settings/presentation/language_settings_page.dart';
 import '../features/settings/presentation/privacy_policy_page.dart';
 import '../features/settings/presentation/settings_page.dart';
@@ -144,6 +145,7 @@ class AppRoutes {
   static const figmaLanguageSettings = '/figma/settings/language';
   static const figmaPrivacyPolicy = '/figma/settings/privacy-policy';
   static const figmaUserAgreement = '/figma/settings/user-agreement';
+  static const figmaAiServiceAgreement = '/figma/settings/ai-service-agreement';
   static const figmaUpdateBoltStar = '/figma/settings/update';
   static const figmaUpdateBoltStarAvailable =
       '/figma/settings/update/available';
@@ -292,6 +294,9 @@ class AppRoutes {
         break;
       case AppRoutes.figmaUserAgreement:
         builder = (_) => const UserAgreementPage();
+        break;
+      case AppRoutes.figmaAiServiceAgreement:
+        builder = (_) => const AiServiceAgreementPage();
         break;
       case AppRoutes.figmaUpdateBoltStar:
         // 正常入口（设置页「检测更新」）：传 state，进入即真实检查版本（三态 UI）。

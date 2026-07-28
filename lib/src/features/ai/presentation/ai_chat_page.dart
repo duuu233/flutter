@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../../network/boltfox_api.dart';
 import '../../../network/boltstar_ai_api.dart';
 import '../../../routes/app_routes.dart';
+import '../../../shared/ai_service_consent.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
@@ -269,6 +270,9 @@ class _AiChatPageState extends State<AiChatPage> {
   /// 在途的建会话请求，用于连点发送时去重（见 [_createSession]）。
   Future<void>? _createReq;
 
+  /// AI 服务协议弹窗在途去重：首次进入与发送动作不能叠出两层弹窗。
+  Future<bool>? _consentPrompt;
+
   /// 视图是否还贴着底（用户上翻看历史时置 false，见 [_onScroll]）。
   bool _stick = true;
   DateTime _lastStickAt = DateTime.fromMillisecondsSinceEpoch(0);
@@ -293,8 +297,14 @@ class _AiChatPageState extends State<AiChatPage> {
     if (_sessionId.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _openSession(_sessionId));
     }
-    // 权限规则（文档 §5.5）：无绑定设备时拦截 AI 入口，提示先绑定
-    WidgetsBinding.instance.addPostFrameCallback((_) => _checkDeviceBound());
+    // 首次进入先确认 AI 服务协议，再检查设备绑定，避免两层弹窗互相覆盖。
+    // 不同意仍可正常查看与输入；发送时会再次引导，直到当前用户同意。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _ensureAiServiceConsent(sendAttempt: false);
+      if (mounted) {
+        await _checkDeviceBound();
+      }
+    });
   }
 
   @override
@@ -486,6 +496,68 @@ class _AiChatPageState extends State<AiChatPage> {
     Navigator.of(context).pop(go == true);
   }
 
+  /// 检查当前登录用户是否已同意 AI 服务协议；未同意时弹出多语种确认框。
+  ///
+  /// 同意状态由 [AiServiceConsent] 按用户 ID 隔离。缓存丢失、切换账号、退出、
+  /// 注销或登录态失效后都会重新确认。拒绝不禁用输入，只让本次发送原样返回。
+  Future<bool> _ensureAiServiceConsent({required bool sendAttempt}) async {
+    final userId = widget.state.currentUser.id.trim();
+    if (userId.isEmpty) {
+      if (sendAttempt && mounted) {
+        AppToast.warn(context, AppL10n.of(context).aiServiceAgreementRequired);
+      }
+      return false;
+    }
+    if (await AiServiceConsent.isAccepted(userId)) {
+      return true;
+    }
+    if (!mounted) {
+      return false;
+    }
+    final pending = _consentPrompt;
+    if (pending != null) {
+      return pending;
+    }
+    final request = _showAiServiceConsentDialog(
+      userId: userId,
+      sendAttempt: sendAttempt,
+    );
+    _consentPrompt = request;
+    try {
+      return await request;
+    } finally {
+      if (identical(_consentPrompt, request)) {
+        _consentPrompt = null;
+      }
+    }
+  }
+
+  Future<bool> _showAiServiceConsentDialog({
+    required String userId,
+    required bool sendAttempt,
+  }) async {
+    final l10n = AppL10n.of(context);
+    final accepted = await showAppConfirmDialog(
+      context,
+      title: sendAttempt
+          ? l10n.aiServiceAgreementRequired
+          : l10n.aiServiceAgreementTitle,
+      message: l10n.aiServiceAgreementSummary,
+      icon: Icons.auto_awesome_rounded,
+      confirmLabel: l10n.agree,
+      cancelLabel: l10n.disagree,
+      barrierDismissible: false,
+    );
+    if (accepted != true) {
+      return false;
+    }
+    final saved = await AiServiceConsent.accept(userId);
+    if (!saved && mounted) {
+      AppToast.warn(context, l10n.aiServiceAgreementRequired);
+    }
+    return saved;
+  }
+
   /// 打开会话列表。列表页自己 push 新的聊天页（所以从那儿进去的会话，返回键**原路退回列表**，
   /// 对齐小程序 2026-07-25 的「原路径返回」）；本页只管把它推上去。
   Future<void> _goSessions() async {
@@ -562,6 +634,9 @@ class _AiChatPageState extends State<AiChatPage> {
       );
       return;
     }
+    if (!await _ensureAiServiceConsent(sendAttempt: true) || !mounted) {
+      return; // 草稿和待发图片保持不变；下次发送继续引导
+    }
     // 还有图片在上传：等 URL 就绪再发，否则 image_urls 会缺图
     if (_pending.any((item) => item.uploading)) {
       AppToast.show(context, AppL10n.of(context).aiImageUploading);
@@ -593,7 +668,12 @@ class _AiChatPageState extends State<AiChatPage> {
     String? styleKey,
     List<_AiImage> images = const [],
   }) async {
-    if (_sending || _banned || !_guardToken()) {
+    if (_sending || _banned) {
+      return;
+    }
+    if (!await _ensureAiServiceConsent(sendAttempt: true) ||
+        !mounted ||
+        !_guardToken()) {
       return;
     }
     // 空态下发出第一条消息，这时才真正建会话——**全项目唯一的建会话时机**。

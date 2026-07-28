@@ -49,7 +49,18 @@ imageCache.clearLiveImages()
 
 注销接口失败时账号仍有效，不执行本地资产清理；只有服务端注销成功后才清。
 
-## 4. 临时文件
+## 4. AI 服务协议同意缓存
+
+`AiServiceConsent` 使用 `SharedPreferences` 保存“协议版本 + BoltFox 用户 ID”维度的同意状态：
+
+- A 用户同意不能让 B 用户跳过确认；
+- 缓存缺失视为未同意；
+- 协议发生实质更新时修改版本，旧记录自然失效；
+- `logout`、`deleteAccount` 成功后和 `_handleSessionExpired` 都在用户 ID 被重置前清除当前记录。
+
+持久化失败按“未同意”处理，不能以内存布尔值绕过缺失的用户缓存。
+
+## 5. 临时文件
 
 投屏编辑和再次投屏会产生带唯一时间戳的临时图片。当前策略是在冷启动由
 `TempCacheSweeper.sweepOnColdStart()` 清扫已登记前缀：
@@ -64,7 +75,7 @@ imageCache.clearLiveImages()
 
 单次运行产生的临时文件会保留到下一次冷启动，这是为避免误删做出的有意取舍。
 
-## 5. BLE 与进程生命周期
+## 6. BLE 与进程生命周期
 
 `BleConnectionLease` 管理的是外层会话寿命，不修改 GATT、协议或图传策略：
 
@@ -79,7 +90,7 @@ imageCache.clearLiveImages()
 Android 连接期间使用前台服务提高进程优先级；断开后必须撤销。所谓“重启/回收”是让进程回到
 系统可回收状态，不是主动杀进程或清除登录态。
 
-## 6. 启动与异常
+## 7. 启动与异常
 
 `main()` 启动时执行 best-effort 清理：
 
@@ -90,7 +101,7 @@ Android 连接期间使用前台服务提高进程优先级；断开后必须撤
 
 Android 原生崩溃和 Dart 未捕获异常写入受限额的崩溃现场；下次启动展示并允许复制/清除。
 
-## 7. 变更检查
+## 8. 变更检查
 
 新增以下代码时必须复核资源归属：
 
@@ -100,6 +111,7 @@ Android 原生崩溃和 Dart 未捕获异常写入受限额的崩溃现场；下
 - BLE 通知/连接；
 - 账号退出路径；
 - 长期缓存或 SharedPreferences。
+- 第三方 AI 服务、用户授权或协议版本。
 
 验证重点：
 
