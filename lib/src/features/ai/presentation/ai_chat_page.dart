@@ -546,6 +546,7 @@ class _AiChatPageState extends State<AiChatPage> {
       icon: Icons.auto_awesome_rounded,
       confirmLabel: l10n.agree,
       cancelLabel: l10n.disagree,
+      messageTextAlign: TextAlign.left,
       barrierDismissible: false,
     );
     if (accepted != true) {

@@ -49,6 +49,7 @@ Future<bool?> showAppConfirmDialog(
   AppDialogTone tone = AppDialogTone.primary,
   String? confirmLabel,
   String? cancelLabel,
+  TextAlign messageTextAlign = TextAlign.start,
   bool showCancel = true,
   bool barrierDismissible = true,
   bool useRootNavigator = false,
@@ -79,6 +80,7 @@ Future<bool?> showAppConfirmDialog(
         tone: tone,
         confirmLabel: confirmLabel,
         cancelLabel: cancelLabel,
+        messageTextAlign: messageTextAlign,
         showCancel: showCancel,
         content: content,
         // 传了 onCancelTap 就把左键改成「执行动作但不关弹窗」（如崩溃日志的「复制日志」）。
@@ -127,6 +129,7 @@ class AppDialog extends StatelessWidget {
     this.tone = AppDialogTone.primary,
     this.confirmLabel,
     this.cancelLabel,
+    this.messageTextAlign = TextAlign.start,
     this.showCancel = true,
     this.content,
     this.onCancel,
@@ -142,6 +145,7 @@ class AppDialog extends StatelessWidget {
   final AppDialogTone tone;
   final String? confirmLabel;
   final String? cancelLabel;
+  final TextAlign messageTextAlign;
   final bool showCancel;
 
   /// 说明文案下方的自定义内容（如重命名弹窗的输入框），通栏铺满。
@@ -205,6 +209,7 @@ class AppDialog extends StatelessWidget {
                         const SizedBox(height: 6),
                         Text(
                           text,
+                          textAlign: messageTextAlign,
                           style: const TextStyle(
                             color: Color(0xFF6F7782),
                             fontSize: 12,
