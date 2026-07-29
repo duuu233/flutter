@@ -33,8 +33,9 @@
 		<string>weixinULAPI</string>
 		<string>weixinURLParamsAPI</string>
 	</array>
-	<!-- 微信授权回调 URL Scheme（fluwx 必需）：把 wxYOUR_WECHAT_APPID 替换为微信开放平台的真实 AppID
-	     （形如 wx1234567890abcdef），与 dart-define 的 WECHAT_APP_ID 保持一致；缺失则授权后无法回跳 App。 -->
+	<!-- 微信授权回调 URL Scheme（fluwx 必需）：值必须与实际使用的 AppID 完全一致
+	     （见 WeChatAuthorizationConfig.fromEnvironment 的默认值 / dart-define 的 WECHAT_APP_ID），
+	     否则微信授权后无法回跳 App。换环境改 AppID 时这里要同步改。 -->
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -44,7 +45,7 @@
 			<string>weixin</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>wxYOUR_WECHAT_APPID</string>
+				<string>wx4cf0c5f38a70d0bc</string>
 			</array>
 		</dict>
 	</array>

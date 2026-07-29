@@ -158,15 +158,28 @@ class BoltFoxApi {
 
   /// 微信开放平台「移动应用微信登录」。
   ///
+  /// 接口：`/Client/User/setWechatAuthorizLogin`（swagger `WechatAuthorizLoginApiIn`，
+  /// 摘要「微信授权登录」，响应同邮箱登录的 `BaseOutput«UserInfoDetailApiOut»`）。
+  /// ⚠️ **不是** `/Client/User/setWechatAppLogin`——那条是小程序「授权手机号一键登录」，
+  /// 入参 DTO 还要 `wxEncrypData` / `wxIvData`（小程序手机号解密数据），移动应用 OAuth
+  /// 拿不到也不该提交；2026-07-29 前 App 一直错发到那条接口。
+  ///
   /// [code] 来自移动端微信 SDK 的 `snsapi_userinfo` 授权回调。AppSecret、code 换
   /// access_token 以及用户身份合并都必须在服务端完成；客户端只接收业务 userToken
   /// 与用于请求鉴权的 jwtToken。
-  /// 后端可根据公共 header 中的 terminal（Android=1 / iOS=2）与小程序（3）区分流程。
+  /// DTO 里的 device / language / terminal 三个字段注释均为「通过 headers 传递」，
+  /// 由 [ApiClient] 作为公共参数注入（Android=1 / iOS=2 / 小程序=3），body 只发 code。
+  ///
+  /// **关闭全部自动重试**（超时与连接中断都不重试）：微信的一次性 code 只能成功消费一次，
+  /// 服务端换过一次后重发同一个 code 必然被微信判 40163，用户看到的是登录失败。
+  /// 失败一律让用户重新拉起微信取新 code（见 docs/integration/WECHAT_LOGIN_SETUP.md 七）。
   static Future<dynamic> weChatMobileLogin({required String code}) {
     return _http.postJson(
-      '/Client/User/setWechatAppLogin',
+      '/Client/User/setWechatAuthorizLogin',
       body: {'code': code},
       auth: false,
+      retryOnTimeout: false,
+      retryOnConnectionError: false,
     );
   }
 

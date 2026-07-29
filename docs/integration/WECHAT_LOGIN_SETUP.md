@@ -1,8 +1,8 @@
 # App 微信快捷登录专项记录
 
 > 文档类型：Integration Runbook / Troubleshooting
-> 状态：Active（后端 App 专用接口待确认）
-> 最后核验：2026-07-28
+> 状态：Active（客户端已按确认接口接通，待真机验收）
+> 最后核验：2026-07-29
 > 适用范围：Flutter Android / iOS App 的微信开放平台移动应用 OAuth 登录
 > 不适用范围：微信小程序手机号快捷登录
 > 本文件是 App 微信快捷登录的当前权威记录；其他文档中的旧接口描述待后续同步。
@@ -16,11 +16,14 @@ App 不需要手工下载并导入微信 SDK。项目已经通过 `fluwx 6.0.0` 
   `com.boltfox.boltstar.wxapi.WXEntryActivity`。
 - Flutter 已调用 `registerApi()`，并通过 `snsapi_userinfo` 拉起微信移动应用授权。
 
-当前真正的阻塞项不是 SDK 文件，而是：
+2026-07-29 更新：App 专用后端接口已确认为 `POST /Client/User/setWechatAuthorizLogin`
+（swagger 摘要「微信授权登录」，入参 `WechatAuthorizLoginApiIn`），客户端已按它改完（见第八节）。
 
-1. Flutter App 目前错误复用了微信小程序手机号登录接口。
-2. App 专用的后端 OAuth 换码接口路径和实现尚未确认。
-3. 后端是否配置了移动应用 AppID 对应的 AppSecret 尚未确认。
+剩余阻塞项：
+
+1. 后端是否已配置移动应用 AppID 对应的 AppSecret（`wx4cf0c5f38a70d0bc`，不是小程序的那把）。
+2. 微信开放平台移动应用是否已过审并开通「微信登录」、正式签名是否已登记。
+3. iOS 的 Universal Link 与 Bundle ID 仍是占位（见第三、九节），iOS 侧尚不能验收。
 
 ## 二、必须区分的两条登录链路
 
@@ -63,7 +66,7 @@ Flutter App
   → fluwx / 微信原生 SDK
   → scope=snsapi_userinfo
   → 得到一次性 OAuth code
-  → App 专用 BoltFox 后端接口（路径待后端确认）
+  → POST /Client/User/setWechatAuthorizLogin（App 专用，见第五节）
   → 后端调用微信 /sns/oauth2/access_token
   → 后端按 openid / unionid 创建或关联用户
   → 后端返回 BoltStar userToken 和用户信息
@@ -107,13 +110,18 @@ debug 签名 MD5：
 
 ### 3.3 iOS
 
-当前 iOS 配置仍是占位状态：
+- `Info.plist` URL Scheme：已填真实 AppID `wx4cf0c5f38a70d0bc`（2026-07-29 由占位符改正）。
+- `Info.plist` `LSApplicationQueriesSchemes`：已含 `weixin` / `weixinULAPI` 等。
+- `Runner.entitlements` Associated Domain：仍是占位 `applinks:example.boltfox.cn`。
+- `WECHAT_UNIVERSAL_LINK`：仍需在构建时传入真实值。
 
-- `Info.plist` URL Scheme：`wxYOUR_WECHAT_APPID`
-- `Runner.entitlements` Associated Domain：`applinks:example.boltfox.cn`
-- `WECHAT_UNIVERSAL_LINK`：需要在构建时传入真实值
+Universal Link 未落地前，iOS 微信登录仍不能视为配置完成（`FluwxWeChatAuthorizationClient`
+在 iOS 上会因为 Universal Link 为空直接以 `config` 错误拒绝拉起，不会发出无效请求）。
 
-因此 iOS 微信登录当前不能视为配置完成。
+### 3.4 Android 包可见性
+
+`AndroidManifest.xml` 的 `<queries>` 已声明 `com.tencent.mm`。Android 11+（targetSdk ≥ 30）
+缺这一条时微信 SDK 的 `isWXAppInstalled` 恒为 false，表现为装了微信仍提示「请先安装微信」。
 
 ## 四、微信开放平台配置步骤
 
@@ -129,19 +137,29 @@ debug 签名 MD5：
 
 AppSecret 只能存放在服务端，不得写入 Flutter 源码、`dart-define`、APK、iOS App 或 Markdown。
 
-## 五、后端需要提供的 App 专用接口
-
-后端应提供一个独立的移动应用登录接口。最终路径由后端确定，例如：
+## 五、App 专用后端接口（已确认）
 
 ```text
-POST /Client/User/setWechatMobileLogin
+POST /Client/User/setWechatAuthorizLogin
 ```
 
-上面的路径只是建议命名，**在后端确认前不得直接写入 Flutter 代码**。
+swagger 摘要：`微信授权登录`；入参 `WechatAuthorizLoginApiIn`；
+响应 `BaseOutput«UserInfoDetailApiOut»`（与邮箱登录同一响应模型）。
 
-建议请求契约：
+`WechatAuthorizLoginApiIn` 字段（`/v2/api-docs` 原文）：
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `code` | string | 微信授权 code，必填 |
+| `device` | string | 手机机型（**通过 headers 传递**） |
+| `language` | int | 语言 0/1=英语,2=简中,3=繁中,4=日文（**通过 headers 传递**） |
+| `terminal` | int | 1=安卓,2=苹果,3=小程序（**通过 headers 传递**） |
+
+后三个字段 DTO 里带着但注明走 headers，即公共参数，App 侧由 `ApiClient` 统一注入
+（header 与 `/Client/` query 各一份），body 只发 `code`：
 
 ```http
+POST /Client/User/setWechatAuthorizLogin?terminal=1&language=2&device=…
 Content-Type: application/json
 terminal: 1
 language: 2
@@ -158,7 +176,12 @@ device: Android设备型号
 
 - Android：`terminal=1`
 - iOS：`terminal=2`
-- 小程序：`terminal=3`，但不应进入该 App 专用接口
+- 小程序：`terminal=3`，走的是 `setWechatAppLogin`，不进本接口
+
+响应 `retData`（`UserInfoDetailApiOut`）：`userToken` / `jwtToken` / `userNo` /
+`nickName` / `avatar` / `userEmail` / `userMobile` / `imgCount` / `productCount`。
+App 要求 `userToken` 与 `jwtToken` 同时非空才置登录态（与邮箱登录同门槛），
+其余字段直接回填个人资料，不再多打一次 `getUserInfo`。
 
 建议服务端环境变量：
 
@@ -220,31 +243,24 @@ https://api.weixin.qq.com/sns/jscode2session
 - 用户重新操作时必须重新拉起微信，取得新的 code。
 - 服务端若需要幂等处理，应以 code 哈希建立短期幂等记录，不能重复调用微信换码接口。
 
-客户端的“关闭全部自动重试”改动应在 App 专用后端接口确定后一起实施和验证，不能继续围绕
-小程序接口修改。
+客户端已按上述约束实施（见第八节），三道闸：SDK 层同一次授权只在途一个请求、
+业务层拒收提交过的 code、网络层对该接口关掉全部自动重试。
 
-## 八、Flutter 后续改动点
+## 八、Flutter 侧改动（2026-07-29 已完成）
 
-当前错误调用位于：
-
-```text
-lib/src/network/boltfox_api.dart
-BoltFoxApi.weChatMobileLogin()
-```
-
-当前地址：
-
-```text
-/Client/User/setWechatAppLogin
-```
-
-后端提供并确认 App 专用接口后，再执行：
-
-1. 把 `weChatMobileLogin()` 改为调用 App 专用接口。
-2. 请求体只提交移动应用 OAuth `code`。
-3. 保留 `terminal=1/2`、`language`、`device` 公共参数。
-4. 为该请求关闭超时、连接中断、Socket/TLS 等全部自动重试。
-5. 增加单元测试，验证一次业务调用最多发送一次 HTTP 请求。
+1. `lib/src/network/boltfox_api.dart` `weChatMobileLogin()` 改调
+   `/Client/User/setWechatAuthorizLogin`（原先错发到小程序的 `setWechatAppLogin`）。
+2. 请求体只提交移动应用 OAuth `code`；`terminal` / `language` / `device` 仍走公共参数。
+3. `lib/src/network/api_client.dart` `postJson` 新增 `retryOnConnectionError`
+   （原先只有 `retryOnTimeout`，连接中断一律重试）；微信登录两个开关都传 false，
+   即超时、连接中断、Socket/TLS 失败都不重试。**该开关只对这一个接口关**，
+   其余接口的连接层重试行为不变（测试里有对照组守着）。
+4. `lib/src/state.dart` `loginWithWeChatCode()` 记录已提交过的 code，
+   同一个 code 第二次提交直接在客户端拒绝，提示重新发起微信登录。
+5. `ios/Runner/Info.plist` URL Scheme 由占位符改为真实 AppID。
+6. `android/app/src/main/AndroidManifest.xml` 的 `<queries>` 增加 `com.tencent.mm`。
+7. 新增 `test/wechat_login_test.dart`：接口路径与 body、一次调用只发一次 HTTP、
+   同一 code 不二次提交、双凭证缺一不置登录态、以及普通接口仍重试的对照组。
 
 Android 正式构建建议：
 
@@ -298,13 +314,15 @@ flutter build apk --release `
 
 ## 十一、当前待确认项
 
+- [x] App 专用 BoltFox 登录接口的最终路径 —— `/Client/User/setWechatAuthorizLogin`（2026-07-29）。
+- [x] App 专用接口的请求和响应字段 —— 见第五节（swagger `WechatAuthorizLoginApiIn` /
+      `UserInfoDetailApiOut`）。
 - [ ] 微信开放平台移动应用是否已审核通过并开通微信登录。
 - [ ] 正式签名 `93d4d761713340c5645dc4faa378ddd1` 是否已登记。
 - [ ] 后端是否持有 AppID `wx4cf0c5f38a70d0bc` 对应的移动应用 AppSecret。
-- [ ] App 专用 BoltFox 登录接口的最终路径。
-- [ ] App 专用接口的请求和响应字段。
-- [ ] 后端是否使用 `/sns/oauth2/access_token`。
+- [ ] 后端是否使用 `/sns/oauth2/access_token`（而不是小程序的 `/sns/jscode2session`）。
 - [ ] iOS Bundle ID、Universal Link、AASA 配置。
+- [ ] 真机验收（本机无 Flutter SDK，未跑 `flutter analyze` / `flutter test` / 未编译）。
 
 ## 十二、信息来源
 

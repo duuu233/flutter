@@ -64,6 +64,10 @@
 ## 4. 有意的平台差异
 
 - 登录：小程序微信快捷登录；App 为邮箱体系 + 微信开放平台移动应用 OAuth。
+  两端**接口不同**：小程序发 `/Client/User/setWechatAppLogin`（授权手机号，带
+  `wxEncrypData` / `wxIvData`），App 发 `/Client/User/setWechatAuthorizLogin`（只发 OAuth `code`）。
+  App 侧对该接口关闭全部自动重试——微信 code 一次性，详见
+  `WECHAT_LOGIN_SETUP.md` 与 `../history/2026-07/2026-07-29-微信授权登录接通App专用接口.md`。
 - 相册选图：小程序使用微信选择媒体能力；Android App 使用系统 Photo Picker，只授权用户
   选中的图片，不申请整个媒体库读取权限。
 - 图片编辑：两端交互/输出规则一致，但 App 使用 Flutter 手势层、Canvas 和 isolate。

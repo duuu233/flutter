@@ -1041,6 +1041,13 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 已提交过的微信 code（FIFO，只留最近几条）。
+  ///
+  /// 微信 code 是一次性凭证：后端拿它换过一次 access_token 后，同一个 code 再换必被微信判
+  /// 40163。网络层已对该接口关掉全部自动重试，这里挡的是业务层复用——失败提示上连点重试、
+  /// 页面重建后拿旧 code 再调等。挡不住的话用户看到的是「微信登录失败」，排查方向全跑偏。
+  final Set<String> _consumedWeChatCodes = <String>{};
+
   /// 微信开放平台「移动应用微信登录」入口。
   ///
   /// [code] 由移动端微信 SDK 返回，只能使用一次；服务端负责用 AppSecret 换取微信身份并返回
@@ -1057,6 +1064,20 @@ class PhotoFrameState extends ChangeNotifier {
           ja: 'WeChat の認証コードが無効です。もう一度お試しください。',
         ),
       );
+    }
+    // 提交即视为已消费（成功与否都不能再发第二次），登记失败说明这个 code 已经发过了。
+    if (!_consumedWeChatCodes.add(authorizationCode)) {
+      return ActionFeedback(
+        success: false,
+        message: tr(
+          zh: '微信授权凭证已使用，请重新发起微信登录。',
+          en: 'This WeChat authorization has already been used. Please sign in with WeChat again.',
+          ja: 'この WeChat 認証は使用済みです。もう一度 WeChat でログインしてください。',
+        ),
+      );
+    }
+    if (_consumedWeChatCodes.length > 8) {
+      _consumedWeChatCodes.remove(_consumedWeChatCodes.first);
     }
 
     try {

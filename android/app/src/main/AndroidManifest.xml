@@ -94,5 +94,8 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
+        <!-- 微信授权登录：Android 11+（targetSdk≥30）的包可见性限制下，不声明这一条时
+             微信 SDK 的 isWXAppInstalled 恒为 false —— 表现是装了微信也提示「请先安装微信」。 -->
+        <package android:name="com.tencent.mm"/>
     </queries>
 </manifest>

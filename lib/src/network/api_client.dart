@@ -28,10 +28,15 @@ class ApiClient {
   /// 之前用顶层 http.get/post（每个请求新建一次性 Client），每次都重付
   /// TLS 握手（LTE 上 ~100–300ms）；投屏一批 5 张是「上传+下载 .bin」×5
   /// 共 10 次握手，白白多花 1~3s。设备帧/固件下载也共用此客户端。
-  final http.Client _http = http.Client();
+  http.Client _http = http.Client();
 
   /// 供网络层之外的裸下载（投屏 .bin、OTA 固件）复用同一连接池。
   http.Client get httpClient => _http;
+
+  /// 仅供测试替换底层客户端（断言「一次业务调用只发一次 HTTP 请求」等）。
+  /// 生产代码不要调用：全局单例换客户端会丢掉已建立的 keep-alive 连接。
+  @visibleForTesting
+  set httpClient(http.Client client) => _http = client;
 
   /// 网络层兜底文案按当前语言取（无 BuildContext，经 ApiSession 拿语言）。
   /// 之前是硬编码中文，英/日用户断网/超时时高频看到中文 toast。
@@ -126,12 +131,19 @@ class ApiClient {
   /// [retryOnTimeout]：超时后是否静默重试。超时 ≠ 请求未送达——服务端可能已执行、
   /// 只是响应没回来。**非幂等接口**（发验证码 / 写投屏记录 / 绑定设备）应传 false，
   /// 否则弱网下会重复副作用（验证码双发、记录重复）。连接失败（[IOException]，
-  /// 连接根本没建立、不可能有副作用）不受此参数影响，始终可重试。
+  /// 连接根本没建立、不可能有副作用）不受此参数影响，另见 [retryOnConnectionError]。
+  ///
+  /// [retryOnConnectionError]：连接层失败（[http.ClientException] / [IOException]）是否重试。
+  /// 绝大多数接口保持 true——连接没建立就不可能有副作用。**唯一例外是一次性凭证换登录态**
+  /// （微信授权 code）：连接可能是「请求已发出、响应途中断」，服务端已拿 code 找微信换过
+  /// access_token，而微信的 code 只能消费一次，重试必然收到 40163 invalid code，
+  /// 用户看到的是「微信登录失败」。此类接口两个开关都要传 false。
   Future<dynamic> postJson(
     String path, {
     Map<String, dynamic>? body,
     bool auth = true,
     bool retryOnTimeout = true,
+    bool retryOnConnectionError = true,
   }) async {
     // POST 也要把公共参数拼进 query string（body 仍为 JSON 业务字段）：后端按 query 里的 userToken
     // 鉴权，此前 postJson 未带 query 导致 addUserProduct 等已登录 POST 鉴权失败、绑定不上。
@@ -152,6 +164,7 @@ class ApiClient {
           )
           .timeout(ApiConfig.timeout),
       retryOnTimeout: retryOnTimeout,
+      retryOnConnectionError: retryOnConnectionError,
     );
   }
 
@@ -166,6 +179,7 @@ class ApiClient {
     Uri uri,
     Future<http.Response> Function() send, {
     bool retryOnTimeout = true,
+    bool retryOnConnectionError = true,
   }) async {
     var attempt = 0;
     while (true) {
@@ -185,7 +199,8 @@ class ApiClient {
         throw ApiException('NETWORK_TIMEOUT', _l10n.netTimeout);
       } on http.ClientException {
         // 连接层失败（DNS/拒连/连接中断）：请求未到达服务端，重试无副作用。
-        if (attempt < ApiConfig.networkRetryMax) {
+        // 例外见 [retryOnConnectionError]：一次性凭证接口不赌「连接中断=没送达」。
+        if (retryOnConnectionError && attempt < ApiConfig.networkRetryMax) {
           attempt++;
           await Future<void>.delayed(ApiConfig.networkRetryDelay);
           continue;
@@ -193,7 +208,7 @@ class ApiClient {
         throw ApiException('NETWORK_UNREACHABLE', _l10n.netConnectFailed);
       } on IOException {
         // SocketException / TLS 握手失败等，同上可安全重试。
-        if (attempt < ApiConfig.networkRetryMax) {
+        if (retryOnConnectionError && attempt < ApiConfig.networkRetryMax) {
           attempt++;
           await Future<void>.delayed(ApiConfig.networkRetryDelay);
           continue;

@@ -48,7 +48,7 @@ BoltStar 当前使用三套不同的远端服务：
 
 | 能力 | 接口 | 客户端方法 | 关键规则 |
 | --- | --- | --- | --- |
-| 微信移动应用登录 | `POST /Client/User/setWechatAppLogin` | `weChatMobileLogin` | 只提交 SDK 一次性 code |
+| 微信移动应用登录 | `POST /Client/User/setWechatAuthorizLogin` | `weChatMobileLogin` | 只提交 SDK 一次性 code；**关闭全部自动重试**（超时与连接中断都不重试），业务层还拒收已提交过的 code。小程序的 `setWechatAppLogin` 是另一条链路（授权手机号），App 不用 |
 | 邮箱注册 | `POST /Client/User/userRegister` | `userRegister` | `userEmail/verifyCode/password/confirmPassword` |
 | 邮箱登录 | `POST /Client/User/userLogin` | `userLogin` | 成功后写入 `ApiSession` |
 | 用户资料 | `GET /Client/User/getUserInfo` | `getUserInfo` | 昵称、头像、邮箱、用户 ID |
