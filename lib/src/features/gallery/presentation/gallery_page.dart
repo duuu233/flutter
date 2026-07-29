@@ -100,6 +100,20 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     _checkDeviceClearStatus();
   }
 
+  /// 下拉每次展开前只重拉设备接口，不复用上次进页时的设备列表，也不连带重拉整份图库。
+  Future<void> _refreshDeviceFiltersForMenu() async {
+    await state.refreshDevices();
+    if (!mounted) {
+      return;
+    }
+    final previous = _deviceFilter;
+    _ensureDeviceFilter();
+    setState(() {});
+    if (previous != _deviceFilter) {
+      _checkDeviceClearStatus();
+    }
+  }
+
   /// 设备筛选下拉的选项列表（对齐小程序 2026-07-29「筛选按设备ID」改动）：
   /// 以设备接口全量绑定设备为主（含刚绑定还没照片的），再并入「照片里带的设备ID、
   /// 但设备列表里没有的」（如已解绑设备的老照片）兜底；全程按设备ID去重——
@@ -278,7 +292,8 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// （设备被清空后图库自然为空）时，回退用设备列表第一台——正需靠它弹「重新上传」提醒；设备也没有则不查。
   /// 自增序号防切换竞态（查询期间又切了设备则丢弃旧结果），_clearModalShowing 防叠弹窗。
   Future<void> _checkDeviceClearStatus() async {
-    final userProductId = _deviceFilter ??
+    final userProductId =
+        _deviceFilter ??
         (state.devices.isNotEmpty ? state.devices.first.id : null);
     if (userProductId == null || userProductId.isEmpty) {
       return;
@@ -328,6 +343,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                 options: _filterOptions,
                 selectedId: _deviceFilter,
                 onSelected: _pickDeviceFilter,
+                onOpen: _refreshDeviceFiltersForMenu,
               ),
             ],
           ),
@@ -381,7 +397,8 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// 蒙层阻断式 loading（不可返回/不可点透），配合耗时的设备 BLE 操作。
   /// 统一走公共的 [AppLoadingDialog]（原来这里有一份私有实现，遮罩偏黑、文字还会被
   /// Flutter 渲染成黄色双下划线——dialog 路由下没有 Material 祖先）。
-  void _showBlockingLoading(String text) => AppLoadingDialog.show(context, text);
+  void _showBlockingLoading(String text) =>
+      AppLoadingDialog.show(context, text);
 
   void _dismissBlockingLoading() => AppLoadingDialog.hide(context);
 
@@ -428,8 +445,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       // 刷新失败且本地无数据 → 「加载失败 + 重试」（断网时不能误显示「还没有照片」）。
       body: !state.albumLoaded || !state.devicesLoaded
           ? const PageLoading()
-          : photos.isEmpty &&
-                (state.albumLoadError || state.devicesLoadError)
+          : photos.isEmpty && (state.albumLoadError || state.devicesLoadError)
           ? PageLoadError(onRetry: _reloadFromBackend)
           : photos.isEmpty
           ? _buildEmptyBody()
@@ -469,6 +485,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                         options: _filterOptions,
                         selectedId: _deviceFilter,
                         onSelected: _pickDeviceFilter,
+                        onOpen: _refreshDeviceFiltersForMenu,
                       ),
                     ],
                   ),
@@ -556,6 +573,7 @@ class _DeviceFilterChip extends StatefulWidget {
     required this.options,
     required this.selectedId,
     required this.onSelected,
+    required this.onOpen,
   });
 
   final String label;
@@ -565,6 +583,7 @@ class _DeviceFilterChip extends StatefulWidget {
   final List<_DeviceFilterOption> options;
   final String? selectedId;
   final ValueChanged<String> onSelected;
+  final Future<void> Function() onOpen;
 
   @override
   State<_DeviceFilterChip> createState() => _DeviceFilterChipState();
@@ -574,20 +593,38 @@ class _DeviceFilterChipState extends State<_DeviceFilterChip> {
   final LayerLink _link = LayerLink();
   final OverlayPortalController _menu = OverlayPortalController();
   bool _open = false;
+  bool _loading = false;
+  int _openSeq = 0;
 
-  void _toggle() {
+  Future<void> _toggle() async {
+    if (_open) {
+      _close();
+      return;
+    }
+    final seq = ++_openSeq;
     setState(() {
-      _open = !_open;
-      _open ? _menu.show() : _menu.hide();
+      _open = true;
+      _loading = true;
+      _menu.show();
     });
+    try {
+      // 每次展开都走真实设备接口；loading 期间不展示上一轮选项，避免把 state 当缓存使用。
+      await widget.onOpen();
+    } finally {
+      if (mounted && _open && seq == _openSeq) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   void _close() {
     if (!_open) {
       return;
     }
+    _openSeq++;
     setState(() {
       _open = false;
+      _loading = false;
       _menu.hide();
     });
   }
@@ -615,6 +652,7 @@ class _DeviceFilterChipState extends State<_DeviceFilterChip> {
               child: _FilterMenu(
                 options: widget.options,
                 selectedId: widget.selectedId,
+                loading: _loading,
                 onSelected: (id) {
                   _close();
                   widget.onSelected(id);
@@ -628,7 +666,8 @@ class _DeviceFilterChipState extends State<_DeviceFilterChip> {
           onTap: _toggle,
           child: Container(
             height: 31,
-            constraints: const BoxConstraints(minWidth: 88),
+            // 与小程序 340rpx 上限一致：名称再长也只能单行省略，不能把顶部栏撑宽/换行。
+            constraints: const BoxConstraints(minWidth: 88, maxWidth: 170),
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.78),
@@ -705,11 +744,13 @@ class _FilterMenu extends StatelessWidget {
   const _FilterMenu({
     required this.options,
     required this.selectedId,
+    required this.loading,
     required this.onSelected,
   });
 
   final List<_DeviceFilterOption> options;
   final String? selectedId;
+  final bool loading;
   final ValueChanged<String> onSelected;
 
   @override
@@ -736,12 +777,26 @@ class _FilterMenu extends StatelessWidget {
           // 无「全部相框」项：对齐小程序单设备图库模型（避免跨设备选中删错槽位）。
           // 选中态与回调都按设备ID（option.id），label 仅用于显示。
           children: [
-            for (final option in options)
-              _FilterOption(
-                label: option.label,
-                active: option.id == selectedId,
-                onTap: () => onSelected(option.id),
-              ),
+            if (loading)
+              const SizedBox(
+                height: 28,
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 13,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: Color(0xFFFF6A24),
+                    ),
+                  ),
+                ),
+              )
+            else
+              for (final option in options)
+                _FilterOption(
+                  label: option.label,
+                  active: option.id == selectedId,
+                  onTap: () => onSelected(option.id),
+                ),
           ],
         ),
       ),
@@ -783,9 +838,7 @@ class _FilterOption extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: active
-                  ? const Color(0xFFFF5F1F)
-                  : const Color(0xFF777E88),
+              color: active ? const Color(0xFFFF5F1F) : const Color(0xFF777E88),
               fontSize: 13,
               height: 1,
             ),
@@ -841,13 +894,12 @@ class _GalleryTile extends StatelessWidget {
                   // 3 列网格瓦片约 120lp，按物理像素解码：原图(≤1920 长边)解码位图
                   // ~11MB/张，一页 100 张远超 ImageCache 100MB 上限，滚动时反复
                   // 解码+重下载；限宽后 ~30 倍内存降幅，可全量驻留缓存。
-                  memCacheWidth:
-                      (140 * MediaQuery.devicePixelRatioOf(context)).round(),
+                  memCacheWidth: (140 * MediaQuery.devicePixelRatioOf(context))
+                      .round(),
                   // 磁盘缓存同样限宽：不设的话磁盘存的是服务端原图（≤1920 长边），
                   // 百张相册量级要占几十 MB，逐出后二次解码也更贵；瓦片场景 800 足够。
                   maxWidthDiskCache: 800,
-                  errorWidget: (context, url, error) =>
-                      const SizedBox.shrink(),
+                  errorWidget: (context, url, error) => const SizedBox.shrink(),
                 ),
               ),
             Align(
@@ -912,7 +964,10 @@ class _SelectCircle extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.white.withValues(alpha: 0.14),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.88), width: 1.5),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.88),
+          width: 1.5,
+        ),
       ),
     );
   }
@@ -1024,34 +1079,34 @@ class _CircleAction extends StatelessWidget {
       button: true,
       label: label,
       child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        width: 48,
-        height: 48,
-        decoration: BoxDecoration(
-          gradient: gradient,
-          color: color,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: shadowColor,
-              blurRadius: 13,
-              offset: const Offset(0, 6),
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 48,
+          height: 48,
+          decoration: BoxDecoration(
+            gradient: gradient,
+            color: color,
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: shadowColor,
+                blurRadius: 13,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Center(
+            child: Image.asset(
+              asset,
+              width: iconSize,
+              height: iconSize,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) =>
+                  Icon(fallback, color: Colors.white, size: iconSize),
             ),
-          ],
-        ),
-        child: Center(
-          child: Image.asset(
-            asset,
-            width: iconSize,
-            height: iconSize,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) =>
-                Icon(fallback, color: Colors.white, size: iconSize),
           ),
         ),
-      ),
       ),
     );
   }

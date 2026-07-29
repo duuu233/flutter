@@ -129,6 +129,22 @@ class _MinePageState extends State<MinePage> with RouteAware {
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
                             _FeatureCard(
+                              iconAsset: 'assets/images/mine-icon07.png',
+                              iconBackground: const Color(0xFFE7F2FF),
+                              fallbackIcon: Icons.devices_other_outlined,
+                              fallbackColor: const Color(0xFF4A98FF),
+                              title: AppL10n.of(context).mineMyDevices,
+                              subtitle: AppL10n.of(context).mineDeviceCountText(
+                                state.userLoaded || state.devicesLoaded,
+                                state.mineDeviceCount,
+                              ),
+                              onTap: () {
+                                Navigator.of(
+                                  context,
+                                ).pushNamed<void>(AppRoutes.figmaMyDevices);
+                              },
+                            ),
+                            _FeatureCard(
                               iconAsset: 'assets/images/mine-icon06.png',
                               iconBackground: const Color(0x1AFFAF8B),
                               fallbackIcon:
@@ -143,22 +159,6 @@ class _MinePageState extends State<MinePage> with RouteAware {
                                 Navigator.of(
                                   context,
                                 ).pushNamed<void>(AppRoutes.figmaGallery);
-                              },
-                            ),
-                            _FeatureCard(
-                              iconAsset: 'assets/images/mine-icon07.png',
-                              iconBackground: const Color(0xFFE7F2FF),
-                              fallbackIcon: Icons.devices_other_outlined,
-                              fallbackColor: const Color(0xFF4A98FF),
-                              title: AppL10n.of(context).mineMyDevices,
-                              subtitle: AppL10n.of(context).mineDeviceCountText(
-                                state.userLoaded || state.devicesLoaded,
-                                state.mineDeviceCount,
-                              ),
-                              onTap: () {
-                                Navigator.of(
-                                  context,
-                                ).pushNamed<void>(AppRoutes.figmaMyDevices);
                               },
                             ),
                             _FeatureCard(
@@ -372,8 +372,8 @@ class _Avatar extends StatelessWidget {
               imageUrl: avatarUrl,
               fit: BoxFit.cover,
               // 56lp 圆形头像，按物理像素解码，避免原图全尺寸位图进内存。
-              memCacheWidth:
-                  (56 * MediaQuery.devicePixelRatioOf(context)).round(),
+              memCacheWidth: (56 * MediaQuery.devicePixelRatioOf(context))
+                  .round(),
               errorWidget: (context, url, error) => _defaultAvatar(),
             )
           : _defaultAvatar(),

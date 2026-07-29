@@ -87,8 +87,11 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
           const SizedBox(height: 12),
           Center(
             child: SizedBox(
-              width: 240,
-              height: 240,
+              // 与 BindDeviceSearching 保持同一 280×280 尺寸。首台设备出现时页面会从
+              // searching 切到 found；此前这里是 240，导致同一 GIF 在“刚开始搜到设备”
+              // 的瞬间肉眼可见地缩小一圈。
+              width: 280,
+              height: 280,
               // 搜索期间雷达一直转（哪怕已经搜到设备）：下面的列表同步追加，两者并存才是
               // 「边搜边显示」。用的是搜索中页那张同款 gif，两页视觉连续、不闪一下静态图。
               child: widget.scanning
@@ -188,5 +191,4 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
       ),
     );
   }
-
 }

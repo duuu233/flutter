@@ -350,8 +350,9 @@ class FrameBleClient {
     final found = <DeviceIdentifier, ScanResult>{};
     final signatures = <DeviceIdentifier, String>{};
 
-    List<ScanResult> visible() => found.values.where(isAllowed).toList()
-      ..sort((a, b) => b.rssi.compareTo(a.rssi));
+    List<ScanResult> visible() =>
+        found.values.where(isAllowed).toList()
+          ..sort((a, b) => b.rssi.compareTo(a.rssi));
 
     // 收网信号。三种情况完成：until 命中、外部 stopScan、Dart 侧窗口到点。
     final done = Completer<void>();
@@ -367,20 +368,9 @@ class FrameBleClient {
     // 表现就是「退出重进后再也搜不了，非杀进程不可」）。
     _activeScanStop = finish;
 
-    // FlutterBluePlus.scanResults 是「重发最新值」的流：listen 的第一个事件必然是
-    // **上一轮**扫描留下的缓存列表，不丢掉的话新一轮会瞬间显示上一轮的设备
-    // ——用户点「刷新」时列表一成不变，观感就是刷新没生效；更糟的是那批 ScanResult
-    // 里的 BluetoothDevice 句柄已失效，照着它连接必然失败。
-    // 真实广播只可能在 startScan 之后到达，所以丢掉首个事件不会漏设备；
-    // 万一 FBP 哪天不再重发，被丢掉的也只是一个广播包，下一包立刻补回（开了
-    // continuousUpdates 后广播是连续的），失败模式安全。
-    var replayDropped = false;
-
-    final sub = FlutterBluePlus.scanResults.listen((list) {
-      if (!replayDropped) {
-        replayDropped = true;
-        return;
-      }
+    // onScanResults 不重放上一轮已经停止的扫描缓存，避免刷新瞬间把旧设备/失效句柄
+    // 当成本轮结果；相比手动丢首包，它也不会误丢本轮真正收到的第一批弱信号广播。
+    final sub = FlutterBluePlus.onScanResults.listen((list) {
       var changed = false;
       for (final r in list) {
         final id = r.device.remoteId;
@@ -434,6 +424,11 @@ class FrameBleClient {
         // 这是安卓弱信号设备「时常搜不到」的头号原因：默认设置下，首包若没带名字，
         // 后续带名字的包**根本不会送到 Dart 层**，上面的追溯放行也就永远等不到料。
         continuousUpdates: true,
+        continuousDivisor: 1,
+        // Android 明确使用最高占空比，并聚焦当前相框采用的 legacy 1M 广播，避免在
+        // 不需要的 PHY 间轮转；名称/厂商数据则由上面的持续重复回调累计。参数在 iOS 忽略。
+        androidScanMode: AndroidScanMode.lowLatency,
+        androidLegacy: true,
       );
       // 扫描窗口由 Dart 侧自己拿表计时（对齐小程序 subscriber.timer）。
       // 同时也把 timeout 传给了 startScan，让系统扫描自己也会停——两道保险，
@@ -467,7 +462,8 @@ class FrameBleClient {
       if ((entry.key & 0xFFFF) != 0xFFFF) {
         continue;
       }
-      if (FrameProtocol.parseAdvertising([0xFF, 0xFF, ...entry.value]) != null) {
+      if (FrameProtocol.parseAdvertising([0xFF, 0xFF, ...entry.value]) !=
+          null) {
         return true;
       }
     }

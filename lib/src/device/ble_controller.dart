@@ -333,6 +333,10 @@ class BleController extends ChangeNotifier {
     void Function(List<ScanResult> devices)? onUpdate,
     bool Function(List<ScanResult> devices)? until,
   }) async {
+    // 在任何 await 之前先换代：这不仅作废已经进入底层的旧扫描，也能作废仍卡在
+    // 产品白名单接口上的旧调用。否则页面退出时底层尚未起扫，stopScan 无从可停；
+    // 等接口回包后旧页面反而会在后台新开一轮扫描，重进/刷新便再次互相干扰。
+    final generation = ++_scanGeneration;
     // 已有在途扫描：**接管**它——先停掉、等它收网，再起自己这一轮。
     //
     // 旧实现是 `if (scanning) return results;`，即拿上一轮的存量结果直接返回。
@@ -343,6 +347,9 @@ class BleController extends ChangeNotifier {
     // 这个标记就永久为真，只能杀进程（用户反馈的正是这个）。
     // 现在：新一轮总是真的开始，且 [FrameBleClient.scan] 的收网不再依赖平台状态流。
     await _supersedeRunningScan();
+    if (generation != _scanGeneration) {
+      return const <ScanResult>[];
+    }
     scanning = true;
     // 上一轮的扫描结果必须清空后再扫。留着的话，「刚断开→立刻重连」这种时序里
     // matchScannedDevice 会匹配到上一轮的 ScanResult，把一个已失效的
@@ -350,12 +357,19 @@ class BleController extends ChangeNotifier {
     // 的另一半成因。
     results = const [];
     notifyListeners();
+    Future<List<ScanResult>>? run;
     try {
       final allowedNames = allowAll ? null : await _loadAllowedBroadcastIds();
-      final run = FrameBleClient.scan(
+      if (generation != _scanGeneration) {
+        return const <ScanResult>[];
+      }
+      run = FrameBleClient.scan(
         timeout: timeout,
         allowedNames: allowedNames,
         onUpdate: (list) {
+          if (generation != _scanGeneration) {
+            return;
+          }
           results = list;
           notifyListeners();
           if (onUpdate != null) {
@@ -365,17 +379,29 @@ class BleController extends ChangeNotifier {
         until: until,
       );
       _runningScan = run;
-      results = await run;
+      final scanned = await run;
+      if (generation != _scanGeneration) {
+        return const <ScanResult>[];
+      }
+      results = scanned;
       return results;
     } finally {
-      _runningScan = null;
-      scanning = false;
-      notifyListeners();
+      if (run != null && identical(_runningScan, run)) {
+        _runningScan = null;
+      }
+      // 旧轮次晚到的 finally 不能把新一轮的扫描状态关掉。
+      if (generation == _scanGeneration) {
+        scanning = false;
+        notifyListeners();
+      }
     }
   }
 
   /// 在途扫描的 future；[_supersedeRunningScan] 靠它等上一轮真正收网。
   Future<List<ScanResult>>? _runningScan;
+
+  /// 扫描代次：新扫描/主动停扫都会递增，用于作废网络等待期和 BLE 等待期的旧调用。
+  int _scanGeneration = 0;
 
   /// 停掉在途扫描并等它收完（无在途扫描时零开销）。
   ///
@@ -386,7 +412,12 @@ class BleController extends ChangeNotifier {
     if (running == null) {
       return;
     }
-    await FrameBleClient.stopScan();
+    try {
+      await FrameBleClient.stopScan().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 底层先同步触发 Dart 收网，再等待原生停扫；即便个别 ROM 的原生回调挂住，
+      // 也不能让刷新按钮永远卡死。
+    }
     try {
       await running.timeout(const Duration(seconds: 2));
     } catch (_) {
@@ -401,7 +432,26 @@ class BleController extends ChangeNotifier {
   /// 不再用 `scanning` 做前置短路：那个标记只反映**本控制器**发起的扫描，
   /// 而停扫的意图是「让射频安静下来」，无条件下发才对（底层 stopScan 本身幂等）。
   Future<void> stopScan() async {
-    await FrameBleClient.stopScan();
+    final generation = ++_scanGeneration;
+    final running = _runningScan;
+    try {
+      await FrameBleClient.stopScan().timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // stopScan 的 Dart 收网动作已同步执行；原生层不回调时最多等到这里，不能永久锁住 UI。
+    }
+    if (running != null) {
+      try {
+        await running.timeout(const Duration(seconds: 2));
+      } catch (_) {}
+    }
+    if (running != null && identical(_runningScan, running)) {
+      _runningScan = null;
+    }
+    // 若停扫期间已有更新一代的新扫描启动，不能用旧 stop 的收尾覆盖它。
+    if (generation == _scanGeneration) {
+      scanning = false;
+      notifyListeners();
+    }
   }
 
   /// 连接设备并读取设备信息。成功返回 null，失败返回错误文案。

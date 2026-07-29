@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -67,7 +69,20 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _startScan());
   }
 
+  @override
+  void dispose() {
+    // 系统返回键/iOS 侧滑不会经过「取消搜索」按钮；页面销毁时也必须立刻停扫，
+    // 否则 20s 扫描会留在后台占用射频，下一次进入容易与旧扫描互相干扰。
+    _scanSeq++;
+    _scanning = false;
+    unawaited(_ble.stopScan());
+    super.dispose();
+  }
+
   Future<void> _startScan() async {
+    if (!mounted) {
+      return;
+    }
     // 本轮扫描的编号；展示顺序表跟着一起重置（见 _applyScanResult）。
     final seq = ++_scanSeq;
     _scanOrder.clear();
@@ -168,7 +183,10 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       return;
     }
     for (final result in list) {
-      _scanOrder.putIfAbsent(result.device.remoteId.str, () => _scanOrder.length);
+      _scanOrder.putIfAbsent(
+        result.device.remoteId.str,
+        () => _scanOrder.length,
+      );
     }
     final ordered = [...list]
       ..sort(
