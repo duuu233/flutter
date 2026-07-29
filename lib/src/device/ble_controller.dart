@@ -333,9 +333,16 @@ class BleController extends ChangeNotifier {
     void Function(List<ScanResult> devices)? onUpdate,
     bool Function(List<ScanResult> devices)? until,
   }) async {
-    if (scanning) {
-      return results;
-    }
+    // 已有在途扫描：**接管**它——先停掉、等它收网，再起自己这一轮。
+    //
+    // 旧实现是 `if (scanning) return results;`，即拿上一轮的存量结果直接返回。
+    // 这正是「退出搜索页再进来搜不了、点刷新也没反应」的成因：从发现页按返回键
+    // 出去时没人停扫（页面此前也没有 dispose），20s 窗口还在跑，重进来的这一轮
+    // 于是原地返回上一轮的旧列表——页面瞬间画出一模一样的内容、`_scanning` 立刻置
+    // false，看上去就是「刷新键是死的」。而一旦上一轮因为任何原因永远结束不了，
+    // 这个标记就永久为真，只能杀进程（用户反馈的正是这个）。
+    // 现在：新一轮总是真的开始，且 [FrameBleClient.scan] 的收网不再依赖平台状态流。
+    await _supersedeRunningScan();
     scanning = true;
     // 上一轮的扫描结果必须清空后再扫。留着的话，「刚断开→立刻重连」这种时序里
     // matchScannedDevice 会匹配到上一轮的 ScanResult，把一个已失效的
@@ -345,7 +352,7 @@ class BleController extends ChangeNotifier {
     notifyListeners();
     try {
       final allowedNames = allowAll ? null : await _loadAllowedBroadcastIds();
-      results = await FrameBleClient.scan(
+      final run = FrameBleClient.scan(
         timeout: timeout,
         allowedNames: allowedNames,
         onUpdate: (list) {
@@ -357,21 +364,43 @@ class BleController extends ChangeNotifier {
         },
         until: until,
       );
+      _runningScan = run;
+      results = await run;
       return results;
     } finally {
+      _runningScan = null;
       scanning = false;
       notifyListeners();
+    }
+  }
+
+  /// 在途扫描的 future；[_supersedeRunningScan] 靠它等上一轮真正收网。
+  Future<List<ScanResult>>? _runningScan;
+
+  /// 停掉在途扫描并等它收完（无在途扫描时零开销）。
+  ///
+  /// 兜底超时是最后一道防线：万一 [FrameBleClient.scan] 因平台异常仍然挂住，
+  /// 也只是这一次多等 2 秒，绝不能重演「`scanning` 永久为真、必须杀进程」。
+  Future<void> _supersedeRunningScan() async {
+    final running = _runningScan;
+    if (running == null) {
+      return;
+    }
+    await FrameBleClient.stopScan();
+    try {
+      await running.timeout(const Duration(seconds: 2));
+    } catch (_) {
+      // 上一轮自己的 finally 会归位状态；等不到也照常开新一轮。
     }
   }
 
   /// 立刻停止在途扫描，保留已搜到的 [results]。
   ///
   /// 在途的 [scan] 会因此提前 return（已搜到的照常返回），它自己的 finally 负责把
-  /// `scanning` 归位并 notify，这里不抢着改状态。没在扫时是空操作。
+  /// `scanning` 归位并 notify，这里不抢着改状态。
+  /// 不再用 `scanning` 做前置短路：那个标记只反映**本控制器**发起的扫描，
+  /// 而停扫的意图是「让射频安静下来」，无条件下发才对（底层 stopScan 本身幂等）。
   Future<void> stopScan() async {
-    if (!scanning) {
-      return;
-    }
     await FrameBleClient.stopScan();
   }
 

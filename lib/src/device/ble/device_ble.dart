@@ -319,87 +319,186 @@ class FrameBleClient {
         .map((s) => s.trim().toUpperCase())
         .where((s) => s.isNotEmpty)
         .toList();
+
+    /// 这台设备是否该出现在结果里。
+    ///
+    /// 两条通路，命中任一即放行：
+    /// ① 广播名命中白名单（platformName / advName 都查，大小写不敏感、允许带前后缀）；
+    /// ② 广播厂商数据就是相框自己那套布局（见 [_looksLikeFrame]）。
+    ///
+    /// ② 是**专门为弱信号加的**：设备名多半装在 scan response 包里，而厂商数据在 ADV 包里，
+    /// 信号差时 scan response 丢包率明显更高——只认名字就会出现「设备明明在广播、
+    /// 列表里却始终没有它」。厂商数据能解析成相框广播（Company_ID=0xFFFF + 合法
+    /// Screen_Type + 电量≤100）时，它是不是相框已经没有悬念，不必再等名字包。
     bool isAllowed(ScanResult r) {
       if (allow.isEmpty) {
         return true;
       }
-      // name 与广播名都查：真机有时只在后续广播包里带上广播名。
       final name = '${r.device.platformName} ${r.advertisementData.advName}'
           .toUpperCase();
-      return allow.any((a) => name.contains(a));
+      if (allow.any((a) => name.contains(a))) {
+        return true;
+      }
+      return _looksLikeFrame(r);
     }
 
+    // 会话层收录**所有**上报的设备帧，白名单只在出结果时（visible）过滤——
+    // 对齐小程序 `bluetooth.js` 的 scan.foundMap + subscriberList 分工。
+    // 关键差别：旧实现在入口就 `if (!isAllowed) continue` 把设备丢掉，首包没带名字的设备
+    // 从此再无翻身机会（正是小程序当年「只搜到一台」的同款病灶）。这里先照单全收，
+    // 名字/厂商数据在后续任意一个广播包里补齐，这台设备就会**追溯性地**进入列表。
     final found = <DeviceIdentifier, ScanResult>{};
-    List<ScanResult> sorted() =>
-        found.values.toList()..sort((a, b) => b.rssi.compareTo(a.rssi));
+    final signatures = <DeviceIdentifier, String>{};
 
-    final earlyStop = Completer<void>();
+    List<ScanResult> visible() => found.values.where(isAllowed).toList()
+      ..sort((a, b) => b.rssi.compareTo(a.rssi));
+
+    // 收网信号。三种情况完成：until 命中、外部 stopScan、Dart 侧窗口到点。
+    final done = Completer<void>();
+    void finish() {
+      if (!done.isCompleted) {
+        done.complete();
+      }
+    }
+
+    // 登记为「当前在途扫描」，让 [stopScan] 能直接把这一轮叫停（不再拐弯去等
+    // FlutterBluePlus.isScanning 翻 false，那条流在部分安卓 ROM 上不补发，
+    // 一旦不补发这里就会永久挂住 —— 上层的 scanning 标记跟着永久为真，
+    // 表现就是「退出重进后再也搜不了，非杀进程不可」）。
+    _activeScanStop = finish;
+
+    // FlutterBluePlus.scanResults 是「重发最新值」的流：listen 的第一个事件必然是
+    // **上一轮**扫描留下的缓存列表，不丢掉的话新一轮会瞬间显示上一轮的设备
+    // ——用户点「刷新」时列表一成不变，观感就是刷新没生效；更糟的是那批 ScanResult
+    // 里的 BluetoothDevice 句柄已失效，照着它连接必然失败。
+    // 真实广播只可能在 startScan 之后到达，所以丢掉首个事件不会漏设备；
+    // 万一 FBP 哪天不再重发，被丢掉的也只是一个广播包，下一包立刻补回（开了
+    // continuousUpdates 后广播是连续的），失败模式安全。
+    var replayDropped = false;
 
     final sub = FlutterBluePlus.scanResults.listen((list) {
+      if (!replayDropped) {
+        replayDropped = true;
+        return;
+      }
       var changed = false;
-      var sawAllowedDevice = false;
       for (final r in list) {
-        if (!isAllowed(r)) {
-          continue;
-        }
-        sawAllowedDevice = true;
-        // 已收录的设备后续广播包继续刷新（RSSI/电量常在后续包才带全），但只有「新设备」才算变化，
-        // 避免纯 RSSI 抖动高频触发 onUpdate 刷屏（对齐小程序按展示签名判变化的意图）。
-        final existed = found.containsKey(r.device.remoteId);
-        found[r.device.remoteId] = r;
-        if (!existed) {
+        final id = r.device.remoteId;
+        // 展示签名（名称 + 厂商数据）：新设备、或名字/电量/屏型有变化才算「有变化」。
+        // 纯 RSSI 抖动不触发回调，否则开了 continuousUpdates 后每个广播包都会刷屏。
+        final sig = _displaySignature(r);
+        if (!found.containsKey(id) || signatures[id] != sig) {
           changed = true;
         }
+        found[id] = r; // RSSI 始终更新，保证最终排序准确
+        signatures[id] = sig;
       }
-      if (sawAllowedDevice) {
-        final current = sorted();
-        if (changed && onUpdate != null) {
-          try {
-            onUpdate(current);
-          } catch (_) {
-            // 页面回调自身异常不能中断扫描
-          }
+      if (!changed) {
+        return;
+      }
+      final current = visible();
+      if (current.isEmpty) {
+        return;
+      }
+      if (onUpdate != null) {
+        try {
+          onUpdate(current);
+        } catch (_) {
+          // 页面回调自身异常不能中断扫描
         }
-        if (!earlyStop.isCompleted && until != null) {
-          try {
-            if (until(current)) {
-              // 与小程序 discoverDevices(until) 一致：目标一出现就让等待方收网，
-              // finally 会统一停止系统扫描并清理订阅。
-              earlyStop.complete();
-            }
-          } catch (_) {
-            // 匹配器异常不能中断扫描，继续等待自然超时。
+      }
+      if (until != null && !done.isCompleted) {
+        try {
+          if (until(current)) {
+            // 与小程序 discoverDevices(until) 一致：目标一出现就让等待方收网，
+            // finally 会统一停止系统扫描并清理订阅。
+            finish();
           }
+        } catch (_) {
+          // 匹配器异常不能中断扫描，继续等待自然超时。
         }
       }
     });
+
+    Timer? window;
     try {
       // 首次安装必现的「第一次连不上、再点一次就好」就断在这里：权限对话框
       // 刚点「允许」，Android 的蓝牙适配器仍处于 unauthorized/turningOn，
       // FBP 的原生侧也才刚被这第一次调用惰性初始化——立刻 startScan 要么抛错、
       // 要么整窗扫描零结果，6 秒后报「未搜索到该设备」。等适配器真正 on 再扫。
       await _awaitAdapterReady();
-      await FlutterBluePlus.startScan(timeout: timeout);
-      // 扫描自然到点(isScanning 置 false) 或 目标命中(earlyStop) 先到者为准。
-      await Future.any([
-        FlutterBluePlus.isScanning.where((s) => s == false).first,
-        earlyStop.future,
-      ]);
+      await FlutterBluePlus.startScan(
+        timeout: timeout,
+        // 每个广播包都上报，而不是每台设备只报第一包（FBP 默认 false）。
+        // 对齐小程序 startBluetoothDevicesDiscovery 的 `allowDuplicatesKey: true`。
+        // 这是安卓弱信号设备「时常搜不到」的头号原因：默认设置下，首包若没带名字，
+        // 后续带名字的包**根本不会送到 Dart 层**，上面的追溯放行也就永远等不到料。
+        continuousUpdates: true,
+      );
+      // 扫描窗口由 Dart 侧自己拿表计时（对齐小程序 subscriber.timer）。
+      // 同时也把 timeout 传给了 startScan，让系统扫描自己也会停——两道保险，
+      // 但**收网与否只认这里**，不依赖任何来自平台的状态流。
+      window = Timer(timeout, finish);
+      await done.future;
     } finally {
+      window?.cancel();
+      if (identical(_activeScanStop, finish)) {
+        _activeScanStop = null;
+      }
       await sub.cancel();
       try {
         await FlutterBluePlus.stopScan();
       } catch (_) {}
     }
-    return sorted();
+    return visible();
+  }
+
+  /// 当前在途扫描的「收网」回调；无在途扫描时为 null。见 [scan] / [stopScan]。
+  static void Function()? _activeScanStop;
+
+  /// 广播厂商数据是否就是相框自己那套布局（6.10.7）：Company_ID 必须是 0xFFFF，
+  /// 且其后的 Screen_Type / Device_ID / 电量能被 [FrameProtocol.parseAdvertising] 解出来。
+  ///
+  /// 卡死 Company_ID=0xFFFF 是为了收紧误判：只看「能不能解析」的话，任意 6 字节里
+  /// 约 0.5% 会碰巧满足 Screen_Type∈{1,2,3} 且电量≤100。加上 Company_ID 这道闸后，
+  /// 非相框设备几乎不可能进来；真进来了也只是多列一行，连接时没有 FF00 服务会被拒。
+  static bool _looksLikeFrame(ScanResult r) {
+    for (final entry in r.advertisementData.manufacturerData.entries) {
+      if ((entry.key & 0xFFFF) != 0xFFFF) {
+        continue;
+      }
+      if (FrameProtocol.parseAdvertising([0xFF, 0xFF, ...entry.value]) != null) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// 一台设备的「展示签名」：名称 + 厂商数据。用来判断这一包广播有没有带来
+  /// 用户看得见的新信息（名字补齐 / 电量变化 / 屏型出现），RSSI 不参与。
+  static String _displaySignature(ScanResult r) {
+    final buffer = StringBuffer()
+      ..write(r.device.platformName)
+      ..write('|')
+      ..write(r.advertisementData.advName);
+    for (final entry in r.advertisementData.manufacturerData.entries) {
+      buffer
+        ..write('|')
+        ..write(entry.key)
+        ..write(':')
+        ..write(entry.value.join(','));
+    }
+    return buffer.toString();
   }
 
   /// 立刻停止在途扫描（不等满 timeout）。
   ///
-  /// [scan] 内部等的是「`isScanning` 转 false 或 `until` 命中」，所以外部停扫会让那个 await
-  /// 当场收网、把**已经搜到的**结果正常 return 出去（不是异常、不是空列表）——绑定页
-  /// 「搜索中直接点立即绑定」就靠这个：扫描与连接抢同一路射频，必须先停扫再连。
+  /// 在途的 [scan] 会当场收网，把**已经搜到的**结果正常 return 出去（不是异常、不是空列表）
+  /// ——绑定页「搜索中直接点立即绑定」就靠这个：扫描与连接抢同一路射频，必须先停扫再连。
   static Future<void> stopScan() async {
+    // 先叫停 Dart 侧的等待，再停系统扫描。顺序很重要：反过来的话，若
+    // FlutterBluePlus.stopScan 抛错/挂住，那一轮 scan 就还在傻等。
+    _activeScanStop?.call();
     try {
       await FlutterBluePlus.stopScan();
     } catch (_) {
