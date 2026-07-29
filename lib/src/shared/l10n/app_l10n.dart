@@ -1030,7 +1030,7 @@ class AppL10n {
     'フォトフレームとの接続を維持しています',
   );
 
-  // 蓝牙信号五档（对齐小程序 rssiToSignalText：极强/强/正常/偏弱/弱）。
+  // 蓝牙信号原始五档文案；搜索列表会按产品口径保守下调一级（见 rssiToSignalLevel）。
   String get signalVeryStrong => _pick('极强', 'Excellent', '非常に強い');
   String get signalStrong => _pick('强', 'Strong', '強い');
   String get signalNormal => _pick('正常', 'Fair', '普通');

@@ -21,8 +21,9 @@ class BindDeviceSearching extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const BindDebugEntryCard(),
-          const SizedBox(height: 16),
-          const Spacer(flex: 2),
+          // 与发现结果页使用完全相同的顶部间距和 280×280 占位。首台设备出现后
+          // searching → found 只替换下方内容，GIF 的顶部坐标与尺寸都不再跳动。
+          const SizedBox(height: 12),
           const Center(
             child: SizedBox(
               width: 280,
@@ -55,7 +56,11 @@ class BindDeviceSearching extends StatelessWidget {
             // 用带花括号的 void 闭包，不用 `=> showBindDeviceScanHelp(context)`：
             // 后者返回 Future<void>，要靠 `??` 求两个函数类型的最小公共上界才能
             // 匹配上非空的 VoidCallback。能过，但没必要把编译结果押在类型推断上。
-            onTap: onHelp ?? () { showBindDeviceScanHelp(context); },
+            onTap:
+                onHelp ??
+                () {
+                  showBindDeviceScanHelp(context);
+                },
           ),
           const SizedBox(height: 16),
         ],

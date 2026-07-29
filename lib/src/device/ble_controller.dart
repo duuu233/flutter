@@ -192,8 +192,11 @@ class BleController extends ChangeNotifier {
     return result.device.remoteId.str;
   }
 
-  /// 把蓝牙信号强度(RSSI，单位 dBm，越接近 0 越强)归到用户能看懂的档位，
-  /// 对齐小程序 `utils/bluetooth.js rssiToSignalText` 的五档划分。
+  /// 把蓝牙信号强度(RSSI，单位 dBm，越接近 0 越强)归到用户能看懂的展示档位。
+  ///
+  /// 现场 RSSI 容易受瞬时尖峰影响，展示口径与小程序统一保守下调一级：
+  /// 原「极强」显示为「强」，其余依次下调，最弱档仍封底为「弱」。
+  /// 此方法只供 UI 展示，不参与连接门槛或重试策略。
   /// 文字由 UI 层按当前语言渲染（见 bind_device_flow 的 signal 映射）；
   /// RSSI 缺省(0)或非法(≥0)时返回 null，由页面兜底成「--」。
   static BleSignalLevel? rssiToSignalLevel(int rssi) {
@@ -201,15 +204,12 @@ class BleController extends ChangeNotifier {
       return null;
     }
     if (rssi >= -55) {
-      return BleSignalLevel.veryStrong;
-    }
-    if (rssi >= -67) {
       return BleSignalLevel.strong;
     }
-    if (rssi >= -78) {
+    if (rssi >= -67) {
       return BleSignalLevel.normal;
     }
-    if (rssi >= -88) {
+    if (rssi >= -78) {
       return BleSignalLevel.weak;
     }
     return BleSignalLevel.veryWeak;
