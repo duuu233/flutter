@@ -893,6 +893,13 @@ class AppL10n {
   // ── 绑定设备 ──
   String get bindDeviceTitle => _pick('绑定设备', 'Bind Device', 'デバイスの追加');
   String get bindNearbyDevices => _pick('附近设备', 'Nearby Devices', '近くのデバイス');
+  /// 「边搜边显示」时替换「附近设备」的标题：搜索仍在继续，同时报已找到几台。
+  String bindScanningFound(int count) => _pick(
+    '正在搜索…已找到 $count 台',
+    'Searching… $count found',
+    '検索中…$count 台見つかりました',
+  );
+  String get bindStopScan => _pick('停止搜索', 'Stop Searching', '検索を停止');
   String get bindBindNow => _pick('立即绑定', 'Bind Now', '今すぐ追加');
   String get bindNotFoundTitle =>
       _pick('未发现设备', 'No Device Found', 'デバイスが見つかりません');
@@ -1099,6 +1106,8 @@ class AppL10n {
   String get devCarouselRandom => _pick('随机轮播', 'Shuffle', 'ランダム再生');
   String get devCarouselSequential => _pick('顺序轮播', 'In Order', '順番再生');
   String get devDeviceId => _pick('设备ID', 'Device ID', 'デバイスID');
+  /// 屏幕物理分辨率（如 680*960），详情页紧跟「设备ID」。
+  String get devResolution => _pick('分辨率', 'Resolution', '解像度');
   String get devDeviceMemory => _pick('设备内存', 'Storage', 'ストレージ');
   String get devOtaUpgrade => _pick('OTA升级', 'Firmware Update', 'OTAアップデート');
   String devFirmwareNewVersion(String version) => _pick(

@@ -364,6 +364,17 @@ class BleController extends ChangeNotifier {
     }
   }
 
+  /// 立刻停止在途扫描，保留已搜到的 [results]。
+  ///
+  /// 在途的 [scan] 会因此提前 return（已搜到的照常返回），它自己的 finally 负责把
+  /// `scanning` 归位并 notify，这里不抢着改状态。没在扫时是空操作。
+  Future<void> stopScan() async {
+    if (!scanning) {
+      return;
+    }
+    await FrameBleClient.stopScan();
+  }
+
   /// 连接设备并读取设备信息。成功返回 null，失败返回错误文案。
   Future<String?> connect(ScanResult result) async {
     // 重入护栏：并发连接（列表快速双击 / 自动重连撞上手动点连接）会让两次

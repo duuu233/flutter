@@ -394,6 +394,19 @@ class FrameBleClient {
     return sorted();
   }
 
+  /// 立刻停止在途扫描（不等满 timeout）。
+  ///
+  /// [scan] 内部等的是「`isScanning` 转 false 或 `until` 命中」，所以外部停扫会让那个 await
+  /// 当场收网、把**已经搜到的**结果正常 return 出去（不是异常、不是空列表）——绑定页
+  /// 「搜索中直接点立即绑定」就靠这个：扫描与连接抢同一路射频，必须先停扫再连。
+  static Future<void> stopScan() async {
+    try {
+      await FlutterBluePlus.stopScan();
+    } catch (_) {
+      // 已经停了 / 适配器不可用都不该抛给调用方，停扫本身是幂等意图。
+    }
+  }
+
   /// 等蓝牙适配器进入 `on` 再放行扫描。
   ///
   /// 已经是 `on` 时零等待（绝大多数调用），只有刚授权 / 刚开蓝牙的冷启动窗口

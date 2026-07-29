@@ -34,12 +34,32 @@ class BindDeviceFlowPage extends StatefulWidget {
 enum _Stage { permission, scanning, found, notFound }
 
 class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
+  /// 扫描窗口（2026-07-29 由 12s 放宽到 20s，与小程序 `bind.js SCAN_TIMEOUT_MS` 同值）。
+  ///
+  /// 依据：设备广播间隔约 3s，7 台同时在场时 12s 实测经常搜不全（少 1~2 台）——每台设备一个
+  /// 窗口内只有几次现身机会，还要和别台抢同一条广播信道。20s 给每台约 6~7 次机会，基本能扫全。
+  /// 之所以敢把窗口拉这么长，是因为交互同时改成了「搜到一个显示一个」：用户不用等满窗口——
+  /// 列表边搜边追加，看到自己那台就能直接点「立即绑定」（[_stopScanForBind] 会立刻停扫转入连接）。
+  /// 旧交互下列表要等窗口跑满才整批出现，单方面拉长窗口只会让人干等，这也是两件事必须一起改的原因。
+  static const Duration _scanTimeout = Duration(seconds: 20);
+
   final BleController _ble = BleController.instance;
   // 初始为「权限确认」安静占位态：系统授权框必须**先于**扫描动画单独出现，
   // 不能压在「正在搜索」雷达页上同屏弹出（产品要求：先授权，后设备操作）。
   _Stage _stage = _Stage.permission;
   List<ScanResult> _results = const [];
   bool _binding = false;
+
+  /// 扫描是否仍在进行。与 [_stage] 分开存：搜到第一台后 stage 就切到 `found`（列表开始显示），
+  /// 但扫描还在继续，雷达要继续转、列表要继续追加——这两件事同时为真才是「边搜边显示」。
+  bool _scanning = false;
+
+  /// 扫描轮次。每次重新搜索/停扫都自增，在途扫描的增量与最终结果按 seq 对不上就直接丢弃，
+  /// 避免上一轮的结果回写到这一轮的列表（对齐小程序 `bind.js` 的 `scanSeq`）。
+  int _scanSeq = 0;
+
+  /// 设备 id → 首次被搜到的序号，用来把展示顺序钉死（见 [_applyScanResult]）。
+  final Map<String, int> _scanOrder = <String, int>{};
 
   @override
   void initState() {
@@ -48,10 +68,14 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   }
 
   Future<void> _startScan() async {
+    // 本轮扫描的编号；展示顺序表跟着一起重置（见 _applyScanResult）。
+    final seq = ++_scanSeq;
+    _scanOrder.clear();
     // 权限阶段：页面保持只有导航栏的安静占位，等系统授权框（定位/附近设备）先行处理完。
     setState(() {
       _stage = _Stage.permission;
       _results = const [];
+      _scanning = false;
     });
     // 蓝牙开启/权限校验（对齐小程序 utils/bluetooth.js openAdapter + describeAdapterError）：
     // 区分「环境不支持/通道缺失」「权限没给」「蓝牙没开」，分别给明确引导，而不是把所有
@@ -97,29 +121,96 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       return;
     }
     // 权限/开关全就绪，才切入「正在搜索」态开始设备操作（雷达动画 + BLE 扫描同时开始）。
-    setState(() => _stage = _Stage.scanning);
-    // 扫描：对齐小程序 bind.js —— 白名单只留目标相框（2 个尺寸），12s 窗口给「同时 2 台及以上」
-    // 每台足够广播机会被搜到。与小程序 bind.wxml 一致：整段扫描期间保持「正在搜索」页
-    //（列表由 `!scanning && devices.length` 门控），扫描结束后才一次性展示搜到的设备列表。
+    setState(() {
+      _stage = _Stage.scanning;
+      _scanning = true;
+    });
+    // 扫描：对齐小程序 bind.js —— 白名单只留目标相框（2 个尺寸），窗口见 [_scanTimeout]。
+    // onUpdate：搜到一台就渲染一台（边搜边显示），不必等满窗口；扫描期间雷达继续转。
     List<ScanResult> list;
     try {
-      list = await _ble.scan(timeout: const Duration(seconds: 12));
+      list = await _ble.scan(
+        timeout: _scanTimeout,
+        onUpdate: (devices) => _applyScanResult(seq, devices),
+      );
     } catch (error) {
-      if (!mounted) {
-        return;
+      if (!mounted || seq != _scanSeq) {
+        return; // 本轮已被停扫/重搜作废
       }
       debugPrint('[Bind] 扫描失败: $error');
       _toast(AppL10n.of(context).bindScanFailed);
-      setState(() => _stage = _Stage.notFound);
+      setState(() {
+        _scanning = false;
+        _stage = _Stage.notFound;
+      });
       return;
     }
-    if (!mounted) {
+    if (!mounted || seq != _scanSeq) {
+      // 停扫（_stopScanForBind/_cancelScan）或重新搜索已让本轮作废：结果直接丢弃，
+      // 否则会把已经停下的那一刻的列表又盖回去，甚至把用户已选中的那台挤动。
       return;
     }
+    _applyScanResult(seq, list);
     setState(() {
-      _results = list;
-      _stage = list.isEmpty ? _Stage.notFound : _Stage.found;
+      _scanning = false;
+      _stage = _results.isEmpty ? _Stage.notFound : _Stage.found;
     });
+  }
+
+  /// 把一次扫描结果（增量或最终）渲染到列表；作废轮次的结果直接丢弃。
+  ///
+  /// 展示顺序按「首次被搜到的先后」钉死，新设备一律追加到末尾：
+  /// [BleController.scan] 回吐的是**按 RSSI 降序**的列表，边搜边渲染时信号一抖动整列表就重排，
+  /// 行与行来回跳，用户指头底下那台可能在按下的瞬间换成了别台（误绑）。首见序号一旦分配就不再变，
+  /// 列表只增不重排，这才是「下面同步新增已搜出的设备」该有的观感（对齐小程序 applyScanResult）。
+  void _applyScanResult(int seq, List<ScanResult> list) {
+    if (!mounted || seq != _scanSeq) {
+      return;
+    }
+    for (final result in list) {
+      _scanOrder.putIfAbsent(result.device.remoteId.str, () => _scanOrder.length);
+    }
+    final ordered = [...list]
+      ..sort(
+        (a, b) => (_scanOrder[a.device.remoteId.str] ?? 0).compareTo(
+          _scanOrder[b.device.remoteId.str] ?? 0,
+        ),
+      );
+    setState(() {
+      _results = ordered;
+      // 搜到第一台就切到发现页开始显示列表（雷达仍在转、扫描仍在继续），不必等满窗口。
+      if (_scanning && ordered.isNotEmpty) {
+        _stage = _Stage.found;
+      }
+    });
+  }
+
+  /// 立刻结束搜索但**保留已搜到的列表**（与 [_cancelScan] 不同，后者还会退出本页）。
+  ///
+  /// 两个入口：① 用户点「停止搜索」；② 搜索还没结束就点了「立即绑定」——此时必须先停扫再连：
+  ///   · 扫描与连接抢同一路射频，边扫边连本就是「连不上」的主因之一；
+  ///   · seq 自增后在途扫描的结果不再回写列表，用户选中的那台不会在连接过程中被新搜到的设备挤动。
+  /// 必须 **await**：[FrameBleClient.connect] 自己不等扫描停下，没停干净就连
+  /// 等于让连接去和自己的扫描抢射频（`_bind` 因此 await 本方法再 connect）。
+  Future<void> _stopScanForBind() async {
+    if (!_scanning) {
+      return;
+    }
+    _scanSeq++; // 使在途扫描的增量与最终结果失效
+    setState(() {
+      _scanning = false;
+      _stage = _results.isEmpty ? _Stage.notFound : _Stage.found;
+    });
+    await _ble.stopScan();
+  }
+
+  /// 「取消搜索」：停扫并退出绑定流程（对齐小程序 `bind.js cancelScan`）。
+  /// 不停扫就走，20s 窗口会在后台继续占着射频，妨碍下一次进来重扫。
+  void _cancelScan() {
+    _scanSeq++;
+    _scanning = false;
+    _ble.stopScan();
+    Navigator.maybePop(context);
   }
 
   /// 把扫描结果构造成发现页的展示项：名称 + 「尺寸 · 电量XX% · 信号XX」副标题
@@ -203,12 +294,20 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     if (_binding) {
       return; // 绑定进行中，忽略重复点击，避免重复绑定
     }
+    // _binding 必须在**任何 await 之前**同步置起：下面 await 停扫期间按钮照样点得动，
+    // 晚一步置起就等于给连点留了一个空窗（与 AI 发送那处同款病灶，见 ai_chat_page 的 _guardedSend）。
+    setState(() => _binding = true);
+    // 搜索中直接点绑定：先停扫**并等它真停下**再连（见 [_stopScanForBind]）。
+    await _stopScanForBind();
+    if (!mounted) {
+      return;
+    }
     final index = _results.indexWhere((r) => r.device.remoteId.str == id);
     if (index < 0) {
+      setState(() => _binding = false); // 选中项已不在列表（列表刷新过），放开按钮让用户重选
       return;
     }
     final result = _results[index];
-    setState(() => _binding = true);
 
     // 真机设备：先连接读取真实信息（电量/播放/屏幕/固件），连接失败则中止绑定（无模拟兜底）。
     // Bug19：全程只保留这一个 loading，直到跳转设备列表前一刻才 hide——
@@ -349,12 +448,16 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
           body: const SizedBox.expand(),
         );
       case _Stage.scanning:
-        return BindDeviceSearching(onCancel: () => Navigator.maybePop(context));
+        // 还没搜到任何一台的空窗期：整页雷达 + 「正在搜索」。搜到第一台就切到 found 页
+        // （雷达继续转 + 列表同步追加），不再整段扫描期都停在这一页。
+        return BindDeviceSearching(onCancel: _cancelScan);
       case _Stage.notFound:
         return BindDeviceNotFound(onRetry: _startScan);
       case _Stage.found:
         return BindDeviceFound(
           entries: [for (final result in _results) _entryOf(result)],
+          scanning: _scanning,
+          onStopScan: _stopScanForBind,
           onRefresh: _startScan,
           onBindId: _bind,
           // 长按某台设备进入硬件联调调试台（调试台自行扫描连接，此处仅提供进入入口）。

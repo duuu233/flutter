@@ -257,6 +257,9 @@ class _AiChatPageState extends State<AiChatPage> {
   bool _chatReady = true;
 
   bool _sending = false;
+
+  /// 已点发送、但请求还没真正发出（正在确认服务协议 / 建会话）。见 [_guardedSend]。
+  bool _submitting = false;
   bool _banned = false;
   bool _voiceMode = false;
   bool _showTools = false;
@@ -607,7 +610,9 @@ class _AiChatPageState extends State<AiChatPage> {
 
   /// 「新对话」按钮：**只把界面退回空态，不建会话**（见 [_createSession]）。
   void _startNewSession() {
-    if (_sending) {
+    // _submitting 同 _sending 一起挡：上一条正卡在「建会话」空窗时点＋，界面会退回空态，
+    // 而那条消息随后仍会发进刚建出来的会话里——一次操作两个矛盾结果（见 [_guardedSend]）。
+    if (_sending || _submitting) {
       return;
     }
     if (isPristineNewSession) {
@@ -620,8 +625,33 @@ class _AiChatPageState extends State<AiChatPage> {
 
   // ── 发送 ─────────────────────────────────────────────────
 
+  /// 发送入口的**同步**闸（2026-07-29）。
+  ///
+  /// 病灶：[_sending] 要等 [_sendChat] 内真正发出请求那一刻（追加 loading 气泡时）才置起，而在
+  /// 它之前还隔着「AI 服务协议确认 + 建会话」最多两次网络往返 —— **首次进入 AI 在空态发第一条
+  /// 消息**时这段空窗最长（必须先 POST /session/new），期间发送按钮仍是亮的、[_onSendTap] 开头的
+  /// 守卫里 `_sending` 仍是 false，用户连点就能把同一条消息发出去好几遍（[_createSession] 只去重了
+  /// 「建会话」，没去重「发送」）。
+  ///
+  /// 这里在任何 await 之前先同步置起 [_submitting]（与 [_sending] 一起决定按钮灰不灰），
+  /// 无论成功/失败/提前 return 都由 finally 归位。返回 false = 被闸挡下。
+  Future<bool> _guardedSend(Future<void> Function() task) async {
+    if (_sending || _submitting || _banned) {
+      return false;
+    }
+    setState(() => _submitting = true);
+    try {
+      await task();
+    } finally {
+      if (mounted) {
+        setState(() => _submitting = false);
+      }
+    }
+    return true;
+  }
+
   Future<void> _onSendTap() async {
-    if (_sending || _banned) {
+    if (_sending || _submitting || _banned) {
       return;
     }
     final text = _input.text.trim();
@@ -635,31 +665,34 @@ class _AiChatPageState extends State<AiChatPage> {
       );
       return;
     }
-    if (!await _ensureAiServiceConsent(sendAttempt: true) || !mounted) {
-      return; // 草稿和待发图片保持不变；下次发送继续引导
-    }
-    // 还有图片在上传：等 URL 就绪再发，否则 image_urls 会缺图
-    if (_pending.any((item) => item.uploading)) {
-      AppToast.show(context, AppL10n.of(context).aiImageUploading);
-      return;
-    }
-    final images = [
-      for (final item in _pending)
-        if (item.url.isNotEmpty) _AiImage(url: item.url, pad: item.pad),
-    ];
-    // 先把会话建出来，**再清输入框**。顺序不能反：建会话可能失败（网络异常 / 20013 会话已达上限），
-    // 先清的话用户打的字和选的图就白没了 —— 而「首次发送才建会话」之后，每轮新对话的第一条都走这。
-    if (_sessionId.isEmpty) {
-      await _createSession();
-      if (!mounted || _sessionId.isEmpty) {
-        return; // 错误提示已由 _createSession 弹出；草稿原样留着，用户可直接重发
+    await _guardedSend(() async {
+      if (!await _ensureAiServiceConsent(sendAttempt: true) || !mounted) {
+        return; // 草稿和待发图片保持不变；下次发送继续引导
       }
-    }
-    setState(() {
-      _input.clear();
-      _pending.clear();
+      // 还有图片在上传：等 URL 就绪再发，否则 image_urls 会缺图
+      if (_pending.any((item) => item.uploading)) {
+        AppToast.show(context, AppL10n.of(context).aiImageUploading);
+        return;
+      }
+      final images = [
+        for (final item in _pending)
+          if (item.url.isNotEmpty) _AiImage(url: item.url, pad: item.pad),
+      ];
+      // 先把会话建出来，**再清输入框**。顺序不能反：建会话可能失败（网络异常 / 20013 会话已达上限），
+      // 先清的话用户打的字和选的图就白没了 —— 而「首次发送才建会话」之后，每轮新对话的第一条都走这。
+      if (_sessionId.isEmpty) {
+        await _createSession();
+        if (!mounted || _sessionId.isEmpty) {
+          return; // 错误提示已由 _createSession 弹出；草稿原样留着，用户可直接重发
+        }
+      }
+      setState(() {
+        _input.clear();
+        _pending.clear();
+      });
+      // await：让 _submitting 一直持有到请求真正发出（_sendChat 内 _sending 接棒），中间不留空窗
+      await _sendChat(text, images: images);
     });
-    await _sendChat(text, images: images);
   }
 
   /// 发送对话 / 一键生图 / 图文多模态。先把用户消息（图片气泡 + 文字气泡）上屏，
@@ -1055,7 +1088,8 @@ class _AiChatPageState extends State<AiChatPage> {
     if (key == null || !mounted) {
       return;
     }
-    await _sendChat(_ai.genMessage(key), styleKey: key);
+    // 同样过一遍同步闸（见 [_guardedSend]）：这条路径也要先建会话，连点样式一样会重复发。
+    await _guardedSend(() => _sendChat(_ai.genMessage(key), styleKey: key));
   }
 
   // ── 消息长按菜单 ──────────────────────────────────────────
@@ -1519,6 +1553,11 @@ class _AiChatPageState extends State<AiChatPage> {
         children: [
           if (isUser)
             Flexible(child: _buildUserBubble(message))
+          // 「正在加载」气泡（只有三个跳动的点）不跟着铺满屏宽：一个占满整行的空白大框看着
+          // 像出错/空回复。Flexible + 内部 width:null 让它收缩到刚好包住三个点；内容一到
+          // （content/images 上屏，loading 转 false）就回到铺满的正常 AI 气泡。
+          else if (message.loading)
+            Flexible(child: _buildAiBubble(message))
           else
             Expanded(child: _buildAiBubble(message)),
         ],
@@ -1533,7 +1572,8 @@ class _AiChatPageState extends State<AiChatPage> {
       behavior: HitTestBehavior.opaque,
       onLongPress: () => _onBubbleLongPress(message),
       child: Container(
-        width: double.infinity,
+        // loading 态按内容收缩（见 [_buildBubbleRow]），其余照常铺满一行。
+        width: message.loading ? null : double.infinity,
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         decoration: BoxDecoration(
           color: Colors.white,
@@ -1795,7 +1835,13 @@ class _AiChatPageState extends State<AiChatPage> {
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: (_input.text.trim().isNotEmpty && !_sending && !_banned)
+                    // _submitting：已点发送但请求还没发出（建会话中）也要置灰，
+                    // 否则这段空窗能连点重复发送（见 [_guardedSend]）。
+                    color:
+                        (_input.text.trim().isNotEmpty &&
+                            !_sending &&
+                            !_submitting &&
+                            !_banned)
                         ? const Color(0xFFFF5F1F)
                         : const Color(0xFFE2E6EE),
                     borderRadius: BorderRadius.circular(20),
@@ -1806,6 +1852,7 @@ class _AiChatPageState extends State<AiChatPage> {
                       color:
                           (_input.text.trim().isNotEmpty &&
                               !_sending &&
+                              !_submitting &&
                               !_banned)
                           ? Colors.white
                           : const Color(0xFF9AA1AB),

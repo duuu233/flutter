@@ -100,16 +100,94 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     _checkDeviceClearStatus();
   }
 
+  /// 设备筛选下拉的选项列表（对齐小程序 2026-07-29「筛选按设备ID」改动）：
+  /// 以设备接口全量绑定设备为主（含刚绑定还没照片的），再并入「照片里带的设备ID、
+  /// 但设备列表里没有的」（如已解绑设备的老照片）兜底；全程按设备ID去重——
+  /// 设备名允许重复，两台同名设备必须各占一项、各筛各的照片。
+  List<_DeviceFilterOption> get _filterOptions {
+    final options = <_DeviceFilterOption>[];
+    void add(String id, String label, String serialTail) {
+      if (id.isEmpty || options.any((option) => option.id == id)) {
+        return;
+      }
+      options.add(
+        _DeviceFilterOption(
+          id: id,
+          label: label,
+          rawLabel: label,
+          serialTail: serialTail,
+        ),
+      );
+    }
+
+    for (final device in state.devices) {
+      add(device.id, device.name, _serialTail(device.serialNumber));
+    }
+    for (final photo in state.myAlbum) {
+      add(
+        photo.deviceId,
+        photo.deviceName.isEmpty ? photo.deviceId : photo.deviceName,
+        '',
+      );
+    }
+    return _disambiguateLabels(options);
+  }
+
+  /// 序列号（AA:BB:…:FF）去分隔符后的尾 4 位（如 D428）；无序列号返回 ''。
+  static String _serialTail(String serial) {
+    final normalized = serial.replaceAll(RegExp(r'[:\-\s]'), '');
+    return normalized.length <= 4
+        ? normalized
+        : normalized.substring(normalized.length - 4);
+  }
+
+  /// 同名设备消歧：筛选值已按设备ID区分，但下拉里两个一样的名字用户无法分辨，
+  /// 重名时给 label 补序列号尾 4 位，取不到序列号则按出现次序补 (2)/(3)。
+  /// rawLabel 保留原始设备名：无 deviceId 老照片的按名兜底匹配要用它（见 [_photos]）。
+  static List<_DeviceFilterOption> _disambiguateLabels(
+    List<_DeviceFilterOption> options,
+  ) {
+    final counts = <String, int>{};
+    for (final option in options) {
+      counts[option.label] = (counts[option.label] ?? 0) + 1;
+    }
+    final seen = <String, int>{};
+    final result = <_DeviceFilterOption>[];
+    for (final option in options) {
+      final nth = (seen[option.label] ?? 0) + 1;
+      seen[option.label] = nth;
+      if ((counts[option.label] ?? 0) < 2) {
+        result.add(option);
+        continue;
+      }
+      final suffix = option.serialTail.isNotEmpty ? option.serialTail : '$nth';
+      result.add(
+        _DeviceFilterOption(
+          id: option.id,
+          label: '${option.label}($suffix)',
+          rawLabel: option.rawLabel,
+        ),
+      );
+    }
+    return result;
+  }
+
   /// 默认选中单台设备（对齐小程序：无「全部相框」，进入即定位到一台设备的图库）。
-  /// 优先当前已连接设备（删除需连接该设备）；否则有照片的首台；再否则设备列表首台。
+  /// 优先当前已连接设备（删除需连接该设备）；否则有照片的首台；再否则设备列表首台；
+  /// 设备列表为空但有照片兜底项（已解绑设备老照片）时选首个兜底项。
   void _ensureDeviceFilter() {
+    final options = _filterOptions;
     if (_deviceFilter != null &&
-        state.devices.any((device) => device.id == _deviceFilter)) {
-      return; // 已选且设备仍存在
+        options.any((option) => option.id == _deviceFilter)) {
+      return; // 已选且仍在筛选项里（含照片兜底项）
+    }
+    if (options.isEmpty) {
+      _deviceFilter = null;
+      return;
     }
     final devices = state.devices;
     if (devices.isEmpty) {
-      _deviceFilter = null;
+      _deviceFilter = options.first.id;
       return;
     }
     final connected = devices.where((device) => device.connected);
@@ -126,18 +204,37 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
 
   List<AlbumPhoto> get _photos {
     final all = state.myAlbum;
-    if (_deviceFilter == null) {
+    final filter = _deviceFilter;
+    if (filter == null) {
       return all; // 仅在无设备时命中（此时相册本就为空）
     }
-    return all.where((photo) => photo.deviceId == _deviceFilter).toList();
+    // 老照片可能没有 deviceId（后端未回 userProductId）：按当前筛选项的原始设备名兜底，
+    // 避免这些照片永远筛不出来；同名设备下它们会两台里都出现——无 ID 无从区分，接受降级。
+    final active = _filterOptions.where((option) => option.id == filter);
+    final rawLabel = active.isEmpty ? '' : active.first.rawLabel;
+    return all
+        .where(
+          (photo) =>
+              photo.deviceId == filter ||
+              (photo.deviceId.isEmpty &&
+                  rawLabel.isNotEmpty &&
+                  photo.deviceName == rawLabel),
+        )
+        .toList();
   }
 
   String get _filterLabel {
-    if (_deviceFilter != null) {
-      return state.deviceName(_deviceFilter!);
+    final options = _filterOptions;
+    final filter = _deviceFilter;
+    if (filter != null) {
+      final active = options.where((option) => option.id == filter);
+      if (active.isNotEmpty) {
+        return active.first.label;
+      }
+      return state.deviceName(filter);
     }
-    return state.devices.isNotEmpty
-        ? state.deviceName(state.devices.first.id)
+    return options.isNotEmpty
+        ? options.first.label
         : AppL10n.of(context).galFrame;
   }
 
@@ -228,7 +325,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
               const Spacer(),
               _DeviceFilterChip(
                 label: _filterLabel,
-                devices: state.devices,
+                options: _filterOptions,
                 selectedId: _deviceFilter,
                 onSelected: _pickDeviceFilter,
               ),
@@ -369,7 +466,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                       const Spacer(),
                       _DeviceFilterChip(
                         label: _filterLabel,
-                        devices: state.devices,
+                        options: _filterOptions,
                         selectedId: _deviceFilter,
                         onSelected: _pickDeviceFilter,
                       ),
@@ -423,6 +520,27 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   }
 }
 
+/// 设备筛选下拉的一项（对齐小程序 list.js 的 `{ label, rawLabel, value }`）。
+///
+/// [id] 是后端设备ID（userProductId），**筛选与查询一律用它**：设备名允许重复，
+/// 按名筛会把两台同名设备的照片混在一起。[label] 仅作展示（重名时带序列号尾号），
+/// [rawLabel] 保留原始设备名，供「无 deviceId 老照片」的按名兜底匹配（见 [_GalleryPageState._photos]）。
+class _DeviceFilterOption {
+  const _DeviceFilterOption({
+    required this.id,
+    required this.label,
+    required this.rawLabel,
+    this.serialTail = '',
+  });
+
+  final String id;
+  final String label;
+  final String rawLabel;
+
+  /// 序列号尾 4 位，仅在重名消歧时用于拼 label（见 [_GalleryPageState._disambiguateLabels]）。
+  final String serialTail;
+}
+
 /// 设备筛选胶囊 + 下拉菜单（小程序 `.filter-btn` / `.filter-menu`，rpx ÷ 2）。
 ///
 /// **不是**底部弹层：小程序是贴着胶囊右下角展开的下拉菜单（`.filter-wrap` 相对定位、
@@ -435,13 +553,16 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
 class _DeviceFilterChip extends StatefulWidget {
   const _DeviceFilterChip({
     required this.label,
-    required this.devices,
+    required this.options,
     required this.selectedId,
     required this.onSelected,
   });
 
   final String label;
-  final List<DeviceItem> devices;
+
+  /// 下拉项：取自 [_GalleryPageState._filterOptions]（按设备ID去重、重名已消歧），
+  /// 不再直接吃 `state.devices`——那样既丢掉已解绑设备的老照片兜底项，同名设备也无法分辨。
+  final List<_DeviceFilterOption> options;
   final String? selectedId;
   final ValueChanged<String> onSelected;
 
@@ -492,7 +613,7 @@ class _DeviceFilterChipState extends State<_DeviceFilterChip> {
               followerAnchor: Alignment.topRight,
               offset: const Offset(0, 4),
               child: _FilterMenu(
-                devices: widget.devices,
+                options: widget.options,
                 selectedId: widget.selectedId,
                 onSelected: (id) {
                   _close();
@@ -582,12 +703,12 @@ class _FilterArrow extends StatelessWidget {
 /// 小程序 `.filter-menu`：宽 105、白 0.9、1px 白边、圆角 6、上下留白 4/6。
 class _FilterMenu extends StatelessWidget {
   const _FilterMenu({
-    required this.devices,
+    required this.options,
     required this.selectedId,
     required this.onSelected,
   });
 
-  final List<DeviceItem> devices;
+  final List<_DeviceFilterOption> options;
   final String? selectedId;
   final ValueChanged<String> onSelected;
 
@@ -613,12 +734,13 @@ class _FilterMenu extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           // 无「全部相框」项：对齐小程序单设备图库模型（避免跨设备选中删错槽位）。
+          // 选中态与回调都按设备ID（option.id），label 仅用于显示。
           children: [
-            for (final device in devices)
+            for (final option in options)
               _FilterOption(
-                label: device.name,
-                active: device.id == selectedId,
-                onTap: () => onSelected(device.id),
+                label: option.label,
+                active: option.id == selectedId,
+                onTap: () => onSelected(option.id),
               ),
           ],
         ),

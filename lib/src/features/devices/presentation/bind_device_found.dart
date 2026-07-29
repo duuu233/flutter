@@ -27,22 +27,34 @@ class BindDeviceEntry {
 
 /// 绑定设备-发现设备页：展示搜索到的设备并发起绑定，对应 UI 稿「绑定设备-发现设备」。
 ///
-/// 单选逻辑对齐小程序 `bind.js`：默认选中信号最强那台（列表已按 RSSI 降序，第 0 台即最强），
+/// 单选逻辑对齐小程序 `bind.js`：默认选中**最先搜到**那台（列表按首见先后排，第 0 台即最先），
 /// 用户点选后保留其选择；底部「立即绑定」绑定当前选中项；长按某行进入该设备的硬件联调调试台。
+///
+/// [scanning]=true 时本页是「边搜边显示」态：雷达继续转、标题显示已找到台数、隐藏重新搜索按钮
+/// （还在搜，重搜没意义）、多出一个「停止搜索」文字链。此时也能直接点「立即绑定」，
+/// 编排页会先停扫再连。
 class BindDeviceFound extends StatefulWidget {
   const BindDeviceFound({
     super.key,
     this.entries = const [],
+    this.scanning = false,
     this.onBindId,
     this.onRefresh,
+    this.onStopScan,
     this.onDebugId,
   });
 
   final List<BindDeviceEntry> entries;
 
+  /// 扫描是否仍在进行（决定雷达转不转、标题文案、是否显示「停止搜索」）。
+  final bool scanning;
+
   /// 绑定回调（按选中设备 id），编排页据此映射回真实的 `ScanResult`。
   final ValueChanged<String>? onBindId;
   final VoidCallback? onRefresh;
+
+  /// 「停止搜索」：立刻收手，保留已搜到的列表（不退出本页）。
+  final VoidCallback? onStopScan;
 
   /// 长按某台设备进入硬件联调调试台（对齐小程序 `openDebug`）。
   final ValueChanged<String>? onDebugId;
@@ -58,25 +70,33 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
   @override
   Widget build(BuildContext context) {
     final entries = widget.entries;
-    // 默认选中信号最强那台（列表按 RSSI 降序，首台即最强）；用户选过的 id 若仍在列表里则保留，
+    final l10n = AppL10n.of(context);
+    // 默认选中最先搜到那台（列表按首见先后排，首台即最先）；用户选过的 id 若仍在列表里则保留，
     // 避免增量刷新（搜出一个显示一个）时选中项来回跳（对齐小程序 applyScanResult 的选中保持）。
     final selectedId = entries.any((e) => e.id == _selectedId)
         ? _selectedId
         : (entries.isNotEmpty ? entries.first.id : '');
 
     return FigmaScreen(
-      title: AppL10n.of(context).bindDeviceTitle,
+      title: l10n.bindDeviceTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const BindDebugEntryCard(),
           const SizedBox(height: 12),
-          const Center(
+          Center(
             child: SizedBox(
               width: 240,
               height: 240,
-              child: FigmaBluetoothRadar(state: FigmaRadarState.found),
+              // 搜索期间雷达一直转（哪怕已经搜到设备）：下面的列表同步追加，两者并存才是
+              // 「边搜边显示」。用的是搜索中页那张同款 gif，两页视觉连续、不闪一下静态图。
+              child: widget.scanning
+                  ? const Image(
+                      image: AssetImage('assets/images/search-devices.gif'),
+                      fit: BoxFit.contain,
+                    )
+                  : const FigmaBluetoothRadar(state: FigmaRadarState.found),
             ),
           ),
           const SizedBox(height: 20),
@@ -84,7 +104,9 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
             children: [
               Expanded(
                 child: Text(
-                  AppL10n.of(context).bindNearbyDevices,
+                  widget.scanning
+                      ? l10n.bindScanningFound(entries.length)
+                      : l10n.bindNearbyDevices,
                   style: const TextStyle(
                     color: Color(0xFF2A2B2B),
                     fontSize: 18,
@@ -93,19 +115,21 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                   ),
                 ),
               ),
-              IconButton(
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints.tightFor(
-                  width: 28,
-                  height: 28,
+              // 还在搜的时候不给「重新搜索」：列表正在自己长，重搜只会把已搜到的清光重来。
+              if (!widget.scanning)
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 28,
+                    height: 28,
+                  ),
+                  icon: const Icon(
+                    Icons.refresh_rounded,
+                    color: Color(0xFFFF6A24),
+                    size: 24,
+                  ),
+                  onPressed: widget.onRefresh,
                 ),
-                icon: const Icon(
-                  Icons.refresh_rounded,
-                  color: Color(0xFFFF6A24),
-                  size: 24,
-                ),
-                onPressed: widget.onRefresh,
-              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -134,10 +158,28 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
               ),
             ),
           ),
+          // 搜索中：仍可随时收手停扫（已搜到的列表保留），不必等满窗口。
+          if (widget.scanning)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: widget.onStopScan,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Text(
+                  l10n.bindStopScan,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF2A2B2B),
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
       bottom: FigmaHomePrimaryButton(
-        label: AppL10n.of(context).bindBindNow,
+        label: l10n.bindBindNow,
         // 「立即绑定」文字加粗对齐小程序 bind.wxss 的 .primary-action(font-weight:700)。
         fontWeight: FontWeight.w700,
         onPressed: selectedId.isEmpty

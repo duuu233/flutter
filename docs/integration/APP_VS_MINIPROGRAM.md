@@ -22,17 +22,17 @@
 | 首页 | `pages/home` | `features/home` | ✅ | 已绑定/未绑定、多设备轮播、头像、投屏与绑定入口一致 |
 | 登录 | `pages/login` | `features/account` | 🔶 | 小程序微信快捷登录；App 支持邮箱和移动应用微信登录 |
 | 我的 | `pages/mine` | `features/mine` | ✅ | 资料、计数、图库、设备、投屏记录、指南和设置入口一致 |
-| 绑定设备 | `subpackages/device/bind` | `features/devices/.../bind_device_flow.dart` | ✅ | 只允许 0x01 完整 6 字节 ID 判重/入库；广播短 ID 与 BLE 句柄不兜底 |
+| 绑定设备 | `subpackages/device/bind` | `features/devices/.../bind_device_flow.dart` | ✅⚠️ | 只允许 0x01 完整 6 字节 ID 判重/入库；广播短 ID 与 BLE 句柄不兜底。**2026-07-29 起「搜到一个显示一个」**：扫描窗口 12s→20s（广播间隔 3s，7 台同时在场 12s 搜不全），搜索期间雷达继续转 + 列表按**首次搜到的先后**追加（不按 RSSI 重排，防误绑）+ 标题报台数 + 「停止搜索」；搜索中点「立即绑定」先停扫并等射频安静再连。⚠️本机无 Flutter SDK，未编译/未真机 |
 | 设备列表 | `subpackages/device/list` | `devices_page.dart` / `my_devices_page.dart` | ✅ | 列表、选择、连接/断开、投屏和重命名一致 |
-| 设备详情 | `subpackages/device/detail` | `device_details_page.dart` | ✅ | 连接、投屏、轮播、清空、删除和 OTA 入口一致 |
+| 设备详情 | `subpackages/device/detail` | `device_details_page.dart` | ✅⚠️ | 连接、投屏、轮播、清空、删除和 OTA 入口一致；**2026-07-29 起「设备ID」下方新增分辨率行**（如 `680*960`，连上取 0x01 真机宽高 → 后端记录宽高 → `--`）。分辨率是产品静态属性，**不随连接状态置 `--`**；两端都不由 `screenType` 反查（会臆造尺寸）。⚠️本机无 Flutter SDK，未编译/未真机 |
 | BLE 调试 | `subpackages/device/debug` | `ble_debug_page.dart` | 🔶 | 两端均保留工程调试能力，release 用户入口受控 |
 | 轮播 | `subpackages/device/slideshow` | `carousel_settings_page.dart` | ✅ | 断线重连、0x10 模式/间隔与失败回滚一致 |
 | OTA | `subpackages/device/ota` | `ota_upgrade_page.dart` | ✅⚠️ | 两端当前源码流程一致；小程序新协议文档与两端源码冲突，修正文档前不可据其改协议 |
 | 投屏预览 | `subpackages/projection/preview` | `cast_preview_page.dart` | ✅⚠️ | 2026-07-25 起使用常驻编辑层；横竖取景、多图切换、旋转和 Canvas 烘焙规则一致，仍需真机回归 |
 | 投屏过程 | `subpackages/projection/result` | `projection_service.dart` / `casting_progress_page.dart` | ✅ | 服务端六色帧、部分成功、空间检查、记录回写与 BLE 图传一致 |
 | 投屏记录 | `subpackages/projection/records` | `cast_management_figma_page.dart` | ✅ | 成功/失败分页、再次投屏、删除与重入刷新一致 |
-| 图库 | `subpackages/album/list` | `gallery_page.dart` | ✅ | 设备筛选、批量删除、清空提示、0x24 刷屏和跨设备保护一致 |
-| AI 星宝 | `subpackages/ai` | `features/ai` | ✅⚠️ | 会话、图文消息及按用户 ID 隔离的 AI 服务协议确认已对齐；两端正式入口均关闭，语音输入仍为 App 占位 |
+| 图库 | `subpackages/album/list` | `gallery_page.dart` | ✅⚠️ | 设备筛选、批量删除、清空提示、0x24 刷屏和跨设备保护一致；**2026-07-29 起下拉筛选按后端设备ID（非设备名）**，设备名可重复，同名两台各占一项、各筛各的照片，重名时 label 补序列号尾 4 位消歧；已解绑设备的老照片按 ID 保留兜底筛选项。⚠️本机无 Flutter SDK，未编译/未真机 |
+| AI 星宝 | `subpackages/ai` | `features/ai` | ✅⚠️ | 会话、图文消息及按用户 ID 隔离的 AI 服务协议确认已对齐；两端正式入口均关闭，语音输入仍为 App 占位。**2026-07-29 起发送入口加同步闸**（`_guardedSend`/`_submitting`）：治「首次在空态发第一条时按钮不及时变灰、连点重复发送」（`_sending` 要等请求真正发出才置起，前面还隔着协议确认+建会话）；加载中气泡（三个跳点）不再铺满屏宽。⚠️本机无 Flutter SDK，未编译/未真机 |
 | 设置 | `subpackages/settings/index` | `settings_page.dart` | ✅ | 联系、用户/隐私/AI 服务协议、退出、注销和失败留页一致；App 协议正文为四语种 |
 | 个人资料 | `subpackages/settings/profile` | `profile_page.dart` | ✅ | 进入刷新、头像本地预览与保存时提交一致 |
 | 邮箱 | `bind-email/change-email` | `bind_email_*` / `modify_email_page.dart` | ✅ | 验证码和 `changeUserEmail` 参数一致 |

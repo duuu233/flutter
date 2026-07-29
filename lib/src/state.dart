@@ -103,6 +103,8 @@ class DeviceItem {
     required this.playbackMode,
     required this.carouselIntervalSeconds,
     required this.carouselEnabled,
+    this.screenWidth = 0,
+    this.screenHeight = 0,
     this.isUpdate = 0,
     this.newVersionNo = '',
     this.downloadPath = '',
@@ -143,6 +145,14 @@ class DeviceItem {
   FramePlaybackMode playbackMode;
   int carouselIntervalSeconds;
   bool carouselEnabled;
+
+  // ── 屏幕物理像素（后端记录 `width`/`height` 原样保留，0=未下发）─────────────
+  /// 详情页「分辨率」在**未连接**时的取值来源。
+  ///
+  /// 为什么不直接用 [screenType] 反查 `FrameProtocol.screenTypes`：[_screenTypeFromSize] 在后端
+  /// 没下发尺寸时会**回落 5.89 寸**，反查就会显示一个臆造的 `680*960`。原始宽高为 0 就老实显示 `--`。
+  int screenWidth;
+  int screenHeight;
 
   // ── 连接后由真机 0x01(readDeviceInfo) 回填的实时内存（对齐小程序 applyConnectedDevice
   //    的 usedMemory/totalMemory）。真机容量最多 95 槽，超出 int 位掩码(最多 32)的表示范围，
@@ -2820,6 +2830,9 @@ class PhotoFrameState extends ChangeNotifier {
       // 连接复用 / 扫描匹配时据此按型号一票否决，防跨型号串台；只影响记录与该防护，
       // 图传尺寸走的是连上后读到的 info.screenType，不受此处影响。
       screenType: _screenTypeFromSize(data['width'], data['height']),
+      // 原始宽高另存一份：屏型是「归一化后的枚举」，未下发时会回落 589，不能拿来展示分辨率。
+      screenWidth: _asInt(data['width']),
+      screenHeight: _asInt(data['height']),
       batteryLevel: 0,
       charging: false,
       connected: false,
