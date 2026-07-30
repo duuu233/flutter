@@ -15,6 +15,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 
+import '../../../device/ble/ble_ab_benchmark.dart';
 import '../../../device/ble/ble_tuning.dart';
 import '../../../device/ble/device_ble.dart';
 import '../../../device/ble/frame_protocol.dart';
@@ -34,6 +35,28 @@ class _BlePerfPageState extends State<BlePerfPage> {
 
   bool _busy = false;
   String _status = '';
+
+  // ── ⚠️ 临时：安卓原生 vs 现有(FBP) 连接对照实验 ──────────────
+  // 定版选定一种实现后，本区块所有字段/方法/`_abCard()` 与 ble_ab_benchmark.dart
+  // 一并删除（清单见 docs/history/2026-07/2026-07-30-安卓原生连接AB对比.md）。
+  BleAbTarget? _abTarget;
+  final BleTrialStats _abFbp = BleTrialStats('fbp');
+  final BleTrialStats _abNative = BleTrialStats('native');
+  BleTrialResult? _abLast;
+  bool _abBusy = false;
+
+  /// 每轮先清直连缓存，逼 FBP 走完整扫描——否则它命中快路径几乎瞬时完成，
+  /// 与原生探针的完整扫描不在同一起跑线，混在一起统计没有意义。
+  bool _abClearCache = true;
+
+  /// 原生侧旋钮：硬件 ScanFilter（+ MATCH_MODE_AGGRESSIVE 才生效）。
+  bool _abUseFilter = false;
+
+  /// 原生侧旋钮：一上来就 autoConnect（弱信号唯一真正管用的牌，现有实现排在最后打）。
+  bool _abAutoConnect = false;
+
+  /// 原生侧旋钮：复现现有实现「停扫后 120ms 沉淀」的那段延迟；关掉即「扫到即连」。
+  bool _abSettle = false;
 
   // 连接间隔自检结果
   BleRttStats? _rttIdle;
@@ -222,6 +245,118 @@ class _BlePerfPageState extends State<BlePerfPage> {
     }
   }
 
+  // ── ⚠️ 临时：连接对照实验的动作 ──────────────────────────
+
+  /// 扫一轮，让用户点选被测目标。刻意不依赖后端设备列表：对照实验只关心射频与协议栈，
+  /// 少一个网络依赖就少一个干扰源。
+  Future<void> _pickAbTarget() async {
+    setState(() {
+      _abBusy = true;
+      _status = '正在扫描在场相框…';
+    });
+    try {
+      final found = await BleAbBenchmark.discoverTargets();
+      if (!mounted) return;
+      if (found.isEmpty) {
+        setState(() => _status = '没扫到相框。确认设备已开机、且没有被别的 App 连着。');
+        return;
+      }
+      final picked = await showDialog<BleAbTarget>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('选择被测设备'),
+          children: [
+            for (final r in found)
+              SimpleDialogOption(
+                onPressed: () {
+                  final ad = BleController.advertisingOf(r);
+                  Navigator.pop(
+                    ctx,
+                    BleAbTarget(
+                      serial: ad?.deviceId ?? '',
+                      name: BleController.displayName(r),
+                      screenCode: ad?.screenType ?? 0,
+                    ),
+                  );
+                },
+                child: Text(
+                  '${BleController.displayName(r)}\n'
+                  '${BleController.advertisingOf(r)?.deviceId ?? '无厂商数据'}  rssi=${r.rssi}',
+                  style: const TextStyle(fontSize: 13, height: 1.4),
+                ),
+              ),
+          ],
+        ),
+      );
+      if (!mounted || picked == null) return;
+      if (picked.serial.isEmpty) {
+        setState(() => _status = '这台广播里没有厂商数据，拿不到设备 ID，换一台再试。');
+        return;
+      }
+      setState(() {
+        _abTarget = picked;
+        _status = '目标已选定：${picked.label}';
+      });
+    } catch (error) {
+      if (mounted) setState(() => _status = '扫描失败：$error');
+    } finally {
+      if (mounted) setState(() => _abBusy = false);
+    }
+  }
+
+  /// 跑一次对照。[native] 决定走哪条路径——页面上就是两个按钮。
+  Future<void> _runAbTrial({required bool native}) async {
+    final target = _abTarget;
+    if (target == null || _abBusy) return;
+    setState(() {
+      _abBusy = true;
+      _status = native ? '原生路径连接中…' : '现有路径连接中…';
+    });
+    try {
+      final result = native
+          ? await BleAbBenchmark.runNativeTrial(
+              target: target,
+              useScanFilter: _abUseFilter,
+              autoConnect: _abAutoConnect,
+              settleMs: _abSettle ? 120 : 0,
+            )
+          : await BleAbBenchmark.runFbpTrial(
+              target: target,
+              clearDirectCache: _abClearCache,
+            );
+      if (!mounted) return;
+      setState(() {
+        (native ? _abNative : _abFbp).results.add(result);
+        _abLast = result;
+        _status = result.summary;
+      });
+    } finally {
+      if (mounted) setState(() => _abBusy = false);
+    }
+  }
+
+  void _clearAbStats() {
+    setState(() {
+      _abFbp.clear();
+      _abNative.clear();
+      _abLast = null;
+      _status = '对照数据已清空';
+    });
+  }
+
+  Future<void> _copyAbReport() async {
+    await Clipboard.setData(
+      ClipboardData(
+        text: BleAbBenchmark.report(
+          target: _abTarget,
+          fbp: _abFbp,
+          native: _abNative,
+        ),
+      ),
+    );
+    if (mounted) setState(() => _status = '对照报告已复制到剪贴板');
+  }
+
   // ── UI ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -230,7 +365,7 @@ class _BlePerfPageState extends State<BlePerfPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 40),
         children: [
-          if (_busy || _status.isNotEmpty) ...[
+          if (_busy || _abBusy || _status.isNotEmpty) ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(12),
@@ -240,7 +375,7 @@ class _BlePerfPageState extends State<BlePerfPage> {
               ),
               child: Row(
                 children: [
-                  if (_busy) ...[
+                  if (_busy || _abBusy) ...[
                     const SizedBox(
                       width: 14,
                       height: 14,
@@ -259,6 +394,8 @@ class _BlePerfPageState extends State<BlePerfPage> {
             ),
             const SizedBox(height: 12),
           ],
+          _abCard(),
+          const SizedBox(height: 12),
           _linkCard(),
           const SizedBox(height: 12),
           _connIntervalCard(),
@@ -300,6 +437,166 @@ class _BlePerfPageState extends State<BlePerfPage> {
           Expanded(
             child: Text(v, style: TextStyle(fontSize: 13, color: color ?? const Color(0xFF2A2D32))),
           ),
+        ],
+      ),
+    );
+  }
+
+  /// ⚠️ 临时：安卓原生 vs 现有(FBP) 连接对照。定版后整卡删除。
+  ///
+  /// 用法：选目标 → 交替按两个按钮各若干次 → 看成功率与「失败停在哪一步」。
+  /// **两个按钮要交替按、不要一口气按满一边**：射频环境是会漂的，
+  /// 分段按能让两条路径共享同一段环境，否则比的是「前五分钟 vs 后五分钟」。
+  Widget _abCard() {
+    final target = _abTarget;
+    final canRun = target != null && !_abBusy;
+    return _card(
+      title: '⓪ 连接对照实验（临时）',
+      children: [
+        _kv('被测目标', target?.label ?? '未选择'),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton(
+            onPressed: _abBusy ? null : _pickAbTarget,
+            child: Text(target == null ? '扫描并选择设备' : '重新选择'),
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton(
+                onPressed: canRun ? () => _runAbTrial(native: false) : null,
+                child: const Text('现有路径'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.tonal(
+                onPressed: canRun && BleAbBenchmark.nativeSupported
+                    ? () => _runAbTrial(native: true)
+                    : null,
+                child: const Text('原生路径'),
+              ),
+            ),
+          ],
+        ),
+        if (!BleAbBenchmark.nativeSupported)
+          const Padding(
+            padding: EdgeInsets.only(top: 6),
+            child: Text(
+              '原生探针仅安卓可用（iOS 的 connect 本身就是「一直等到连上」语义，没有对应旋钮）。',
+              style: TextStyle(fontSize: 12, color: Color(0xFF808690), height: 1.5),
+            ),
+          ),
+        const SizedBox(height: 12),
+        _abStatsRow('现有(FBP)', _abFbp),
+        _abStatsRow('原生', _abNative),
+        const SizedBox(height: 8),
+        const Text(
+          '开关（改完从下一次点击起生效）',
+          style: TextStyle(fontSize: 12, color: Color(0xFF808690)),
+        ),
+        _abSwitch(
+          '每轮先清直连缓存',
+          '让现有路径也走完整扫描，与原生同起跑线；缓存下次正常连接后自动重建。',
+          _abClearCache,
+          (v) => setState(() => _abClearCache = v),
+        ),
+        _abSwitch(
+          '原生：硬件扫描过滤 + AGGRESSIVE',
+          '让控制器在射频侧丢掉非相框广播。代价是广播必须每包都带厂商数据，真机未必如此——'
+              '这正是要测的。MATCH_MODE_AGGRESSIVE 只在带过滤时生效。',
+          _abUseFilter,
+          (v) => setState(() => _abUseFilter = v),
+        ),
+        _abSwitch(
+          '原生：直接用 autoConnect',
+          '现有实现把 autoConnect 排在超时阶梯最后（正常信号要先白等 13.4s）。'
+              '打开这个即「一上来就打这张牌」。',
+          _abAutoConnect,
+          (v) => setState(() => _abAutoConnect = v),
+        ),
+        _abSwitch(
+          '原生：复现 120ms 停扫沉淀',
+          '关闭 = 扫到即连（原生独有的零延迟）。打开则与现有实现同样先沉淀 120ms，'
+              '用来判断这段延迟到底值不值。',
+          _abSettle,
+          (v) => setState(() => _abSettle = v),
+        ),
+        if (_abLast != null) ...[
+          const SizedBox(height: 10),
+          const Text('最近一次', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 4),
+          SelectableText(
+            _abLast!.log.isEmpty
+                ? _abLast!.summary
+                : '${_abLast!.summary}\n${_abLast!.log.join('\n')}',
+            style: const TextStyle(fontSize: 11, height: 1.5, fontFamily: 'monospace'),
+          ),
+        ],
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            OutlinedButton(
+              onPressed: _abBusy ? null : _copyAbReport,
+              child: const Text('复制报告'),
+            ),
+            const SizedBox(width: 10),
+            OutlinedButton(
+              onPressed: _abBusy ? null : _clearAbStats,
+              child: const Text('清空'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _abStatsRow(String label, BleTrialStats stats) {
+    final failures = stats.failureStages;
+    final detail = StringBuffer()
+      ..write('${stats.success}/${stats.total}（${stats.successRate}）');
+    if (stats.medianMs != null) {
+      detail.write('  中位 ${stats.medianMs}ms');
+      detail.write('  ${stats.minMs}~${stats.maxMs}ms');
+    }
+    if (failures.isNotEmpty) {
+      detail.write(
+        '  失败：${failures.entries.map((e) => '${e.key}×${e.value}').join('，')}',
+      );
+    }
+    return _kv(label, detail.toString());
+  }
+
+  Widget _abSwitch(
+    String title,
+    String hint,
+    bool value,
+    ValueChanged<bool> onChanged,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontSize: 13)),
+                Text(
+                  hint,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    color: Color(0xFF808690),
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(value: value, onChanged: _abBusy ? null : onChanged),
         ],
       ),
     );

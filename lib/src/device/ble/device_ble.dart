@@ -241,6 +241,18 @@ class FrameBleClient {
     Duration(seconds: 5),
   ];
 
+  /// 极弱信号阈值（仅 Android）。低于它时常规 `connectGatt` 的 CONNECT_IND 命中率
+  /// 已接近于零——再花 5 秒试一次是纯粹的白等，不如把整份预算都给 autoConnect。
+  /// 取 -80dBm：-70~-80 还有相当比例能一次连上（保留 5s 快速试错），
+  /// -80 以下现场记录几乎全是超时。
+  static const int veryWeakSignalRssi = -80;
+
+  /// 极弱信号候选的建连阶梯：**空**，即常规建连一档都不走，直接上 autoConnect
+  /// （见 [_connectWithAutoConnect]）。最坏耗时不比原来长——省下的 5 秒
+  /// 原样加到 autoConnect 的等待预算里（[androidAutoConnectFallbackVeryWeak]），
+  /// 只是这 20 秒全花在真正管用的机制上。
+  static const List<Duration> veryWeakSignalAttemptTimeouts = <Duration>[];
+
   /// 每次建连失败后的退避（让底层把半连状态清干净再试，对齐小程序 `CONNECT_BACKOFF_MS`）。
   static const Duration connectRetryBackoff = Duration(milliseconds: 400);
 
@@ -254,6 +266,22 @@ class FrameBleClient {
   /// 8s 只覆盖 2~3 个广播事件，经常等不到。iOS 同环境连得上正是因为其 connect 是
   /// 「无限等到连上」语义；15s（≈5 个广播事件）把差距补到同一量级，且仍有界。
   static const Duration androidAutoConnectFallback = Duration(seconds: 15);
+
+  /// 极弱信号（[veryWeakSignalRssi] 以下）跳过常规建连后，autoConnect 拿到的预算。
+  /// = 15s + 省下来的那一档 5s：worst case 与改前持平，但不再有任何一秒花在
+  /// 命中率接近零的常规 connectGatt 上。
+  static const Duration androidAutoConnectFallbackVeryWeak = Duration(
+    seconds: 20,
+  );
+
+  /// 建连失败后，等底层把「已断开」真正落地的上限。
+  ///
+  /// 改前是失败即 `disconnect()` 然后立刻退避 400ms 重试——但 `disconnect()` 返回
+  /// **不等于**链路已经拆干净。半连状态还挂着时发下一次 `connectGatt`，安卓侧典型表现
+  /// 就是 `status=133`；更糟的是每轮都会新建一个 GATT client，而每个 app 的句柄数有限，
+  /// 攒够之后「怎么连都是 133，重启 App 才好」。
+  /// 已断开时 `isConnected` 立刻为假、这里直接返回，不会平白多花时间。
+  static const Duration disconnectSettleTimeout = Duration(milliseconds: 600);
 
   /// 停扫落地后的「沉淀」时长（对齐小程序 `bluetooth.SCAN_SETTLE_MS`）。
   /// 原生 stopScan 回调返回 ≠ 射频立刻空闲；扫描与 GATT 建连抢同一路射频，
@@ -396,9 +424,30 @@ class FrameBleClient {
     final found = <DeviceIdentifier, ScanResult>{};
     final signatures = <DeviceIdentifier, String>{};
 
-    List<ScanResult> visible() =>
-        found.values.where(isAllowed).toList()
-          ..sort((a, b) => b.rssi.compareTo(a.rssi));
+    /// [isAllowed] 的判定结果缓存，键同 [found]。
+    ///
+    /// **这是扫描热路径上最贵的一块**：`until != null`（即所有连接路径）时，
+    /// `visible()` 每收到**一个广播包**就要重算一遍，而 `isAllowed` 每台设备都要做
+    /// 字符串拼接 + `toUpperCase` + `contains`，名字不命中的还要再解析一遍厂商数据。
+    /// 我们又开着 `continuousUpdates + continuousDivisor:1`（每包都上报），
+    /// 于是在三十几台设备的环境里就是每秒几百次 × N 台的字符串运算压在 UI isolate 上——
+    /// 目标设备那一包因此排队变晚，弱信号闸的「最多等 1.5s」也跟着被拉偏。
+    ///
+    /// 判定的输入只有名字和厂商数据，两者恰好就是 [_displaySignature] 的成分：
+    /// 签名没变 ⇒ 判定不可能变。所以只在「新设备 / 签名有变化」时重算，
+    /// 其余时候是一次 map 查表。RSSI 变化不影响判定，只影响排序。
+    final allowed = <DeviceIdentifier, bool>{};
+
+    List<ScanResult> visible() {
+      final list = <ScanResult>[];
+      for (final entry in found.entries) {
+        if (allowed[entry.key] == true) {
+          list.add(entry.value);
+        }
+      }
+      list.sort((a, b) => b.rssi.compareTo(a.rssi));
+      return list;
+    }
 
     // 收网信号。三种情况完成：until 命中、外部 stopScan、Dart 侧窗口到点。
     final done = Completer<void>();
@@ -425,6 +474,9 @@ class FrameBleClient {
         final sig = _displaySignature(r);
         if (!found.containsKey(id) || signatures[id] != sig) {
           changed = true;
+          // 判定只依赖名字与厂商数据（= 签名的成分），签名变了才需要重算。
+          // 见 [allowed] 的注释：这一行是把每包 O(N) 字符串运算压成 O(1) 的关键。
+          allowed[id] = isAllowed(r);
         }
         found[id] = r; // RSSI 始终更新，保证最终排序准确
         signatures[id] = sig;
@@ -781,7 +833,12 @@ class FrameBleClient {
     List<Duration> timeouts = connectAttemptTimeouts,
     bool allowAutoConnectFallback = true,
   }) async {
-    final budget = timeouts.isEmpty ? connectAttemptTimeouts : timeouts;
+    // 空阶梯 = 调用方明确要求「跳过常规建连、直接上 autoConnect」（极弱信号候选，
+    // 见 [veryWeakSignalAttemptTimeouts]）。但若同时又不允许 autoConnect 兜底，
+    // 那就一种建连手段都不剩了——回落默认阶梯兜住，绝不能变成「什么都没试就报失败」。
+    final budget = timeouts.isEmpty && !allowAutoConnectFallback
+        ? connectAttemptTimeouts
+        : timeouts;
     Object? lastError;
     for (int i = 0; i < budget.length; i++) {
       try {
@@ -795,16 +852,21 @@ class FrameBleClient {
         lastError = error;
         // 失败先物理断开：清掉半连状态、让设备恢复广播，否则下次扫描/连接更难成功
         //（对齐小程序 closeBLEConnection + sleep(400) 再重试）。
-        try {
-          await device.disconnect();
-        } catch (_) {}
+        // ⚠️ 必须**等断开真正落地**再退避，见 [disconnectSettleTimeout]：
+        // disconnect() 返回不等于链路拆干净，半连状态上发 connectGatt 就是 133 的常客，
+        // 而且每轮都会新建一个 GATT client，句柄攒满后会变成「怎么连都是 133」。
+        await _settleDisconnected(device);
         if (i < budget.length - 1) {
           await Future<void>.delayed(connectRetryBackoff);
         }
       }
     }
+    // 极弱信号跳过了常规阶梯，省下的时间原样给 autoConnect（总预算不变）。
+    final fallback = budget.isEmpty
+        ? androidAutoConnectFallbackVeryWeak
+        : androidAutoConnectFallback;
     if (allowAutoConnectFallback &&
-        await _connectWithAutoConnect(device, androidAutoConnectFallback)) {
+        await _connectWithAutoConnect(device, fallback)) {
       return;
     }
     throw lastError is FrameBleException
@@ -815,6 +877,35 @@ class FrameBleClient {
             '连接设备失败：${lastError ?? '未知错误'}',
             kind: FrameBleErrorKind.connectFailed,
           );
+  }
+
+  /// 断开并**等它真正落地**（上限 [disconnectSettleTimeout]）。
+  ///
+  /// `disconnect()` 返回只代表请求已下发；链路真正拆掉是随后一个异步事件。
+  /// 不等就重连，安卓侧最典型的表现是 `status=133`，而且每轮重试都会新建一个
+  /// GATT client——每个 app 的句柄数有限，攒满之后就变成「怎么连都是 133、
+  /// 重启 App 才好」（这正是排查里怀疑的第 ④ 条）。
+  ///
+  /// 已经断开时 `isConnected` 立刻为假、直接返回，不会平白多等；
+  /// 平台不补发断开事件时靠超时兜底，绝不永久挂住。
+  Future<void> _settleDisconnected(BluetoothDevice device) async {
+    try {
+      await device.disconnect();
+    } catch (_) {
+      // 本来就没连上时 disconnect 会抛，属正常路径。
+    }
+    if (!device.isConnected) {
+      return;
+    }
+    try {
+      await device.connectionState
+          .firstWhere(
+            (state) => state == BluetoothConnectionState.disconnected,
+          )
+          .timeout(disconnectSettleTimeout);
+    } catch (_) {
+      // 超时/流异常都按「尽力而为」处理：继续退避重试，别把失败路径卡死。
+    }
   }
 
   /// Android 弱信号兜底：改用 `autoConnect` 再要一次连接，成功返回 true。

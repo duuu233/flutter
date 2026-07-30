@@ -32,6 +32,34 @@
 序列号归一化规则：移除 `:`、`-`、空格并转大写。稳定身份必须是 12 个十六进制字符，
 且不能是全 `0` 或全 `F`；展示和绑定入库统一为 `AA:BB:CC:DD:EE:FF`。
 
+### 身份补齐来源（2026-07-30）
+
+`connectBoundDevice` 第一行就是身份闸：缺完整 6 字节 ID 直接返回「请删除后重新绑定」，
+**连扫描都不发起**。闸门本身是对的（缺 ID 时用短 ID/名称/尺寸兜底连接必然串台），
+但「记录一时缺 ID」不等于「这台设备没有身份」——必须先走完补齐链再判定拦截，
+否则会把没连接的正常设备报成需要删除重新绑定。
+
+补齐顺序固定，登记表只作最后兜底、**永不反向覆盖后端最新值**：
+
+```text
+记录自身的完整 ID  >  本地上一版记录(_carryOverBleFields)  >  身份登记表
+```
+
+`DeviceIdentityRegistry`（`device_identity_registry.dart`）是按后端记录主键存的登记表
+（`userProductId → AA:BB:CC:DD:EE:FF`，SharedPreferences）。它的意义是让「这台设备的完整 ID」
+与「后端这一次返回了什么」解耦：`refreshDevices` 是整体替换列表，而 `_carryOverBleFields`
+不搬 `serialNumber`，接口任何一次没下发 `deviceId` 都会让身份当场丢失。
+
+- 登记时机：列表接口返回带 ID 的记录时、连接后 0x01 验身通过时（`_applyConnectedInfo`）。
+- 清除时机：删除设备 `forget(recordId)`、退出登录/注销/登录态失效 `clear()`。
+- **只收完整 6 字节 ID**：短 ID、BLE 句柄不得入表，否则等于用缓存制造串台。
+- **键只取记录自己的主键**：不得借用另一条记录的主键登记。
+- 表上限 64 条（`maxEntries`），超限丢弃最早写入的一条。这只是防止异常写入把偏好文件撑大，
+  不是业务上限；被丢的那条在列表接口下次带 ID 返回、或连接后 0x01 验身通过时会重新登记。
+
+对齐小程序 `utils/device-identity.js` 与
+`photo-album/docs/architecture/device-identity-and-connection.md`。
+
 ## 3. 匹配规则
 
 ### 候选匹配
@@ -76,7 +104,7 @@
   → 快路径②：本机直连缓存命中则按上次 remoteId 短超时(3s)直连，跳过整段扫描
   → 完整扫描（广播名白名单 + 弱信号闸）
   → 短 ID + 屏型筛候选
-  → 停扫沉淀(settleAfterScan) 后连接候选 GATT
+  → 停扫沉淀(settleAfterScan) 后连接**闸门放行的那一台**候选 GATT
   → 发现服务/特征并订阅通知
   → 读取 0x01 完整 ID
   ├── 匹配：登记完整身份、写入直连缓存、读取设备信息、发布连接状态
@@ -99,12 +127,33 @@
 - 连续 2 次「直连失败但随后扫描成功」即在本进程内停用快路径，避免在不支持不扫描直连的
   平台上每次复连白花探测超时。
 
+### 扫描热路径与命中捕获（2026-07-30）
+
+连接路径上的扫描开着 `continuousUpdates + continuousDivisor:1`（每包都上报，弱信号必须），
+且 `until` 判定在**每个广播包**上跑一次。因此白名单判定不得是每包 O(N) 的字符串运算：
+
+- 判定的输入只有名字和厂商数据，两者恰好是 `_displaySignature` 的成分，
+  **签名不变 ⇒ 判定不变**，所以结果按设备缓存，只在「新设备 / 签名有变化」时重算。
+  RSSI 变化只影响排序，不影响判定；「首包没名字、后续包补齐后追溯进入列表」的行为不变。
+- 这一条不是省电优化：在三十几台设备的环境里，每秒几百次 × N 台的字符串运算压在 UI isolate
+  上会让目标设备那一包排队变晚，**把弱信号闸的「最多等 1.5s」拉偏**。
+
+闸门放行的那一台必须**就地捕获**，不得在扫描返回后重新 match：
+
+- 同短 ID 的两台都在场时，窗口末尾按 RSSI 重排后「第一个匹配」可能已经换了一台；
+- 建连阶梯是按「开闸那一刻那一帧的 RSSI」选的，重新 match 拿到的是最后一包的 RSSI。
+
+只有「等满整窗才收网」（闸门从未放行）时才回落到在最终列表里重新 match。
+
 ### 提速与弱信号参数
 
 | 参数 | 值 | 位置 | 作用 |
 | --- | --- | --- | --- |
 | 建连超时阶梯 | 5s → 8s | `FrameBleClient.connectAttemptTimeouts` | 首次快速试错，末次耐心等弱信号的 CONNECT_IND |
 | 弱信号候选短阶梯 | 仅 5s 一档（仅 Android） | `weakSignalAttemptTimeouts` | RSSI < -70 时第二次 8s 长试命中率极低，尽早切 autoConnect |
+| 极弱信号阶梯 | **空**（仅 Android） | `veryWeakSignalAttemptTimeouts` / `veryWeakSignalRssi=-80` | -80dBm 以下常规 CONNECT_IND 命中率接近零，常规一档都不走、直接 autoConnect |
+| 极弱信号 autoConnect 预算 | 20s | `androidAutoConnectFallbackVeryWeak` | = 15s + 省下的那一档 5s，总预算与改前持平 |
+| 断开落地等待 | ≤600ms | `disconnectSettleTimeout` | `disconnect()` 返回 ≠ 链路拆干净；半连状态上重连是 133 常客，且每轮新建 GATT client |
 | 建连退避 | 400ms | `connectRetryBackoff` | 让底层清干净半连状态再试 |
 | 直连探测超时 | 3s | `directConnectProbeTimeout` | 快路径「赌一把」的上限 |
 | Android autoConnect 兜底 | 15s | `androidAutoConnectFallback` | 常规建连全失败后的弱信号唯一有效手段；低占空比等广播，3s 广播间隔下 8s 只有 2~3 次机会，15s ≈ 5 次 |
@@ -159,18 +208,29 @@
   存储损坏不抛错且不影响后续写入。
 - 连接信号闸：够强立刻连、读不到 RSSI 立刻连、等满窗口再弱也必须连。
 
+- 身份登记表：只收完整 6 字节 ID（短 ID/全 0/全 F/非法值不入表）；空主键不登记；
+  `forget` 只清一条；`clear` 整表清空；磁盘脏数据读回时过滤；存储损坏不抛错。
+
 对应单测：`test/serial_match_test.dart`、`test/device_battery_cache_test.dart`、
 `test/ble_connection_lease_test.dart`、`test/ble_direct_connect_cache_test.dart`、
-`test/ble_signal_level_test.dart`。
+`test/ble_signal_level_test.dart`、`test/device_identity_registry_test.dart`。
 
 真机回归（自动测试覆盖不到，发版前必做）：
 
 - Android 弱信号（-70~-85dBm）复连成功率，含 `autoConnect` 兜底命中后无幽灵连接残留。
+- 极弱档：相框放到 -80dBm 以下，日志应直接进 autoConnect，不得先白等一档常规超时。
+- GATT client 不泄漏：连续 20 次失败重试后
+  `adb shell dumpsys bluetooth_manager | grep -i client` 的数量不得只增不减
+  （只增不减 = 「怎么连都是 133、重启 App 才好」的来源）。
 - 半分钟内连点 6 次以上设备，不得出现「忽然全都搜不到」。
 - 设备被系统层占着（另一 App 连着/杀进程后残留）时能走系统已连接表兜底。
+- 身份闸不误伤：绑定 A/B/C 三台，连 A 后反复刷新设备列表，再进 B/C 点连接，
+  不得出现「请删除后重新绑定」；退出登录重登后由列表接口重新登记。
 
 历史证据：
 
 - `../history/2026-07/2026-07-20-单连接合规与跨端审查.md`
 - `../history/2026-07/2026-07-27-同尺寸设备身份校验与电量缓存.md`
 - `../history/2026-07/2026-07-30-蓝牙搜索连接提速.md`
+- `../history/2026-07/2026-07-30-FBP连接优化与身份登记表.md`
+- `../history/2026-07/2026-07-30-安卓原生连接AB对比.md`（临时对照实验）

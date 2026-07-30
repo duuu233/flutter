@@ -6,6 +6,7 @@ import 'device/ble_controller.dart';
 import 'device/ble/ble_direct_connect_cache.dart';
 import 'device/ble/frame_protocol.dart';
 import 'device/battery_cache.dart';
+import 'device/device_identity_registry.dart';
 import 'device/device_interaction_trace.dart';
 import 'device/frame_device_protocol.dart';
 import 'device/serial_match.dart';
@@ -757,6 +758,27 @@ class PhotoFrameState extends ChangeNotifier {
     await refreshConnectedDeviceInfo(_selectedDeviceId);
   }
 
+  /// 用身份登记表补齐 / 登记设备记录的完整 6 字节 ID（见 [DeviceIdentityRegistry]）。
+  ///
+  /// 两个方向：记录缺 ID 就查表补上；记录带着后端下发的完整 ID 就登记下来。
+  /// 登记表永不反向覆盖后端最新值——只在记录自身与本地上一版都拿不出 ID 时才被采纳。
+  Future<void> _completeDeviceIdentities(List<DeviceItem> devices) async {
+    final registry = DeviceIdentityRegistry.instance;
+    for (final device in devices) {
+      if (device.isPlaceholder) {
+        continue;
+      }
+      if (device.serialNumber.isEmpty) {
+        final remembered = await registry.recall(device.id);
+        if (remembered.isNotEmpty) {
+          device.serialNumber = remembered;
+        }
+      } else {
+        await registry.remember(device.id, device.serialNumber);
+      }
+    }
+  }
+
   /// 按 id 在当前列表里找设备；找不到返回 null（区别于 [_findDevice] 的占位兜底）。
   DeviceItem? _deviceByIdOrNull(String deviceId) {
     for (final item in _devices) {
@@ -845,6 +867,13 @@ class PhotoFrameState extends ChangeNotifier {
     if (fresh.firmwareVersion.isEmpty) {
       fresh.firmwareVersion = old.firmwareVersion;
     }
+    // 稳定身份的第二档来源（顺序见 [DeviceIdentityRegistry]：记录自身 > 本地上一版 > 登记表）。
+    // 后端这一行缺 deviceId 时，用上一版记录里已验证过的完整 ID 补上——**只补不覆盖**，
+    // 后端下发的完整 ID 永远优先。不搬的话，后端一次抖动就会把身份丢掉，
+    // 之后这台设备的每一次连接都会被身份闸拦在扫描之前。
+    if (fresh.serialNumber.isEmpty && old.serialNumber.isNotEmpty) {
+      fresh.serialNumber = old.serialNumber;
+    }
     fresh.playbackMode = old.playbackMode;
     fresh.carouselEnabled = old.carouselEnabled;
     // 间隔要跟默认值比、不能跟 0 比：列表接口不下发 carouselInterval，_deviceFromJson
@@ -865,6 +894,20 @@ class PhotoFrameState extends ChangeNotifier {
   void _applyConnectedInfo(DeviceItem device, FrameDeviceInfo? info) {
     if (info == null) {
       return;
+    }
+    // 0x01 验身通过的完整 6 字节 ID 是**最权威的一手身份来源**（两处调用点都已确认
+    // 当前 BLE 会话就是这台设备）。登记进身份表，并在记录自身缺 ID 时就地补上。
+    //
+    // 少了这一步，后端列表接口任何一次没下发 deviceId，身份就会当场丢失
+    //（`_carryOverBleFields` 搬电量/固件却不搬 serialNumber），之后
+    // `connectBoundDevice` 第一行的身份闸会把这台好设备**一直拦在扫描之前**，
+    // 报「请删除后重新绑定」。见 [DeviceIdentityRegistry] 与小程序同款修复。
+    final verified = canonicalDeviceSerial(info.deviceId);
+    if (verified.isNotEmpty && !device.isPlaceholder) {
+      if (device.serialNumber.isEmpty) {
+        device.serialNumber = verified;
+      }
+      unawaited(DeviceIdentityRegistry.instance.remember(device.id, verified));
     }
     // 真机内存（真机容量最多 95 槽，超出 int 掩码范围，直接采用上报计数/容量）。
     // 这里**不能**像电量/容量那样加 `> 0` 守卫：0 张是合法状态（设备被清空），
@@ -2042,6 +2085,13 @@ class PhotoFrameState extends ChangeNotifier {
         // 小程序同样是合并而非覆盖（home.js:424 / device/list.js:86 的 `?? cached`）。
         _carryOverBleFields(device);
       }
+      // 稳定身份的第三档来源：登记表（顺序见 [DeviceIdentityRegistry]）。
+      // 前两档都没给出完整 ID 时才查表兜底；反过来，后端这次下发了完整 ID 的记录顺手登记，
+      // 供以后接口没下发时使用。整条补齐链只为一件事：别让身份闸把好设备拦在扫描之前。
+      await _completeDeviceIdentities(mapped);
+      if (epoch != _sessionEpoch) {
+        return ActionFeedback(success: true, message: '');
+      }
       _devices
         ..clear()
         ..addAll(mapped);
@@ -2290,6 +2340,9 @@ class PhotoFrameState extends ChangeNotifier {
           BleDirectConnectCache.instance.remove(target.serialNumber),
         );
       }
+      // 身份登记表按后端记录主键存：记录都删了就得清掉这一条，
+      // 否则后端复用 userProductId 时会把上一台的完整 ID 带回给新设备（用缓存制造串台）。
+      unawaited(DeviceIdentityRegistry.instance.forget(deviceId));
       _devices.removeWhere((device) => device.id == deviceId);
       _albumPhotos.removeWhere((photo) => photo.deviceId == deviceId);
       _castRecords.removeWhere((record) => record.deviceId == deviceId);
@@ -2570,6 +2623,8 @@ class PhotoFrameState extends ChangeNotifier {
     // 清空列表还不够：照片本体还在内存/磁盘两层图片缓存里（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
     // 退出登录同样清空上个账号的列表与首屏加载态，避免换账号后先看到上一个人的数据/空态。
+    // 身份登记表按 userProductId 存，换账号后与新用户无关，必须整表清空。
+    unawaited(DeviceIdentityRegistry.instance.clear());
     _batteryCache.clear();
     _devices.clear();
     _albumPhotos.clear();
@@ -2609,6 +2664,7 @@ class PhotoFrameState extends ChangeNotifier {
     ImageCacheCleanup.clearAll();
     // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
     // 并把首屏加载态复位，下个账号进来才会重新走一次 loading 而不是直接看到上个账号的空态。
+    unawaited(DeviceIdentityRegistry.instance.clear());
     _batteryCache.clear();
     _albumPhotos.clear();
     _castRecords.clear();
@@ -3250,6 +3306,7 @@ class PhotoFrameState extends ChangeNotifier {
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 与 logout 同等对待：会话已失效，上个账号的照片不该留在本机（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
+    unawaited(DeviceIdentityRegistry.instance.clear());
     _batteryCache.clear();
     _devices.clear();
     _albumPhotos.clear();
