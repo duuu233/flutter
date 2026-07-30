@@ -104,9 +104,10 @@
 | 参数 | 值 | 位置 | 作用 |
 | --- | --- | --- | --- |
 | 建连超时阶梯 | 5s → 8s | `FrameBleClient.connectAttemptTimeouts` | 首次快速试错，末次耐心等弱信号的 CONNECT_IND |
+| 弱信号候选短阶梯 | 仅 5s 一档（仅 Android） | `weakSignalAttemptTimeouts` | RSSI < -70 时第二次 8s 长试命中率极低，尽早切 autoConnect |
 | 建连退避 | 400ms | `connectRetryBackoff` | 让底层清干净半连状态再试 |
 | 直连探测超时 | 3s | `directConnectProbeTimeout` | 快路径「赌一把」的上限 |
-| Android autoConnect 兜底 | 8s | `androidAutoConnectFallback` | 常规建连全失败后的弱信号唯一有效手段 |
+| Android autoConnect 兜底 | 15s | `androidAutoConnectFallback` | 常规建连全失败后的弱信号唯一有效手段；低占空比等广播，3s 广播间隔下 8s 只有 2~3 次机会，15s ≈ 5 次 |
 | 停扫沉淀 | 120ms | `scanSettleDelay` / `settleAfterScan` | 扫描与建连抢同一路射频 |
 | 连接信号闸 | -70dBm / 最多等 1.5s | `BleController.weakSignalRssi` / `weakSignalWait` | 不抢窗口里最差的第一帧；等满照常连 |
 | 建连后高优先级窗口 | 2s | `postConnectFastWindow` | 首屏 0x01/0x04 读完再回落省电档 |

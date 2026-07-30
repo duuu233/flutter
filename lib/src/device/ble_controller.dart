@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -507,6 +508,10 @@ class BleController extends ChangeNotifier {
   /// 连接设备并读取设备信息。成功返回 null，失败返回错误文案。
   Future<String?> connect(ScanResult result) {
     final ad = advertisingOf(result);
+    // Android 弱信号候选换短阶梯：常规建连对弱信号命中率极低，早点切到
+    // autoConnect 这张唯一有效牌（rssi < -70 天然排除 0/非法值；iOS 阶梯不变）。
+    final weakCandidate =
+        Platform.isAndroid && result.rssi < weakSignalRssi;
     return _connectDevice(
       result.device,
       traceName: 'connect-device',
@@ -514,6 +519,8 @@ class BleController extends ChangeNotifier {
       // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
       broadcastId: ad?.deviceId ?? '',
       screenType: ad?.screenType ?? 0,
+      attemptTimeouts:
+          weakCandidate ? FrameBleClient.weakSignalAttemptTimeouts : null,
     );
   }
 

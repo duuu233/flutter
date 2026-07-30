@@ -232,6 +232,15 @@ class FrameBleClient {
     Duration(seconds: 8),
   ];
 
+  /// 弱信号候选（原始 RSSI 低于连接闸值）的建连超时阶梯——仅 Android 使用。
+  /// 常规 connectGatt 的 CONNECT_IND 只在极短窗口里发，RSSI 已低于 -70dBm 时
+  /// 第二次 8s 长试的命中率依然很低，纯属白等；只快速试错一次，尽早换
+  /// `autoConnect` 这张弱信号唯一有效牌（见 [_connectWithAutoConnect]）。
+  /// iOS 不用：它的 connect 本身就是「等到连上」语义，缩短阶梯只会帮倒忙。
+  static const List<Duration> weakSignalAttemptTimeouts = <Duration>[
+    Duration(seconds: 5),
+  ];
+
   /// 每次建连失败后的退避（让底层把半连状态清干净再试，对齐小程序 `CONNECT_BACKOFF_MS`）。
   static const Duration connectRetryBackoff = Duration(milliseconds: 400);
 
@@ -241,7 +250,10 @@ class FrameBleClient {
   static const Duration directConnectProbeTimeout = Duration(seconds: 3);
 
   /// Android 弱信号兜底：常规建连全部失败后，用 `autoConnect` 再等这么久。
-  static const Duration androidAutoConnectFallback = Duration(seconds: 8);
+  /// autoConnect 是控制器**低占空比**扫描等设备广播：相框广播间隔约 3s、弱信号还丢帧，
+  /// 8s 只覆盖 2~3 个广播事件，经常等不到。iOS 同环境连得上正是因为其 connect 是
+  /// 「无限等到连上」语义；15s（≈5 个广播事件）把差距补到同一量级，且仍有界。
+  static const Duration androidAutoConnectFallback = Duration(seconds: 15);
 
   /// 停扫落地后的「沉淀」时长（对齐小程序 `bluetooth.SCAN_SETTLE_MS`）。
   /// 原生 stopScan 回调返回 ≠ 射频立刻空闲；扫描与 GATT 建连抢同一路射频，
@@ -417,20 +429,24 @@ class FrameBleClient {
         found[id] = r; // RSSI 始终更新，保证最终排序准确
         signatures[id] = sig;
       }
-      if (!changed) {
+      if (!changed && until == null) {
         return;
       }
       final current = visible();
       if (current.isEmpty) {
         return;
       }
-      if (onUpdate != null) {
+      if (changed && onUpdate != null) {
         try {
           onUpdate(current);
         } catch (_) {
           // 页面回调自身异常不能中断扫描
         }
       }
+      // until 必须**每个广播包**都重估，不能挂在 changed 后面（对齐小程序
+      // `notifySubscriber`：onUpdate 看 changed、until 无条件）。弱信号闸靠
+      // 「更强的一帧到了」或「等待时间到了」放行，而这两者都不改变展示签名——
+      // 若只在 changed 时重估，「最多等 1.5s」会退化成「等满整个扫描窗口」。
       if (until != null && !done.isCompleted) {
         try {
           if (until(current)) {
