@@ -33,11 +33,13 @@ lib/
     │   └── app_theme.dart
     ├── device/
     │   ├── ble/
+    │   │   ├── ble_direct_connect_cache.dart
     │   │   ├── ble_tuning.dart
     │   │   ├── device_ble.dart
     │   │   ├── frame_protocol.dart
     │   │   ├── image_codec.dart
     │   │   └── ota_ble.dart
+    │   ├── battery_cache.dart
     │   ├── ble_connection_lease.dart
     │   ├── ble_controller.dart
     │   ├── device_interaction_trace.dart
@@ -179,14 +181,20 @@ UI / PhotoFrameState
 
 当前 `test/` 包含：
 
+- `ai_service_consent_test.dart`
 - `api_rows_test.dart`
+- `api_session_test.dart`
 - `auth_page_test.dart`
 - `ble_connection_lease_test.dart`
+- `ble_direct_connect_cache_test.dart`
+- `ble_signal_level_test.dart`
+- `boltstar_ai_api_test.dart`
 - `device_battery_cache_test.dart`
 - `frame_device_protocol_test.dart`
 - `language_settings_test.dart`
 - `serial_match_test.dart`
 - `simple_html_text_test.dart`
+- `wechat_login_test.dart`
 - `widget_test.dart`
 
 常规验证：

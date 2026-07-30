@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import '../../../device/ble/device_ble.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../device/serial_match.dart';
@@ -44,11 +45,6 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   /// 列表边搜边追加，看到自己那台就能直接点「立即绑定」（[_stopScanForBind] 会立刻停扫转入连接）。
   /// 旧交互下列表要等窗口跑满才整批出现，单方面拉长窗口只会让人干等，这也是两件事必须一起改的原因。
   static const Duration _scanTimeout = Duration(seconds: 20);
-
-  /// 原生停扫回调返回后再给蓝牙射频一个很短的沉淀窗口，再开始 GATT 连接。
-  /// 与小程序 `bluetooth.js SCAN_SETTLE_MS` 保持一致，主要兜 Android 弱信号下
-  /// stopScan 已返回、控制器仍未完全退出扫描态时立刻 connect 的瞬时失败。
-  static const Duration _scanSettleBeforeConnect = Duration(milliseconds: 120);
 
   final BleController _ble = BleController.instance;
   // 初始为「权限确认」安静占位态：系统授权框必须**先于**扫描动画单独出现，
@@ -225,9 +221,10 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       _stage = _results.isEmpty ? _Stage.notFound : _Stage.found;
     });
     await _ble.stopScan();
-    // `_ble.stopScan()` 已等 Dart 扫描任务与原生 stopScan 收网；再沉淀 120ms，
+    // `_ble.stopScan()` 已等 Dart 扫描任务与原生 stopScan 收网；再沉淀一小会儿，
     // 对齐小程序 whenScanStopped，避免 Android 扫描与 GATT 建连抢同一路射频。
-    await Future<void>.delayed(_scanSettleBeforeConnect);
+    // 自动重连路径用的是同一个常量（见 `FrameBleClient.settleAfterScan`），改一处即两端生效。
+    await FrameBleClient.settleAfterScan();
   }
 
   /// 「取消搜索」：停扫并退出绑定流程（对齐小程序 `bind.js cancelScan`）。

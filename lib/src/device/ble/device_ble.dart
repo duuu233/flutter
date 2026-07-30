@@ -221,6 +221,40 @@ class FrameBleClient {
   static const Duration transferAckAdvanceTimeout = Duration(milliseconds: 600);
   static const int transferMaxRetries = 15;
 
+  /// 建连尝试的超时阶梯（对齐小程序 `device-ble.CONNECT_TIMEOUTS`）。
+  ///
+  /// 为什么逐次拉长而不是固定一个大值：绝大多数首连失败是**瞬时**的（GATT 抖动、
+  /// CONNECT_IND 丢包），首次 5s 快速试错、早失败早重试更划算；末次 8s 才耐心等——
+  /// 弱信号下 CONNECT_IND 可能要经过好几个广播事件才被设备收到，一刀切的短超时会把
+  /// 「本来能连上、只是慢」误杀成失败。此前两次都是 12s，最坏白等 24s 且只有 2 次机会。
+  static const List<Duration> connectAttemptTimeouts = <Duration>[
+    Duration(seconds: 5),
+    Duration(seconds: 8),
+  ];
+
+  /// 每次建连失败后的退避（让底层把半连状态清干净再试，对齐小程序 `CONNECT_BACKOFF_MS`）。
+  static const Duration connectRetryBackoff = Duration(milliseconds: 400);
+
+  /// 直连快路径（按缓存 remoteId 赌一把、跳过扫描）的短超时。
+  /// 取 3s：一次建连正常 1~2s 内就起来，超过多半是赌不中（设备重启/换机/地址轮换/离线）；
+  /// 短到「赌不中也不明显拖慢」、长到「本来能连、只是慢一点的别误杀」。
+  static const Duration directConnectProbeTimeout = Duration(seconds: 3);
+
+  /// Android 弱信号兜底：常规建连全部失败后，用 `autoConnect` 再等这么久。
+  static const Duration androidAutoConnectFallback = Duration(seconds: 8);
+
+  /// 停扫落地后的「沉淀」时长（对齐小程序 `bluetooth.SCAN_SETTLE_MS`）。
+  /// 原生 stopScan 回调返回 ≠ 射频立刻空闲；扫描与 GATT 建连抢同一路射频，
+  /// 弱信号下这正是「连不上」的主因之一。见 [settleAfterScan]。
+  static const Duration scanSettleDelay = Duration(milliseconds: 120);
+
+  /// 建连成功后维持高优先级链路的时长（Android）。
+  ///
+  /// 服务发现 / MTU 交换 / 开通知 / 读 0x01 是十几~几十个 ATT 往返，每个往返至少吃一个
+  /// 连接事件——跑在 Android 默认的 BALANCED(≈30~50ms) 上是几百毫秒到一秒多，跑在
+  /// HIGH(≈11.25~15ms) 上是它的三分之一。等这些首屏读取都做完再回落省电档。
+  static const Duration postConnectFastWindow = Duration(seconds: 2);
+
   BluetoothDevice? _device;
   BluetoothCharacteristic? _writeChar;
   StreamSubscription<List<int>>? _notifySub;
@@ -417,6 +451,10 @@ class FrameBleClient {
       // FBP 的原生侧也才刚被这第一次调用惰性初始化——立刻 startScan 要么抛错、
       // 要么整窗扫描零结果，6 秒后报「未搜索到该设备」。等适配器真正 on 再扫。
       await _awaitAdapterReady();
+      // Android 对「同一个 app 起停扫描的频率」有硬限制，超了不报错、直接把这一轮
+      // 降级成机会式扫描（几乎收不到广播）。重试编排很容易撞上，必须先让窗口滑出。
+      await _awaitScanStartSlot();
+      _noteScanStart();
       await FlutterBluePlus.startScan(
         timeout: timeout,
         // 每个广播包都上报，而不是每台设备只报第一包（FBP 默认 false）。
@@ -450,6 +488,77 @@ class FrameBleClient {
 
   /// 当前在途扫描的「收网」回调；无在途扫描时为 null。见 [scan] / [stopScan]。
   static void Function()? _activeScanStop;
+
+  // ── Android 起扫频率账本 ──────────────────────────────────
+  //
+  // Android 7+ 的 `AppScanStats.isScanningTooFrequently()`：同一个 app 在 30 秒内
+  // 起扫超过 5 次，之后的扫描**不报错**，而是被系统降级（实测表现为整窗几乎收不到广播）。
+  // 这条限制专治我们这种「重试型」编排：`connectBoundDevice` 每轮一次起扫、`until`
+  // 命中即停时每轮只占 1~2 秒，用户连点几台设备就能在半分钟内攒够 5 次——
+  // 症状是「刚才还能搜到，连点几次之后就再也搜不到了，等一会儿又好了」，极易误判成固件问题。
+  //
+  // 小程序天然少踩这条：它一路硬件扫描 + 多订阅者共用（`bluetooth.js activeScan`），
+  // 并发调用不会各起一路。App 这边靠账本把起扫次数管住，并在触顶时如实记一条埋点。
+  static const int _androidScanStartLimit = 5;
+  static const Duration _androidScanStartWindow = Duration(seconds: 30);
+
+  /// 触顶时最多等多久让窗口滑出。等待期间用户看到的仍是「搜索中」，
+  /// 而被系统降级的扫描是「转满整窗一台都搜不到」——等一下明显划算。
+  /// 仍设上限：绝不为了理论上的干净窗口把用户按在原地半分钟。
+  static const Duration _maxScanStartWait = Duration(seconds: 10);
+
+  static final List<DateTime> _scanStarts = <DateTime>[];
+
+  static void _pruneScanStarts(DateTime now) {
+    _scanStarts.removeWhere(
+      (at) => now.difference(at) >= _androidScanStartWindow,
+    );
+  }
+
+  static Future<void> _awaitScanStartSlot() async {
+    if (!Platform.isAndroid) {
+      return; // iOS 无此限制。
+    }
+    _pruneScanStarts(DateTime.now());
+    if (_scanStarts.length < _androidScanStartLimit) {
+      return;
+    }
+    final elapsed = DateTime.now().difference(_scanStarts.first);
+    var wait = _androidScanStartWindow - elapsed + const Duration(milliseconds: 150);
+    if (wait <= Duration.zero) {
+      return;
+    }
+    if (wait > _maxScanStartWait) {
+      wait = _maxScanStartWait;
+    }
+    _perfLog(
+      'warn',
+      'Android 起扫已达 ${_scanStarts.length} 次/${_androidScanStartWindow.inSeconds}s 上限，'
+          '再起扫会被系统静默降级（整窗几乎收不到广播）。先等 ${wait.inMilliseconds}ms 让窗口滑出。',
+    );
+    await Future<void>.delayed(wait);
+    _pruneScanStarts(DateTime.now());
+  }
+
+  static void _noteScanStart() {
+    if (!Platform.isAndroid) {
+      return;
+    }
+    _scanStarts.add(DateTime.now());
+    // 账本只需要最近这一个窗口，顺手夹住长度，避免长会话里无界增长。
+    if (_scanStarts.length > _androidScanStartLimit * 2) {
+      _scanStarts.removeRange(0, _scanStarts.length - _androidScanStartLimit * 2);
+    }
+  }
+
+  /// 停扫落地后再「沉淀」一小会儿，然后才发起 GATT 建连
+  /// （对齐小程序 `bluetooth.whenScanStopped` 的 `SCAN_SETTLE_MS`）。
+  ///
+  /// [scan] 的 finally 已经 await 过原生 `stopScan`，但回调返回不等于射频真的空闲；
+  /// 扫描与建连抢同一路射频，强信号扛得过去、「正常/偏弱」档就扛不住。
+  /// 绑定页与自动重连两条路径都必须经过这里，别只治一条。
+  static Future<void> settleAfterScan() =>
+      Future<void>.delayed(scanSettleDelay);
 
   /// 广播厂商数据是否就是相框自己那套布局（6.10.7）：Company_ID 必须是 0xFFFF，
   /// 且其后的 Screen_Type / Device_ID / 电量能被 [FrameProtocol.parseAdvertising] 解出来。
@@ -539,7 +648,16 @@ class FrameBleClient {
   ///    扫描永远搜不到这台设备；且失败会话绝不能把 `connected` 谎报成 true。
   /// ② `_linkAlive`/onLinkStateChanged(true) 要等**通知订阅成功后**才置——它一触发
   ///    控制器就启动保活心跳与 Android 前台服务，置早了失败路径下两者会永不停止。
-  Future<void> connect(BluetoothDevice device) async {
+  /// [attemptTimeouts]：建连尝试的超时阶梯，默认 [connectAttemptTimeouts]。
+  /// 直连快路径只给一档短超时（[directConnectProbeTimeout]）——它是「赌一把」，
+  /// 赌不中必须马上回落扫描，不能在这里耗掉用户的耐心。
+  /// [allowAutoConnectFallback]：常规建连全失败后是否再走 Android 的 `autoConnect` 兜底
+  /// （见 [_connectWithAutoConnect]）。快路径必须传 false。
+  Future<void> connect(
+    BluetoothDevice device, {
+    List<Duration>? attemptTimeouts,
+    bool allowAutoConnectFallback = true,
+  }) async {
     // 先清上一段会话的订阅残留：设备侧断开路径只置 _linkAlive=false、不撤订阅
     // （onValueReceived 是全局流，不随断开自动取消），不清的话重连同一设备后
     // 每条通知会被 N+1 个旧监听器重复解析，图传越用越慢。
@@ -554,15 +672,26 @@ class FrameBleClient {
     _releasingRemote = false;
     try {
       // ① 连接带重试（对齐小程序 device-ble.createConnectionWithRetry）：安卓 GATT 首次连接
-      //    易抖动/超时，失败先物理断开清掉半连状态、等 400ms 再试，最多 2 次——单次失败即报错
+      //    易抖动/超时，失败先物理断开清掉半连状态、等 400ms 再试——单次失败即报错
       //    会让用户手动再点一次，体感明显不如小程序「一次就连上」。
-      await _connectWithRetry(device);
+      //    超时走阶梯（5s→8s），最后再给 Android 的 autoConnect 一次弱信号兜底。
+      await _connectWithRetry(
+        device,
+        timeouts: attemptTimeouts ?? connectAttemptTimeouts,
+        allowAutoConnectFallback: allowAutoConnectFallback,
+      );
 
       _connSub = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
           unawaited(_releaseAfterRemoteDisconnect());
         }
       });
+
+      // Android：建连一成功就请求高优先级链路，让紧接着的服务发现 / MTU 交换 / 开通知 /
+      // 读 0x01 这一串 ATT 往返跑在 ≈11.25~15ms 上而不是默认的 ≈30~50ms。
+      // best-effort、await 但极快（只是把请求交给协议栈）；[postConnectFastWindow]
+      // 之后由 [_settleToIdleAfterConnect] 回落省电档。iOS 无此 API，内部直接跳过。
+      await requestFastConnection();
 
       // ② 服务/特征发现带重试（对齐小程序 discoverMainService/discoverCharacteristics）：
       //    安卓 discoverServices 首次常返回不全，轮询到 FF00 下 FF01(写)/FF02(通知) 齐了再继续，
@@ -614,7 +743,11 @@ class FrameBleClient {
       // 不再 await（P3-6）：老固件不认 0x13 时这里要白等满 2s 才算「连接完成」，连接体感白丢 2 秒，
       // 而省电目的根本不需要阻塞连接建立。改后台发；顺序安全由 [_queueConnInterval] 串行队列 +
       // 「图传会话开着就跳过空闲档」双保险保证——绝不会出现「空闲档 100ms 后到、把图传的 15ms 覆盖掉」。
-      unawaited(applyIdleConnectionInterval());
+      //
+      // 回落再延后 [postConnectFastWindow]：连上之后紧跟着的还有上层的读 0x01（设备信息）、
+      // 读 0x04（电量）等首屏读取，立刻把链路压到 100ms 会让每条指令白等一个长间隔。
+      // 顺带把「空闲档撞上图传档」的窗口进一步缩小（回落越晚越安全）。
+      unawaited(_settleToIdleAfterConnect());
     } catch (_) {
       // 见方法头注释①：失败必须物理断开，让设备恢复广播、可被再次扫到。
       // disconnect 幂等且自吞底层错误，不会掩盖原始异常。
@@ -624,17 +757,21 @@ class FrameBleClient {
   }
 
   /// 建立物理连接（带重试，对齐小程序 device-ble.createConnectionWithRetry）：
-  /// 失败先断开清半连状态、等 400ms 再试，最多 [attempts] 次；全部失败抛最后一次错误。
+  /// 失败先断开清半连状态、等 [connectRetryBackoff] 再试，超时按 [timeouts] 阶梯逐次拉长；
+  /// 全部失败后（Android 且 [allowAutoConnectFallback]）再走一次 autoConnect 兜底；
+  /// 仍不成则抛最后一次错误。
   Future<void> _connectWithRetry(
     BluetoothDevice device, {
-    int attempts = 2,
+    List<Duration> timeouts = connectAttemptTimeouts,
+    bool allowAutoConnectFallback = true,
   }) async {
+    final budget = timeouts.isEmpty ? connectAttemptTimeouts : timeouts;
     Object? lastError;
-    for (int i = 0; i < attempts; i++) {
+    for (int i = 0; i < budget.length; i++) {
       try {
         await device.connect(
           license: License.nonprofit,
-          timeout: const Duration(seconds: 12),
+          timeout: budget[i],
           mtu: null,
         );
         return;
@@ -645,10 +782,14 @@ class FrameBleClient {
         try {
           await device.disconnect();
         } catch (_) {}
-        if (i < attempts - 1) {
-          await Future<void>.delayed(const Duration(milliseconds: 400));
+        if (i < budget.length - 1) {
+          await Future<void>.delayed(connectRetryBackoff);
         }
       }
+    }
+    if (allowAutoConnectFallback &&
+        await _connectWithAutoConnect(device, androidAutoConnectFallback)) {
+      return;
     }
     throw lastError is FrameBleException
         ? lastError
@@ -658,6 +799,77 @@ class FrameBleClient {
             '连接设备失败：${lastError ?? '未知错误'}',
             kind: FrameBleErrorKind.connectFailed,
           );
+  }
+
+  /// Android 弱信号兜底：改用 `autoConnect` 再要一次连接，成功返回 true。
+  ///
+  /// 常规建连（autoConnect=false）是「主机立刻发起一次定向连接」——CONNECT_IND 只在
+  /// 极短的窗口里试，弱信号/远距离下丢一次就整轮超时。`autoConnect=true` 走的是完全不同的
+  /// 路径：把设备加进控制器白名单，由**控制器**自己用低占空比持续等它的广播，等到了再连。
+  /// 慢一点，但对「信号弱、时断时续、广播间隔长（本相框约 3s）」的设备成功率明显更高，
+  /// 是安卓侧独有的一张牌——这也正是「设备明明在，就是连不上，多点几次某一次忽然又好了」的解法。
+  ///
+  /// 只在常规尝试全部失败后才用（它更慢），且只在 Android：iOS 侧 CoreBluetooth 的
+  /// `connect` 本身就是「一直等到连上」的语义，没有对应旋钮。
+  ///
+  /// 三处必须小心：
+  /// ① FBP 要求 autoConnect 与 requestMtu 不能同用 → `mtu: null`；
+  /// ② 不同 FBP 版本下 `connect(autoConnect: true)` 有「立刻返回」与「等到连上」两种行为，
+  ///    这里两种都兜：抛错=失败；没抛错也没连上=进有界等待；
+  /// ③ 等不到必须显式 `disconnect()` 取消挂起的 autoConnect，否则它会在后台一直连下去，
+  ///    之后用户去连另一台时，这条幽灵连接会把设备占住（设备被占就停止广播 → 又是「搜不到」）。
+  Future<bool> _connectWithAutoConnect(
+    BluetoothDevice device,
+    Duration timeout,
+  ) async {
+    if (!Platform.isAndroid) {
+      return false;
+    }
+    var rejected = false;
+    try {
+      await device.connect(
+        license: License.nonprofit,
+        autoConnect: true,
+        mtu: null,
+      );
+    } catch (_) {
+      rejected = true;
+    }
+    if (device.isConnected) {
+      _perfLog('connected', 'connected via autoConnect fallback');
+      return true;
+    }
+    if (rejected) {
+      return false;
+    }
+    try {
+      await device.connectionState
+          .firstWhere((state) => state == BluetoothConnectionState.connected)
+          .timeout(timeout);
+      _perfLog(
+        'connected',
+        'connected via autoConnect fallback (waited ≤${timeout.inSeconds}s)',
+      );
+      return true;
+    } catch (_) {
+      try {
+        await device.disconnect();
+      } catch (_) {}
+      return false;
+    }
+  }
+
+  /// 建连后的省电回落：等首屏读取（0x01/0x04）跑完再把链路压回空闲档。
+  /// 见 [postConnectFastWindow]；全程 best-effort，断开/已进图传就直接放手。
+  Future<void> _settleToIdleAfterConnect() async {
+    await Future<void>.delayed(postConnectFastWindow);
+    if (!_linkAlive || _transferSessionDepth > 0) {
+      return;
+    }
+    // 两条一起才真省电：Android 系统侧优先级回落 + 设备侧 0x13 回落空闲档。
+    // 只发 0x13 的话，系统侧仍停在 HIGH，间隔由双方协商，省电目的达不到。
+    await requestPowerSaveConnection();
+    await applyIdleConnectionInterval();
   }
 
   /// 协商 / 读取本次会话的 ATT MTU。

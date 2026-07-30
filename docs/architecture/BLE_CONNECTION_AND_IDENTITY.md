@@ -2,9 +2,10 @@
 
 > 文档类型：Architecture Decision  
 > 状态：Active  
-> 最后核验：2026-07-28  
+> 最后核验：2026-07-30  
 > 维护责任：BLE、设备列表/详情、绑定与投屏维护者  
-> 事实来源：`ble_controller.dart`、`serial_match.dart`、`device_ble.dart`
+> 事实来源：`ble_controller.dart`、`serial_match.dart`、`device_ble.dart`、
+> `ble/ble_direct_connect_cache.dart`
 
 ## 1. 不变量
 
@@ -71,17 +72,49 @@
 ```text
 快照用户目标设备
   → 若活动会话完整身份匹配则复用
-  → 扫描广播白名单
+  → 快路径①：系统已连接表(systemDevices[FF00]) 按广播名白名单筛出相框候选，直接建连
+  → 快路径②：本机直连缓存命中则按上次 remoteId 短超时(3s)直连，跳过整段扫描
+  → 完整扫描（广播名白名单 + 弱信号闸）
   → 短 ID + 屏型筛候选
-  → 连接候选 GATT
+  → 停扫沉淀(settleAfterScan) 后连接候选 GATT
   → 发现服务/特征并订阅通知
   → 读取 0x01 完整 ID
-  ├── 匹配：登记完整身份、读取设备信息、发布连接状态
-  └── 不匹配：断开、排除 remoteId、继续扫描
+  ├── 匹配：登记完整身份、写入直连缓存、读取设备信息、发布连接状态
+  └── 不匹配：断开、排除 remoteId、删除该设备直连缓存、继续扫描
 ```
+
+两条快路径都没有广播厂商数据，**身份完全由 0x01 完整 ID 提供**，与扫描路径同一把尺子；
+广播短 ID 本来就只能筛候选、不能验身，因此跳过扫描不降低身份安全性。任一快路径失败都必须
+静默回落完整扫描，不得改变原有失败语义与错误文案。
 
 连接失败路径必须回收物理连接、通知订阅、保活服务、租约和 UI 状态，避免设备被残留 GATT
 占用后停止广播。
+
+### 直连缓存
+
+- 键为 0x01 完整 6 字节 ID（归一化），值为本机上次验身通过的 `remoteId`。
+- **只存本机**（`SharedPreferences`）：`remoteId` 是「设备 × 手机」的函数，Android 是射频 MAC、
+  iOS 是本机系统给外设生成的 UUID，跨手机共享必然连不上还白等。
+- 只有 0x01 验身通过才写入；赌不中、验身串台、删除设备记录时删除该键。
+- 连续 2 次「直连失败但随后扫描成功」即在本进程内停用快路径，避免在不支持不扫描直连的
+  平台上每次复连白花探测超时。
+
+### 提速与弱信号参数
+
+| 参数 | 值 | 位置 | 作用 |
+| --- | --- | --- | --- |
+| 建连超时阶梯 | 5s → 8s | `FrameBleClient.connectAttemptTimeouts` | 首次快速试错，末次耐心等弱信号的 CONNECT_IND |
+| 建连退避 | 400ms | `connectRetryBackoff` | 让底层清干净半连状态再试 |
+| 直连探测超时 | 3s | `directConnectProbeTimeout` | 快路径「赌一把」的上限 |
+| Android autoConnect 兜底 | 8s | `androidAutoConnectFallback` | 常规建连全失败后的弱信号唯一有效手段 |
+| 停扫沉淀 | 120ms | `scanSettleDelay` / `settleAfterScan` | 扫描与建连抢同一路射频 |
+| 连接信号闸 | -70dBm / 最多等 1.5s | `BleController.weakSignalRssi` / `weakSignalWait` | 不抢窗口里最差的第一帧；等满照常连 |
+| 建连后高优先级窗口 | 2s | `postConnectFastWindow` | 首屏 0x01/0x04 读完再回落省电档 |
+| Android 起扫配额 | 5 次 / 30s，触顶最多等 10s | `FrameBleClient._awaitScanStartSlot` | 越限会被系统静默降级成「整窗搜不到」 |
+| 同候选失败容忍 | 2 次 | `_maxConnectFailuresPerCandidate` | 连接失败 ≠ 不是这台，重扫拿新句柄再连 |
+
+规则：**信号弱只能推迟连接、绝不能阻断连接**；等满窗口无论多弱都必须发起连接。
+连接策略一律使用原始 RSSI，与保守下调过一级的展示档位（`rssiToSignalLevel`）互不牵连。
 
 ## 5. 单连接与状态展示
 
@@ -121,11 +154,22 @@
 - 屏幕类型冲突拒绝。
 - 共享短 ID 的 A/B 两台设备：点击 A、先扫到 B 时必须断开 B 并继续找到 A。
 - 电量 `0%` 可缓存；15 秒内不重复读取；过期并发只读一次；失败保留旧值。
+- 直连缓存只接受完整 6 字节 ID 作键，短 ID/全 0/全 F/空句柄一律不写；磁盘脏数据读回时过滤；
+  存储损坏不抛错且不影响后续写入。
+- 连接信号闸：够强立刻连、读不到 RSSI 立刻连、等满窗口再弱也必须连。
 
 对应单测：`test/serial_match_test.dart`、`test/device_battery_cache_test.dart`、
-`test/ble_connection_lease_test.dart`。
+`test/ble_connection_lease_test.dart`、`test/ble_direct_connect_cache_test.dart`、
+`test/ble_signal_level_test.dart`。
+
+真机回归（自动测试覆盖不到，发版前必做）：
+
+- Android 弱信号（-70~-85dBm）复连成功率，含 `autoConnect` 兜底命中后无幽灵连接残留。
+- 半分钟内连点 6 次以上设备，不得出现「忽然全都搜不到」。
+- 设备被系统层占着（另一 App 连着/杀进程后残留）时能走系统已连接表兜底。
 
 历史证据：
 
 - `../history/2026-07/2026-07-20-单连接合规与跨端审查.md`
 - `../history/2026-07/2026-07-27-同尺寸设备身份校验与电量缓存.md`
+- `../history/2026-07/2026-07-30-蓝牙搜索连接提速.md`

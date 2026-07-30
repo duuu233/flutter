@@ -7,6 +7,7 @@ import '../native_device_api.dart';
 import '../network/boltfox_api.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../state.dart' show AppLanguage;
+import 'ble/ble_direct_connect_cache.dart';
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
 import 'ble/ota_ble.dart';
@@ -16,6 +17,36 @@ import 'serial_match.dart';
 
 /// 蓝牙信号档位（由 UI 层按当前语言渲染文字，见 [BleController.rssiToSignalLevel]）。
 enum BleSignalLevel { veryStrong, strong, normal, weak, veryWeak }
+
+/// 直连快路径的结果，见 `BleController._tryDirectConnect`。
+enum _DirectConnectOutcome {
+  /// 已连上并通过 0x01 完整 ID 验身。
+  verified,
+
+  /// 探测过但没成（连不上或验身不过）——回落完整扫描。
+  missed,
+
+  /// 没有可用缓存 / 快路径已停用，本次压根没探测。
+  skipped,
+}
+
+/// 「弱信号不抢第一帧」闸门（移植小程序 `active-device.scanForTarget`）。
+///
+/// 扫描一命中就发起连接，抓到的往往是整个窗口里信号最差的那一帧——本相框广播间隔约 3s，
+/// 第一帧擦边收到时链路质量最差，CONNECT_IND 极易丢，正是「-67~-78dBm 区间经常连不上」
+/// 的成因。信号弱时先不连，给一个短窗口等更强的一帧；期间来一帧达标的立刻连，
+/// 等满了也照常连——**绝不因为信号弱就不让用户连**。
+class _WeakSignalGate {
+  final Stopwatch _waited = Stopwatch();
+
+  /// 现在就该发起连接吗？[rssi] 是本次命中候选的原始 RSSI。
+  bool shouldConnectNow(int rssi) {
+    if (!_waited.isRunning) {
+      _waited.start();
+    }
+    return BleController.shouldConnectAtRssi(rssi, _waited.elapsed);
+  }
+}
 
 /// 全局 BLE 会话控制器（单例）。
 ///
@@ -213,6 +244,25 @@ class BleController extends ChangeNotifier {
       return BleSignalLevel.weak;
     }
     return BleSignalLevel.veryWeak;
+  }
+
+  /// 连接前的信号闸阈值（原始 RSSI，dBm）：命中候选弱于此值时先等更强的一帧。
+  /// -70dBm 取在原始 RSSI 的 -67~-78dBm 区间靠前位置，与小程序
+  /// `active-device.WEAK_SIGNAL_RSSI` 同值。**与展示档位无关**——展示文案保守下调过一级
+  /// （见 [rssiToSignalLevel]），但连接策略必须用原始 RSSI。
+  static const int weakSignalRssi = -70;
+
+  /// 弱信号最多等多久。广播间隔约 3s，1.5s 意味着「等下一帧再决定」；
+  /// 等满仍不达标也照常连，绝不因信号弱阻断用户。
+  static const Duration weakSignalWait = Duration(milliseconds: 1500);
+
+  /// 弱信号闸的判据（[_WeakSignalGate] 与单测共用）。
+  /// [rssi] 为 0 或非法（≥0）= 该机型没上报信号强度，无从判断，按原行为立即连。
+  static bool shouldConnectAtRssi(int rssi, Duration waited) {
+    if (rssi >= weakSignalRssi) {
+      return true;
+    }
+    return waited >= weakSignalWait;
   }
 
   /// 扫描结果广播里解析到的屏幕尺寸文字（如 `3.7寸`/`5.89寸`）；无广播厂商数据时返回空串。
@@ -455,24 +505,65 @@ class BleController extends ChangeNotifier {
   }
 
   /// 连接设备并读取设备信息。成功返回 null，失败返回错误文案。
-  Future<String?> connect(ScanResult result) async {
+  Future<String?> connect(ScanResult result) {
+    final ad = advertisingOf(result);
+    return _connectDevice(
+      result.device,
+      traceName: 'connect-device',
+      label: displayName(result),
+      // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
+      broadcastId: ad?.deviceId ?? '',
+      screenType: ad?.screenType ?? 0,
+    );
+  }
+
+  /// 按 remoteId 直接建连（**不经扫描**），供直连快路径使用。
+  ///
+  /// 没有 ScanResult 也就没有广播厂商数据：`broadcastDeviceId`/`broadcastScreenType`
+  /// 留空，会话身份完全由建连后读到的 0x01 完整 ID 提供——这不降低安全性，
+  /// 因为广播短 ID 本来就只能筛候选、不能验身（见 `BLE_CONNECTION_AND_IDENTITY.md`）。
+  Future<String?> connectByRemoteId(String remoteId, {String name = ''}) {
+    return _connectDevice(
+      BluetoothDevice.fromId(remoteId),
+      traceName: 'connect-direct',
+      label: name,
+      broadcastId: '',
+      screenType: 0,
+      // 快路径是「赌一把」：赌不中必须马上回落扫描，既不重试也不走 autoConnect 兜底。
+      attemptTimeouts: const <Duration>[FrameBleClient.directConnectProbeTimeout],
+      allowAutoConnectFallback: false,
+    );
+  }
+
+  Future<String?> _connectDevice(
+    BluetoothDevice device, {
+    required String traceName,
+    required String label,
+    required String broadcastId,
+    required int screenType,
+    List<Duration>? attemptTimeouts,
+    bool allowAutoConnectFallback = true,
+  }) async {
     // 重入护栏：并发连接（列表快速双击 / 自动重连撞上手动点连接）会让两次
     // _client.connect 交错覆盖 _device/订阅/_writeChar，且 broadcastDeviceId 与
     // 实际连上的设备错位——这正是序列号交叉认领最怕的输入。第二路直接拒绝。
     if (connecting) {
       return _l10n.bleBusyConnecting;
     }
-    final trace = DeviceInteractionTrace('connect-device');
+    final trace = DeviceInteractionTrace(traceName);
     connecting = true;
     _connectionLease.taskStarted();
-    deviceName = displayName(result);
-    // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
-    broadcastDeviceId = advertisingOf(result)?.deviceId ?? '';
-    broadcastScreenType = advertisingOf(result)?.screenType ?? 0;
+    deviceName = label;
+    broadcastDeviceId = broadcastId;
+    broadcastScreenType = screenType;
     notifyListeners();
     try {
       await trace.measure('gatt-connect-and-discover', () async {
-        await _client.connect(result.device);
+        await _client.connect(
+          device,
+          attemptTimeouts: attemptTimeouts,
+          allowAutoConnectFallback: allowAutoConnectFallback,
+        );
       });
       try {
         // 连接成功只同步页面需要的 0x01 核心信息。固件版本 0x03 不应挡在
@@ -484,6 +575,15 @@ class BleController extends ChangeNotifier {
       } catch (_) {
         // 设备信息读取失败不阻断连接，后续可重试。
         info = null;
+      }
+      // 记住这台设备的 remoteId，下次复连可整段跳过扫描（见 [connectByRemoteId]）。
+      // 写入点收敛在这里一处，绑定页/详情页/自动重连三条入口自动全覆盖；
+      // 键用 0x01 自报的完整 ID —— 它就是后端记录的稳定身份，串台不了。
+      final learned = info?.deviceId ?? '';
+      if (isCompleteDeviceSerial(learned)) {
+        unawaited(
+          BleDirectConnectCache.instance.put(learned, device.remoteId.str),
+        );
       }
       notifyListeners();
       trace.finish(success: true);
@@ -610,24 +710,61 @@ class BleController extends ChangeNotifier {
       await trace.measure('disconnect-previous-session', disconnect);
     }
     final excludedDeviceIds = <String>{};
+    // 同一个 remoteId 已经连失败几次。连接失败**不等于**「这台不是我要的」：
+    // 句柄可能刚失效（设备重启/安卓随机地址轮换）、也可能就是一次瞬时抖动，
+    // 重扫拿到新鲜句柄再连往往就成了。所以只有反复失败才把它排除掉。
+    final connectFailures = <String, int>{};
     String? lastConnectError;
-    // 同短 ID 设备通常为两台；最多核验 4 个候选，避免异常广播环境下无限循环。
+
+    // ① 系统已连接表兜底：设备被系统层占着时**它不广播**，扫描永远搜不到。
+    if (await _tryConnectSystemDevice(
+      serial: serial,
+      name: name,
+      screenCode: screenCode,
+      trace: trace,
+      excludedDeviceIds: excludedDeviceIds,
+    )) {
+      trace.finish(success: true, stage: 'system-device-verified');
+      return null;
+    }
+
+    // ② 直连快路径：命中本机缓存就短超时直连上次的 remoteId，成功即整段跳过扫描。
+    final directProbed = await _tryDirectConnect(
+      serial: serial,
+      name: name,
+      screenCode: screenCode,
+      trace: trace,
+      excludedDeviceIds: excludedDeviceIds,
+    );
+    if (directProbed == _DirectConnectOutcome.verified) {
+      trace.finish(success: true, stage: 'direct-connect-verified');
+      return null;
+    }
+
+    // ③ 完整扫描 → 筛候选 → 建连 → 0x01 验身。
+    // 同短 ID 设备通常为两台，且每台允许一次「换新句柄重连」，最多 4 轮，
+    // 避免异常广播环境下无限循环。
     for (var attempt = 0; attempt < 4; attempt += 1) {
+      // 弱信号不抢第一帧：命中即停会在「刚擦边收到第一帧」时就发起连接，而那一帧往往是
+      // 整个窗口里信号最差的时刻，连接成功率最低（现场表现正是高 RSSI 一点就连上、
+      // -67~-78dBm 区间经常连不上）。信号够强/读不到 RSSI 时行为完全不变：扫到即走。
+      final gate = _WeakSignalGate();
       final found = await trace.measure(
         'scan-${attempt + 1}',
         () => scan(
           // 12 秒（原 6 秒）：相框被 GATT 占着时不广播，断开后要好几秒才恢复广播。
           // 排除已验错候选后继续扫，直到找到另一个同短 ID、同尺寸候选。
           timeout: const Duration(seconds: 12),
-          until: (list) =>
-              matchScannedDevice(
-                list,
-                serial: serial,
-                name: name,
-                screenCode: screenCode,
-                excludedDeviceIds: excludedDeviceIds,
-              ) !=
-              null,
+          until: (list) {
+            final hit = matchScannedDevice(
+              list,
+              serial: serial,
+              name: name,
+              screenCode: screenCode,
+              excludedDeviceIds: excludedDeviceIds,
+            );
+            return hit != null && gate.shouldConnectNow(hit.rssi);
+          },
         ),
       );
       final target = matchScannedDevice(
@@ -641,13 +778,24 @@ class BleController extends ChangeNotifier {
         break;
       }
       final remoteId = target.device.remoteId.str;
+      // 扫描与 GATT 建连抢同一路射频：等停扫真正沉淀下来再连（弱信号下这是主因之一）。
+      await FrameBleClient.settleAfterScan();
       final error = await trace.measure(
         'connect-and-read-info-${attempt + 1}',
         () => connect(target),
       );
       if (error != null) {
         lastConnectError = error;
-        excludedDeviceIds.add(remoteId);
+        final failures = (connectFailures[remoteId] ?? 0) + 1;
+        connectFailures[remoteId] = failures;
+        // 只有同一台反复连不上才排除；否则下一轮重扫拿新鲜句柄再连——这一层
+        // 专治「句柄已失效」，那类失败在同一个句柄上重试多少次都是超时。
+        if (failures >= _maxConnectFailuresPerCandidate) {
+          excludedDeviceIds.add(remoteId);
+          trace.mark('connect-failed-excluded-$remoteId');
+        } else {
+          trace.mark('connect-failed-will-rescan-$remoteId');
+        }
         if (connected) {
           await disconnect();
         }
@@ -657,15 +805,192 @@ class BleController extends ChangeNotifier {
         serial: serial,
         screenCode: screenCode,
       )) {
+        if (directProbed == _DirectConnectOutcome.missed) {
+          // 直连没连上、扫描却连上了同一台 ⇒ 设备本来就够得着，是直连这条路不通。
+          _noteDirectConnectMiss();
+        }
         trace.finish(success: true, stage: 'identity-verified');
         return null;
       }
       excludedDeviceIds.add(remoteId);
+      // 身份不符：这个句柄绝不能再留在直连缓存里，否则每次复连都先串一次台。
+      await BleDirectConnectCache.instance.remove(serial);
       await disconnect();
       trace.mark('identity-mismatch-excluded-$remoteId');
     }
     trace.finish(success: false, stage: 'verified-target-not-found');
     return lastConnectError ?? _l10n.bleDeviceNotFound;
+  }
+
+  /// 同一个 remoteId 允许连失败几次才把它排除出候选。
+  static const int _maxConnectFailuresPerCandidate = 2;
+
+  /// 系统已连接表里最多试几个候选（每个都要花一次短超时建连，必须夹住）。
+  static const int _maxSystemDeviceCandidates = 2;
+
+  /// 系统已连接表兜底：**扫描治不了的那一类「搜不到」**。
+  ///
+  /// BLE 设备一旦被连上就停止广播。所以只要相框此刻被系统层占着——微信小程序还连着、
+  /// 上一个进程被杀时 GATT 没收干净、或别的 App 连过——扫描窗口开到 60 秒也一台都搜不到，
+  /// 用户看到的是「设备明明开着、就是搜不到」，还会被引到「是不是没开机」的错误方向。
+  /// 这类情况下设备就躺在系统的已连接表里，直接拿它建连几乎瞬时完成（ACL 链路已经在了，
+  /// 只是我们这个 App 还没有自己的 GATT 客户端）。
+  ///
+  /// 安全边界：
+  /// ① Android 的 `systemDevices` 会把**所有** GATT 已连接设备都返回（服务过滤只在 iOS 生效），
+  ///    耳机/手表都在里面。所以先用扫描同款的广播名白名单筛一遍——名字取不到就直接跳过，
+  ///    宁可放弃这次提速，也绝不拿 3 秒超时去连用户的耳机。
+  /// ② 白名单只筛「是不是相框」，**认不认领由 0x01 完整 ID 说了算**，与扫描路径同一把尺子。
+  /// ③ 候选数量夹在 [_maxSystemDeviceCandidates]，最坏多花两次短超时。
+  ///
+  /// 返回 true 表示已连上并通过验身，调用方可直接成功返回。
+  Future<bool> _tryConnectSystemDevice({
+    required String serial,
+    required String name,
+    required int screenCode,
+    required DeviceInteractionTrace trace,
+    required Set<String> excludedDeviceIds,
+  }) async {
+    List<BluetoothDevice> candidates;
+    try {
+      // 只用**已缓存**的白名单，绝不在这里 await 产品列表接口：那是一次网络请求，
+      // 弱网下能卡好几秒——快路径一旦要等网络就不再是快路径了（扫描那一步本来就会拉，
+      // 拉到后整次会话复用）。没缓存就退回内置的两款相框广播名，够用且零开销。
+      final allow = (_cachedBroadcastIds ?? _fallbackBroadcastIds)
+          .map((s) => s.trim().toUpperCase())
+          .where((s) => s.isNotEmpty)
+          .toList();
+      if (allow.isEmpty) {
+        return false; // 没有白名单就没有安全的筛选依据，直接放弃这条快路径。
+      }
+      final sys = await FlutterBluePlus.systemDevices([
+        Guid(FrameProtocol.serviceUuid),
+      ]);
+      candidates = sys
+          .where((device) {
+            if (excludedDeviceIds.contains(device.remoteId.str)) {
+              return false;
+            }
+            final platformName = device.platformName.toUpperCase();
+            return allow.any((allowed) => platformName.contains(allowed));
+          })
+          .take(_maxSystemDeviceCandidates)
+          .toList();
+    } catch (_) {
+      return false; // 查询失败不影响主链：照常走扫描。
+    }
+    if (candidates.isEmpty) {
+      return false;
+    }
+    for (final device in candidates) {
+      final remoteId = device.remoteId.str;
+      final error = await trace.measure(
+        'system-device-connect',
+        () => _connectDevice(
+          device,
+          traceName: 'connect-system-device',
+          label: name,
+          // 没有 ScanResult 就没有广播厂商数据；身份完全由 0x01 提供（同直连快路径）。
+          broadcastId: '',
+          screenType: 0,
+          // 链路已经在了，连不上多半是刚被放掉：短超时快速失败、回落扫描。
+          attemptTimeouts: const <Duration>[
+            FrameBleClient.directConnectProbeTimeout,
+          ],
+          allowAutoConnectFallback: false,
+        ),
+      );
+      if (error == null &&
+          await _verifyBoundDeviceIdentity(
+            serial: serial,
+            screenCode: screenCode,
+          )) {
+        return true;
+      }
+      if (error == null) {
+        // 是相框但不是这一台：排除，别让紧接着的扫描再连一遍。
+        excludedDeviceIds.add(remoteId);
+        trace.mark('system-device-identity-mismatch-$remoteId');
+        // 刚用 0x01 证明了这个句柄不是本设备。若直连缓存正好指着它，那条记录
+        // 已被证伪，立刻删掉——留着只会让下次复连先白花一次 3s 探测。
+        if (await BleDirectConnectCache.instance.get(serial) == remoteId) {
+          await BleDirectConnectCache.instance.remove(serial);
+        }
+      }
+      if (connected) {
+        await disconnect();
+      }
+    }
+    return false;
+  }
+
+  /// 直连快路径连续「设备够得着、但直连不通」几次后，本进程内不再尝试快路径。
+  ///
+  /// 这条自适应闸门是为 iOS 准备的：Android 的 remoteId 就是 MAC，不扫描直接连是
+  /// 标准用法；iOS 的 remoteId 是系统给外设生成的 UUID，能否不扫描直连取决于插件
+  /// 底层有没有走 `retrievePeripherals(withIdentifiers:)`。若这条路在某个平台/版本上
+  /// 根本不通，探测就会变成每次复连白花 3 秒——累计两次即自动关掉，不留长期回归。
+  static const int _directConnectMissLimit = 2;
+  int _directConnectMisses = 0;
+  bool _directConnectDisabled = false;
+
+  void _noteDirectConnectMiss() {
+    if (_directConnectDisabled) {
+      return;
+    }
+    _directConnectMisses += 1;
+    if (_directConnectMisses >= _directConnectMissLimit) {
+      _directConnectDisabled = true;
+      debugPrint(
+        '[BLE direct] 连续 $_directConnectMisses 次「直连失败但扫描成功」，'
+        '本次进程内停用直连快路径',
+      );
+    }
+  }
+
+  /// 直连快路径：命中缓存就按上次的 remoteId 短超时直连，跳过整段扫描。
+  ///
+  /// 三种结果：[_DirectConnectOutcome.verified] 已连上并通过 0x01 验身（调用方可直接返回成功）；
+  /// [_DirectConnectOutcome.missed] 探测过但没成（调用方回落扫描，并在扫描成功时记一次 miss）；
+  /// [_DirectConnectOutcome.skipped] 没有可用缓存 / 已停用（不计 miss）。
+  Future<_DirectConnectOutcome> _tryDirectConnect({
+    required String serial,
+    required String name,
+    required int screenCode,
+    required DeviceInteractionTrace trace,
+    required Set<String> excludedDeviceIds,
+  }) async {
+    if (_directConnectDisabled) {
+      return _DirectConnectOutcome.skipped;
+    }
+    final cachedId = await BleDirectConnectCache.instance.get(serial);
+    if (cachedId.isEmpty || excludedDeviceIds.contains(cachedId)) {
+      return _DirectConnectOutcome.skipped;
+    }
+    final error = await trace.measure(
+      'direct-connect-probe',
+      () => connectByRemoteId(cachedId, name: name),
+    );
+    if (error == null &&
+        await _verifyBoundDeviceIdentity(
+          serial: serial,
+          screenCode: screenCode,
+        )) {
+      _directConnectMisses = 0;
+      return _DirectConnectOutcome.verified;
+    }
+    // 连上了但验身没过（缓存串台）：排除这个句柄并清掉缓存，别让它下次再来一遍。
+    if (error == null) {
+      excludedDeviceIds.add(cachedId);
+      trace.mark('direct-connect-identity-mismatch');
+    }
+    // 赌不中就必须把缓存删掉：留着的话，设备真的离线/换了地址时，
+    // 每次复连都要先白花一次探测超时。下一次扫描连上后会重新写入。
+    await BleDirectConnectCache.instance.remove(serial);
+    if (connected) {
+      await disconnect();
+    }
+    return _DirectConnectOutcome.missed;
   }
 
   /// 回前台「连接体检」（移植小程序 device-ble.reconcileConnections）：

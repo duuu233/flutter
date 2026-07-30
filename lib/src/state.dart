@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'device/ble_controller.dart';
+import 'device/ble/ble_direct_connect_cache.dart';
 import 'device/ble/frame_protocol.dart';
 import 'device/battery_cache.dart';
 import 'device/device_interaction_trace.dart';
@@ -2282,6 +2283,13 @@ class PhotoFrameState extends ChangeNotifier {
         }),
       );
       await Future.wait(tasks);
+      // 直连缓存按 6 字节设备 ID 存 remoteId：记录都删了，句柄不该继续留在本机
+      //（留着不会串台——重连前仍要 0x01 验身——但没有任何用处）。
+      if (target != null) {
+        unawaited(
+          BleDirectConnectCache.instance.remove(target.serialNumber),
+        );
+      }
       _devices.removeWhere((device) => device.id == deviceId);
       _albumPhotos.removeWhere((photo) => photo.deviceId == deviceId);
       _castRecords.removeWhere((record) => record.deviceId == deviceId);

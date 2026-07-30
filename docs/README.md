@@ -2,7 +2,7 @@
 
 > 文档类型：Knowledge Governance  
 > 状态：Active  
-> 最后核验：2026-07-28  
+> 最后核验：2026-07-30  
 > 目录约束：项目 Markdown 统一存放在 `docs/` 下
 
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
@@ -79,6 +79,10 @@
 | [`history/2026-07/2026-07-28-Android纯Photo-Picker迁移.md`](history/2026-07/2026-07-28-Android纯Photo-Picker迁移.md) | Historical Change Record |
 | [`history/2026-07/2026-07-28-AI服务协议.md`](history/2026-07/2026-07-28-AI服务协议.md) | Historical Change Record |
 | [`history/2026-07/2026-07-28-AI网关错误与服务协议v2.md`](history/2026-07/2026-07-28-AI网关错误与服务协议v2.md) | Historical Change Record |
+| [`history/2026-07/2026-07-29-蓝牙边搜边显示与AI发送去重同步.md`](history/2026-07/2026-07-29-蓝牙边搜边显示与AI发送去重同步.md) | Historical Change Record |
+| [`history/2026-07/2026-07-29-微信授权登录接通App专用接口.md`](history/2026-07/2026-07-29-微信授权登录接通App专用接口.md) | Historical Change Record |
+| [`history/2026-07/2026-07-29-图库设备筛选按设备ID同步.md`](history/2026-07/2026-07-29-图库设备筛选按设备ID同步.md) | Historical Change Record |
+| [`history/2026-07/2026-07-30-蓝牙搜索连接提速.md`](history/2026-07/2026-07-30-蓝牙搜索连接提速.md) | Historical Change Record |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责
