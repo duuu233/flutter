@@ -31,7 +31,7 @@ class BindDeviceEntry {
 /// 用户点选后保留其选择；底部「立即绑定」绑定当前选中项；长按某行进入该设备的硬件联调调试台。
 ///
 /// [scanning]=true 时本页是「边搜边显示」态：雷达继续转、标题显示已找到台数、隐藏重新搜索按钮
-/// （还在搜，重搜没意义）、多出一个「停止搜索」文字链。此时也能直接点「立即绑定」，
+/// （还在搜，重搜没意义）、在台数后显示「结束搜索」文字链。此时也能直接点「立即绑定」，
 /// 编排页会先停扫再连。
 class BindDeviceFound extends StatefulWidget {
   const BindDeviceFound({
@@ -46,14 +46,14 @@ class BindDeviceFound extends StatefulWidget {
 
   final List<BindDeviceEntry> entries;
 
-  /// 扫描是否仍在进行（决定雷达转不转、标题文案、是否显示「停止搜索」）。
+  /// 扫描是否仍在进行（决定雷达转不转、标题文案、是否显示「结束搜索」）。
   final bool scanning;
 
   /// 绑定回调（按选中设备 id），编排页据此映射回真实的 `ScanResult`。
   final ValueChanged<String>? onBindId;
   final VoidCallback? onRefresh;
 
-  /// 「停止搜索」：立刻收手，保留已搜到的列表（不退出本页）。
+  /// 「结束搜索」：立刻收手，保留已搜到的列表（不退出本页）。
   final VoidCallback? onStopScan;
 
   /// 长按某台设备进入硬件联调调试台（对齐小程序 `openDebug`）。
@@ -106,16 +106,35 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  widget.scanning
-                      ? l10n.bindScanningFound(entries.length)
-                      : l10n.bindNearbyDevices,
-                  style: const TextStyle(
-                    color: Color(0xFF2A2B2B),
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    height: 1.2,
-                  ),
+                child: Row(
+                  children: [
+                    Text(
+                      l10n.bindFoundCount(entries.length),
+                      style: const TextStyle(
+                        color: Color(0xFF8B9098),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w400,
+                        height: 1.4,
+                      ),
+                    ),
+                    if (widget.scanning)
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: widget.onStopScan,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            l10n.bindEndSearchInline,
+                            style: const TextStyle(
+                              color: Color(0xFFFF6421),
+                              fontSize: 13,
+                              fontWeight: FontWeight.w400,
+                              height: 1.4,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
               // 还在搜的时候不给「重新搜索」：列表正在自己长，重搜只会把已搜到的清光重来。
@@ -161,24 +180,6 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
               ),
             ),
           ),
-          // 搜索中：仍可随时收手停扫（已搜到的列表保留），不必等满窗口。
-          if (widget.scanning)
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: widget.onStopScan,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  l10n.bindStopScan,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Color(0xFF2A2B2B),
-                    fontSize: 14,
-                    height: 1.4,
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
       bottom: FigmaHomePrimaryButton(
