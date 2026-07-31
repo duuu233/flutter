@@ -25,6 +25,10 @@
 - iOS 工程声明 `UIBackgroundModes: bluetooth-central`。
 - `BlePerfLog` 在 release 中保留最近 300 条内存记录并支持复制，不落盘。
 
+⚠️ 自检页顶部的「⓪ 连接对照实验（临时）」卡片与本文无关：它是安卓原生 vs `flutter_blue_plus`
+的建连 A/B 探针（iOS 上原生一侧不可用），测完即拆，做 iOS 投屏性能时直接跳过它。
+见 `../history/2026-07/2026-07-30-安卓原生连接AB对比.md`。
+
 历史实施背景见
 `../history/2026-07/2026-07-22-iOS投屏性能优化.md`；早期性能对比见
 `../history/2026-07/2026-07-17-连接投屏性能对比分析.md`。

@@ -508,10 +508,6 @@ class BleController extends ChangeNotifier {
   /// 连接设备并读取设备信息。成功返回 null，失败返回错误文案。
   Future<String?> connect(ScanResult result) {
     final ad = advertisingOf(result);
-    // Android 弱信号候选换短阶梯：常规建连对弱信号命中率极低，早点切到
-    // autoConnect 这张唯一有效牌（rssi < -70 天然排除 0/非法值；iOS 阶梯不变）。
-    final weakCandidate =
-        Platform.isAndroid && result.rssi < weakSignalRssi;
     return _connectDevice(
       result.device,
       traceName: 'connect-device',
@@ -519,9 +515,37 @@ class BleController extends ChangeNotifier {
       // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
       broadcastId: ad?.deviceId ?? '',
       screenType: ad?.screenType ?? 0,
-      attemptTimeouts:
-          weakCandidate ? FrameBleClient.weakSignalAttemptTimeouts : null,
+      attemptTimeouts: _attemptTimeoutsForRssi(result.rssi),
     );
+  }
+
+  /// 按候选的**原始** RSSI 选建连阶梯。返回 null = 用默认阶梯。
+  ///
+  /// 三档（仅 Android；iOS 的 `connect` 本身就是「一直等到连上」的语义，
+  /// 缩短阶梯只会帮倒忙，一律返回 null）：
+  ///
+  /// | 档位 | 判据 | 阶梯 |
+  /// | --- | --- | --- |
+  /// | 正常 | ≥ -70dBm | 5s → 8s → autoConnect 15s |
+  /// | 弱 | < -70dBm | 5s → autoConnect 15s（第二次 8s 长试命中率太低，不值得） |
+  /// | 极弱 | < -80dBm | 常规一档都不走 → autoConnect 20s |
+  ///
+  /// 极弱档是本轮新增：-80dBm 以下常规 `connectGatt` 的 CONNECT_IND 命中率接近于零，
+  /// 那 5 秒是纯白等。省下来的时间原样加给 autoConnect，**总预算不变**，
+  /// 只是全花在真正管用的机制上（见 `FrameBleClient.veryWeakSignalAttemptTimeouts`）。
+  ///
+  /// `rssi == 0`（读不到）天然落进「正常」档：0 不小于任何一个负阈值。
+  static List<Duration>? _attemptTimeoutsForRssi(int rssi) {
+    if (!Platform.isAndroid) {
+      return null;
+    }
+    if (rssi < FrameBleClient.veryWeakSignalRssi) {
+      return FrameBleClient.veryWeakSignalAttemptTimeouts;
+    }
+    if (rssi < weakSignalRssi) {
+      return FrameBleClient.weakSignalAttemptTimeouts;
+    }
+    return null;
   }
 
   /// 按 remoteId 直接建连（**不经扫描**），供直连快路径使用。
@@ -756,6 +780,12 @@ class BleController extends ChangeNotifier {
       // 整个窗口里信号最差的时刻，连接成功率最低（现场表现正是高 RSSI 一点就连上、
       // -67~-78dBm 区间经常连不上）。信号够强/读不到 RSSI 时行为完全不变：扫到即走。
       final gate = _WeakSignalGate();
+      // 闸门放行的那一台**就地捕获**，不再等扫描返回后重新 match 一遍。两个理由：
+      // ① 同短 ID 的两台都在场时，窗口末尾按 RSSI 重排后「第一个匹配」可能已经换了一台，
+      //    于是连的不是闸门放行的那一台；
+      // ② 建连阶梯是按「开闸那一刻那一帧的 RSSI」选的（见 [_attemptTimeoutsForRssi]），
+      //    重新 match 拿到的是最后一包的 RSSI，两者对不上时会选错档位。
+      ScanResult? gated;
       final found = await trace.measure(
         'scan-${attempt + 1}',
         () => scan(
@@ -770,17 +800,24 @@ class BleController extends ChangeNotifier {
               screenCode: screenCode,
               excludedDeviceIds: excludedDeviceIds,
             );
-            return hit != null && gate.shouldConnectNow(hit.rssi);
+            if (hit == null || !gate.shouldConnectNow(hit.rssi)) {
+              return false;
+            }
+            gated = hit;
+            return true;
           },
         ),
       );
-      final target = matchScannedDevice(
-        found,
-        serial: serial,
-        name: name,
-        screenCode: screenCode,
-        excludedDeviceIds: excludedDeviceIds,
-      );
+      // 闸门没开过（等满整窗才收网）时才回落到「在最终列表里找」。
+      final target =
+          gated ??
+          matchScannedDevice(
+            found,
+            serial: serial,
+            name: name,
+            screenCode: screenCode,
+            excludedDeviceIds: excludedDeviceIds,
+          );
       if (target == null) {
         break;
       }

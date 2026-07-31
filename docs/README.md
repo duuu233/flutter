@@ -83,6 +83,8 @@
 | [`history/2026-07/2026-07-29-微信授权登录接通App专用接口.md`](history/2026-07/2026-07-29-微信授权登录接通App专用接口.md) | Historical Change Record |
 | [`history/2026-07/2026-07-29-图库设备筛选按设备ID同步.md`](history/2026-07/2026-07-29-图库设备筛选按设备ID同步.md) | Historical Change Record |
 | [`history/2026-07/2026-07-30-蓝牙搜索连接提速.md`](history/2026-07/2026-07-30-蓝牙搜索连接提速.md) | Historical Change Record |
+| [`history/2026-07/2026-07-30-FBP连接优化与身份登记表.md`](history/2026-07/2026-07-30-FBP连接优化与身份登记表.md) | Historical Change Record |
+| [`history/2026-07/2026-07-30-安卓原生连接AB对比.md`](history/2026-07/2026-07-30-安卓原生连接AB对比.md) | Temporary（临时对照实验，含拆除清单；定版后随代码一并删除） |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责

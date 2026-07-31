@@ -2,7 +2,7 @@
 
 > Audience: future AI assistants working on this repository.
 >
-> Last verified: 2026-07-28
+> Last verified: 2026-07-30
 >
 > Evidence rule: use source code and CodeGraph for current implementation facts, Active documents
 > for product/protocol/manual decisions, and Historical documents only for traceability. Anything not
@@ -75,6 +75,11 @@ OpenHarmony/HAP is not integrated.
   than fixed to numeric values in the repository.
 - Native code is Kotlin. It provides the Flutter device method channel, a BLE connected-device
   foreground service, wake-lock lifetime handling, and Android crash logging.
+- `BleNativeProbe.kt` and its one-line `MainActivity` registration are **temporary**: a native
+  versus `flutter_blue_plus` connection A/B probe reachable only from the hidden performance
+  self-test page. It is not part of the production connection path and is deleted together with
+  `lib/src/device/ble/ble_ab_benchmark.dart` and the self-test page card once the comparison is
+  decided. Removal checklist: `docs/history/2026-07/2026-07-30-安卓原生连接AB对比.md`.
 - The main manifest declares version-specific Bluetooth permissions, camera, network,
   foreground-service, wake-lock, and notification permissions. It deliberately does not declare
   `READ_MEDIA_IMAGES`, `READ_MEDIA_VISUAL_USER_SELECTED`, or `READ_EXTERNAL_STORAGE`.
@@ -193,7 +198,7 @@ Inside `lib/src/features/`, the current domains are `account`, `ai`, `cast`, `de
 | Network core | Common BoltFox parameters, token/session state, response parsing, uploads, exceptions, API row parsing | `lib/src/network/api_client.dart`, `api_session.dart`, `api_rows.dart`, `api_exception.dart` |
 | BoltFox API | Account, product, user-device, gallery, casting-record, version, upload, and seekink-token endpoints | `lib/src/network/boltfox_api.dart` |
 | External services | seekink binary conversion/token refresh and independent BoltStar AI calls | `lib/src/network/dithering_api.dart`, `lib/src/network/boltstar_ai_api.dart` |
-| BLE session and protocol | Permissions, scan, one-session ownership, full-ID verification, GATT commands, image transfer, ACK/retry behavior, connection lease, performance tuning, OTA | `lib/src/device/ble_controller.dart`, `lib/src/device/ble/device_ble.dart`, `lib/src/device/ble/frame_protocol.dart`, `lib/src/device/frame_device_protocol.dart`, `lib/src/device/serial_match.dart`, `lib/src/device/ble_connection_lease.dart`, `lib/src/device/ble/ota_ble.dart` |
+| BLE session and protocol | Permissions, scan, one-session ownership, full-ID verification, GATT commands, image transfer, ACK/retry behavior, connection lease, performance tuning, OTA | `lib/src/device/ble_controller.dart`, `lib/src/device/ble/device_ble.dart`, `lib/src/device/ble/frame_protocol.dart`, `lib/src/device/frame_device_protocol.dart`, `lib/src/device/serial_match.dart`, `lib/src/device/device_identity_registry.dart`, `lib/src/device/ble_connection_lease.dart`, `lib/src/device/ble/ota_ble.dart` |
 | Device feature | Bind/search/found/not-found flows, list/detail, carousel, clear, unbind, OTA, BLE debug, and performance diagnostics | `lib/src/features/devices/` |
 | Cast feature | Source selection, persistent preview editor, strict device-resolution export, backend conversion, BLE projection, progress/results, recast | `lib/src/features/cast/` |
 | Account feature | Email/WeChat auth, registration, password/email/profile maintenance, local email history | `lib/src/features/account/` |
@@ -267,17 +272,34 @@ full device ID are different concepts.
 Snapshot the user-selected backend device record
   -> reuse only an active session whose verified full ID and screen type match
   -> otherwise request permission and end any different active session
-  -> scan up to the bounded candidate limit
+  -> fast path 1: a frame candidate already held by the system connected-device list
+  -> fast path 2: the locally cached remoteId, connected with a short probe timeout
+  -> otherwise scan up to the bounded candidate limit
   -> filter by anchored short-ID compatibility and screen type
   -> connect GATT and read command 0x01 full identity
   |    -> match: register verified session and read device state
   `    -> mismatch: disconnect, exclude remoteId, continue scanning
 ```
 
+Neither fast path carries broadcast manufacturer data, so identity still comes solely from the
+0x01 full ID — the same measure the scan path uses. Any fast-path failure must fall back silently
+to the full scan without changing failure semantics or error text. Android connect-attempt ladders
+are chosen from the candidate's raw RSSI (normal, weak, and a very-weak tier that skips ordinary
+`connectGatt` entirely and spends the whole budget on `autoConnect`), and every failed attempt
+waits for the disconnect to actually land before retrying. Values and rationale live in
+`docs/architecture/BLE_CONNECTION_AND_IDENTITY.md`.
+
 Current code limits same-short-ID verification to four candidates and uses 12-second scan windows.
 An editable device name is never identity evidence. Backend records with an old four-byte ID,
 all-zero/all-F identity, or invalid format are not compatible records: connecting them must fail
 with a rebind instruction.
+
+That identity gate runs before any scan, so the completion chain must run first: the record's own
+full ID, then the previous local snapshot, then `DeviceIdentityRegistry`
+(`lib/src/device/device_identity_registry.dart`, keyed by backend record id, persisted). A record
+that is momentarily missing `deviceId` in one list response is not a device without an identity;
+rejecting it there reports a healthy device as "delete and rebind". The registry only ever fills a
+gap — it never overrides a fresher backend value, and it only stores complete six-byte IDs.
 
 ### 5. Device battery refresh
 

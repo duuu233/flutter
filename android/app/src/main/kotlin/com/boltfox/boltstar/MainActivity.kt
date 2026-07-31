@@ -32,6 +32,9 @@ class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
             handleMethodCall(call, result)
         }
+        // ⚠️ 临时：安卓原生连接 A/B 对照实验。定版选定一种实现后整条注册与 BleNativeProbe.kt
+        // 一并删除（清单见 docs/history/2026-07/2026-07-30-安卓原生连接AB对比.md「拆除清单」）。
+        BleNativeProbe.register(flutterEngine, this)
     }
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {

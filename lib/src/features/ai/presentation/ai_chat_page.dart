@@ -21,6 +21,7 @@ import '../../cast/presentation/cast_preview_page.dart';
 import '../ai_i18n.dart';
 import '../ai_image_compress.dart';
 import 'ai_sessions_page.dart';
+import 'ai_visuals.dart';
 
 /// AI 对话（星宝）主界面。对齐小程序 `subpackages/ai/chat`
 /// （需求：`assets/ai/支付&ai&官方图库.docx`「一、AI对话模块」；接口：`BoltStar-API-Doc-v2-1.0.4.md`）。
@@ -42,6 +43,14 @@ import 'ai_sessions_page.dart';
 ///   投屏复用现有投屏链路（下载成本地文件后进预览页）；
 /// - 无绑定设备拦截（文档 §5.5）、Token 余额展示 + 每次成功对话扣 1（**本地模拟**，支付未接）、
 ///   22002/22003 封禁弹窗 + 禁用输入 + 顶部横幅、20013 会话数达上限引导去清理。
+///
+/// ## 2026-07-31 视觉同步（小程序 2026-07-30 UI 接入 + 07-31 校准两轮）
+/// 按 `assets/ai/UI` 视觉稿重做：顶部历史入口 + 会话标题 + Token 胶囊、暖米白配色、
+/// 欢迎页星标与三条灵感词、常驻四工具输入卡（相册 / 拍照 / 比例 / 一键生图）、比例与风格两个上拉
+/// 浮层、长按 AI 图片后的内联「下载 / 投屏 / 删除」操作条、30xxx 失败原地变成可重试的失败卡、
+/// 投屏设备底部弹层。图标全部改用与小程序**同一批** `assets/images/ai-*.png`。
+/// ⚠️ 背景图**本轮不动**（用户指定「flutter 先不改背景图」）：本页仍用全 App 统一的
+/// [FigmaScreenBackground]，没有跟着小程序换成 AI 那张 OSS 全屏图。
 ///
 /// ## 与小程序有意的差异（无对应端能力 / 平台机制不同）
 /// - **语音输入**：小程序已接微信「同声传译」插件（按住说话、松手直发，动效盖住整个输入区）。
@@ -119,10 +128,36 @@ const String _kTokenPrefsKey = 'aiTokenBalanceDemo';
 const int _kTokenDefault = 100;
 
 /// 一键生图风格（需求文案：漫画/风景/肖像/动漫；API 值：cartoon/landscape/portrait/anime）。
-const List<String> _kStyleKeys = ['cartoon', 'landscape', 'portrait', 'anime'];
+/// 顺序与小程序 `STYLE_OPTIONS` 一致（漫画 / 人物 / 风景 / 卡通）。
+const List<String> _kStyleKeys = ['cartoon', 'portrait', 'landscape', 'anime'];
 
 /// 图片比例（需求：竖向/横向/方形；API `img_orientation` 必传，只认这三个值）。
 const List<String> _kOrientationKeys = ['vertical', 'horizontal', 'square'];
+
+/// 比例浮层里每项的图标：选中态用 `-active`，未选中态用各自的默认图。
+/// ⚠️ 竖向那张默认图的文件名是 `-vertical-default`，另外两张没有 `-default` 后缀 ——
+/// 图源就是这么给的，别按规律改名。
+const Map<String, String> _kOrientationIcons = <String, String>{
+  'vertical': 'assets/images/ai-orientation-vertical-default.png',
+  'horizontal': 'assets/images/ai-orientation-horizontal.png',
+  'square': 'assets/images/ai-orientation-square.png',
+};
+
+String _orientationActiveIcon(String key) =>
+    'assets/images/ai-orientation-$key-active.png';
+
+/// 输入卡常驻四工具（相册 / 拍照 / 比例 / 一键生图）的宽度比例，
+/// 对应小程序 `.quick-tools` 的 `grid-template-columns: 1fr 1fr 1.35fr 1.75fr`。
+/// ⚠️ 两个上拉浮层是按这组比例**算出**自己该贴哪一格的（见 `_buildPopover`），
+/// 改比例必须两处一起看。
+const List<int> _kToolFlex = <int>[100, 100, 135, 175];
+const double _kToolGap = 4;
+const double _kToolHeight = 29;
+const Color _kToolText = Color(0xFF6F6F6F);
+
+/// 输入卡的外边距与内边距。浮层要按输入卡的**内容区**对齐，所以两边共用这两个值。
+const double _kInputCardMargin = 16;
+const double _kInputCardPadding = 10;
 
 /// 方向 → 图片占位比例（**高/宽×100**，2026-07-27 需求 1.2）：图片没加载完时先按已知比例把高度
 /// 占住，加载完不会把上面的内容顶飞。
@@ -215,7 +250,20 @@ class _AiMessage {
   bool loading;
   bool typing;
 
+  /// 30xxx / 未知上游失败：气泡原地变成可重试的失败卡（2026-07-30 视觉稿），
+  /// 重试所需的原始请求参数记在 [_AiChatPageState._retryByMessage] 里。
+  bool failed = false;
+
   bool get isUser => role == 'user';
+}
+
+/// 失败卡「重新生成」要重发的原始请求参数。
+class _RetryPayload {
+  const _RetryPayload(this.message, this.styleKey, this.urls);
+
+  final String message;
+  final String? styleKey;
+  final List<String> urls;
 }
 
 /// 输入框内待发送的图片（v1.0.3 §5.1.4）。
@@ -262,8 +310,21 @@ class _AiChatPageState extends State<AiChatPage> {
   bool _submitting = false;
   bool _banned = false;
   bool _voiceMode = false;
-  bool _showTools = false;
+
+  /// 两个上拉浮层（比例 / 一键生图风格）。视觉稿里四个工具入口是**常驻**的，
+  /// 原来那个「＋ 展开工具面板」的 `_showTools` 随之取消。
+  bool _showOrientationPicker = false;
+  bool _showStylePicker = false;
+
+  /// 长按 AI 气泡里某张图后展开的内联「下载 / 投屏 / 删除」操作条：
+  /// 消息 id + 图在气泡里的下标（0 / -1 表示没有展开的）。
+  int _activeImageMessageId = 0;
+  int _activeImageIndex = -1;
+
   String _orientation = 'vertical'; // 默认竖向（电子相框主流为竖屏）
+
+  /// 失败卡 id → 重试要重发的原始请求参数（对齐小程序 `_retryByMessage`）。
+  final Map<int, _RetryPayload> _retryByMessage = <int, _RetryPayload>{};
 
   int _uid = 0;
   int _pid = 0;
@@ -582,8 +643,13 @@ class _AiChatPageState extends State<AiChatPage> {
   /// 只动本地状态，**不碰服务端** —— 建不建会话由调用方决定（而且只认「首次发送」）。
   void _resetToNewSession() {
     _stick = true; // 别把上一条会话「用户翻上去了」的状态带过来
+    _retryByMessage.clear();
     setState(() {
       _messages.clear();
+      _showOrientationPicker = false;
+      _showStylePicker = false;
+      _activeImageMessageId = 0;
+      _activeImageIndex = -1;
       _sessionTitle = AppL10n.of(context).aiNewChat;
       _sessionId = '';
       _banned = false;
@@ -808,13 +874,41 @@ class _AiChatPageState extends State<AiChatPage> {
       if (!mounted) {
         return;
       }
+      if (error is AiApiException && error.aborted) {
+        setState(() {
+          _messages.removeWhere((item) => item.id == holder.id);
+          _sending = false;
+        });
+        return; // 用户主动停止，静默
+      }
+      // 30xxx 上游失败 / 未知错误（31001）：气泡**原地**变成可重试的失败卡，而不是弹一次性
+      // 提示后把这一轮抹掉（对齐小程序 2026-07-30）。网关白名单那类自带 userMessage 的错误
+      // 要原样弹给用户看（含 RequestId），仍走 handleError。
+      final aiError = error is AiApiException ? error : null;
+      final code = aiError == null || aiError.code == 0 ? 31001 : aiError.code;
+      final inlineFailure =
+          (aiError?.userMessage == null || aiError!.userMessage!.isEmpty) &&
+          ((code >= 30000 && code < 31000) || code == 31001);
+      final index = _messages.indexWhere((item) => item.id == holder.id);
+      if (inlineFailure && index >= 0) {
+        if (aiError?.detail != null) {
+          debugPrint('[BoltStar] code=$code ${aiError!.detail}');
+        }
+        _retryByMessage[holder.id] = _RetryPayload(message, styleKey, urls);
+        setState(() {
+          _messages[index]
+            ..loading = false
+            ..typing = false
+            ..failed = true;
+          _sending = false;
+        });
+        _stickToBottom(force: true, animate: true);
+        return;
+      }
       setState(() {
         _messages.removeWhere((item) => item.id == holder.id);
         _sending = false;
       });
-      if (error is AiApiException && error.aborted) {
-        return; // 用户主动停止，静默
-      }
       await _ai.handleError(
         context,
         error,
@@ -822,6 +916,25 @@ class _AiChatPageState extends State<AiChatPage> {
         onBanned: (_) => setState(() => _banned = true),
       );
     }
+  }
+
+  /// 失败卡「重新生成」：删掉这张卡，用原参数重发一次（同样过发送同步闸，防连点重复发）。
+  Future<void> _onRetryMessage(int messageId) async {
+    final retry = _retryByMessage[messageId];
+    if (retry == null || _sending || _submitting || _banned) {
+      return;
+    }
+    await _guardedSend(() async {
+      _retryByMessage.remove(messageId);
+      setState(() => _messages.removeWhere((item) => item.id == messageId));
+      await _dispatchChat(retry.message, retry.styleKey, retry.urls);
+    });
+  }
+
+  /// 失败卡右上角「删除」：只清本地这张卡（服务端本来就没这条消息）。
+  void _onFailureDelete(int messageId) {
+    _retryByMessage.remove(messageId);
+    setState(() => _messages.removeWhere((item) => item.id == messageId));
   }
 
   /// 回复渲染（需求 3：文字与图片渲染进**同一个气泡**）：文字走打字机，图片打完字后挂到
@@ -952,20 +1065,37 @@ class _AiChatPageState extends State<AiChatPage> {
 
   // ── 工具面板 ──────────────────────────────────────────────
 
-  /// ＋ 工具栏「点外面就收起」（对齐小程序 2026-07-27 的 `closeTools`）。三个入口共用：
-  /// 点消息区任意位置、点顶部工具行、输入框获得焦点（键盘和工具栏不该同时占着底部）。
+  /// 「点外面就收起」（对齐小程序 `closeTools`）。收的是两个上拉浮层与图片内联操作条。
+  /// 入口：点消息区任意位置、点顶部导航行、输入框获得焦点（键盘和浮层不该同时占着底部）。
   ///
-  /// ⚠️ 故意**不做**全屏透明遮罩：遮罩会把拖动一起吃掉，工具栏开着时聊天记录就滑不动了。
+  /// ⚠️ 故意**不做**全屏透明遮罩：遮罩会把拖动一起吃掉，浮层开着时聊天记录就滑不动了。
   /// 挂在容器上的 onTap 只吃点击，滚动照常交给 ListView（手势竞技场里拖动归可滚动组件）。
-  /// 气泡里的图有自己的 onTap（要看大图），点图不会收工具栏 —— 与小程序一致，是有意的。
+  /// 气泡里的图有自己的 onTap（要看大图），点图不会收浮层 —— 与小程序一致，是有意的。
   void _closeTools() {
-    if (_showTools) {
-      setState(() => _showTools = false);
+    if (!_showOrientationPicker &&
+        !_showStylePicker &&
+        _activeImageMessageId == 0) {
+      return;
     }
+    setState(() {
+      _showOrientationPicker = false;
+      _showStylePicker = false;
+      _activeImageMessageId = 0;
+      _activeImageIndex = -1;
+    });
+  }
+
+  /// 欢迎页灵感词：只填入输入草稿，**不自动发送**，避免误触就直接建会话 / 触发生图计费。
+  void _useSuggestion(String prompt) {
+    _closeTools();
+    setState(() {
+      _input.text = prompt;
+      _input.selection = TextSelection.collapsed(offset: prompt.length);
+    });
   }
 
   Future<void> _pickImages({required bool camera}) async {
-    setState(() => _showTools = false);
+    _closeTools();
     if (_banned) {
       return;
     }
@@ -1058,36 +1188,37 @@ class _AiChatPageState extends State<AiChatPage> {
     return '';
   }
 
-  /// 一键生图：按语种自动拼 message（如「生成图片-卡通」），img_style 触发生图（文档 §5.3.2）。
-  Future<void> _openStylePicker() async {
-    setState(() => _showTools = false);
-    final l10n = AppL10n.of(context);
-    final key = await showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _AiSheet(
-        title: l10n.aiPickStyle,
-        cancelLabel: l10n.cancel,
-        child: Wrap(
-          alignment: WrapAlignment.center,
-          spacing: 18,
-          runSpacing: 18,
-          children: [
-            for (var i = 0; i < _kStyleKeys.length; i++)
-              _AiStyleTile(
-                label: l10n.aiStyleLabel(_kStyleKeys[i]),
-                accent: i.isEven
-                    ? const Color(0xFFFF5F1F)
-                    : const Color(0xFF3E8BFF),
-                onTap: () => Navigator.of(sheetContext).pop(_kStyleKeys[i]),
-              ),
-          ],
-        ),
-      ),
-    );
-    if (key == null || !mounted) {
-      return;
-    }
+  /// 「一键生图」按钮：开合风格浮层（视觉稿改成靠近输入区的上拉浮层，不再是底部弹窗）。
+  void _toggleStylePicker() {
+    setState(() {
+      _showStylePicker = !_showStylePicker;
+      _showOrientationPicker = false;
+      _activeImageMessageId = 0;
+      _activeImageIndex = -1;
+    });
+  }
+
+  /// 比例按钮：开合比例浮层。
+  void _toggleOrientationPicker() {
+    setState(() {
+      _showOrientationPicker = !_showOrientationPicker;
+      _showStylePicker = false;
+      _activeImageMessageId = 0;
+      _activeImageIndex = -1;
+    });
+  }
+
+  void _onOrientationTap(String key) {
+    setState(() {
+      _orientation = key;
+      _showOrientationPicker = false;
+    });
+  }
+
+  /// 选中风格即发（浮层副标题已写明「选择后立即发送」）：按语种自动拼 message
+  ///（如「生成图片-卡通」），img_style 触发生图（文档 §5.3.2）。
+  Future<void> _onStyleTap(String key) async {
+    setState(() => _showStylePicker = false);
     // 同样过一遍同步闸（见 [_guardedSend]）：这条路径也要先建会话，连点样式一样会重复发。
     await _guardedSend(() => _sendChat(_ai.genMessage(key), styleKey: key));
   }
@@ -1117,22 +1248,40 @@ class _AiChatPageState extends State<AiChatPage> {
     }
   }
 
-  /// 长按 AI 气泡里的单张图：下载/投屏都只针对这一张；删除也只摘掉这一张
-  ///（气泡里还有文字或别的图就留着，都没了才整条移除）。
-  Future<void> _onImageLongPress(_AiMessage message, int index) async {
+  /// 长按 AI 气泡里的单张图：展开视觉稿里的内联操作条（下载 / 投屏 / 删除），
+  /// 不再弹底部菜单 —— 操作条就贴在这张图下面，指哪张就是哪张。
+  void _onImageLongPress(_AiMessage message, int index) {
     if (message.loading || message.typing || index >= message.images.length) {
       return;
     }
-    final image = message.images[index];
-    final action = await _showMessageActions(withImageActions: true);
-    if (action == null || !mounted) {
+    setState(() {
+      _activeImageMessageId = message.id;
+      _activeImageIndex = index;
+      _showOrientationPicker = false;
+      _showStylePicker = false;
+    });
+  }
+
+  /// 内联操作条上的一次点击：下载/投屏都只针对这一张；删除也只摘掉这一张
+  ///（气泡里还有文字或别的图就留着，都没了才整条移除）。
+  Future<void> _onImageActionTap(
+    String action,
+    _AiMessage message,
+    int index,
+  ) async {
+    setState(() {
+      _activeImageMessageId = 0;
+      _activeImageIndex = -1;
+    });
+    if (index >= message.images.length) {
       return;
     }
+    final url = message.images[index].url;
     switch (action) {
       case 'download':
-        await _downloadImage(image.url);
+        await _downloadImage(url);
       case 'cast':
-        await _castImage(image.url);
+        await _castImage(url);
       case 'delete':
         await _deleteBubbleImage(message, index);
     }
@@ -1192,7 +1341,15 @@ class _AiChatPageState extends State<AiChatPage> {
       if (!mounted) {
         return;
       }
-      setState(() => _messages.removeWhere((item) => item.id == message.id));
+      _retryByMessage.remove(message.id);
+      setState(() {
+        _messages.removeWhere((item) => item.id == message.id);
+        // 内联操作条正指着这条消息里的图：连它一起收掉，别留一条指向空气的浮条
+        if (_activeImageMessageId == message.id) {
+          _activeImageMessageId = 0;
+          _activeImageIndex = -1;
+        }
+      });
       AppToast.show(context, AppL10n.of(context).aiDeleted);
     } catch (error) {
       if (mounted) {
@@ -1323,25 +1480,184 @@ class _AiChatPageState extends State<AiChatPage> {
       AppToast.show(context, l10n.aiNoBoundDevice);
       return null;
     }
+    final selectedId = widget.state.selectedDevice.id;
     return showModalBottomSheet<DeviceItem>(
       context: context,
       backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _AiSheet(
-        title: l10n.aiPickCastDevice,
-        cancelLabel: l10n.cancel,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final device in devices)
-              _AiSheetAction(
-                label: device.name,
-                subtitle: device.connected
-                    ? l10n.aiDeviceConnected
-                    : l10n.aiDeviceWillConnect,
-                icon: Icons.photo_size_select_actual_rounded,
-                onTap: () => Navigator.of(sheetContext).pop(device),
+      barrierColor: const Color(0x6B1E1D1B),
+      builder: (sheetContext) => _buildDeviceSheet(
+        sheetContext,
+        devices: devices,
+        selectedId: selectedId,
+      ),
+    );
+  }
+
+  /// 投屏设备弹层（对齐小程序 `.device-sheet`）：点一项即选中并直接开投，没有二次确认，
+  /// 所以副标题要把「选完自动连接」讲清楚。单选圈只标当前活动设备。
+  Widget _buildDeviceSheet(
+    BuildContext sheetContext, {
+    required List<DeviceItem> devices,
+    required String selectedId,
+  }) {
+    final l10n = AppL10n.of(context);
+    final bottom = MediaQuery.of(sheetContext).padding.bottom;
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 13 + bottom),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAF8F4).withValues(alpha: 0.98),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(21)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F322B22),
+            blurRadius: 20,
+            offset: Offset(0, -7),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            l10n.aiPickCastDevice,
+            style: const TextStyle(
+              color: Color(0xFF252525),
+              fontSize: 19,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            l10n.aiPickCastDeviceDesc,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF8D8984), fontSize: 12.5),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(0, 12.5, 0, 10),
+            child: Divider(height: 1, thickness: 1, color: Color(0xFFDFDBD5)),
+          ),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 280),
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: devices.length,
+              itemBuilder: (context, index) => _buildDeviceItem(
+                sheetContext,
+                device: devices[index],
+                index: index,
+                selected: devices[index].id == selectedId,
               ),
-          ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.of(sheetContext).pop(),
+            child: Container(
+              height: 42,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEEEAE5),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                l10n.cancel,
+                style: const TextStyle(
+                  color: Color(0xFF272727),
+                  fontSize: 15.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeviceItem(
+    BuildContext sheetContext, {
+    required DeviceItem device,
+    required int index,
+    required bool selected,
+  }) {
+    // 三档配色轮换（小程序 `.device-placeholder--0/1/2`）：列表里相邻两台不会撞色
+    const marks = <List<Color>>[
+      [Color(0xFFFF6E28), Color(0xFFFFF0E9)],
+      [Color(0xFF2DAD6F), Color(0xFFEAF8F0)],
+      [Color(0xFF5794EF), Color(0xFFEAF2FF)],
+    ];
+    final mark = marks[index % marks.length];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => Navigator.of(sheetContext).pop(device),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 60),
+          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFFFF8F4)
+                : Colors.white.withValues(alpha: 0.88),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: selected
+                  ? const Color(0xFFDF7654)
+                  : Colors.white.withValues(alpha: 0.92),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: mark[1],
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Text(
+                  // 视觉稿里就是一个「屏」字占位（设备缩略图后端未提供）
+                  '屏',
+                  style: TextStyle(color: mark[0], fontSize: 11.5),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Text(
+                  device.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF2C2C2C),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 11),
+              Container(
+                width: 21,
+                height: 21,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? const Color(0xFFE87C5A) : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: selected
+                        ? const Color(0xFFE87C5A)
+                        : const Color(0xFFC5C2BE),
+                    width: 1.5,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(Icons.check_rounded, size: 13, color: Colors.white)
+                    : null,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -1396,76 +1712,165 @@ class _AiChatPageState extends State<AiChatPage> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppL10n.of(context);
-    final title = _sessionTitle.isEmpty ? l10n.aiNewChat : _sessionTitle;
     return FigmaScreen(
-      title: title,
+      // 顶部导航自绘（返回 + 历史入口 + 会话标题 + Token 胶囊），所以不给 FigmaScreen 传 title。
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
       body: Column(
         children: [
-          _buildToolbar(),
-          if (_banned)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: const Color(0x14D64541),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                l10n.aiBannedBanner,
-                style: const TextStyle(color: Color(0xFFD64541), fontSize: 12),
-              ),
-            ),
+          _buildHeader(),
+          if (_banned) _buildBannedBar(),
           Expanded(child: _buildMessages()),
           if (_sending) _buildStopPill(),
+          // 两个浮层放在消息区与输入卡之间：视觉上就是「浮在输入卡上方」，而聊天区是 Expanded，
+          // 弹出时只是被压短一点，输入卡本身纹丝不动（小程序那边靠 absolute 定位达到同样效果）。
+          if (_showOrientationPicker) _buildOrientationPopover(),
+          if (_showStylePicker) _buildStylePopover(),
           _buildInputArea(),
         ],
       ),
     );
   }
 
-  /// 标题栏下方工具行：左「会话」入口 / 右 Token 余额 + 新对话。
-  Widget _buildToolbar() {
+  /// 顶部导航：左「返回 + 历史会话」，中间会话标题，右 Token 胶囊。
+  ///
+  /// 🔶 与小程序的差异：小程序的聊天页是 tab 页、没有返回键，左上角只有历史入口；
+  /// App 这页是 push 进来的，必须留返回键，于是左侧是「返回 + 历史」两颗并排。
+  /// 两张图（`ai-back-button.png` / `ai-history-button.png`）几何完全一致，并排不违和。
+  Widget _buildHeader() {
     final l10n = AppL10n.of(context);
+    final title = _sessionTitle.isEmpty ? l10n.aiNewChat : _sessionTitle;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: _closeTools, // 点工具行空白处也收起 ＋ 工具栏
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-        child: Row(
+      onTap: _closeTools, // 点导航行空白处也收起浮层
+      child: SizedBox(
+        height: 44,
+        child: Stack(
           children: [
-            _AiChip(
-              label: l10n.aiSessions,
-              icon: Icons.menu_rounded,
-              onTap: _goSessions,
-            ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: const Color(0x1AFFAA00),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                'Token $_tokenBalance',
-                style: const TextStyle(
-                  color: Color(0xFFB07800),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+            // 标题真正居中：左右各让开按钮簇的宽度（左 96 = 4+44+44，右 120 ≈ Token 胶囊 + 边距）
+            Positioned(
+              left: 96,
+              right: 120,
+              top: 0,
+              bottom: 0,
+              child: Center(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFF111111),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
                 ),
               ),
             ),
-            const SizedBox(width: 8),
-            _AiChip(
-              label: l10n.aiNewChat,
-              icon: Icons.add_rounded,
-              onTap: _startNewSession,
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(width: 4),
+                  FigmaBackButton(onTap: () => Navigator.maybePop(context)),
+                  _buildHistoryButton(),
+                ],
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: _buildTokenPill(),
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// 历史会话入口。图源几何与返回键完全一致（白块只占画布 48.5%、且偏上 5.15%），
+  /// 所以处理方式也一致：图放到 62、再下推 5.15%，命中盒仍是 44。详见 [FigmaBackButton]。
+  Widget _buildHistoryButton() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _goSessions,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: OverflowBox(
+          maxWidth: 62,
+          maxHeight: 62,
+          child: Transform.translate(
+            offset: const Offset(0, 62 * 0.0515),
+            child: const AiIcon(
+              'assets/images/ai-history-button.png',
+              size: 62,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Token 余额胶囊（本地模拟，支付未接）。
+  /// 小程序那颗要读微信原生胶囊的位置来避让，App 没有原生胶囊，直接靠右 16 即可。
+  Widget _buildTokenPill() {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.94)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A53493C),
+            blurRadius: 7,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AiIcon('assets/images/ai-token-spark.png', size: 12.5),
+          const SizedBox(width: 4),
+          Text(
+            '$_tokenBalance',
+            style: const TextStyle(
+              color: kAiOrangeStrong,
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              height: 1,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Text(
+            'Token',
+            style: TextStyle(color: Color(0xFF777777), fontSize: 11, height: 1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBannedBar() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDECEC),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        AppL10n.of(context).aiBannedBanner,
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Color(0xFFD64541), fontSize: 11.5),
       ),
     );
   }
@@ -1487,7 +1892,7 @@ class _AiChatPageState extends State<AiChatPage> {
                     opacity: _chatReady ? 1.0 : 0.0,
                     child: ListView.builder(
                       controller: _scroll,
-                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                      padding: const EdgeInsets.fromLTRB(20, 4, 20, 13),
                       itemCount: _messages.length,
                       itemBuilder: (context, index) =>
                           _buildBubbleRow(_messages[index]),
@@ -1501,41 +1906,101 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
-  /// 默认状态：星宝招呼语居中（需求原文案）。
+  /// 空态：星标 + 招呼语 + 三条灵感词（点了只填草稿，不自动发送）。
+  /// 与小程序一致是**顶部对齐**（84rpx 上留白），不是垂直居中 —— 居中会随灵感词的行数上下跳。
   Widget _buildWelcome() {
     final l10n = AppL10n.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Container(
-            width: 64,
-            height: 64,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: Color(0x1A7B61FF),
-              shape: BoxShape.circle,
+    final suggestions = l10n.aiWelcomeSuggestions;
+    const icons = [
+      'assets/images/ai-suggestion-home.png',
+      'assets/images/ai-suggestion-sunrise.png',
+      'assets/images/ai-suggestion-palette.png',
+    ];
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(18, 42, 18, 15),
+        child: Column(
+          children: [
+            const AiIcon('assets/images/ai-welcome-star.png', size: 105),
+            const SizedBox(height: 7),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(
+                    l10n.aiWelcomeGreeting,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Color(0xFF5A5A5A),
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4.5),
+                const AiIcon('assets/images/ai-spark-orange.png', size: 15),
+              ],
             ),
-            child: const Text('✨', style: TextStyle(fontSize: 28)),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            l10n.aiWelcome,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFF2A2D32),
-              fontSize: 15,
-              height: 1.6,
+            const SizedBox(height: 5),
+            Text(
+              l10n.aiWelcomeText,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF5F5F5F),
+                fontSize: 13.5,
+                height: 1.5,
+              ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            l10n.aiWelcomeTip,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12),
-          ),
-        ],
+            const SizedBox(height: 16),
+            for (var i = 0; i < suggestions.length; i++)
+              Padding(
+                padding: EdgeInsets.only(top: i == 0 ? 0 : 7.5),
+                child: _buildSuggestion(
+                  suggestions[i],
+                  i < icons.length ? icons[i] : icons.last,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuggestion(String prompt, String icon) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _useSuggestion(prompt),
+      child: Container(
+        constraints: const BoxConstraints(minHeight: 28),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.72),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.88)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x12544633),
+              blurRadius: 13,
+              offset: Offset(0, 5),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AiIcon(icon, size: 14),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                prompt,
+                style: const TextStyle(
+                  color: Color(0xFF656565),
+                  fontSize: 12.5,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1544,7 +2009,7 @@ class _AiChatPageState extends State<AiChatPage> {
   Widget _buildBubbleRow(_AiMessage message) {
     final isUser = message.isUser;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         mainAxisAlignment: isUser
             ? MainAxisAlignment.end
@@ -1553,10 +2018,10 @@ class _AiChatPageState extends State<AiChatPage> {
         children: [
           if (isUser)
             Flexible(child: _buildUserBubble(message))
-          // 「正在加载」气泡（只有三个跳动的点）不跟着铺满屏宽：一个占满整行的空白大框看着
-          // 像出错/空回复。Flexible + 内部 width:null 让它收缩到刚好包住三个点；内容一到
-          // （content/images 上屏，loading 转 false）就回到铺满的正常 AI 气泡。
-          else if (message.loading)
+          // 「正在加载」气泡（一张 71 宽的动图）和失败卡都是**定宽**的，不跟着铺满屏宽：
+          // 一个占满整行的空白大框看着像出错/空回复。内容一到（content/images 上屏，
+          // loading 转 false）就回到铺满的正常 AI 气泡。
+          else if (message.loading || message.failed)
             Flexible(child: _buildAiBubble(message))
           else
             Expanded(child: _buildAiBubble(message)),
@@ -1568,76 +2033,19 @@ class _AiChatPageState extends State<AiChatPage> {
   /// AI 回复气泡（需求 3）：文字与图片在**同一个气泡**里。
   /// 气泡本体长按 = 删整条；里面某张图的长按/点击由图自己接住（见 [_AiBubbleImage]）。
   Widget _buildAiBubble(_AiMessage message) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onLongPress: () => _onBubbleLongPress(message),
-      child: Container(
-        // loading 态按内容收缩（见 [_buildBubbleRow]），其余照常铺满一行。
-        width: message.loading ? null : double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x0F7991B2),
-              blurRadius: 16,
-              offset: Offset(0, 6),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (message.loading)
-              const _TypingDots()
-            else if (message.content.isNotEmpty)
-              SelectableText(
-                message.typing ? '${message.content}▍' : message.content,
-                style: const TextStyle(
-                  color: Color(0xFF2A2D32),
-                  fontSize: 14,
-                  height: 1.6,
-                ),
-              ),
-            for (var i = 0; i < message.images.length; i++)
-              Padding(
-                padding: EdgeInsets.only(
-                  top: (i == 0 && message.content.isEmpty && !message.loading)
-                      ? 0.0
-                      : 8.0,
-                ),
-                child: _buildBubbleImage(message, i),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  /// 用户气泡（需求 6.3：维持现状不变）——文字是橙色渐变块、图片是白底小卡片。
-  Widget _buildUserBubble(_AiMessage message) {
-    if (message.kind == _MsgKind.image && message.images.isNotEmpty) {
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onLongPress: () => _onBubbleLongPress(message),
-        child: Container(
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0F7991B2),
-                blurRadius: 16,
-                offset: Offset(0, 6),
-              ),
-            ],
-          ),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 220),
-            child: _buildBubbleImage(message, 0, handleLongPressHere: false),
-          ),
+    if (message.failed) {
+      return _buildFailureCard(message);
+    }
+    // 加载态：没有卡片底、就是一张会动的图（小程序 `.bubble--loading` 把底和投影都去掉了）。
+    // 图丢了就退回三个跳点 —— 加载态一旦变成一片空白，用户会以为界面卡死。
+    if (message.loading) {
+      return Image.asset(
+        'assets/images/ai-loading-bubble.png',
+        width: 71,
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => const Padding(
+          padding: EdgeInsets.symmetric(vertical: 14),
+          child: _TypingDots(),
         ),
       );
     }
@@ -1645,17 +2053,347 @@ class _AiChatPageState extends State<AiChatPage> {
       behavior: HitTestBehavior.opaque,
       onLongPress: () => _onBubbleLongPress(message),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
-          color: const Color(0xFFFF5F1F),
+          color: Colors.white.withValues(alpha: 0.78),
           borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x14594C3A),
+              blurRadius: 15,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (message.content.isNotEmpty) _buildBubbleText(message),
+            for (var i = 0; i < message.images.length; i++) ...[
+              Padding(
+                padding: EdgeInsets.only(
+                  // 文字与图之间 18rpx，图与图之间 14rpx
+                  top: i == 0 ? (message.content.isEmpty ? 0.0 : 9.0) : 7.0,
+                ),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 255),
+                  child: _buildBubbleImage(message, i),
+                ),
+              ),
+              if (_activeImageMessageId == message.id && _activeImageIndex == i)
+                _buildImageActions(message, i),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 气泡正文。打字机进行中在末尾挂一个橙色光标块。
+  /// 🔶 与小程序的差异：小程序那个光标是 CSS 动画在闪，这里是常亮 —— 文字本身每 16ms 就在长，
+  /// 已经足够「活」；为闪烁单开一个 AnimationController 会在打字期间和文本重建打架。
+  Widget _buildBubbleText(_AiMessage message) {
+    const style = TextStyle(
+      color: kAiText,
+      fontSize: 14.5,
+      height: 1.55,
+    );
+    if (!message.typing) {
+      return SelectableText(message.content, style: style);
+    }
+    return SelectableText.rich(
+      TextSpan(
+        style: style,
+        children: [
+          TextSpan(text: message.content),
+          const TextSpan(text: '▍', style: TextStyle(color: Color(0xFFEF641E))),
+        ],
+      ),
+    );
+  }
+
+  /// 长按某张 AI 图后贴在它下面的内联操作条（下载 / 投屏 / 删除）。
+  Widget _buildImageActions(_AiMessage message, int index) {
+    final l10n = AppL10n.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.94),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.92)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F4A3E2E),
+                blurRadius: 14,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildImageAction(
+                label: l10n.aiDownload,
+                icon: 'assets/images/ai-download.png',
+                onTap: () => _onImageActionTap('download', message, index),
+              ),
+              _buildImageActionDivider(),
+              _buildImageAction(
+                label: l10n.aiCast,
+                icon: 'assets/images/ai-project.png',
+                onTap: () => _onImageActionTap('cast', message, index),
+              ),
+              _buildImageActionDivider(),
+              _buildImageAction(
+                label: l10n.aiDelete,
+                icon: 'assets/images/ai-delete-red.png',
+                danger: true,
+                onTap: () => _onImageActionTap('delete', message, index),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageAction({
+    required String label,
+    required String icon,
+    required VoidCallback onTap,
+    bool danger = false,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AiIcon(icon, size: 12.5),
+            const SizedBox(width: 5),
+            Text(
+              label,
+              style: TextStyle(
+                color: danger ? const Color(0xFFEF4545) : const Color(0xFF2F2F2F),
+                fontSize: 12.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageActionDivider() {
+    return Container(width: 1, height: 17, color: const Color(0xFFDEDBD7));
+  }
+
+  /// 30xxx / 未知上游失败的失败卡：定宽 260，右上角浮一颗「删除」，卡内是标题 + 说明 +
+  /// 「重新生成」。删除/重试都 `catchtap` 语义（GestureDetector 自己吃掉，不冒泡到气泡长按）。
+  Widget _buildFailureCard(_AiMessage message) {
+    final l10n = AppL10n.of(context);
+    return SizedBox(
+      width: 260,
+      // 「删除」浮标要探出卡片上沿 27，所以整块留出这段上边距，别被 ListView 裁掉。
+      child: Padding(
+        padding: const EdgeInsets.only(top: 27),
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14594C3A),
+                    blurRadius: 15,
+                    offset: Offset(0, 6),
+                  ),
+                ],
+              ),
+              child: Container(
+                constraints: const BoxConstraints(minHeight: 200),
+                padding: const EdgeInsets.all(19),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(11),
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFFFFF0E7), Color(0xFFF5EEE8)],
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      l10n.aiFailureTitle,
+                      style: const TextStyle(
+                        color: Color(0xFF2B2B2B),
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      l10n.aiFailureDesc,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Color(0xFF85817D),
+                        fontSize: 12.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => _onRetryMessage(message.id),
+                      child: Container(
+                        constraints: const BoxConstraints(minWidth: 130),
+                        height: 36,
+                        padding: const EdgeInsets.symmetric(horizontal: 14),
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(999),
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFED8A69), Color(0xFFED744F)],
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x38E26F4B),
+                              blurRadius: 13,
+                              offset: Offset(0, 7),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              '↻',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                height: 1,
+                              ),
+                            ),
+                            const SizedBox(width: 7),
+                            Text(
+                              l10n.aiRetryGenerate,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Positioned(
+              top: -27,
+              right: -9,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: () => _onFailureDelete(message.id),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 7.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.94),
+                    borderRadius: BorderRadius.circular(11),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x1A4A3E2E),
+                        blurRadius: 12,
+                        offset: Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const AiIcon('assets/images/ai-delete-red.png', size: 14),
+                      const SizedBox(width: 4.5),
+                      Text(
+                        l10n.aiDelete,
+                        style: const TextStyle(
+                          color: Color(0xFFEF4545),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 用户气泡（需求 6.3：维持现状不变）——文字是浅橙块、图片是白底小卡片。
+  Widget _buildUserBubble(_AiMessage message) {
+    if (message.kind == _MsgKind.image && message.images.isNotEmpty) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onLongPress: () => _onBubbleLongPress(message),
+        child: Container(
+          width: 215,
+          padding: const EdgeInsets.all(5),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.86),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x12594C3A),
+                blurRadius: 15,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
+          child: _buildBubbleImage(message, 0, handleLongPressHere: false),
+        ),
+      );
+    }
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () => _onBubbleLongPress(message),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: const BoxDecoration(
+          color: Color(0xFFFFE0CD),
+          // 右上角收成小圆角 = 视觉稿里指向发送者的那个「尖」
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(14),
+            topRight: Radius.circular(5),
+            bottomLeft: Radius.circular(14),
+            bottomRight: Radius.circular(14),
+          ),
         ),
         child: SelectableText(
           message.content,
           style: const TextStyle(
-            color: Colors.white,
-            fontSize: 14,
-            height: 1.6,
+            color: kAiText,
+            fontSize: 14.5,
+            height: 1.55,
           ),
         ),
       ),
@@ -1713,20 +2451,33 @@ class _AiChatPageState extends State<AiChatPage> {
         behavior: HitTestBehavior.opaque,
         onTap: () => _stopGenerate(),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6.5),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: Colors.white.withValues(alpha: 0.95),
             borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: const Color(0xFFE2E6EE)),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1F4A3E2E),
+                blurRadius: 14,
+                offset: Offset(0, 5),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(width: 10, height: 10, color: const Color(0xFF2A2D32)),
-              const SizedBox(width: 8),
+              Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF641E),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 6),
               Text(
                 AppL10n.of(context).aiStopGenerating,
-                style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 13),
+                style: const TextStyle(color: kAiText, fontSize: 12.5),
               ),
             ],
           ),
@@ -1735,282 +2486,649 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
+  /// 输入卡：常驻四工具（相册 / 拍照 / 比例 / 一键生图）+ 输入行。
+  /// 视觉稿里这是一张**浮在背景上的圆角卡**，不再是「顶到屏幕底边的白条 + ＋ 展开的工具面板」，
+  /// 所以四个工具入口常驻、原来的 `_showTools` 随之取消。
   Widget _buildInputArea() {
-    final l10n = AppL10n.of(context);
-    return Container(
+    return Padding(
       // 键盘避让由 FigmaScreen 的 Scaffold(resizeToAvoidBottomInset: true) 负责，
       // 这里**不要**再加 viewInsets，否则弹键盘时输入区会被顶两次。
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Color(0xFFEDF1F7))),
+      padding: const EdgeInsets.fromLTRB(
+        _kInputCardMargin,
+        4,
+        _kInputCardMargin,
+        9,
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (_pending.isNotEmpty) _buildPendingStrip(),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              _AiRoundButton(
-                icon: _voiceMode
-                    ? Icons.keyboard_alt_outlined
-                    : Icons.mic_none_rounded,
-                onTap: () => setState(() {
-                  _voiceMode = !_voiceMode;
-                  _showTools = false;
-                }),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _voiceMode
-                    ? GestureDetector(
-                        behavior: HitTestBehavior.opaque,
-                        // ⚠️ App 侧没有录音 + 语音转写能力：小程序那套「按住说话、松手直发、
-                        // 动效盖住整个输入区」靠的是微信「同声传译」插件（小程序独有）。
-                        // App 要做得引入录音插件 + 第三方 STT 服务，本轮不擅自加依赖，
-                        // 仍只给同语义的占位提示（详见文件头「与小程序有意的差异」）。
-                        onLongPress: () =>
-                            AppToast.show(context, l10n.aiVoicePending),
-                        onTap: () => AppToast.show(context, l10n.aiVoicePending),
-                        child: Container(
-                          height: 40,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF2F5FC),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            l10n.aiHoldToTalk,
-                            style: const TextStyle(
-                              color: Color(0xFF777E88),
-                              fontSize: 14,
-                            ),
-                          ),
-                        ),
-                      )
-                    : TextField(
-                        controller: _input,
-                        enabled: !_banned,
-                        textInputAction: TextInputAction.send,
-                        onSubmitted: (_) => _onSendTap(),
-                        onChanged: (_) => setState(() {}),
-                        // 键盘和 ＋ 工具栏不该同时占着底部（对齐小程序 bindfocus="closeTools"）
-                        onTap: _closeTools,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          filled: true,
-                          fillColor: const Color(0xFFF2F5FC),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 10,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(20),
-                            borderSide: BorderSide.none,
-                          ),
-                          hintText: _banned
-                              ? l10n.aiBannedHint
-                              : (_pending.isEmpty
-                                    ? l10n.aiInputHint
-                                    : l10n.aiInputWithImagesHint),
-                          hintStyle: const TextStyle(
-                            color: Color(0xFF9AA1AB),
-                            fontSize: 14,
-                          ),
-                        ),
-                      ),
-              ),
-              const SizedBox(width: 8),
-              _AiRoundButton(
-                icon: Icons.add_rounded,
-                onTap: () => setState(() => _showTools = !_showTools),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _onSendTap,
-                child: Container(
-                  height: 40,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    // _submitting：已点发送但请求还没发出（建会话中）也要置灰，
-                    // 否则这段空窗能连点重复发送（见 [_guardedSend]）。
-                    color:
-                        (_input.text.trim().isNotEmpty &&
-                            !_sending &&
-                            !_submitting &&
-                            !_banned)
-                        ? const Color(0xFFFF5F1F)
-                        : const Color(0xFFE2E6EE),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    l10n.aiSend,
-                    style: TextStyle(
-                      color:
-                          (_input.text.trim().isNotEmpty &&
-                              !_sending &&
-                              !_submitting &&
-                              !_banned)
-                          ? Colors.white
-                          : const Color(0xFF9AA1AB),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (_showTools) _buildToolsPanel(),
-        ],
-      ),
-    );
-  }
-
-  /// 待发送图片缩略图（v1.0.3 §5.1.4）：停在输入框内，每张可删、最多 4 张。
-  Widget _buildPendingStrip() {
-    return SizedBox(
-      height: 68,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.only(bottom: 8),
-        itemCount: _pending.length,
-        separatorBuilder: (context, index) => const SizedBox(width: 8),
-        itemBuilder: (context, index) {
-          final item = _pending[index];
-          return SizedBox(
-            width: 60,
-            height: 60,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Image.file(File(item.path), fit: BoxFit.cover),
-                  ),
-                ),
-                if (item.uploading)
-                  Positioned.fill(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.35),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: const Center(
-                        child: SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                Positioned(
-                  right: 0,
-                  top: 0,
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _pending.remove(item)),
-                    child: Container(
-                      width: 18,
-                      height: 18,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(
-                        color: Color(0xCC11151C),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(
-                        Icons.close_rounded,
-                        size: 12,
-                        color: Colors.white,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(
+          _kInputCardPadding,
+          9,
+          _kInputCardPadding,
+          10,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.84),
+          borderRadius: BorderRadius.circular(21),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.94)),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x295B482D),
+              blurRadius: 22,
+              offset: Offset(0, 10),
             ),
-          );
-        },
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (_pending.isNotEmpty) _buildPendingStrip(),
+            _buildQuickTools(),
+            const SizedBox(height: 8),
+            _buildInputLine(),
+          ],
+        ),
       ),
     );
   }
 
-  /// ＋ 工具面板：相册 / 拍照 / 一键生图 + 图片比例。
-  Widget _buildToolsPanel() {
+  /// 常驻四工具行。宽度比例 1 : 1 : 1.35 : 1.75（见 [_kToolFlex]）——
+  /// 后两格文字更长，等分会挤成两行。
+  Widget _buildQuickTools() {
     final l10n = AppL10n.of(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: Column(
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _AiToolItem(
-                label: l10n.aiAlbum,
-                icon: Icons.photo_library_outlined,
-                accent: const Color(0xFF3BB273),
-                onTap: () => _pickImages(camera: false),
-              ),
-              _AiToolItem(
-                label: l10n.aiCamera,
-                icon: Icons.photo_camera_outlined,
-                accent: const Color(0xFF3E8BFF),
-                onTap: () => _pickImages(camera: true),
-              ),
-              _AiToolItem(
-                label: l10n.aiGenerateImage,
-                icon: Icons.auto_awesome_outlined,
-                accent: const Color(0xFFFF5F1F),
-                onTap: _openStylePicker,
-              ),
-            ],
+    return Row(
+      children: [
+        Expanded(
+          flex: _kToolFlex[0],
+          child: _buildQuickTool(
+            icon: 'assets/images/ai-album-outline.png',
+            label: l10n.aiAlbum,
+            onTap: () => _pickImages(camera: false),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Text(
-                l10n.aiImageRatio,
-                style: const TextStyle(color: Color(0xFF777E88), fontSize: 12),
+        ),
+        const SizedBox(width: _kToolGap),
+        Expanded(
+          flex: _kToolFlex[1],
+          child: _buildQuickTool(
+            icon: 'assets/images/ai-camera-outline.png',
+            label: l10n.aiCamera,
+            onTap: () => _pickImages(camera: true),
+          ),
+        ),
+        const SizedBox(width: _kToolGap),
+        Expanded(flex: _kToolFlex[2], child: _buildOrientationButton()),
+        const SizedBox(width: _kToolGap),
+        Expanded(flex: _kToolFlex[3], child: _buildGenerateButton()),
+      ],
+    );
+  }
+
+  /// 工具行里一颗普通胶囊（相册 / 拍照）。
+  Widget _buildQuickTool({
+    required String icon,
+    required String label,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: _kToolHeight,
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0x2E7D7D7D)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AiIcon(icon, size: 13.5),
+            const SizedBox(width: 4.5),
+            // 小程序那边是 nowrap 溢出可见；Flutter 里溢出会直接报错，所以给省略号兜底
+            //（四语种里德文/日文更长，窄屏上宁可截字也不能崩布局）。
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: _kToolText, fontSize: 12.5),
               ),
-              const SizedBox(width: 10),
-              for (final key in _kOrientationKeys)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: GestureDetector(
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 比例按钮：显示当前比例，点开/收起比例浮层。展开时整颗按钮转橙描边态。
+  Widget _buildOrientationButton() {
+    final active = _showOrientationPicker;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggleOrientationPicker,
+      child: Container(
+        height: _kToolHeight,
+        decoration: BoxDecoration(
+          color: active
+              ? const Color(0xFFFFF4ED)
+              : Colors.white.withValues(alpha: 0.42),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: active ? const Color(0xFFF5A77E) : const Color(0x2E7D7D7D),
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            AiIcon(
+              _orientationActiveIcon(_orientation),
+              size: 13.5,
+              opacity: 0.75,
+            ),
+            const SizedBox(width: 4.5),
+            Flexible(
+              child: Text(
+                AppL10n.of(context).aiOrientationLabel(_orientation),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: active ? kAiOrange : _kToolText,
+                  fontSize: 12.5,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4.5),
+            // 箭头/关闭都用等大的方图：切换时按钮里的内容宽度不变，
+            // 也不会像 ›/× 那样因字形基线不同而整体偏上偏左。
+            AiIcon(
+              active
+                  ? 'assets/images/ai-close-orange.png'
+                  : 'assets/images/ai-chevron-right.png',
+              size: 17,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 一键生图按钮：默认是橙色渐变实心，展开风格浮层时转成白底橙描边。
+  Widget _buildGenerateButton() {
+    final active = _showStylePicker;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: _toggleStylePicker,
+      child: Container(
+        height: _kToolHeight,
+        decoration: BoxDecoration(
+          color: active ? Colors.white.withValues(alpha: 0.78) : null,
+          gradient: active
+              ? null
+              : const LinearGradient(
+                  colors: [Color(0xFFFF5F24), Color(0xFFFF884A)],
+                ),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: active ? kAiOrange : Colors.transparent),
+          boxShadow: active
+              ? null
+              : const [
+                  BoxShadow(
+                    color: Color(0x38FF6827),
+                    blurRadius: 11,
+                    offset: Offset(0, 5),
+                  ),
+                ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // 外层固定 18，魔杖/关闭切换不改宽度；× 的图源四周留白多（笔画只占 64%），
+            // 所以关闭态把图放大到 18，才和魔杖看着一样大。
+            SizedBox(
+              width: 18,
+              height: 18,
+              child: Center(
+                child: active
+                    ? const AiIcon('assets/images/ai-close-orange.png', size: 18)
+                    : const AiIcon('assets/images/ai-magic-white.png', size: 14.5),
+              ),
+            ),
+            const SizedBox(width: 4.5),
+            Flexible(
+              child: Text(
+                AppL10n.of(context).aiGenerateImage,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: active ? kAiOrange : Colors.white,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 输入行：输入框（或「按住说话」占位）+ 右侧发送/语音圆钮。
+  Widget _buildInputLine() {
+    final l10n = AppL10n.of(context);
+    final canSend =
+        _input.text.trim().isNotEmpty && !_sending && !_submitting && !_banned;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 41),
+      // 右侧是 35 的圆钮，右边只留 3，四周才等距
+      padding: const EdgeInsets.only(left: 12, right: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.34),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x246C6C6C)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _voiceMode
+                ? GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTap: () => setState(() => _orientation = key),
+                    // ⚠️ App 侧没有录音 + 语音转写能力：小程序那套「按住说话、松手直发、
+                    // 动效盖住整个输入区」靠的是微信「同声传译」插件（小程序独有）。
+                    // App 要做得引入录音插件 + 第三方 STT 服务，本轮不擅自加依赖，
+                    // 仍只给同语义的占位提示（详见文件头「与小程序有意的差异」）。
+                    onLongPress: () =>
+                        AppToast.show(context, l10n.aiVoicePending),
+                    onTap: () => AppToast.show(context, l10n.aiVoicePending),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
+                      height: 34,
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: _orientation == key
-                            ? const Color(0x1AFF5F1F)
-                            : const Color(0xFFF2F5FC),
+                        color: const Color(0xFFF2EEE9),
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
+                        l10n.aiHoldToTalk,
+                        style: const TextStyle(color: kAiText, fontSize: 14),
+                      ),
+                    ),
+                  )
+                : TextField(
+                    controller: _input,
+                    enabled: !_banned,
+                    textInputAction: TextInputAction.send,
+                    onSubmitted: (_) => _onSendTap(),
+                    onChanged: (_) => setState(() {}),
+                    // 键盘和浮层不该同时占着底部（对齐小程序 bindfocus="closeTools"）
+                    onTap: _closeTools,
+                    style: const TextStyle(
+                      color: Color(0xFF3A3A3A),
+                      fontSize: 15,
+                    ),
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      hintText: _banned
+                          ? l10n.aiBannedHint
+                          : (_pending.isEmpty
+                                ? l10n.aiInputHint
+                                : l10n.aiInputWithImagesHint),
+                      hintStyle: const TextStyle(
+                        color: Color(0xFF9C9791),
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+          ),
+          const SizedBox(width: 7),
+          // 有草稿就是发送键，否则是语音/键盘切换键（与小程序同一格位置互斥出现）
+          if (_input.text.isNotEmpty && !_voiceMode)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _onSendTap,
+              child: Opacity(
+                opacity: canSend ? 1 : 0.42,
+                child: const SizedBox(
+                  width: 35,
+                  height: 35,
+                  child: AiIcon('assets/images/ai-send-active.png', size: 35),
+                ),
+              ),
+            )
+          else
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => setState(() {
+                _voiceMode = !_voiceMode;
+                _showOrientationPicker = false;
+                _showStylePicker = false;
+              }),
+              child: SizedBox(
+                width: 35,
+                height: 35,
+                child: Center(
+                  child: _voiceMode
+                      // 语音态下这颗是「切回键盘」：小程序也是个自绘的方块占位（没有图源）
+                      ? Container(
+                          width: 24,
+                          height: 24,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF7C7C7C),
+                            borderRadius: BorderRadius.circular(7.5),
+                          ),
+                          child: const Text(
+                            '键',
+                            style: TextStyle(color: Colors.white, fontSize: 10),
+                          ),
+                        )
+                      : const AiIcon(
+                          'assets/images/ai-microphone.png',
+                          size: 24,
+                        ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 比例浮层：竖向 / 横向 / 方形，选中项橙底 + 右侧对勾。
+  Widget _buildOrientationPopover() {
+    final l10n = AppL10n.of(context);
+    return _buildPopover(
+      cellIndex: 2,
+      width: 125,
+      padding: const EdgeInsets.all(6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final key in _kOrientationKeys)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _onOrientationTap(key),
+              child: Container(
+                height: 36,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: _orientation == key
+                      ? const Color(0xFFFFF0E7)
+                      : Colors.transparent,
+                  borderRadius: BorderRadius.circular(11),
+                ),
+                child: Row(
+                  children: [
+                    AiIcon(
+                      _orientation == key
+                          ? _orientationActiveIcon(key)
+                          : _kOrientationIcons[key]!,
+                      size: 14,
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
                         l10n.aiOrientationLabel(key),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: _orientation == key
-                              ? const Color(0xFFFF5F1F)
-                              : const Color(0xFF777E88),
-                          fontSize: 12,
+                              ? kAiOrange
+                              : const Color(0xFF303030),
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    if (_orientation == key) ...[
+                      const SizedBox(width: 7),
+                      const AiIcon(
+                        'assets/images/ai-check-orange.png',
+                        size: 12,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 一键生图风格浮层。点风格**立即发送**（副标题已写明），所以没有二次确认。
+  Widget _buildStylePopover() {
+    final l10n = AppL10n.of(context);
+    return _buildPopover(
+      cellIndex: 3,
+      width: 155,
+      alignRight: true,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const AiIcon('assets/images/ai-generate.png', size: 27),
+              const SizedBox(width: 7),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.aiGenerateImage,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF2C2C2C),
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 1),
+                    Text(
+                      l10n.aiGenerateImageDesc,
+                      maxLines: 2,
+                      style: const TextStyle(
+                        color: Color(0xFF9B9691),
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          for (final key in _kStyleKeys)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => _onStyleTap(key),
+              child: SizedBox(
+                height: 32,
+                child: Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFFF7840),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(
+                        l10n.aiStyleLabel(key),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF303030),
+                          fontSize: 13.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    const AiIcon('assets/images/ai-send-outline.png', size: 14),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// 浮层外壳 + 水平定位。
+  ///
+  /// 小程序靠 `position:absolute` + 一个按 750rpx 算死的 left/right 贴住对应的工具按钮；
+  /// App 屏宽不定，所以这里按 [_kToolFlex] **实算**那一格的位置，再把浮层夹回屏内 ——
+  /// 窄屏上浮层不会探出屏幕，宽屏上也仍旧对着自己的按钮。
+  Widget _buildPopover({
+    required int cellIndex,
+    required double width,
+    required EdgeInsets padding,
+    required Widget child,
+    bool alignRight = false,
+  }) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const inset = _kInputCardMargin + _kInputCardPadding;
+        final content = constraints.maxWidth - inset * 2;
+        var totalFlex = 0;
+        for (final flex in _kToolFlex) {
+          totalFlex += flex;
+        }
+        final unit =
+            (content - _kToolGap * (_kToolFlex.length - 1)) / totalFlex;
+        var cellLeft = inset;
+        for (var i = 0; i < cellIndex; i++) {
+          cellLeft += unit * _kToolFlex[i] + _kToolGap;
+        }
+        final cellWidth = unit * _kToolFlex[cellIndex];
+        final wanted = alignRight
+            ? cellLeft + cellWidth - width
+            : cellLeft + cellWidth / 2 - width / 2;
+        final maxLeft = constraints.maxWidth - inset - width;
+        var left = wanted;
+        if (left > maxLeft) {
+          left = maxLeft;
+        }
+        if (left < inset) {
+          left = inset;
+        }
+        if (left < 0) {
+          left = 0;
+        }
+        return Padding(
+          // 输入卡自己还有 4 的上边距，这里再补 5 就是小程序那 18rpx 的间隙
+          padding: EdgeInsets.only(left: left, bottom: 5),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              width: width,
+              padding: padding,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.97),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.92),
+                ),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x2E4D3E2B),
+                    blurRadius: 21,
+                    offset: Offset(0, 9),
+                  ),
+                ],
+              ),
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// 待发送图片缩略图（v1.0.3 §5.1.4）：停在输入卡内，每张可删、最多 4 张。
+  Widget _buildPendingStrip() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: SizedBox(
+        height: 50,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _pending.length,
+          separatorBuilder: (context, index) => const SizedBox(width: 7),
+          itemBuilder: (context, index) {
+            final item = _pending[index];
+            return SizedBox(
+              width: 50,
+              height: 50,
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: ColoredBox(
+                        color: const Color(0xFFEEE9E2),
+                        child: Image.file(File(item.path), fit: BoxFit.cover),
+                      ),
+                    ),
+                  ),
+                  if (item.uploading)
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F141E).withValues(alpha: 0.42),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Center(
+                          child: SizedBox(
+                            width: 15,
+                            height: 15,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  Positioned(
+                    right: 0,
+                    top: 0,
+                    child: GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: () => setState(() => _pending.remove(item)),
+                      child: Container(
+                        width: 18,
+                        height: 18,
+                        alignment: Alignment.center,
+                        decoration: const BoxDecoration(
+                          color: Color(0x8C0F141E),
+                          borderRadius: BorderRadius.only(
+                            bottomLeft: Radius.circular(7),
+                          ),
+                        ),
+                        child: const Text(
+                          '×',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            height: 1,
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-            ],
-          ),
-        ],
+                ],
+              ),
+            );
+          },
+        ),
       ),
     );
   }

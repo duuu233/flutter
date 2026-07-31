@@ -33,6 +33,7 @@ lib/
     │   └── app_theme.dart
     ├── device/
     │   ├── ble/
+    │   │   ├── ble_ab_benchmark.dart      # ⚠️ 临时对照实验，定版后删除
     │   │   ├── ble_direct_connect_cache.dart
     │   │   ├── ble_tuning.dart
     │   │   ├── device_ble.dart
@@ -42,6 +43,7 @@ lib/
     │   ├── battery_cache.dart
     │   ├── ble_connection_lease.dart
     │   ├── ble_controller.dart
+    │   ├── device_identity_registry.dart
     │   ├── device_interaction_trace.dart
     │   ├── frame_device_protocol.dart
     │   └── serial_match.dart
@@ -140,6 +142,8 @@ UI / PhotoFrameState
 - `BleController` 统一权限、扫描、连接、身份确认、设备信息、图传、OTA、保活与租约。
 - `FrameBleClient` 管理 GATT、MTU、连接间隔、指令、ACK、分包和重试。
 - `DeviceBatteryCache` 以完整设备 ID 缓存 15 秒电量并合并并发 `0x04` 读取。
+- `DeviceIdentityRegistry` 以后端记录主键落盘完整 6 字节 ID，供列表接口漏发 `deviceId` 时
+  兜底补齐；只作补齐链最后一档，不反向覆盖后端最新值，删除设备与退出登录时清理。
 - 广播短 ID 只用于筛选候选；后端记录、绑定入库与活动会话认领必须使用完整
   6 字节 ID，建连后再次读取 0x01 做最终验身。
 - 同一时刻只维护一个目标设备会话，连接切换必须先清理旧连接状态。
@@ -190,6 +194,7 @@ UI / PhotoFrameState
 - `ble_signal_level_test.dart`
 - `boltstar_ai_api_test.dart`
 - `device_battery_cache_test.dart`
+- `device_identity_registry_test.dart`
 - `frame_device_protocol_test.dart`
 - `language_settings_test.dart`
 - `serial_match_test.dart`
@@ -211,5 +216,9 @@ BLE 图传、连接间隔、OTA、相机/相册和平台登录仍需要真机验
 - 产品发布目标是 Android/iOS；其他 Flutter 平台目录仅为生成的工程壳。
 - AI 正式入口当前关闭；语音输入仍是占位，下载只落应用缓存目录。
 - BLE 性能自检参数会影响正常投屏，测试后必须恢复默认。
+- 临时件：`android/app/src/main/kotlin/com/boltfox/boltstar/BleNativeProbe.kt`、
+  `lib/src/device/ble/ble_ab_benchmark.dart` 和性能自检页顶部的「连接对照实验」卡片
+  只服务于安卓原生 vs `flutter_blue_plus` 的 A/B 实验，不属于生产连接路径；
+  拆除清单见 `../history/2026-07/2026-07-30-安卓原生连接AB对比.md`。
 - 历史架构、Figma 还原和改造过程已归档到
   `../history/2026-07/PROJECT_STRUCTURE_LEGACY.md`。
