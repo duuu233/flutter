@@ -7,6 +7,7 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 import '../../../device/ble/device_ble.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/frame_device_protocol.dart';
+import '../../../device/recently_bound_device.dart';
 import '../../../device/serial_match.dart';
 import '../../../native_device_api.dart';
 import '../../../routes/app_routes.dart';
@@ -14,6 +15,7 @@ import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/device_name_dialog.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import 'bind_device_found.dart';
@@ -421,18 +423,63 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       final persisted = _findBound(serials, scannedScreen);
       if (persisted != null) {
         widget.state.selectDevice(persisted.id);
+        // 记住「刚绑定的这台」：设备列表排序的第二优先级（需求第 6 项）。
+        unawaited(RecentlyBoundDevice.instance.remember(persisted.id));
       }
       widget.state.reconcileConnectionFlags();
-      // 跳转前一刻关掉 loading，随即返回设备列表（去掉原 500ms 固定延时；_binding 保持 true 到本页销毁，防重复点击）。
+      // 关掉 loading（_binding 保持 true 到本页销毁，防重复点击）。
       AppLoadingDialog.hide(context);
       HapticFeedback.mediumImpact(); // 绑定成功触觉反馈
-      _toast(AppL10n.of(context).bindSuccess);
+      // 不再弹「绑定成功」提示（需求第 17 项）：紧接着就要弹命名弹窗，成功 toast 会压在它上面，
+      // 且返回设备列表本身就是反馈。
+      await _promptRenameAfterBind(persisted?.id ?? '');
+      if (!mounted) {
+        return;
+      }
       Navigator.of(context).maybePop();
     } finally {
       // 兜底收口：mounted 早退/异常路径都不把 canPop:false 的蒙层留在 root 栈上
       //（hide 幂等，上面各分支「跳转前一刻 hide」的时序不受影响）。
       AppLoadingDialog.hide(context);
     }
+  }
+
+  /// 新绑定成功后在**当前页**引导命名（需求第 1 项：弱性强制）。
+  ///
+  /// 交互：绑定成功 → 弹出带默认名称的设备名称编辑弹窗 → 点「保存」写回后端 →
+  /// 再按原逻辑返回上一页。点「暂不修改」/点遮罩则直接沿用默认名返回，不阻断绑定。
+  /// 已绑定设备的复用路径**不进入这里**，避免每次重连都要求改名（对齐小程序 bind.js）。
+  ///
+  /// 拿不到后端记录主键（回查失败）时静默跳过：没有 id 就没法调改名接口，
+  /// 弹一个注定保存失败的框只会让用户以为绑定出了问题。
+  Future<void> _promptRenameAfterBind(String userProductId) async {
+    if (!mounted || userProductId.isEmpty) {
+      return;
+    }
+    final l10n = AppL10n.of(context);
+    final current = widget.state.deviceById(userProductId).name;
+    final name = await showDeviceNameDialog(
+      context,
+      initialValue: current,
+      title: l10n.devBindNameTitle,
+      cancelLabel: l10n.devBindNameLater,
+    );
+    if (!mounted || name == null || name == current) {
+      return;
+    }
+    // 保存中 loading（同「我的设备」/详情页两个改名入口，需求第 16 项）。
+    AppLoadingDialog.show(context, l10n.saving);
+    final ActionFeedback feedback;
+    try {
+      feedback = await widget.state.renameDevice(userProductId, name);
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
+    if (!mounted || feedback.success) {
+      return;
+    }
+    // 改名失败不回滚绑定：设备已经绑上了，只提示改名没成功，用户可在设备页重试。
+    _toast(feedback.message);
   }
 
   /// 在已绑定设备列表里按完整 6 字节 ID 精确匹配 + 型号一票否决，

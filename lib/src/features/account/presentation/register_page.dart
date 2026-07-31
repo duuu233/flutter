@@ -337,6 +337,8 @@ class _RegisterPageState extends State<RegisterPage> {
             child: AuthPillTextField(
               controller: _emailController,
               hintText: l10n.accEmailAddressHint,
+              // 注册页四个输入行统一收窄图标与文字的间距（登录页仍是默认 14）。
+              iconGap: AuthPillTextField.registerIconGap,
               icon: Image.asset(
                 'assets/images/email_icon.png',
                 width: 24,
@@ -355,6 +357,7 @@ class _RegisterPageState extends State<RegisterPage> {
             child: AuthPillTextField(
               controller: _codeController,
               hintText: l10n.accVerifyCodeHint,
+              iconGap: AuthPillTextField.registerIconGap,
               // 无验证码切图资源，用同色系图标保持与左侧图标一致的视觉份量。
               icon: const Icon(
                 Icons.verified_user_outlined,
@@ -380,6 +383,7 @@ class _RegisterPageState extends State<RegisterPage> {
             child: AuthPillTextField(
               controller: _passwordController,
               hintText: l10n.accPasswordRuleHint,
+              iconGap: AuthPillTextField.registerIconGap,
               icon: Image.asset(
                 'assets/images/password_icon.png',
                 width: 24,
@@ -406,6 +410,7 @@ class _RegisterPageState extends State<RegisterPage> {
             child: AuthPillTextField(
               controller: _confirmController,
               hintText: l10n.accConfirmPasswordHint,
+              iconGap: AuthPillTextField.registerIconGap,
               icon: Image.asset(
                 'assets/images/password_icon.png',
                 width: 24,

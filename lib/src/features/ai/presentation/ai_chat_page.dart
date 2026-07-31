@@ -2279,12 +2279,20 @@ class _AiChatPageState extends State<AiChatPage> {
                           mainAxisAlignment: MainAxisAlignment.center,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text(
-                              '↻',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 18,
-                                height: 1,
+                            // 固定 18×18 的居中盒（小程序 .retry-placeholder 36rpx）：
+                            // ↻ 字形在行盒里本身偏上，不框住它按钮里的文字会跟着被顶偏。
+                            const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: Center(
+                                child: Text(
+                                  '↻',
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 18,
+                                    height: 1,
+                                  ),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 7),
@@ -2639,11 +2647,12 @@ class _AiChatPageState extends State<AiChatPage> {
             const SizedBox(width: 4.5),
             // 箭头/关闭都用等大的方图：切换时按钮里的内容宽度不变，
             // 也不会像 ›/× 那样因字形基线不同而整体偏上偏左。
+            // 2026-07-31 由 17 收到 11（小程序 34rpx → 22rpx）：原尺寸压过了左边的比例图标。
             AiIcon(
               active
                   ? 'assets/images/ai-close-orange.png'
                   : 'assets/images/ai-chevron-right.png',
-              size: 17,
+              size: 11,
             ),
           ],
         ),

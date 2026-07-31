@@ -27,12 +27,16 @@ import 'casting_progress_page.dart';
 ///   点「开始投屏」时才按取景框内所见烘焙上传。
 /// - **竖向 / 横向取景**：工具栏前两颗按钮切的是**可视区域（取景框）**——竖向 = 设备物理比例，
 ///   横向 = 宽高对调（相框躺着摆）。图片本身位置/大小/角度不动，换框后用 zoom 反向补偿保住绝对显示尺寸。
-/// - **长按 1s 才拖拽**（[_kLongPress]，仿苹果相册长按取图）：单指按住几乎不动满 1s → 震动 +
+/// - **自由缩放、所见即所得**（2026-07-31 需求第 4 项）：缩放只受
+///   [_kMinZoomFactor] ~ [_kMaxZoomFactor] 限制，**不强制铺满取景框**；缩小/平移露出的区域
+///   是白色画布，与导出画布的白底一一对应（见 [_clampTransform] 与 [_bake]）。
+/// - **长按 0.5s 才拖拽**（[_kLongPress]，仿苹果相册长按取图）：单指按住几乎不动满 0.5s → 震动 +
 ///   「拿起」放大回弹动画，此后单指移动才平移图片；按住期间位移超 [_kMoveCancelPx] 判为切图滑动。
 /// - **双指缩放 + 旋转**随时可用，不需长按；右上角悬浮按钮每点一次顺时针 +90°。
-/// - **左右滑动切图**：松手时按横向位移方向提交（[_kSwipeCommitPx]），PageView 只负责过场动画——
-///   触摸全部由上层 [Listener] 独占后在 JS 同款状态机里分流（小程序那边 swiper 无法与
-///   「同一根手指长按后转拖拽」共存，App 照抄这个取舍以保证两端手感一致）。
+/// - **左右滑动切图**：松手时按横向位移方向提交（[_kSwipeCommitPx]），PageView 负责 Banner 式
+///   过场动画（[_kSlideDuration] = 360ms，需求第 14 项）——触摸全部由上层 [Listener] 独占后在
+///   JS 同款状态机里分流（小程序那边 swiper 无法与「同一根手指长按后转拖拽」共存，
+///   App 照抄这个取舍以保证两端手感一致）。
 ///
 /// ## 导出铁律（改这里前先读完，错了不报错、设备直接花屏）
 /// 两种取景方向**恒导出竖向设备物理分辨率**（480×720 / 680×960）：
@@ -200,9 +204,10 @@ class _DragAnchor {
   final double angle;
 }
 
-/// 长按进入拖拽所需时长（对齐小程序 LONG_PRESS_MS）。
-/// 2026-07-25：2s 太久（按着像没反应），两端同步改 1s；改这里记得同步 `castEditHint` 文案。
-const Duration _kLongPress = Duration(milliseconds: 1000);
+/// 长按进入拖拽所需时长（对齐小程序 `LONG_PRESS_MS`）。
+/// 2026-07-25：2s 太久（按着像没反应）改 1s；2026-07-31 按需求第 4 项两端统一到 **0.5s**。
+/// 改这里记得同步 `castEditHint` 文案。
+const Duration _kLongPress = Duration(milliseconds: 500);
 
 /// 长按判定的位移容差(px)：按住期间移动超过它即认定用户在左右滑动切图，取消长按计时。
 const double _kMoveCancelPx = 12;
@@ -213,13 +218,20 @@ const double _kSwipeCommitPx = 50;
 /// 编辑态里图片相对「铺满取景框(cover)」还能再放大的上限倍数。
 const double _kMaxZoomFactor = 8;
 
+/// 缩小下限（相对 cover 的倍数，对齐小程序 `MIN_ZOOM_FACTOR`）。
+///
+/// 2026-07-31 需求第 4 项：图片要能「想缩小多少就缩小多少，所见即所得」——所以**不再强制
+/// cover 取景框**，缩小后露出的区域就是白色画布，导出时原样带上（见 `_bake`）。
+/// 不取 0 是因为 scale=0 之后任何倍率手势都乘不回来，图片会永久消失、手势再也救不回。
+const double _kMinZoomFactor = 0.02;
+
 /// 横向导出时整幅构图的旋转量（度，顺时针）：90°（横转竖）+ 180°（真机倒置校正）。
 /// **唯一真源**，别在别处另写角度。
 const double _kExportRotateDeg = 270;
 const double _kExportRotateRad = _kExportRotateDeg * math.pi / 180;
 
-/// 切图过场时长（对齐小程序 swiper duration=300ms）。
-const Duration _kSlideDuration = Duration(milliseconds: 300);
+/// 切图过场时长：Banner 式轮播过场（对齐小程序 swiper `duration=360ms`，需求第 14 项）。
+const Duration _kSlideDuration = Duration(milliseconds: 360);
 
 /// 「拿起」放大回弹动画时长（对齐小程序 clipPickup 0.34s）。
 const Duration _kPickupDuration = Duration(milliseconds: 340);
@@ -467,7 +479,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
 
   /// 「竖向 / 横向」：只换取景框（可视区域），图片的位置/大小/角度原地保持不变——
   /// 需求语义是「横竖切换改变的只是可视区域，对图片本身没有改动」。换框后 baseScale 变了，
-  /// 用 zoom 反向补偿保住绝对显示尺寸；[_clampTransform] 会在新框盖不满时自动把 zoom 顶上去。
+  /// 用 zoom 反向补偿保住绝对显示尺寸。新框盖不满时**不再自动放大**——2026-07-31 起允许
+  /// 自由缩小，露出的地方就是白色画布（见 [_clampTransform]）。
   void _setOrientation(_Orientation orientation) {
     if (orientation == _orientation) {
       return;
@@ -489,43 +502,30 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     _applyEdit(keepZoom, g.tx, g.ty, g.angle);
   }
 
-  /// 约束一组变换：① zoom 不小于「当前角度下铺满取景框」所需最小值（旋转后也不露白边），
-  /// 且不超过上限；② 平移不让取景框越出图片（把屏幕平移量转到图片本地坐标再夹取）。
+  /// 约束一组变换：**只限制极小 / 极大的缩放值**（[_kMinZoomFactor] ~ [_kMaxZoomFactor]），
+  /// 不再强制铺满取景框，也不再把平移夹在图片边缘内。
+  ///
+  /// 2026-07-31 需求第 4 项「想缩小多少就缩小多少，所见即所得」（对齐小程序
+  /// `preview.js _clampTransform` 同日改动）。原实现有两道夹取：
+  ///   ① zoom ≥「当前角度下 cover 取景框」——用户一缩小就被顶回去，看着像卡住；
+  ///   ② 平移不让取景框越出图片——缩到比框小以后这条几何上无解，图片会被钉死在中间。
+  /// 两道一起去掉，缩小/平移露出的区域就是白色画布，导出时原样带上（预览与输出一致）。
+  ///
+  /// [angle] 现在不参与夹取，保留形参是为了让调用点读起来仍是「一整组变换」。
   ({double zoom, double tx, double ty}) _clampTransform(
     double zoom,
     double tx,
     double ty,
     double angle,
   ) {
-    final g = _edit!;
-    final rad = angle * math.pi / 180;
-    final cosT = math.cos(rad);
-    final sinT = math.sin(rad);
-    final c = cosT.abs();
-    final s = sinT.abs();
-    final fw = g.frame.width;
-    final fh = g.frame.height;
-    // 旋转 angle 后，图片(baseW×baseH×zoom)要包住轴对齐的取景框(fw×fh)所需的最小 zoom
-    final minZoom = math.max(
-      (fw * c + fh * s) / g.baseW,
-      (fw * s + fh * c) / g.baseH,
+    final z = zoom.isFinite
+        ? zoom.clamp(_kMinZoomFactor, _kMaxZoomFactor).toDouble()
+        : 1.0;
+    return (
+      zoom: z,
+      tx: tx.isFinite ? tx : 0.0,
+      ty: ty.isFinite ? ty : 0.0,
     );
-    var z = math.max(zoom, minZoom);
-    z = math.min(z, minZoom * _kMaxZoomFactor);
-    final w = g.baseW * z;
-    final h = g.baseH * z;
-    // 取景框旋转到图片本地坐标后的半宽/半高
-    final hx = (fw / 2) * c + (fh / 2) * s;
-    final hy = (fw / 2) * s + (fh / 2) * c;
-    // 屏幕平移(tx,ty) → 图片本地平移(lox,loy)
-    var lox = tx * cosT + ty * sinT;
-    var loy = -tx * sinT + ty * cosT;
-    final maxLox = math.max(0.0, w / 2 - hx);
-    final maxLoy = math.max(0.0, h / 2 - hy);
-    lox = lox.clamp(-maxLox, maxLox).toDouble();
-    loy = loy.clamp(-maxLoy, maxLoy).toDouble();
-    // 本地平移 → 屏幕平移
-    return (zoom: z, tx: lox * cosT - loy * sinT, ty: lox * sinT + loy * cosT);
   }
 
   /// 应用一组变换：先夹取到合法范围，写回 [_edit]，再重建画面。
@@ -543,7 +543,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   }
 
   /// 图右上角悬浮按钮：在当前角度基础上顺时针 +90°。
-  /// 夹取会自动把 zoom 提到「转 90° 后仍铺满取景框」所需值，不露白边。
+  /// 只转角度、不再自动补 zoom：转出的白边就是最终输出里的白边（所见即所得）。
   void _rotate90() {
     final g = _edit;
     if (g == null) {
@@ -553,7 +553,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   }
 
   // ── 触摸手势（1:1 移植小程序 07-24 的状态机）───────────────
-  //  单指：默认判为「左右滑动切图」；若按住几乎不动满 2s → 进入拖拽态后单指平移图片。
+  //  单指：默认判为「左右滑动切图」；若按住几乎不动满 [_kLongPress](0.5s) → 进入拖拽态后单指平移图片。
   //  双指：随时进入缩放 + 旋转（不需长按），与切图/拖拽互不影响。
 
   void _clearLongPress() {
@@ -598,7 +598,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     );
   }
 
-  /// 长按满 1s：进入拖拽态，给「拿起」反馈（放大回弹 + 震动，仿苹果相册）。
+  /// 长按满 [_kLongPress](0.5s)：进入拖拽态，给「拿起」反馈（放大回弹 + 震动，仿苹果相册）。
   void _armDrag() {
     _lpTimer = null;
     final start = _touchStart;
@@ -1177,7 +1177,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             aspectRatio: ratio,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(_kClipRadius),
-              child: ColoredBox(color: const Color(0xFFE6ECF4), child: image),
+              // 与编辑层取景框、导出画布同为白底（需求第 4 项「所见即所得」）。
+              child: ColoredBox(color: const Color(0xFFFFFFFF), child: image),
             ),
           ),
         );
@@ -1227,7 +1228,10 @@ class _CastPreviewPageState extends State<CastPreviewPage>
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(_kClipRadius),
                   child: ColoredBox(
-                    color: const Color(0xFFE6ECF4),
+                    // 取景框底色必须是**白色**，与 [_bake] 导出前铺的白底一致：
+                    // 自由缩小后露出的留白就是最终会写进设备的那块白（需求第 4 项「所见即所得」）。
+                    // 原来是浅蓝灰 #E6ECF4，缩小后预览留白与导出留白颜色对不上。
+                    color: const Color(0xFFFFFFFF),
                     child: Stack(
                       children: [
                         Positioned(

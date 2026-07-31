@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../device/recently_bound_device.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
@@ -24,13 +27,86 @@ class DevicesPage extends StatefulWidget {
 }
 
 class _DevicesPageState extends State<DevicesPage> with RouteAware {
+  /// 上一帧处于「已连接」的设备 id。用来识别「切换了连接设备」这一刻——
+  /// 新连上的那台会被排到最上面，同时给它一次上移入场动效（需求第 6 项）。
+  String _lastConnectedId = '';
+
+  /// 正在播放上移动效的设备 id（560ms 后清空，与小程序 `reorderingDeviceId` 同一时长）。
+  String _promotedId = '';
+  Timer? _promotionTimer;
+
+  /// 首帧只记录当前连接目标、不播动效：动效表达的是「**切换**了连接设备」，
+  /// 每次进页都对已连接那台放一遍就成了无意义的入场噪音。
+  bool _promotionPrimed = false;
+
   @override
   void initState() {
     super.initState();
+    // 「最近绑定」是排序的第二优先级，进页先把它从本机读回来。
+    RecentlyBoundDevice.instance.load().then((_) {
+      if (mounted) {
+        setState(() {});
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _reload();
       }
+    });
+  }
+
+  /// 排序（对齐小程序 `list.js sortDevices`）：
+  /// ① 真实连接中的设备永远置顶 → ② 最近绑定的设备 → ③ 其余保持接口原有顺序。
+  ///
+  /// 连接态只认 [PhotoFrameState.isDeviceActuallyConnected] 校验过的活动会话，
+  /// 不能用后端记录里的 connected 字段——那只是上一次刷新的缓存。
+  List<DeviceItem> _sortedDevices() {
+    final recentId = RecentlyBoundDevice.instance.value;
+    final indexed = <(int, DeviceItem)>[
+      for (var i = 0; i < widget.state.devices.length; i++)
+        (i, widget.state.devices[i]),
+    ];
+    indexed.sort((a, b) {
+      final ac = widget.state.isDeviceActuallyConnected(a.$2.id) ? 1 : 0;
+      final bc = widget.state.isDeviceActuallyConnected(b.$2.id) ? 1 : 0;
+      if (ac != bc) {
+        return bc - ac;
+      }
+      final ar = recentId.isNotEmpty && a.$2.id == recentId ? 1 : 0;
+      final br = recentId.isNotEmpty && b.$2.id == recentId ? 1 : 0;
+      if (ar != br) {
+        return br - ar;
+      }
+      return a.$1 - b.$1; // 其余保持接口原有顺序（稳定排序）
+    });
+    return [for (final entry in indexed) entry.$2];
+  }
+
+  /// 连接设备发生切换时，给新连上的那台标记一次上移动效。
+  ///
+  /// 在 build 里检测（连接是异步完成的，没有单一回调能覆盖「列表页连接 / 详情页连接 /
+  /// 自动重连」三条路径），所以用 postFrame 回调改状态，避免在 build 期间 setState。
+  void _notePromotion(String connectedId) {
+    if (connectedId == _lastConnectedId) {
+      return;
+    }
+    _lastConnectedId = connectedId;
+    final primed = _promotionPrimed;
+    _promotionPrimed = true;
+    if (connectedId.isEmpty || !primed) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _promotedId = connectedId);
+      _promotionTimer?.cancel();
+      _promotionTimer = Timer(const Duration(milliseconds: 560), () {
+        if (mounted) {
+          setState(() => _promotedId = '');
+        }
+      });
     });
   }
 
@@ -45,6 +121,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
 
   @override
   void dispose() {
+    _promotionTimer?.cancel();
     appRouteObserver.unsubscribe(this);
     super.dispose();
   }
@@ -79,12 +156,22 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
     return AnimatedBuilder(
       animation: state,
       builder: (context, _) {
+        final ordered = _sortedDevices();
+        // 已连接的那台排序后必然在第一位（若有）；连接目标变了就播一次上移动效。
+        // 判据与排序用同一个（真实会话），不看记录里可能过期的 connected 缓存。
+        final connectedId =
+            ordered.isNotEmpty &&
+                state.isDeviceActuallyConnected(ordered.first.id)
+            ? ordered.first.id
+            : '';
+        _notePromotion(connectedId);
         return MyDevicesPage(
           // 首屏未出结果前显示 loading，不先闪空列表。
           loading: !state.devicesLoaded,
           loadError: state.devicesLoadError,
           onRefresh: _reload,
-          devices: state.devices
+          promotedDeviceId: _promotedId,
+          devices: ordered
               .map(
                 (device) => MyDeviceOverview(
                   id: device.id,

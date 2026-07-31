@@ -162,7 +162,7 @@ class SettingsPage extends StatelessWidget {
                 ),
                 const _SettingsDivider(),
                 _SettingsRow(
-                  iconAsset: 'assets/images/set-icon02.png',
+                  iconAsset: 'assets/images/set-icon05.png',
                   iconBg: const Color(0x1A287DFF),
                   title: l10n.checkUpdate,
                   // 检测更新：跳转「更新 BoltStar」页，进入即真实检查版本（三态 UI），
@@ -251,6 +251,9 @@ class SettingsPage extends StatelessWidget {
       title: l10n.deleteAccount,
       message: l10n.deleteAccountWarn1,
       icon: Icons.person_remove_alt_1_outlined,
+      // 第一步不是终局操作（点完还有第二次确认），按钮叫「继续」而不是「确定」，
+      // 避免用户以为这一下就注销了。
+      confirmLabel: l10n.continueLabel,
     );
     if (step1 != true || !context.mounted) {
       return;
@@ -292,6 +295,7 @@ Future<bool?> _showConfirmDialog(
   required String message,
   IconData icon = Icons.logout_rounded,
   AppDialogTone tone = AppDialogTone.danger,
+  String? confirmLabel,
 }) {
   return showAppConfirmDialog(
     context,
@@ -299,6 +303,7 @@ Future<bool?> _showConfirmDialog(
     message: message,
     icon: icon,
     tone: tone,
+    confirmLabel: confirmLabel,
   );
 }
 

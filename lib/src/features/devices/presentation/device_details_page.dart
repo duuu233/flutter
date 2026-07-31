@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
+import 'package:BoltStar/src/shared/widgets/device_name_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble_controller.dart';
 import '../../../device/frame_device_protocol.dart';
@@ -39,7 +39,8 @@ String _resolutionText(DeviceItem device, bool connected) {
 /// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
 ///
 /// 对照微信小程序 `photo-album/subpackages/device/detail`：摘要卡 + 顶部操作栏（投屏 / 连接·断开）+
-/// 信息列表 + 操作列表（清空 / 删除），删除/清空走全局统一的二次确认弹窗（见 [AppDialog]）。
+/// 信息列表 + 操作列表（一键清空 / 解除绑定 / 删除设备），三者都走全局统一的二次确认弹窗
+///（`AppDialog`，流程分别在 `device_clear_flow.dart` 与 `delete_device_flow.dart`）。
 /// 展示当前选中设备（`state.selectedDevice`），随 [PhotoFrameState] 变化自动刷新。
 class DeviceDetailsPage extends StatefulWidget {
   const DeviceDetailsPage({
@@ -48,6 +49,7 @@ class DeviceDetailsPage extends StatefulWidget {
     required this.deviceId,
     this.onCarouselSettings,
     this.onClearDevice,
+    this.onUnbindDevice,
     this.onDeleteDevice,
     this.onOtaUpgrade,
   });
@@ -56,6 +58,11 @@ class DeviceDetailsPage extends StatefulWidget {
   final String deviceId;
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
+
+  /// 「解除绑定」：只解绑，设备照片保留。
+  final VoidCallback? onUnbindDevice;
+
+  /// 「删除设备」：一键清空 + 断开 + 解除绑定。
   final VoidCallback? onDeleteDevice;
   final VoidCallback? onOtaUpgrade;
 
@@ -112,6 +119,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
           onCast: () => _startCast(context),
           onCarouselSettings: widget.onCarouselSettings,
           onClearDevice: widget.onClearDevice,
+          onUnbindDevice: widget.onUnbindDevice,
           onDeleteDevice: widget.onDeleteDevice,
           onOtaUpgrade: widget.onOtaUpgrade,
         ),
@@ -126,26 +134,12 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   /// 摘要卡编辑图标：重命名当前设备（对齐小程序 detail.js `showRenameModal`）。
   Future<void> _renameDevice(BuildContext context) async {
     final device = this.device;
-    final controller = TextEditingController(text: device.name);
-    final String? name;
-    try {
-      final confirmed = await showAppConfirmDialog(
-        context,
-        title: AppL10n.of(context).devRenameTitle,
-        icon: Icons.drive_file_rename_outline_rounded,
-        confirmLabel: AppL10n.of(context).devConfirm,
-        content: AppDialogTextField(
-          controller: controller,
-          hintText: AppL10n.of(context).devNameHint,
-          maxLength: 20,
-        ),
-      );
-      name = confirmed == true ? controller.text.trim() : null;
-    } finally {
-      // 原来从不 dispose（每次重命名泄漏一个 ChangeNotifier）；退场动画期间 TextField
-      // 仍挂着 controller，延迟一个主题动画时长再释放，避免 used-after-dispose 断言。
-      Future<void>.delayed(kThemeAnimationDuration, controller.dispose);
-    }
+    // 统一样式的设备名称弹窗（列表页与绑定成功后的命名引导用的是同一个）。
+    final name = await showDeviceNameDialog(
+      context,
+      initialValue: device.name,
+      title: AppL10n.of(context).devRenameTitle,
+    );
     if (name == null || name == device.name) {
       return;
     }
@@ -299,6 +293,7 @@ class DeviceDetailsBody extends StatelessWidget {
     this.onCast,
     this.onCarouselSettings,
     this.onClearDevice,
+    this.onUnbindDevice,
     this.onDeleteDevice,
     this.onOtaUpgrade,
   });
@@ -317,6 +312,11 @@ class DeviceDetailsBody extends StatelessWidget {
 
   final VoidCallback? onCarouselSettings;
   final VoidCallback? onClearDevice;
+
+  /// 「解除绑定」：只解绑，设备照片保留。
+  final VoidCallback? onUnbindDevice;
+
+  /// 「删除设备」：一键清空 + 断开 + 解除绑定。
   final VoidCallback? onDeleteDevice;
   final VoidCallback? onOtaUpgrade;
 
@@ -555,19 +555,22 @@ class DeviceDetailsBody extends StatelessWidget {
                     : '--',
               ),
               const _ThinDivider(),
-              // 屏幕物理分辨率（如 680*960），紧跟设备ID：产品静态属性，
+              // 屏幕物理尺寸（如 680*960），紧跟设备ID：产品静态属性，
               // 不随连接状态置 --（见 [_resolutionText]）。
+              // 图标不复用「设备ID」那张标签图：这一行讲的是屏幕，用专门画的相框+尺寸标注
+              //（对齐小程序 device-detail-screen-size.svg；Flutter 无 SVG 依赖，故用 CustomPaint）。
               _DetailRow(
-                iconAsset: 'assets/images/device-detail-icon02.png',
+                iconAsset: '',
+                iconWidget: const _ScreenSizeGlyph(),
                 fallbackIcon: Icons.aspect_ratio_rounded,
-                label: AppL10n.of(context).devResolution,
+                label: AppL10n.of(context).devScreenSize,
                 value: _resolutionText(device, connected),
               ),
               const _ThinDivider(),
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon03.png',
                 fallbackIcon: Icons.sd_storage_outlined,
-                label: AppL10n.of(context).devDeviceMemory,
+                label: AppL10n.of(context).devMaxPhotoCount,
                 // 内存占用是连接才读得到的实时数据（0x01 的 IMG_MASK）：未连接（含断开设备后）一律 --，
                 // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
                 value: connected
@@ -609,6 +612,19 @@ class DeviceDetailsBody extends StatelessWidget {
                 onTap: onClearDevice,
               ),
               const _ThinDivider(),
+              // 解除绑定：只断账号关系，设备上的照片保留（与下面的「删除设备」不是一回事）。
+              _DetailRow(
+                iconAsset: 'assets/images/device-detail-icon06.png',
+                fallbackIcon: Icons.link_off_rounded,
+                label: AppL10n.of(context).devUnbindDevice,
+                labelColor: const Color(0xFFFF3045),
+                labelWeight: FontWeight.w500,
+                value: AppL10n.of(context).devUnbindDeviceValue,
+                showChevron: true,
+                onTap: onUnbindDevice,
+              ),
+              const _ThinDivider(),
+              // 删除设备（放在最底部）：一键清空 + 断开连接 + 解除绑定，需已连接。
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon06.png',
                 fallbackIcon: Icons.delete_outline_rounded,
@@ -634,6 +650,7 @@ class _DetailRow extends StatelessWidget {
     required this.fallbackIcon,
     required this.label,
     required this.value,
+    this.iconWidget,
     this.labelColor = const Color(0xFF33373D),
     this.labelWeight = FontWeight.w600,
     this.showChevron = false,
@@ -641,6 +658,9 @@ class _DetailRow extends StatelessWidget {
   });
 
   final String iconAsset;
+
+  /// 直接给一个绘制型图标（无切图资源时用，如「屏幕尺寸」）；给了就不再读 [iconAsset]。
+  final Widget? iconWidget;
   final IconData fallbackIcon;
   final String label;
   final String value;
@@ -658,13 +678,19 @@ class _DetailRow extends StatelessWidget {
         height: 60,
         child: Row(
           children: [
-            Image.asset(
-              iconAsset,
+            SizedBox(
               width: 20,
               height: 20,
-              fit: BoxFit.contain,
-              errorBuilder: (context, error, stackTrace) =>
-                  Icon(fallbackIcon, size: 20, color: labelColor),
+              child:
+                  iconWidget ??
+                  Image.asset(
+                    iconAsset,
+                    width: 20,
+                    height: 20,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        Icon(fallbackIcon, size: 20, color: labelColor),
+                  ),
             ),
             const SizedBox(width: 15),
             // 左侧标题按内容宽度（短标签），纯 Text 不占弹性——把中间空间全部让给右侧
@@ -711,6 +737,75 @@ class _DetailRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 「屏幕尺寸」行图标：相框 + 底座 + 顶部橙色双向标注箭头。
+///
+/// 1:1 复刻小程序 `assets/images/device-detail-screen-size.svg`（48×48 视图盒）。
+/// Flutter 侧没有 SVG 依赖，也不值得为一枚图标引入 flutter_svg，故按同一组坐标绘制
+///（同 `_FrameLogoPainter` 的做法），按 20/48 缩放到行内 20×20。
+class _ScreenSizeGlyph extends StatelessWidget {
+  const _ScreenSizeGlyph();
+
+  @override
+  Widget build(BuildContext context) {
+    return const SizedBox(
+      width: 20,
+      height: 20,
+      child: CustomPaint(painter: _ScreenSizePainter()),
+    );
+  }
+}
+
+class _ScreenSizePainter extends CustomPainter {
+  const _ScreenSizePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // SVG 视图盒是 48×48，这里等比缩放到实际绘制尺寸，坐标可直接照抄 SVG。
+    final scale = size.width / 48;
+    canvas.scale(scale);
+
+    final frame = Paint()
+      ..color = const Color(0xFF5D6672)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+
+    // 屏幕主体 rect(9,11,30×23) rx=3.5。
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        const Rect.fromLTWH(9, 11, 30, 23),
+        const Radius.circular(3.5),
+      ),
+      frame,
+    );
+    // 底座：立柱 + 横杆。
+    canvas.drawLine(const Offset(24, 34), const Offset(24, 40), frame);
+    canvas.drawLine(const Offset(18, 40), const Offset(30, 40), frame);
+
+    // 顶部橙色尺寸标注：一条横线 + 两端向外的箭头。
+    final measure = Paint()
+      ..color = const Color(0xFFFF6A20)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    canvas.drawLine(const Offset(10, 5), const Offset(38, 5), measure);
+    canvas.drawPath(
+      Path()
+        ..moveTo(13, 7)
+        ..lineTo(10, 4)
+        ..lineTo(7, 7)
+        ..moveTo(35, 7)
+        ..lineTo(38, 4)
+        ..lineTo(41, 7),
+      measure,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 细分割线（小程序 `.thin-divider`，rgba(42,43,43,0.08)）。

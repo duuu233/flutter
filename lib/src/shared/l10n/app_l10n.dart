@@ -133,6 +133,10 @@ class AppL10n {
   String get confirm => _pick('确定', 'OK', '確定');
   String get gotIt => _pick('我知道了', 'Got it', '了解しました');
 
+  /// 多步确认里的「非终局」确认按钮：点了还会再弹一次，不能叫「确定」。
+  String get continueLabel => _pick('继续', 'Continue', '続ける');
+  String get save => _pick('保存', 'Save', '保存');
+
   /// 通用提示弹窗标题（校验失败、纯告知类提示统一用它）。
   String get tipTitle => _pick('提示', 'Notice', 'お知らせ');
   String get loading => _pick('加载中…', 'Loading…', '読み込み中…');
@@ -679,10 +683,11 @@ class AppL10n {
   // 对应的 castPrevPhoto/castNextPhoto 两个键随之删除，勿再加回。
   String get castPortrait => _pick('竖向', 'Portrait', '縦向き');
   String get castLandscape => _pick('横向', 'Landscape', '横向き');
+  /// 提示里的时长必须与 `cast_preview_page.dart` 的 `_kLongPress` 一致（2026-07-31 起 0.5 秒）。
   String get castEditHint => _pick(
-    '长按1秒后可拖拽图片、双指可缩放与旋转图片',
-    'Press and hold 1s to drag · Pinch with two fingers to zoom and rotate',
-    '1秒長押しでドラッグ · 2本指で拡大・回転',
+    '长按0.5秒后可拖拽图片、双指可缩放与旋转图片',
+    'Press and hold 0.5s to drag · Pinch with two fingers to zoom and rotate',
+    '0.5秒長押しでドラッグ · 2本指で拡大・回転',
   );
   String get castRecordNoImage => _pick(
     '该记录没有可投屏的图片',
@@ -1121,6 +1126,22 @@ class AppL10n {
   String get devDeviceNameTitle => _pick('设备名称', 'Device Name', 'デバイス名');
   String get devNameHint =>
       _pick('请输入设备名称', 'Enter a device name', 'デバイス名を入力してください');
+
+  /// 设备名称弹窗副标题（小程序 `.name-dialog__tip`）。
+  String get devNameDialogTip => _pick(
+    '为设备设置一个容易识别的名称',
+    'Give this device a name you can recognise',
+    'すぐ分かる名前をデバイスに付けてください',
+  );
+
+  /// 绑定成功后的命名引导标题：弱性强制，可以「暂不修改」。
+  String get devBindNameTitle => _pick('设备命名', 'Name Your Device', 'デバイスに名前を付ける');
+  String get devBindNameLater => _pick('暂不修改', 'Not now', '後で変更');
+  String devNameTooLong(int max) => _pick(
+    '设备名称最多$max个字符',
+    'Device name must be at most $max characters.',
+    'デバイス名は$max文字以内です。',
+  );
   String get devConfirm => _pick('确认', 'Confirm', '確認');
   String get devConnecting =>
       _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
@@ -1147,9 +1168,13 @@ class AppL10n {
   String get devCarouselSequential => _pick('顺序轮播', 'In Order', '順番再生');
   String get devDeviceId => _pick('设备ID', 'Device ID', 'デバイスID');
 
-  /// 屏幕物理分辨率（如 680*960），详情页紧跟「设备ID」。
-  String get devResolution => _pick('分辨率', 'Resolution', '解像度');
-  String get devDeviceMemory => _pick('设备内存', 'Storage', 'ストレージ');
+  /// 屏幕物理尺寸（像素，如 680*960），详情页紧跟「设备ID」。
+  /// 2026-07-31 文案由「分辨率」改为「屏幕尺寸」（对齐小程序 detail.wxml）。
+  String get devScreenSize => _pick('屏幕尺寸', 'Screen Size', '画面サイズ');
+
+  /// 设备可存放的照片数量（已用/上限），文案由「设备内存」改为「最大照片数量」。
+  String get devMaxPhotoCount =>
+      _pick('最大照片数量', 'Max Photos', '最大写真枚数', '最大照片數量');
   String get devOtaUpgrade => _pick('OTA升级', 'Firmware Update', 'OTAアップデート');
   String devFirmwareNewVersion(String version) => _pick(
     '发现新版本 $version',
@@ -1160,14 +1185,46 @@ class AppL10n {
   String get devClearing => _pick('清空中…', 'Clearing…', '消去中…');
   String get devCleared => _pick('已清空', 'Cleared', '消去しました');
   String get devClearAllValue => _pick(
-    '清空设备本地所有照片',
-    'Erase all photos stored on the device',
-    'デバイス内のすべての写真を消去',
+    '清空设备及设备照片记录',
+    'Erase device photos and their records',
+    'デバイスと写真記録を消去',
   );
+
+  /// 一键清空第一步的取消键（对齐小程序「再想想」）。
+  String get devThinkAgain => _pick('再想想', 'Not now', 'もう一度考える');
+
+  // 「解除绑定」与「删除设备」是两件事，文案与后果都不同，不要合并：
+  //   · 解除绑定 = 只解除账号关系，设备上的照片保留；
+  //   · 删除设备 = 一键清空 + 断开连接 + 解除绑定（需已连接）。
+  String get devUnbindDevice => _pick('解除绑定', 'Unbind Device', 'ペアリング解除');
+  String get devUnbindDeviceValue => _pick(
+    '保留设备上的照片',
+    'Photos on the device are kept',
+    'デバイス内の写真は保持されます',
+  );
+  String get devUnbindDeviceMessage => _pick(
+    '解除绑定后，设备上的照片将保留，您可以稍后重新绑定设备。',
+    'After unbinding, photos on the device are kept and you can pair it again later.',
+    'ペアリングを解除しても、デバイス内の写真は残り、後で再度ペアリングできます。',
+  );
+  String get devUnbinding => _pick('解除绑定中', 'Unbinding…', 'ペアリング解除中…');
   String get devDeleteDevice => _pick('删除设备', 'Delete Device', 'デバイスを削除');
-  String get devDeleting => _pick('删除中', 'Deleting…', '削除中…');
-  String get devDeleteDeviceValue =>
-      _pick('删除后将无法恢复', 'Cannot be undone once deleted', '削除すると元に戻せません');
+  String get devDeleting => _pick('删除设备中', 'Deleting device…', 'デバイスを削除中…');
+  String get devDeviceDeleted => _pick('设备已删除', 'Device deleted', 'デバイスを削除しました');
+  String get devDeleteDeviceValue => _pick(
+    '清空照片并解除绑定',
+    'Erase photos and unbind',
+    '写真を消去してペアリング解除',
+  );
+
+  /// 删除设备第二次确认的标题与说明（对齐小程序 detail.wxml）。
+  String get devDeleteDeviceConfirmTitle =>
+      _pick('确认删除设备', 'Confirm Device Deletion', 'デバイス削除の確認');
+  String get devDeleteDeviceConfirmMessage => _pick(
+    '我已知晓删除设备相关内容，确认删除',
+    'I understand what deleting this device means and confirm the deletion.',
+    'デバイス削除の内容を理解した上で、削除を確認します。',
+  );
   String get devEmptyTitle => _pick('暂无设备', 'No Devices', 'デバイスがありません');
   String get devEmptySubtitle => _pick(
     '请先搜索并绑定附近的智能相框。',
@@ -1176,26 +1233,20 @@ class AppL10n {
   );
   String get devAddDevice => _pick('添加设备', 'Add Device', 'デバイスを追加');
   String get devClearStep1Message => _pick(
-    '将清空设备内所有照片，同时清空图库，请谨慎选择是否继续？',
-    'This will erase all photos on the device and clear the gallery. Are you sure you want to continue?',
-    'デバイス内のすべての写真とギャラリーを消去します。続行してもよろしいですか？',
+    '将清空彩色墨水屏设备内所有照片，同时清空小程序/APP的图库，请谨慎选择是否继续。',
+    'This will erase all photos on the colour e-ink device and also clear the gallery in the Mini Program / App. Please continue with care.',
+    'カラー電子ペーパー本体内のすべての写真と、ミニプログラム／アプリのギャラリーを消去します。続行するかどうか慎重にご判断ください。',
   );
   String get devClearStep2Message => _pick(
     '我已阅读并了解此操作的结果，确认清空设备与图库内的全部照片。',
     'I have read and understood the consequences and confirm erasing all photos on the device and in the gallery.',
     'この操作の結果を理解した上で、デバイスとギャラリー内のすべての写真を消去することを確認します。',
   );
+  /// 删除设备第一次确认：先劝一句「建议清空照片防隐私泄露」（对齐小程序 detail.wxml）。
   String get devDeleteDeviceMessage => _pick(
-    '删除设备后，设备上的照片将保留，如不再使用此设备，建议先清空所有照片',
-    'Photos on the device are kept after deletion. If you no longer use this device, we recommend clearing all photos first.',
-    'デバイスを削除しても本体内の写真は残ります。この端末を今後使わない場合は、先にすべての写真を消去することをおすすめします。',
-  );
-
-  /// 删除前置确认（设备连接中需先断开）弹窗说明——对齐小程序 detail.js showDisconnectConfirm。
-  String get devDeleteNeedDisconnect => _pick(
-    '删除设备需要先断开此设备',
-    'You need to disconnect this device before deleting it.',
-    'デバイスを削除するには、先に接続を切断する必要があります。',
+    '如果您不再使用设备，建议执行一键清空设备照片，防止隐私泄露',
+    'If you no longer use this device, we recommend clearing its photos first to avoid leaking your privacy.',
+    'この端末を今後使わない場合は、プライバシー漏えいを防ぐため、先に写真を一括消去することをおすすめします。',
   );
 
   // ── OTA 升级 ──
@@ -1446,7 +1497,15 @@ class AppL10n {
       _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetooth接続');
 
   // ── 图库 ──
-  String get galTitle => _pick('我的图库', 'My Gallery', 'マイギャラリー');
+  /// 2026-07-31 标题由「我的图库」改为「设备照片」（对齐小程序 list.wxml 的 page-nav）。
+  String get galTitle => _pick('设备照片', 'Device Photos', 'デバイスの写真');
+
+  /// 列表顶部的一行说明：这里看到的就是相框当前这块屏上的照片。
+  String get galScreenHint => _pick(
+    '当前屏幕照片，可指定显示或删除当前屏幕照片',
+    'These are the photos on the current screen. You can choose one to display, or delete them here.',
+    'これは現在の画面の写真です。表示する写真を指定したり、削除したりできます。',
+  );
   String get galFrame => _pick('相框', 'Photo Frame', 'フォトフレーム');
   String get galTip => _pick('提示', 'Notice', 'お知らせ');
   String get galDeviceClearedNotice => _pick(

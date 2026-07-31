@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
+import 'package:BoltStar/src/shared/widgets/device_name_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
 
@@ -22,6 +22,7 @@ class MyDevicesPage extends StatefulWidget {
     this.onConnect,
     this.onDisconnect,
     this.onRename,
+    this.promotedDeviceId = '',
   });
 
   final List<MyDeviceOverview>? devices;
@@ -44,6 +45,10 @@ class MyDevicesPage extends StatefulWidget {
 
   /// 重命名回调：(设备 id, 新名称)。由上层接 `state.renameDevice` 走真实接口。
   final void Function(String id, String name)? onRename;
+
+  /// 刚被切换成「已连接」、需要播一次上移入场动效的设备 id（需求第 6 项）。
+  /// 由上层在连接目标变化时置起、560ms 后清空（见 `devices_page.dart`）。
+  final String promotedDeviceId;
 
   @override
   State<MyDevicesPage> createState() => _MyDevicesPageState();
@@ -113,13 +118,19 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
                       separatorBuilder: (_, _) => const SizedBox(height: 12),
                       itemBuilder: (context, index) {
                         final device = _devices[index];
-                        return _DeviceCard(
-                          device: device,
-                          onOpenDetail: () =>
-                              widget.onOpenDetail?.call(device.id),
-                          onCast: () => widget.onCast?.call(device.id),
-                          onRename: () => _rename(device),
-                          onToggleConnection: () => _toggleConnection(device),
+                        return _PromotionTransition(
+                          // key 带上设备 id：列表重排后 Flutter 才不会把动画状态
+                          // 复用给恰好排在同一位置的另一台设备。
+                          key: ValueKey('device-card-${device.id}'),
+                          active: device.id == widget.promotedDeviceId,
+                          child: _DeviceCard(
+                            device: device,
+                            onOpenDetail: () =>
+                                widget.onOpenDetail?.call(device.id),
+                            onCast: () => widget.onCast?.call(device.id),
+                            onRename: () => _rename(device),
+                            onToggleConnection: () => _toggleConnection(device),
+                          ),
                         );
                       },
                     ),
@@ -140,25 +151,102 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
   }
 
   Future<void> _rename(MyDeviceOverview device) async {
-    final controller = TextEditingController(text: device.name);
-    final confirmed = await showAppConfirmDialog(
+    // 统一样式的设备名称弹窗（详情页与绑定成功后的命名引导用的是同一个）。
+    final name = await showDeviceNameDialog(
       context,
+      initialValue: device.name,
       title: AppL10n.of(context).devDeviceNameTitle,
-      icon: Icons.drive_file_rename_outline_rounded,
-      content: AppDialogTextField(
-        controller: controller,
-        hintText: AppL10n.of(context).devNameHint,
-        maxLength: 20,
-      ),
     );
-    final name = confirmed == true ? controller.text : null;
-    // 不立即 dispose：对话框还在退场动画中、TextField 仍挂着 controller，
-    // 立刻释放会触发 used-after-dispose 断言；延迟一个主题动画时长再释放。
-    Future<void>.delayed(kThemeAnimationDuration, controller.dispose);
-    if (name != null) {
-      // 通过回调走真实接口；列表名称由上层 state 更新后重建。
-      widget.onRename?.call(device.id, name.trim());
+    if (name != null && name != device.name) {
+      // 通过回调走真实接口（上层带保存中 loading）；列表名称由 state 更新后重建。
+      widget.onRename?.call(device.id, name);
     }
+  }
+}
+
+/// 「切换连接设备」时新连上那台的上移入场动效。
+///
+/// 复刻小程序 `.device-card--promoted` 的 `@keyframes devicePromoted`：
+/// 520ms 内从「下方 16px / 缩 0.985 / 半透明」升到位，中途 58% 处轻微过冲（上 3.5px / 1.008）
+/// 再回落——用户能看清「这台被提到最上面了」，而不是列表突然重排。
+///
+/// [active] 由 false→true 时播一次；期间列表若重排，外层的 ValueKey 保证动画跟着设备走。
+class _PromotionTransition extends StatefulWidget {
+  const _PromotionTransition({
+    super.key,
+    required this.active,
+    required this.child,
+  });
+
+  final bool active;
+  final Widget child;
+
+  @override
+  State<_PromotionTransition> createState() => _PromotionTransitionState();
+}
+
+class _PromotionTransitionState extends State<_PromotionTransition>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 520),
+    value: 1, // 默认停在终态：没被提升的卡片不做任何变换
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(_PromotionTransition oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.active && !oldWidget.active) {
+      _controller.forward(from: 0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      // child 只建一次，动画每帧只重跑变换（卡片内部有若干 Image.asset，别每帧重建）。
+      child: widget.child,
+      builder: (context, child) {
+        final t = _controller.value;
+        if (t >= 1) {
+          return child!;
+        }
+        // 0 → 0.58：16px 上移并轻微过冲到 -3.5px；0.58 → 1：回落到 0。
+        final double dy;
+        final double scale;
+        if (t <= 0.58) {
+          final p = Curves.easeOut.transform(t / 0.58);
+          dy = 16 + (-3.5 - 16) * p;
+          scale = 0.985 + (1.008 - 0.985) * p;
+        } else {
+          final p = Curves.easeOut.transform((t - 0.58) / 0.42);
+          dy = -3.5 + 3.5 * p;
+          scale = 1.008 + (1 - 1.008) * p;
+        }
+        return Opacity(
+          opacity: 0.45 + 0.55 * t,
+          child: Transform.translate(
+            offset: Offset(0, dy),
+            child: Transform.scale(scale: scale, child: child),
+          ),
+        );
+      },
+    );
   }
 }
 

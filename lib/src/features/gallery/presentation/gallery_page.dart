@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -9,6 +7,7 @@ import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
+import 'package:BoltStar/src/shared/widgets/device_filter_chip.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 /// 我的图库，对照微信小程序 `photo-album/subpackages/album/list`。
@@ -120,56 +119,21 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   ///
   /// (2026-07-30)已删「照片里带的设备ID、但设备列表里没有的（已解绑设备老照片）并入下拉」
   /// 的兜底：这类照片不再单独成筛选项，也不会出现在任何设备的筛选结果里。
-  List<_DeviceFilterOption> get _filterOptions {
-    final options = <_DeviceFilterOption>[];
+  List<DeviceFilterOption> get _filterOptions {
+    final options = <DeviceFilterOption>[];
     for (final device in state.devices) {
       if (device.id.isEmpty || options.any((option) => option.id == device.id)) {
         continue;
       }
       options.add(
-        _DeviceFilterOption(
+        DeviceFilterOption(
           id: device.id,
           label: device.name,
-          serialTail: _serialTail(device.serialNumber),
+          serialTail: deviceSerialTail(device.serialNumber),
         ),
       );
     }
-    return _disambiguateLabels(options);
-  }
-
-  /// 序列号（AA:BB:…:FF）去分隔符后的尾 4 位（如 D428）；无序列号返回 ''。
-  static String _serialTail(String serial) {
-    final normalized = serial.replaceAll(RegExp(r'[:\-\s]'), '');
-    return normalized.length <= 4
-        ? normalized
-        : normalized.substring(normalized.length - 4);
-  }
-
-  /// 同名设备消歧：筛选值已按设备ID区分，但下拉里两个一样的名字用户无法分辨，
-  /// 重名时给 label 补序列号尾 4 位，取不到序列号则按出现次序补 (2)/(3)。
-  /// 设备名只用于展示，不参与任何匹配/合并——照片归属一律按设备ID（见 [_photos]）。
-  static List<_DeviceFilterOption> _disambiguateLabels(
-    List<_DeviceFilterOption> options,
-  ) {
-    final counts = <String, int>{};
-    for (final option in options) {
-      counts[option.label] = (counts[option.label] ?? 0) + 1;
-    }
-    final seen = <String, int>{};
-    final result = <_DeviceFilterOption>[];
-    for (final option in options) {
-      final nth = (seen[option.label] ?? 0) + 1;
-      seen[option.label] = nth;
-      if ((counts[option.label] ?? 0) < 2) {
-        result.add(option);
-        continue;
-      }
-      final suffix = option.serialTail.isNotEmpty ? option.serialTail : '$nth';
-      result.add(
-        _DeviceFilterOption(id: option.id, label: '${option.label}($suffix)'),
-      );
-    }
-    return result;
+    return disambiguateDeviceFilterLabels(options);
   }
 
   /// 默认选中单台设备（对齐小程序：无「全部相框」，进入即定位到一台设备的图库）。
@@ -245,7 +209,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     });
   }
 
-  /// 切换设备筛选（下拉菜单选项回调，见 [_DeviceFilterChip]）。
+  /// 切换设备筛选（下拉菜单选项回调，见 [DeviceFilterChip]）。
   void _pickDeviceFilter(String deviceId) {
     if (deviceId == _deviceFilter) {
       return;
@@ -310,7 +274,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
           child: Row(
             children: [
               const Spacer(),
-              _DeviceFilterChip(
+              DeviceFilterChip(
                 label: _filterLabel,
                 options: _filterOptions,
                 selectedId: _deviceFilter,
@@ -320,6 +284,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
             ],
           ),
         ),
+        const _ScreenPhotoHint(),
         const Expanded(child: _GalleryEmptyState()),
       ],
     );
@@ -363,7 +328,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       return;
     }
     setState(_selectedIds.clear);
-    _showFeedback(feedback.message);
+    // 「照片在此设备异常」「刷屏失败」这类「删成功但结果不理想」走警告样式。
+    if (feedback.warn) {
+      AppToast.warn(context, feedback.message);
+    } else {
+      _showFeedback(feedback.message);
+    }
   }
 
   /// 蒙层阻断式 loading（不可返回/不可点透），配合耗时的设备 BLE 操作。
@@ -452,7 +422,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                         ),
                       ),
                       const Spacer(),
-                      _DeviceFilterChip(
+                      DeviceFilterChip(
                         label: _filterLabel,
                         options: _filterOptions,
                         selectedId: _deviceFilter,
@@ -462,6 +432,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                     ],
                   ),
                 ),
+                const _ScreenPhotoHint(),
                 Expanded(
                   // 下拉刷新：此前数据只在进页/回页时刷新，用户没有任何手动恢复手段。
                   child: RefreshIndicator(
@@ -509,310 +480,54 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   }
 }
 
-/// 设备筛选下拉的一项（对齐小程序 list.js 的 `{ label, value }`）。
+/// 列表顶部的说明条（小程序 `.album-hint`）：橙点 + 「当前屏幕照片，可指定显示或删除…」。
 ///
-/// [id] 是后端设备ID（userProductId），**筛选与查询一律用它**：设备名允许重复，
-/// 按名筛会把两台同名设备的照片混在一起。[label] 仅作展示（重名时带序列号尾号），
-/// 不参与任何匹配/合并。
-class _DeviceFilterOption {
-  const _DeviceFilterOption({
-    required this.id,
-    required this.label,
-    this.serialTail = '',
-  });
-
-  final String id;
-  final String label;
-
-  /// 序列号尾 4 位，仅在重名消歧时用于拼 label（见 [_GalleryPageState._disambiguateLabels]）。
-  final String serialTail;
-}
-
-/// 设备筛选胶囊 + 下拉菜单（小程序 `.filter-btn` / `.filter-menu`，rpx ÷ 2）。
-///
-/// **不是**底部弹层：小程序是贴着胶囊右下角展开的下拉菜单（`.filter-wrap` 相对定位、
-/// `.filter-menu` 绝对定位 `top:70rpx; right:0`），宽 105、白 0.9 + 1px 白边 + 圆角 6，
-/// 选中项是橙字 + 橙色淡底药丸（**没有对勾**）。这里用 [OverlayPortal] + [LayerLink]
-/// 挂到 Overlay 上，保证菜单能盖住下方照片网格而不被 Column 裁掉。
-///
-/// 与小程序唯一有意的差异：多加一层透明全屏点击层，点空白处收起菜单——小程序没有遮罩、
-/// 只能再点一次胶囊才收起，在 App 上那是明显的手感缺陷。
-class _DeviceFilterChip extends StatefulWidget {
-  const _DeviceFilterChip({
-    required this.label,
-    required this.options,
-    required this.selectedId,
-    required this.onSelected,
-    required this.onOpen,
-  });
-
-  final String label;
-
-  /// 下拉项：取自 [_GalleryPageState._filterOptions]（按设备ID去重、重名已消歧），
-  /// 不再直接吃 `state.devices`——那样既丢掉已解绑设备的老照片兜底项，同名设备也无法分辨。
-  final List<_DeviceFilterOption> options;
-  final String? selectedId;
-  final ValueChanged<String> onSelected;
-  final Future<void> Function() onOpen;
-
-  @override
-  State<_DeviceFilterChip> createState() => _DeviceFilterChipState();
-}
-
-class _DeviceFilterChipState extends State<_DeviceFilterChip> {
-  final LayerLink _link = LayerLink();
-  final OverlayPortalController _menu = OverlayPortalController();
-  bool _open = false;
-  bool _loading = false;
-  int _openSeq = 0;
-
-  Future<void> _toggle() async {
-    if (_open) {
-      _close();
-      return;
-    }
-    final seq = ++_openSeq;
-    setState(() {
-      _open = true;
-      _loading = true;
-      _menu.show();
-    });
-    try {
-      // 每次展开都走真实设备接口；loading 期间不展示上一轮选项，避免把 state 当缓存使用。
-      await widget.onOpen();
-    } finally {
-      if (mounted && _open && seq == _openSeq) {
-        setState(() => _loading = false);
-      }
-    }
-  }
-
-  void _close() {
-    if (!_open) {
-      return;
-    }
-    _openSeq++;
-    setState(() {
-      _open = false;
-      _loading = false;
-      _menu.hide();
-    });
-  }
+/// 说明这一页看到的是**相框那块屏上的照片**，不是手机相册——用户此前会把它当成
+/// 「App 里的相册」，删照片时不理解为什么要连设备。
+class _ScreenPhotoHint extends StatelessWidget {
+  const _ScreenPhotoHint();
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: _link,
-      child: OverlayPortal(
-        controller: _menu,
-        overlayChildBuilder: (context) => Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: _close,
-              ),
-            ),
-            CompositedTransformFollower(
-              link: _link,
-              // 菜单右边缘与胶囊右边缘对齐，间隔 4（小程序 top:70rpx − 胶囊 62rpx）。
-              targetAnchor: Alignment.bottomRight,
-              followerAnchor: Alignment.topRight,
-              offset: const Offset(0, 4),
-              child: _FilterMenu(
-                options: widget.options,
-                selectedId: widget.selectedId,
-                loading: _loading,
-                onSelected: (id) {
-                  _close();
-                  widget.onSelected(id);
-                },
-              ),
-            ),
-          ],
-        ),
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: _toggle,
-          child: Container(
-            height: 31,
-            // 与小程序 340rpx 上限一致：名称再长也只能单行省略，不能把顶部栏撑宽/换行。
-            constraints: const BoxConstraints(minWidth: 88, maxWidth: 170),
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.78),
-              borderRadius: BorderRadius.circular(999),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFF7E96B8).withValues(alpha: 0.08),
-                  blurRadius: 14,
-                  offset: const Offset(0, 5),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: Text(
-                    widget.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF777E88),
-                      fontSize: 13,
-                      height: 1,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 9),
-                _FilterArrow(open: _open),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 小程序 `.filter-arrow`：7×7 方块只留右/下 1px 边，旋转 45°（展开时 225°）成箭头。
-class _FilterArrow extends StatelessWidget {
-  const _FilterArrow({required this.open});
-
-  final bool open;
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox.square(
-      dimension: 10,
-      child: Center(
-        child: Transform.rotate(
-          angle: open ? 225 * math.pi / 180 : 45 * math.pi / 180,
-          child: Transform.translate(
-            offset: const Offset(0, -1.5),
-            child: Container(
-              width: 7,
-              height: 7,
-              decoration: const BoxDecoration(
-                border: Border(
-                  right: BorderSide(color: Color(0xFF777E88)),
-                  bottom: BorderSide(color: Color(0xFF777E88)),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 小程序 `.filter-menu`：宽 105、白 0.9、1px 白边、圆角 6、上下留白 4/6。
-class _FilterMenu extends StatelessWidget {
-  const _FilterMenu({
-    required this.options,
-    required this.selectedId,
-    required this.loading,
-    required this.onSelected,
-  });
-
-  final List<_DeviceFilterOption> options;
-  final String? selectedId;
-  final bool loading;
-  final ValueChanged<String> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(23, 0, 23, 11),
       child: Container(
-        width: 105,
-        padding: const EdgeInsets.only(top: 4, bottom: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.9),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.95)),
-          borderRadius: BorderRadius.circular(6),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF7E746A).withValues(alpha: 0.18),
-              blurRadius: 20,
-              offset: const Offset(0, 9),
-            ),
-          ],
+          color: Colors.white.withValues(alpha: 0.5),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.82)),
+          borderRadius: BorderRadius.circular(9),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          // 无「全部相框」项：对齐小程序单设备图库模型（避免跨设备选中删错槽位）。
-          // 选中态与回调都按设备ID（option.id），label 仅用于显示。
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (loading)
-              const SizedBox(
-                height: 28,
-                child: Center(
-                  child: SizedBox.square(
-                    dimension: 13,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 1.5,
-                      color: Color(0xFFFF6A24),
-                    ),
+            // 橙点 + 外扩光晕（小程序 .album-hint__dot 的 box-shadow 扩散环）。
+            Container(
+              width: 5,
+              height: 5,
+              margin: const EdgeInsets.only(top: 5, left: 3, right: 10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFF6725),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFF6725).withValues(alpha: 0.1),
+                    spreadRadius: 3.5,
                   ),
-                ),
-              )
-            else
-              for (final option in options)
-                _FilterOption(
-                  label: option.label,
-                  active: option.id == selectedId,
-                  onTap: () => onSelected(option.id),
-                ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 小程序 `.filter-option`：高 28、左右内缩 6、圆角 4；选中为橙字 + 橙淡底。
-class _FilterOption extends StatelessWidget {
-  const _FilterOption({
-    required this.label,
-    required this.active,
-    required this.onTap,
-  });
-
-  final String label;
-  final bool active;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        height: 28,
-        margin: const EdgeInsets.symmetric(horizontal: 6),
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: active
-              ? const Color(0xFFFF7436).withValues(alpha: 0.12)
-              : null,
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: active ? const Color(0xFFFF5F1F) : const Color(0xFF777E88),
-              fontSize: 13,
-              height: 1,
+                ],
+              ),
             ),
-          ),
+            Expanded(
+              child: Text(
+                AppL10n.of(context).galScreenHint,
+                style: const TextStyle(
+                  color: Color(0xFF747D89),
+                  fontSize: 11.5,
+                  height: 1.45,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

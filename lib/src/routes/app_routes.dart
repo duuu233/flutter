@@ -240,11 +240,20 @@ class AppRoutes {
         builder = (context) => DeviceDetailsPage(
           state: state,
           deviceId: detailDeviceId,
-          onCarouselSettings: () {
+          onCarouselSettings: () async {
             // 对齐小程序 detail.js goSlideshow：入口时未连接直接拦截；若进入后链路掉线，
             // 设置页提交时仍会按 ensureConnectedForAction 自动重连。
-            if (!state.isDeviceActuallyConnected(detailDeviceId)) {
-              AppToast.show(context, AppL10n.of(context).devConnectFirst);
+            // 判定走 resolveDeviceConnected 而不是同步版：详情接口可能没下发完整设备 ID，
+            // 身份缺失会让「明明连着这台」被误判成未连接，白拦住入口（第 7 项）。
+            final l10n = AppL10n.of(context);
+            if (!await state.resolveDeviceConnected(detailDeviceId)) {
+              if (!context.mounted) {
+                return;
+              }
+              AppToast.show(context, l10n.devConnectFirst);
+              return;
+            }
+            if (!context.mounted) {
               return;
             }
             Navigator.of(
@@ -258,8 +267,12 @@ class AppRoutes {
           // （与 startDeleteDeviceFlow 同形态，路由表只做分发不内嵌业务编排）。
           onClearDevice: () =>
               startClearDeviceFlow(context, state, detailDeviceId),
-          // 删除设备完整流程抽在 delete_device_flow.dart（与 startOtaFlow 同模式），
+          // 解绑 / 删除两条流程都抽在 delete_device_flow.dart（与 startOtaFlow 同模式），
           // 路由表只做页面分发，不再内嵌业务编排。
+          //   · 解除绑定 = 只解绑，设备照片保留；
+          //   · 删除设备 = 一键清空 + 断开 + 解绑（需已连接，两道二次确认）。
+          onUnbindDevice: () =>
+              startUnbindDeviceFlow(context, state, detailDeviceId),
           onDeleteDevice: () =>
               startDeleteDeviceFlow(context, state, detailDeviceId),
           onOtaUpgrade: () {

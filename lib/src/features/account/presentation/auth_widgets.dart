@@ -143,6 +143,7 @@ class AuthPillTextField extends StatelessWidget {
     this.trailing,
     this.onSubmitted,
     this.autofillHints,
+    this.iconGap = 14,
   });
 
   final TextEditingController controller;
@@ -161,6 +162,13 @@ class AuthPillTextField extends StatelessWidget {
   /// 密码管理器自动填充提示（AutofillHints.email / .password）。
   final List<String>? autofillHints;
 
+  /// 左图标与输入文字之间的间距。登录页保持设计稿的 14；注册页按产品要求收窄
+  /// （见 [AuthPillTextField.registerIconGap]），所以做成参数而不是直接改死。
+  final double iconGap;
+
+  /// 注册页专用的图标—文字间距（需求：注册账号的地方图标和文字的间距缩短）。
+  static const double registerIconGap = 8;
+
   @override
   Widget build(BuildContext context) {
     return DecoratedBox(
@@ -176,7 +184,7 @@ class AuthPillTextField extends StatelessWidget {
         child: Row(
           children: [
             icon,
-            const SizedBox(width: 14),
+            SizedBox(width: iconGap),
             Expanded(
               child: TextField(
                 controller: controller,

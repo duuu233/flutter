@@ -2,9 +2,9 @@
 
 > 文档类型：Cross-client Integration  
 > 状态：Active  
-> 最后核验：2026-07-30  
+> 最后核验：2026-07-31  
 > 对照仓库：`D:\Work\learn\photo-album`  
-> 覆盖说明：矩阵吸收了截至 2026-07-30 的增量同步；上一次从头逐页完整复核为
+> 覆盖说明：矩阵吸收了截至 2026-07-31 的增量同步；上一次从头逐页完整复核为
 > 2026-07-14，后续仍应安排下一次完整复核。
 
 ## 1. 对齐原则
@@ -20,20 +20,20 @@
 | 模块 | 小程序 | Flutter | 状态 | 当前结论 |
 | --- | --- | --- | --- | --- |
 | 首页 | `pages/home` | `features/home` | ✅ | 已绑定/未绑定、多设备轮播、头像、投屏与绑定入口一致 |
-| 登录 | `pages/login` | `features/account` | 🔶 | 小程序微信快捷登录；App 支持邮箱和移动应用微信登录 |
-| 我的 | `pages/mine` | `features/mine` | ✅ | 资料、计数、图库、设备、投屏记录、指南和设置入口一致 |
-| 绑定设备 | `subpackages/device/bind` | `features/devices/.../bind_device_flow.dart` | ✅⚠️ | 只允许 0x01 完整 6 字节 ID 判重/入库；广播短 ID 与 BLE 句柄不兜底。**2026-07-29 起「搜到一个显示一个」**：扫描窗口 12s→20s；安卓 low-latency + legacy 1M + 持续重复回调，名称首包丢失时可由后续包/厂商数据补入；新扫描接管旧会话，返回/侧滑 dispose 停扫，旧响应不覆盖新状态；搜索动效在结果出现前后保持 280×280。静态检查无新增诊断，⚠️仍需 Android/iOS 真机弱信号回归 |
-| 设备列表 | `subpackages/device/list` | `devices_page.dart` / `my_devices_page.dart` | ✅ | 列表、选择、连接/断开、投屏和重命名一致 |
-| 设备详情 | `subpackages/device/detail` | `device_details_page.dart` | ✅⚠️ | 连接、投屏、轮播、清空、删除和 OTA 入口一致；**2026-07-29 起「设备ID」下方新增分辨率行**（如 `680*960`，连上取 0x01 真机宽高 → 后端记录宽高 → `--`）。分辨率是产品静态属性，**不随连接状态置 `--`**；两端都不由 `screenType` 反查（会臆造尺寸）。⚠️本机无 Flutter SDK，未编译/未真机 |
+| 登录 | `pages/login` | `features/account` | 🔶 | 小程序微信快捷登录；App 支持邮箱和移动应用微信登录。**2026-07-31：注册页四个输入行的图标—文字间距 14 → 8（`AuthPillTextField.iconGap`），登录页保持 14** |
+| 我的 | `pages/mine` | `features/mine` | ✅ | 资料、计数、图库、设备、投屏记录、指南和设置入口一致。**2026-07-31：昵称展示前解一次 `\uXXXX` / `\u{XXXXX}` / `&#123;` / `&#x1F31F;` 转义（`shared/display_text.dart`），历史数据里的 emoji 才能显示成表情而不是一串转义码** |
+| 绑定设备 | `subpackages/device/bind` | `features/devices/.../bind_device_flow.dart` | ✅⚠️ | **2026-07-31 起绑定成功不再弹「绑定成功」提示，改为在当前页弹带默认名的设备命名弹窗（弱性强制，可「暂不修改」），保存后再按原逻辑返回**；同时把这台记入「最近绑定」供设备列表排序用。只允许 0x01 完整 6 字节 ID 判重/入库；广播短 ID 与 BLE 句柄不兜底。**2026-07-29 起「搜到一个显示一个」**：扫描窗口 12s→20s；安卓 low-latency + legacy 1M + 持续重复回调，名称首包丢失时可由后续包/厂商数据补入；新扫描接管旧会话，返回/侧滑 dispose 停扫，旧响应不覆盖新状态；搜索动效在结果出现前后保持 280×280。静态检查无新增诊断，⚠️仍需 Android/iOS 真机弱信号回归 |
+| 设备列表 | `subpackages/device/list` | `devices_page.dart` / `my_devices_page.dart` | ✅⚠️ | 列表、选择、连接/断开、投屏和重命名一致。**2026-07-31 起排序为「已连接 → 最近绑定 → 接口原序」**，切换连接设备时新连上那台有 520ms 上移入场动效；重命名改用统一样式的设备名称弹窗（20 个 Unicode 字符、实时计数）。⚠️未编译/未真机 |
+| 设备详情 | `subpackages/device/detail` | `device_details_page.dart` | ✅⚠️ | 连接、投屏、轮播、清空、删除和 OTA 入口一致。**2026-07-31 起：「分辨率」→「屏幕尺寸」（换绘制型图标）、「设备内存」→「最大照片数量」、一键清空提示改为「将清空彩色墨水屏设备内所有照片，同时清空小程序/APP的图库…」，原「删除设备」拆成「解除绑定」（保留设备照片，一次确认）与底部新增的「删除设备」（一键清空 + 断开 + 解除绑定，需已连接，两道二次确认）**；**2026-07-29 起「设备ID」下方新增分辨率行**（如 `680*960`，连上取 0x01 真机宽高 → 后端记录宽高 → `--`）。分辨率是产品静态属性，**不随连接状态置 `--`**；两端都不由 `screenType` 反查（会臆造尺寸）。⚠️本机无 Flutter SDK，未编译/未真机 |
 | BLE 调试 | `subpackages/device/debug` | `ble_debug_page.dart` | 🔶 | 两端均保留工程调试能力，release 用户入口受控 |
-| 轮播 | `subpackages/device/slideshow` | `carousel_settings_page.dart` | ✅ | 断线重连、0x10 模式/间隔与失败回滚一致 |
+| 轮播 | `subpackages/device/slideshow` | `carousel_settings_page.dart` | ✅ | 断线重连、0x10 模式/间隔与失败回滚一致。**2026-07-31 修「已连接却提示请先连接设备」**：`refreshDevices` 里判连接态的那步移到身份补齐之后，入口门禁改走 `resolveDeviceConnected`（先查身份登记表补完整 6 字节 ID 再判），等价小程序 `inheritStableIdentity` |
 | OTA | `subpackages/device/ota` | `ota_upgrade_page.dart` | ✅⚠️ | 两端当前源码流程一致；小程序新协议文档与两端源码冲突，修正文档前不可据其改协议 |
-| 投屏预览 | `subpackages/projection/preview` | `cast_preview_page.dart` | ✅⚠️ | 2026-07-25 起使用常驻编辑层；横竖取景、多图切换、旋转和 Canvas 烘焙规则一致，仍需真机回归 |
+| 投屏预览 | `subpackages/projection/preview` | `cast_preview_page.dart` | ✅⚠️ | 2026-07-25 起使用常驻编辑层；横竖取景、多图切换、旋转和 Canvas 烘焙规则一致。**2026-07-31：长按 1s → 0.5s；缩放去掉「必须 cover 取景框」与「平移不越出图片」两道夹取，只留 0.02~8，可任意缩小自由构图；取景框与轮播底色改白，与导出白底一一对应（所见即所得）；切图过场 300ms → 360ms Banner 式**。导出铁律未动。⚠️仍需真机回归 |
 | 投屏过程 | `subpackages/projection/result` | `projection_service.dart` / `casting_progress_page.dart` | ✅ | 服务端六色帧、部分成功、空间检查、记录回写与 BLE 图传一致 |
-| 投屏记录 | `subpackages/projection/records` | `cast_management_figma_page.dart` | ✅ | 成功/失败分页、再次投屏、删除与重入刷新一致 |
-| 图库 | `subpackages/album/list` | `gallery_page.dart` | ✅⚠️ | 设备筛选、批量删除、清空提示、0x24 刷屏和跨设备保护一致；下拉按后端设备ID，同名设备用序列号尾号消歧；胶囊/菜单文字单行省略；**每次展开下拉都重新请求设备列表接口并显示菜单内 loading**，不以进页时列表作缓存。静态检查无新增诊断，⚠️仍需同名设备真机验证 |
-| AI 星宝 | `subpackages/ai` | `features/ai` | ✅⚠️ | 会话、图文消息及按用户 ID 隔离的 AI 服务协议确认已对齐；两端正式入口均关闭，语音输入仍为 App 占位。**2026-07-29 起发送入口加同步闸**（`_guardedSend`/`_submitting`）：治「首次在空态发第一条时按钮不及时变灰、连点重复发送」（`_sending` 要等请求真正发出才置起，前面还隔着协议确认+建会话）；加载中气泡（三个跳点）不再铺满屏宽。⚠️本机无 Flutter SDK，未编译/未真机 |
-| 设置 | `subpackages/settings/index` | `settings_page.dart` | ✅ | 联系、用户/隐私/AI 服务协议、退出、注销和失败留页一致；App 协议正文为四语种 |
+| 投屏记录 | `subpackages/projection/records` | `cast_management_figma_page.dart` | ✅⚠️ | 成功/失败分页、再次投屏、删除与重入刷新一致。**2026-07-31 起按设备分类**：下拉与图库共用 `shared/widgets/device_filter_chip.dart`，选项按设备ID去重、重名补序列号尾 4 位、**正在连接的设备排最前并默认选中**；拉取带 `userProductId`，本地再筛一层兜底。⚠️未编译/未真机 |
+| 图库 | `subpackages/album/list` | `gallery_page.dart` | ✅⚠️ | **2026-07-31：标题改「设备照片」、新增「当前屏幕照片，可指定显示或删除当前屏幕照片」说明条、设备下拉加宽（胶囊 112~200、菜单 140~240 自适应）；设备端照片已不存在时仍可删掉图库记录并提示「照片在此设备异常，请删除重新上传」**。设备筛选、批量删除、清空提示、0x24 刷屏和跨设备保护一致；下拉按后端设备ID，同名设备用序列号尾号消歧；胶囊/菜单文字单行省略；**每次展开下拉都重新请求设备列表接口并显示菜单内 loading**，不以进页时列表作缓存。静态检查无新增诊断，⚠️仍需同名设备真机验证 |
+| AI 星宝 | `subpackages/ai` | `features/ai` | ✅⚠️ | **2026-07-31 已比对小程序当日三个样式提交并补齐差异**：方向按钮尾图标 17→11、「重新生成」的 ↻ 加固定 18×18 居中盒；返回键/历史入口几何补偿、Token 胶囊填充与投影、会话左滑删除（删除键与卡片同轨、被 overflow 裁掉）此前已一致；`.bubble--image .img-box` 那条不适用（Flutter 图本就填满父约束）。会话、图文消息及按用户 ID 隔离的 AI 服务协议确认已对齐；两端正式入口均关闭，语音输入仍为 App 占位。**2026-07-29 起发送入口加同步闸**（`_guardedSend`/`_submitting`）：治「首次在空态发第一条时按钮不及时变灰、连点重复发送」（`_sending` 要等请求真正发出才置起，前面还隔着协议确认+建会话）；加载中气泡（三个跳点）不再铺满屏宽。⚠️本机无 Flutter SDK，未编译/未真机 |
+| 设置 | `subpackages/settings/index` | `settings_page.dart` | ✅ | 联系、用户/隐私/AI 服务协议、退出、注销和失败留页一致；App 协议正文为四语种。**2026-07-31：注销账号第一次确认按钮由「确定」改「继续」（非终局操作）、检查更新图标改 `set-icon05.png`** |
 | 个人资料 | `subpackages/settings/profile` | `profile_page.dart` | ✅ | 进入刷新、头像本地预览与保存时提交一致 |
 | 邮箱 | `bind-email/change-email` | `bind_email_*` / `modify_email_page.dart` | ✅ | 验证码和 `changeUserEmail` 参数一致 |
 | 语言 | `subpackages/settings/language` | `language_settings_page.dart` | ✅🔶 | 四项 UI 一致；App 同时切换本地内置文案 |

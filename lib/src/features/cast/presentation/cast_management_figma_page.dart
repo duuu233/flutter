@@ -10,6 +10,7 @@ import '../../../shared/permission_gate.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
+import 'package:BoltStar/src/shared/widgets/device_filter_chip.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'cast_preview_page.dart';
 
@@ -31,6 +32,10 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     with RouteAware {
   CastStatus _tab = CastStatus.success;
 
+  /// 当前设备筛选（后端 userProductId）。null = 还没有可选设备。
+  /// 投屏记录按设备分档查看（需求第 13 项），默认优先「正在连接的设备」。
+  String? _deviceFilter;
+
   /// 每次拉取的本地 loading（区别于 state.castRecordsLoaded 这个「一旦成功就常驻 true」的
   /// stale-while-revalidate 标记）。切 tab / 重入 / 首屏拉取期间都显示列表区 loading，
   /// 避免数据回来前先闪「暂无记录」空态。
@@ -44,14 +49,86 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     // 订阅全局状态（同 gallery_page 的说明）：页面打开期间 BLE 断链等外部变化
     // 即时反映，不再依赖下一次用户交互的手动 setState。
     widget.state.addListener(_handleStateChanged);
-    // 打开时刷新设备 + 当前 tab 的投屏记录，两者并发（原来串行 await，
-    // 记录页的 loading 要白等一个跟记录无关的设备接口往返）。
+    // 设备接口先回来才知道默认筛哪台，所以这里必须**先等设备、再拉记录**
+    //（原来两者并发，记录会先按「无设备筛选」拉一次全量，设备回来后再拉一次，白跑一趟）。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      final devices = state.refreshDevices();
-      final records = _loadTab();
-      await devices;
-      await records;
+      await state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      _ensureDeviceFilter();
+      await _loadTab();
     });
+  }
+
+  /// 设备筛选下拉的选项：以设备接口返回的绑定设备为准，按设备ID去重、重名补序列号尾号，
+  /// **正在连接的设备排最前**（与小程序 records.js loadDeviceFilters 同规则）。
+  List<DeviceFilterOption> get _filterOptions {
+    final options = <DeviceFilterOption>[];
+    final devices = [...state.devices]
+      ..sort((a, b) {
+        final ac = state.isDeviceActuallyConnected(a.id) ? 1 : 0;
+        final bc = state.isDeviceActuallyConnected(b.id) ? 1 : 0;
+        return bc - ac;
+      });
+    for (final device in devices) {
+      if (device.id.isEmpty || options.any((option) => option.id == device.id)) {
+        continue;
+      }
+      options.add(
+        DeviceFilterOption(
+          id: device.id,
+          label: device.name,
+          serialTail: deviceSerialTail(device.serialNumber),
+        ),
+      );
+    }
+    return disambiguateDeviceFilterLabels(options);
+  }
+
+  /// 定下默认筛选设备：沿用已选（仍在列表里）→ 正在连接的 → 第一台 → 无设备则 null。
+  void _ensureDeviceFilter() {
+    final options = _filterOptions;
+    if (_deviceFilter != null &&
+        options.any((option) => option.id == _deviceFilter)) {
+      return;
+    }
+    // _filterOptions 已把已连接设备排到最前，取第一项即「优先当前连接设备」。
+    _deviceFilter = options.isEmpty ? null : options.first.id;
+  }
+
+  String get _filterLabel {
+    final filter = _deviceFilter;
+    if (filter != null) {
+      final active = _filterOptions.where((option) => option.id == filter);
+      if (active.isNotEmpty) {
+        return active.first.label;
+      }
+      return state.deviceName(filter);
+    }
+    return AppL10n.of(context).galFrame;
+  }
+
+  /// 下拉每次展开前重拉设备接口；默认设备因此变化时连带重拉记录。
+  Future<void> _refreshDeviceFiltersForMenu() async {
+    await state.refreshDevices();
+    if (!mounted) {
+      return;
+    }
+    final previous = _deviceFilter;
+    _ensureDeviceFilter();
+    setState(() {});
+    if (previous != _deviceFilter) {
+      await _loadTab();
+    }
+  }
+
+  void _pickDeviceFilter(String deviceId) {
+    if (deviceId == _deviceFilter) {
+      return;
+    }
+    setState(() => _deviceFilter = deviceId);
+    _loadTab();
   }
 
   void _handleStateChanged() {
@@ -81,19 +158,29 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
   /// 返回时列表白闪一下；数据回来后 setState 刷新即可。
   @override
   void didPopNext() {
-    state.refreshDevices();
-    _silentReload();
+    () async {
+      await state.refreshDevices();
+      if (!mounted) {
+        return;
+      }
+      // 期间可能解绑了当前筛选的设备，或连上了另一台：重新定一次默认设备再拉记录。
+      _ensureDeviceFilter();
+      await _silentReload();
+    }();
   }
 
   /// 成功 tab→deviceUploadState:1 / 失败 tab→0（对齐小程序 records.js filterToUploadState）。
   int _uploadStateOf(CastStatus tab) => tab == CastStatus.success ? 1 : 0;
 
-  /// 按当前 tab 状态回后端拉取记录（分状态拉取，避免 >100 条时本地切片丢行）。
+  /// 按当前 tab 状态 + 当前设备回后端拉取记录（分状态拉取，避免 >100 条时本地切片丢行）。
   Future<void> _loadTab() async {
     if (mounted) {
       setState(() => _loading = true);
     }
-    await state.refreshCastRecords(deviceUploadState: _uploadStateOf(_tab));
+    await state.refreshCastRecords(
+      userProductId: _deviceFilter,
+      deviceUploadState: _uploadStateOf(_tab),
+    );
     if (mounted) {
       setState(() => _loading = false);
     }
@@ -101,15 +188,26 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
 
   /// 下拉刷新用的静默重拉：不切 _loading（切了会把列表换成整页 loading，打断刷新手势）。
   Future<void> _silentReload() async {
-    await state.refreshCastRecords(deviceUploadState: _uploadStateOf(_tab));
+    await state.refreshCastRecords(
+      userProductId: _deviceFilter,
+      deviceUploadState: _uploadStateOf(_tab),
+    );
     if (mounted) {
       setState(() {});
     }
   }
 
-  // 后端已按状态过滤；仍按 tab 再筛一层作兜底（后端忽略过滤参数时也不串档）。
-  List<CastRecord> get _records =>
-      state.castRecords.where((record) => record.status == _tab).toList();
+  // 后端已按状态 + 设备过滤；仍在本地再筛一层作兜底（后端忽略过滤参数时也不串档/不串设备）。
+  List<CastRecord> get _records {
+    final filter = _deviceFilter;
+    return state.castRecords
+        .where(
+          (record) =>
+              record.status == _tab &&
+              (filter == null || record.deviceId == filter),
+        )
+        .toList();
+  }
 
   // 再次/重新投屏：对齐小程序 records.js retryProjection/doRetryProjection —— 与手选照片**完全同链路**。
   // 先连设备；连上后把记录里的服务器图片下载到本地，带进投屏预览页构图，点「开始投屏」照常走
@@ -239,6 +337,8 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     final l10n = AppL10n.of(context);
     final records = _records;
     final success = _tab == CastStatus.success;
+    // _filterOptions 每次调用都重建并排序一份，build 里只取一次。
+    final filterOptions = _filterOptions;
 
     return FigmaScreen(
       title: l10n.castManagementTitle,
@@ -259,17 +359,34 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
             },
           ),
           const SizedBox(height: 18),
-          // 「共 N 条记录」也要等接口回来再显示，否则首帧会先闪一行「共 0 条记录」
+          // 「共 N 条记录」+ 设备筛选下拉（与图库同一个组件，需求第 13 项）。
+          // 计数也要等接口回来再显示，否则首帧会先闪一行「共 0 条记录」
           // （小程序把它一并包在 loading 的 else 分支里，同理）。
-          if (!_loading)
-            Text(
-              l10n.castTotalRecords(records.length),
-              style: const TextStyle(
-                color: Color(0xFF777E88),
-                fontSize: 12,
-                height: 1,
-              ),
+          SizedBox(
+            height: 31,
+            child: Row(
+              children: [
+                if (!_loading)
+                  Text(
+                    l10n.castTotalRecords(records.length),
+                    style: const TextStyle(
+                      color: Color(0xFF777E88),
+                      fontSize: 12,
+                      height: 1,
+                    ),
+                  ),
+                const Spacer(),
+                if (filterOptions.isNotEmpty)
+                  DeviceFilterChip(
+                    label: _filterLabel,
+                    options: filterOptions,
+                    selectedId: _deviceFilter,
+                    onSelected: _pickDeviceFilter,
+                    onOpen: _refreshDeviceFiltersForMenu,
+                  ),
+              ],
             ),
+          ),
           const SizedBox(height: 12),
           Expanded(
             // 四分支互斥链（loading 优先）：接口没回来之前不渲染「暂无记录」空态；

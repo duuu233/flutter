@@ -46,6 +46,7 @@ lib/
     │   ├── device_identity_registry.dart
     │   ├── device_interaction_trace.dart
     │   ├── frame_device_protocol.dart
+    │   ├── recently_bound_device.dart
     │   └── serial_match.dart
     ├── features/
     │   ├── account/
@@ -72,9 +73,10 @@ lib/
     │   └── app_routes.dart
     ├── shared/
     │   ├── l10n/
-    │   ├── widgets/
+    │   ├── widgets/          # 含 device_name_dialog.dart / device_filter_chip.dart
     │   ├── ai_service_consent.dart
     │   ├── avatar_upload.dart
+    │   ├── display_text.dart
     │   ├── image_cache_cleanup.dart
     │   ├── permission_gate.dart
     │   └── temp_cache_sweeper.dart

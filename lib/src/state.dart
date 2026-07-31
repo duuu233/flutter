@@ -9,6 +9,7 @@ import 'device/battery_cache.dart';
 import 'device/device_identity_registry.dart';
 import 'device/device_interaction_trace.dart';
 import 'device/frame_device_protocol.dart';
+import 'device/recently_bound_device.dart';
 import 'device/serial_match.dart';
 import 'network/api_exception.dart';
 import 'network/api_rows.dart';
@@ -16,6 +17,7 @@ import 'network/api_session.dart';
 import 'network/boltfox_api.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'shared/ai_service_consent.dart';
+import 'shared/display_text.dart';
 import 'shared/image_cache_cleanup.dart';
 import 'shared/l10n/chinese_script.dart';
 
@@ -30,10 +32,18 @@ enum ImageSourceType { camera, album }
 enum CastStatus { success, failed }
 
 class ActionFeedback {
-  const ActionFeedback({required this.success, required this.message});
+  const ActionFeedback({
+    required this.success,
+    required this.message,
+    this.warn = false,
+  });
 
   final bool success;
   final String message;
+
+  /// 「成功了，但结果不理想」——如照片已在设备侧异常、刷屏失败。
+  /// 调用方据此用 `AppToast.warn` 而不是普通 toast（对齐两端 toast 语义约定）。
+  final bool warn;
 }
 
 /// App 版本检查结果（见 [PhotoFrameState.checkAppVersion]）。
@@ -723,6 +733,38 @@ class PhotoFrameState extends ChangeNotifier {
   bool isDeviceActuallyConnected(String deviceId) {
     final device = _deviceByIdOrNull(deviceId);
     return device != null && _sessionMatches(device);
+  }
+
+  /// 入口门禁专用：先尽力把这条记录的稳定身份补齐，再判是否就是当前 BLE 会话。
+  ///
+  /// [isDeviceActuallyConnected] 是纯同步判断，只认记录当下带着的完整 6 字节 ID。
+  /// 但详情接口（`getUserProductDetail`）并不保证下发 `deviceId`，绑定刚完成时也可能没有——
+  /// 此时身份缺失会让判断一律为 false，于是**明明连着这台设备，点「轮播设置」却提示
+  /// 「请先连接设备」**（用户反馈第 7 项）。
+  ///
+  /// 这里补的是小程序 `activeDevice.inheritStableIdentity` 那一步：查身份登记表把完整 ID
+  /// 填回记录，再重判一次。登记表只收 0x01 验过身的完整 ID（见 [DeviceIdentityRegistry]），
+  /// 因此不会把「短 ID 兜底」升格成身份，也就不会串台。
+  Future<bool> resolveDeviceConnected(String deviceId) async {
+    if (isDeviceActuallyConnected(deviceId)) {
+      return true;
+    }
+    final device = _deviceByIdOrNull(deviceId);
+    // 记录本身已带完整 ID 却判不通过 = 真的连着别台（或没连），补身份也救不回来。
+    if (device == null || device.isPlaceholder || device.serialNumber.isNotEmpty) {
+      return false;
+    }
+    final remembered = await DeviceIdentityRegistry.instance.recall(deviceId);
+    if (remembered.isEmpty) {
+      return false;
+    }
+    device.serialNumber = remembered;
+    final live = _sessionMatches(device);
+    if (device.connected != live) {
+      device.connected = live;
+      notifyListeners();
+    }
+    return live;
   }
 
   /// 用真实 BLE 会话对账各设备的「已连接」显示（回前台连接体检后调用，
@@ -1716,6 +1758,9 @@ class PhotoFrameState extends ChangeNotifier {
     }
     final client = BleController.instance.client;
     String refreshWarn = '';
+    // 设备上已经没有这张照片时的标记：后端记录仍然要删掉，否则这条异常记录会**永久卡在图库**
+    //（用户反馈第 8 项：照片在设备上被删掉后，图库里那条记录再也删不掉）。
+    var devicePhotoAbnormal = false;
     if (client.connected) {
       try {
         final info = await client.readTransferInfo();
@@ -1726,6 +1771,11 @@ class PhotoFrameState extends ChangeNotifier {
           if (slot >= 0 && !slotIndexes.contains(slot)) {
             slotIndexes.add(slot);
           }
+        }
+        // 一条槽位都解析不出来 = 这些照片在设备上已经不存在（在别处被删/被清空）。
+        // 这不是失败，继续往下删后端记录，只是最后给一句「照片在此设备异常」的提示。
+        if (slotIndexes.isEmpty) {
+          devicePhotoAbnormal = true;
         }
         if (slotIndexes.isNotEmpty) {
           final newMask = await client.deleteImage(slotIndexes);
@@ -1759,15 +1809,22 @@ class PhotoFrameState extends ChangeNotifier {
             ),
           );
         }
-        // 设备没删成功就不动后端/本地，避免三处不一致。
-        return ActionFeedback(
-          success: false,
-          message: tr(
-            zh: '设备删除失败，请检查设备连接后重试。',
-            en: 'Failed to delete from device. Check the connection and retry.',
-            ja: '端末からの削除に失敗しました。接続を確認して再試行してください。',
-          ),
-        );
+        // 设备明确回「这张图不存在」：记录仍必须允许删除，否则异常记录永久卡在图库
+        //（对齐小程序 isMissingDevicePhotoError 的放行口径）。
+        // 只放行这一类，连接中断/设备繁忙等真实链路错误仍按原规则中止。
+        if (_isMissingDevicePhotoError(e)) {
+          devicePhotoAbnormal = true;
+        } else {
+          // 设备没删成功就不动后端/本地，避免三处不一致。
+          return ActionFeedback(
+            success: false,
+            message: tr(
+              zh: '设备删除失败，请检查设备连接后重试。',
+              en: 'Failed to delete from device. Check the connection and retry.',
+              ja: '端末からの削除に失敗しました。接続を確認して再試行してください。',
+            ),
+          );
+        }
       }
     }
 
@@ -1787,8 +1844,17 @@ class PhotoFrameState extends ChangeNotifier {
     notifyListeners();
     // 4) 回后端对账列表/计数（对齐小程序删除后 loadPhotos）；失败则保留上面的本地软隐藏。
     await refreshAlbum();
+    // 提示优先级与小程序一致：设备侧照片异常 > 刷屏失败 > 普通成功。
+    if (devicePhotoAbnormal) {
+      return ActionFeedback(
+        success: true,
+        warn: true,
+        message: devicePhotoAbnormalMessage,
+      );
+    }
     return ActionFeedback(
       success: true,
+      warn: refreshWarn.isNotEmpty,
       message: refreshWarn.isNotEmpty
           ? refreshWarn
           : tr(
@@ -1797,6 +1863,27 @@ class PhotoFrameState extends ChangeNotifier {
               ja: '選択した写真を削除しました。',
             ),
     );
+  }
+
+  /// 「照片在此设备异常，请删除重新上传」——设备上已经没有这张图时的提示（需求第 8 项）。
+  /// 记录照删不误，只是告诉用户这张图在设备侧已经对不上了，需要重新投屏。
+  String get devicePhotoAbnormalMessage => tr(
+    zh: '照片在此设备异常，请删除重新上传',
+    en: 'This photo is out of sync with the device. Delete it and upload again.',
+    ja: 'この写真はデバイス側と一致していません。削除して再アップロードしてください。',
+  );
+
+  /// 设备侧错误是否属于「这张照片/槽位在设备上不存在」。
+  ///
+  /// 与小程序 `list.js isMissingDevicePhotoError` 同口径：只认明确的「不存在 / 异常 / not found /
+  /// 索引无效」，**不**把断联、超时、设备繁忙这类真实链路故障误放行——那样会在设备其实没删掉的
+  /// 情况下删掉后端记录，两边从此对不上。
+  static bool _isMissingDevicePhotoError(Object error) {
+    final message = error.toString();
+    return RegExp(
+      r'(照片|图片).*(不存在|异常)|not[\s_-]*(found|exist)|无此图片|索引.*(无效|不存在)',
+      caseSensitive: false,
+    ).hasMatch(message);
   }
 
   /// 图库「刷新屏幕」：把选中的这张照片切到相框当前显示（对齐小程序 list.js:474-533 refreshScreen）。
@@ -2078,7 +2165,6 @@ class PhotoFrameState extends ChangeNotifier {
       // 正连着的设备会被错显示成「未连接」（改名后刷新列表时尤其明显）。
       // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
       for (final device in mapped) {
-        device.connected = _sessionMatches(device);
         // 蓝牙字段回填：后端**不下发**电量/内存/索引/固件等，_deviceFromJson 一律给 0/null。
         // 若整体替换而不回填，每次进首页/设备列表（都会调本方法）都会把 BLE 读到的
         // 电量抹成 0%、内存抹成 0/32——正是「切换页面后电量变 0%」的根因。
@@ -2089,6 +2175,18 @@ class PhotoFrameState extends ChangeNotifier {
       // 前两档都没给出完整 ID 时才查表兜底；反过来，后端这次下发了完整 ID 的记录顺手登记，
       // 供以后接口没下发时使用。整条补齐链只为一件事：别让身份闸把好设备拦在扫描之前。
       await _completeDeviceIdentities(mapped);
+      // 已连接回填：后端不存连接态/BLE 会话，若一律 connected:false 替换，
+      // 正连着的设备会被错显示成「未连接」（改名后刷新列表时尤其明显）。
+      // 按序列号与活动会话容错交叉匹配回填（与小程序 loadHomeState/loadDevices 同规则）。
+      //
+      // ⚠️ 必须排在**身份补齐之后**：`_sessionMatches` 只认完整 6 字节 ID，
+      // 后端这一行没下发 deviceId 时，身份要靠 `_carryOverBleFields`（本地上一版）与
+      // `_completeDeviceIdentities`（登记表）补。原来这行排在两者之前，补齐还没发生就先判了，
+      // 于是刷新一次列表，正连着的设备就整体掉成「未连接」——「明明连着却提示请先连接设备」
+      // （轮播设置/一键清空等入口门禁）正是从这里来的。
+      for (final device in mapped) {
+        device.connected = _sessionMatches(device);
+      }
       if (epoch != _sessionEpoch) {
         return ActionFeedback(success: true, message: '');
       }
@@ -2343,6 +2441,11 @@ class PhotoFrameState extends ChangeNotifier {
       // 身份登记表按后端记录主键存：记录都删了就得清掉这一条，
       // 否则后端复用 userProductId 时会把上一台的完整 ID 带回给新设备（用缓存制造串台）。
       unawaited(DeviceIdentityRegistry.instance.forget(deviceId));
+      // 「最近绑定」若指向这台已解绑的设备就一并清掉，避免主键复用时把排序优先级
+      // 错给另一台设备（见 [RecentlyBoundDevice]）。
+      if (RecentlyBoundDevice.instance.value == deviceId) {
+        unawaited(RecentlyBoundDevice.instance.clear());
+      }
       _devices.removeWhere((device) => device.id == deviceId);
       _albumPhotos.removeWhere((photo) => photo.deviceId == deviceId);
       _castRecords.removeWhere((record) => record.deviceId == deviceId);
@@ -2625,6 +2728,7 @@ class PhotoFrameState extends ChangeNotifier {
     // 退出登录同样清空上个账号的列表与首屏加载态，避免换账号后先看到上一个人的数据/空态。
     // 身份登记表按 userProductId 存，换账号后与新用户无关，必须整表清空。
     unawaited(DeviceIdentityRegistry.instance.clear());
+    unawaited(RecentlyBoundDevice.instance.clear());
     _batteryCache.clear();
     _devices.clear();
     _albumPhotos.clear();
@@ -2665,6 +2769,7 @@ class PhotoFrameState extends ChangeNotifier {
     // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
     // 并把首屏加载态复位，下个账号进来才会重新走一次 loading 而不是直接看到上个账号的空态。
     unawaited(DeviceIdentityRegistry.instance.clear());
+    unawaited(RecentlyBoundDevice.instance.clear());
     _batteryCache.clear();
     _albumPhotos.clear();
     _castRecords.clear();
@@ -2873,7 +2978,7 @@ class PhotoFrameState extends ChangeNotifier {
     }
     final nick = data['nickName'];
     if (nick is String && nick.isNotEmpty) {
-      _currentUser.nickname = nick;
+      _currentUser.nickname = decodeDisplayText(nick);
     }
     final email = data['userEmail'];
     if (email is String && email.isNotEmpty) {
@@ -3307,6 +3412,7 @@ class PhotoFrameState extends ChangeNotifier {
     // 与 logout 同等对待：会话已失效，上个账号的照片不该留在本机（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
     unawaited(DeviceIdentityRegistry.instance.clear());
+    unawaited(RecentlyBoundDevice.instance.clear());
     _batteryCache.clear();
     _devices.clear();
     _albumPhotos.clear();

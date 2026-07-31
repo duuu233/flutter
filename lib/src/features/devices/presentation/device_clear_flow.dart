@@ -11,8 +11,10 @@ import '../../../state.dart';
 /// 每次调用各一份，挡不住重入。
 bool _clearFlowBusy = false;
 
+const String _clearIcon = 'assets/images/device-detail-icon05.png';
+
 /// 详情页「一键清空」完整流程（对齐小程序 `detail.js` 的
-/// `delete-warn`(第一步警示「同时清空图库」) → `delete`(第二步确认) 两级弹窗）。
+/// `clearCopies`(第一步警示「同时清空图库」) → `confirmClearCopies`(第二步确认) 两级弹窗）。
 ///
 /// 2026-07-19 由整页路由改成**当前页直接弹窗**：原实现 push 了一个
 /// `DeviceClearConfirmPage`，因为 `AppPageRoute` 继承 `MaterialPageRoute`（不透明），
@@ -41,22 +43,28 @@ Future<void> startClearDeviceFlow(
   // 入口先判连接（对齐小程序 detail.js：未连接直接提示，不进两步确认）。
   // clearDeviceMemory 不自动扫连，不在这里拦的话用户点完两步确认才看到
   // 「请先连接设备」——白走一遍确认流程。与轮播设置入口同一形态（app_routes）。
-  if (!state.isDeviceActuallyConnected(deviceId)) {
-    AppToast.show(context, AppL10n.of(context).devConnectFirst);
+  // 用 resolveDeviceConnected：详情接口不下发完整设备 ID 时，同步判断会把连着的设备误判成未连接。
+  if (!await state.resolveDeviceConnected(deviceId)) {
+    if (context.mounted) {
+      AppToast.show(context, AppL10n.of(context).devConnectFirst);
+    }
+    return;
+  }
+  if (!context.mounted) {
     return;
   }
   _clearFlowBusy = true;
   try {
-    const clearIcon = 'assets/images/device-detail-icon05.png';
     final l10n = AppL10n.of(context);
-    // 第一步：警示「同时清空图库」。
+    // 第一步：警示「同时清空设备与小程序/APP 图库」。点完还有第二步，按钮是「继续」。
     final warned = await showAppConfirmDialog(
       context,
-      iconAsset: clearIcon,
+      iconAsset: _clearIcon,
       icon: Icons.cleaning_services_outlined,
       title: l10n.devClearAll,
       message: l10n.devClearStep1Message,
-      confirmLabel: l10n.devConfirm,
+      cancelLabel: l10n.devThinkAgain,
+      confirmLabel: l10n.continueLabel,
     );
     if (warned != true || !context.mounted) {
       return;
@@ -64,7 +72,7 @@ Future<void> startClearDeviceFlow(
     // 第二步：「我已阅读并了解此操作的结果」。
     final confirmed = await showAppConfirmDialog(
       context,
-      iconAsset: clearIcon,
+      iconAsset: _clearIcon,
       icon: Icons.cleaning_services_outlined,
       title: l10n.devClearAll,
       message: l10n.devClearStep2Message,
@@ -73,26 +81,38 @@ Future<void> startClearDeviceFlow(
     if (confirmed != true || !context.mounted) {
       return;
     }
-    AppLoadingDialog.show(context, l10n.devClearing);
-    // hide 放 finally 且不做 mounted 门控（不依赖 context）：清空可长达 180s，
-    // 期间页面被卸载也要收掉 root 栈上 canPop:false 的蒙层，否则整个 App 假死。
-    final ActionFeedback feedback;
-    try {
-      feedback = await state.clearDeviceMemory(deviceId);
-    } finally {
-      AppLoadingDialog.hide(context);
-    }
-    if (!context.mounted) {
-      return;
-    }
+    final cleared = await runClearDeviceMemory(context, state, deviceId);
     // 成功/失败都留在详情页：原实现「成功后 maybePop」是为了退出那个假弹窗页，
     // 现在没有页面要退，只给吐司反馈。
-    if (feedback.success) {
+    if (cleared && context.mounted) {
       AppToast.show(context, l10n.devCleared);
-    } else {
-      AppToast.warn(context, feedback.message);
     }
   } finally {
     _clearFlowBusy = false;
   }
+}
+
+/// 只做「蒙层 loading + 调清空 + 失败提示」这一段，不含二次确认。
+///
+/// 抽出来是给「删除设备」复用的：那条流程有自己的两道确认，确认完要先清空再解绑，
+/// 不能再弹一遍一键清空的确认框。返回是否清空成功——失败时调用方必须中止，
+/// 否则设备解绑了、照片却永远留在上面。
+Future<bool> runClearDeviceMemory(
+  BuildContext context,
+  PhotoFrameState state,
+  String deviceId,
+) async {
+  AppLoadingDialog.show(context, AppL10n.of(context).devClearing);
+  // hide 放 finally 且不做 mounted 门控（不依赖 context）：清空可长达 180s，
+  // 期间页面被卸载也要收掉 root 栈上 canPop:false 的蒙层，否则整个 App 假死。
+  final ActionFeedback feedback;
+  try {
+    feedback = await state.clearDeviceMemory(deviceId);
+  } finally {
+    AppLoadingDialog.hide(context);
+  }
+  if (!feedback.success && context.mounted) {
+    AppToast.warn(context, feedback.message);
+  }
+  return feedback.success;
 }
