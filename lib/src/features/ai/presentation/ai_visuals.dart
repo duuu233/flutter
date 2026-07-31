@@ -1,5 +1,3 @@
-import 'package:flutter/material.dart';
-
 /// AI 模块（星宝）的共用视觉零件与色值 —— 聊天页与会话列表页共享。
 ///
 /// 2026-07-31 按小程序 `assets/ai/UI` 视觉稿同步：整套配色从原来的冷灰蓝
@@ -10,6 +8,8 @@ import 'package:flutter/material.dart';
 /// ⚠️ 背景图本轮不同步（用户指定「flutter 先不改背景图」）：两页仍用全 App 统一的
 /// `FigmaScreenBackground`，没有跟着小程序换成 AI 那张 OSS 全屏图。
 library;
+
+import 'package:flutter/material.dart';
 
 /// 视觉稿里的小图标：等比放进方盒。
 /// 图缺失时静默留白（保住布局占位），不摆一个刺眼的破图占位。

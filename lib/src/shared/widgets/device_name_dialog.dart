@@ -298,12 +298,12 @@ class _DeviceNameMark extends StatelessWidget {
             ),
           ),
           // 笔：右下角，逆时针 12°（小程序 rotate(-12deg)）。
-          const Positioned(
+          Positioned(
             right: 4,
             bottom: 2,
             child: Transform.rotate(
               angle: -0.2094, // -12°
-              child: Text(
+              child: const Text(
                 '✎',
                 style: TextStyle(
                   color: Color(0xFFFF6725),
