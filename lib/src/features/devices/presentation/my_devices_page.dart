@@ -148,7 +148,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
       content: AppDialogTextField(
         controller: controller,
         hintText: AppL10n.of(context).devNameHint,
-        maxLength: 6,
+        maxLength: 20,
       ),
     );
     final name = confirmed == true ? controller.text : null;

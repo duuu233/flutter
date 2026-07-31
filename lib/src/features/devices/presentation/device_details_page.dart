@@ -149,7 +149,18 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     if (name == null || name == device.name) {
       return;
     }
-    final feedback = await state.renameDevice(device.id, name);
+    if (!context.mounted) {
+      return;
+    }
+    AppLoadingDialog.show(context, AppL10n.of(context).saving);
+    final ActionFeedback feedback;
+    try {
+      feedback = await state.renameDevice(device.id, name);
+    } finally {
+      // 公共 Flutter 页面同时覆盖 iOS / Android；无论接口成功失败都关闭蒙层。
+      // ignore: use_build_context_synchronously
+      AppLoadingDialog.hide(context);
+    }
     if (context.mounted && !feedback.success) {
       _snack(context, feedback.message);
     }

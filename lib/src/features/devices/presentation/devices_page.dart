@@ -108,7 +108,15 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
           },
           onCast: (deviceId) => _startCast(context, deviceId),
           onRename: (deviceId, name) async {
-            final feedback = await state.renameDevice(deviceId, name);
+            AppLoadingDialog.show(context, AppL10n.of(context).saving);
+            final ActionFeedback feedback;
+            try {
+              feedback = await state.renameDevice(deviceId, name);
+            } finally {
+              // iOS / Android 共用此 Flutter 流程；即使页面状态变化也要收掉 root 蒙层。
+              // ignore: use_build_context_synchronously
+              AppLoadingDialog.hide(context);
+            }
             if (!context.mounted) {
               return;
             }

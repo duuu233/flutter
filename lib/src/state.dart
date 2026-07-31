@@ -1975,15 +1975,15 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     }
-    // 对齐小程序 utils/device-name.js：按 Unicode 码点计数，最多 6 个字符。
+    // 对齐小程序 utils/device-name.js：按 Unicode 码点计数，最多 20 个字符。
     // 使用 runes，emoji / 生僻字不会被 UTF-16 代理对误算成两个字符。
-    if (value.runes.length > 6) {
+    if (value.runes.length > 20) {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '设备名称最多6个字符',
-          en: 'Device name must be at most 6 characters.',
-          ja: '端末名は6文字以内です。',
+          zh: '设备名称最多20个字符',
+          en: 'Device name must be at most 20 characters.',
+          ja: '端末名は20文字以内です。',
         ),
       );
     }
