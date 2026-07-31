@@ -700,17 +700,31 @@ class AppL10n {
   String get aiTitle => _pick('AI生图', 'AI Studio', 'AI生成');
   String get aiNewChat => _pick('新对话', 'New Chat', '新しいチャット');
   String get aiSessions => _pick('会话', 'Chats', '履歴');
-  String get aiSessionsTitle => _pick('会话历史', 'Chat History', 'チャット履歴');
-  String get aiWelcome => _pick(
-    '你好！我是星宝✨，你的AI创作伙伴。有什么我可以帮你的吗？',
-    'Hi! I am BoltStar ✨, your AI creative partner. How can I help?',
-    'こんにちは！AIパートナーの星宝✨です。何をお手伝いしましょう？',
+  String get aiSessionsTitle => _pick('历史会话', 'Chat History', 'チャット履歴');
+
+  /// 会话列表右上角的「新建」（区别于聊天页里那句完整的「新对话」[aiNewChat]）。
+  String get aiNewSessionAction => _pick('新建', 'New', '新規');
+
+  // 2026-07-31 视觉稿的欢迎页：大标题 + 一句副文案 + 三条灵感词（点了只填草稿，不自动发送）。
+  String get aiWelcomeGreeting =>
+      _pick('你好！我是星宝', 'Hi! I am BoltStar', 'こんにちは！星宝です');
+  String get aiWelcomeText => _pick(
+    '你的 AI 创作伙伴，有什么我可以帮你的吗？',
+    'Your AI creative partner. How can I help?',
+    'AI創作パートナーです。何をお手伝いしましょう？',
   );
-  String get aiWelcomeTip => _pick(
-    '试试：输入「画一只卡通猫」，或点 ＋ 一键生图',
-    'Try: “Draw a cartoon cat”, or tap ＋ for one-tap generation',
-    '「猫のイラストを描いて」と入力、または ＋ から一発生成',
-  );
+
+  /// 欢迎页灵感词。顺序与三张图标 `ai-suggestion-home/sunrise/palette.png` 一一对应，
+  /// 增删条目要同步改 `ai_chat_page` 里的图标数组。
+  List<String> get aiWelcomeSuggestions => [
+    _pick(
+      '生成一张温馨的客厅插画',
+      'Draw a cozy living room',
+      '居心地のよいリビングのイラストを生成',
+    ),
+    _pick('帮我写一句早安文案', 'Write me a good-morning line', 'おはようの一言を書いて'),
+    _pick('把照片变成漫画风', 'Turn my photo into a comic', '写真を漫画風にして'),
+  ];
   String get aiInputHint =>
       _pick('和星宝说点什么…', 'Say something to BoltStar…', '星宝に話しかけてみよう…');
   String get aiInputWithImagesHint => _pick(
@@ -728,8 +742,21 @@ class AppL10n {
   String get aiAlbum => _pick('相册', 'Album', 'アルバム');
   String get aiCamera => _pick('拍照', 'Camera', '撮影');
   String get aiGenerateImage => _pick('一键生图', 'Generate', '一発生成');
+
+  /// 一键生图浮层的副标题：点风格即发，没有二次确认，得先说清楚。
+  String get aiGenerateImageDesc =>
+      _pick('选择后立即发送', 'Sends as soon as you pick', '選択するとすぐ送信');
   String get aiImageRatio => _pick('图片比例', 'Ratio', '画像比率');
   String get aiPickStyle => _pick('选择生图模式', 'Choose a style', '生成スタイルを選択');
+
+  // 30xxx / 未知上游失败：不再只弹一次性 toast，气泡原地变成可重试的失败卡（对齐小程序 2026-07-30）。
+  String get aiFailureTitle => _pick('生成未完成', 'Generation failed', '生成できませんでした');
+  String get aiFailureDesc => _pick(
+    '网络或服务繁忙，请稍后重试',
+    'Network or service is busy. Please try again.',
+    'ネットワークまたはサービスが混雑しています。後でお試しください',
+  );
+  String get aiRetryGenerate => _pick('重新生成', 'Try again', '再生成');
   String get aiMessageActions => _pick('消息操作', 'Message actions', 'メッセージ操作');
   String get aiDownload => _pick('下载', 'Download', 'ダウンロード');
   String get aiCast => _pick('投屏', 'Cast', 'キャスト');
@@ -750,6 +777,11 @@ class AppL10n {
   );
   String get aiPreparingCast => _pick('准备投屏', 'Preparing cast…', 'キャストの準備中…');
   String get aiPickCastDevice => _pick('选择投屏设备', 'Choose a device', 'キャスト先を選択');
+  String get aiPickCastDeviceDesc => _pick(
+    '选择设备后，将自动连接并开始投屏',
+    'The device will connect automatically and start casting.',
+    '選択したデバイスに自動接続してキャストします',
+  );
   String get aiDeviceConnected => _pick('已连接', 'Connected', '接続済み');
   String get aiDeviceWillConnect => _pick(
     '未连接，选择后自动连接',
@@ -797,7 +829,20 @@ class AppL10n {
     'Only the last 7 days of chats are kept.',
     '直近7日間のチャットのみ保持されます',
   );
-  String get aiNoSessions => _pick('暂无会话', 'No chats yet', 'チャットはありません');
+  String get aiNoSessions =>
+      _pick('暂时没有历史会话', 'No chats yet', '履歴はまだありません');
+  String get aiNoSessionsDesc => _pick(
+    '开始一次新的历史创作吧',
+    'Start a new conversation.',
+    '新しい会話を始めましょう',
+  );
+  String get aiPullToLoadMore =>
+      _pick('上拉加载更多', 'Pull up to load more', '上にスワイプして続きを読み込む');
+
+  /// 会话列表的日期分组标题：今天单列，其余按「几月几日」。
+  String get aiToday => _pick('今天', 'Today', '今日');
+  String aiMonthDay(int month, int day) =>
+      _pick('$month月$day日', '$month/$day', '$month月$day日');
   // ⚠️ 2026-07-25 起本模块**没有也不要再加**任何「清空」入口（对齐小程序）：接口无批量删除能力，
   //    只能逐条串行 DELETE，中途失败会留下「删一半且无法回滚」的状态。原
   //    aiClearAll/aiClear/aiClearing/aiCleared/aiClearAllTitle/aiClearAllMessage 六条文案随功能删除。

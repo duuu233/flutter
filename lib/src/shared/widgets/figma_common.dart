@@ -170,16 +170,26 @@ class FigmaTopBar extends StatelessWidget {
   }
 }
 
-/// 顶部返回按钮：圆形底图 `return-round-icon.png` + 箭头 `return-arrow-icon.png`
-/// 叠加居中（对应小程序 `page-nav` 的 `.nav-back`：56rpx 圆底 + 24rpx 箭头）。
+/// 顶部返回按钮：整颗按钮就是一张 `ai-back-button.png`
+/// （2026-07-31 起两端统一换成这张，对应小程序 `page-nav` 的 `.nav-back-image`；
+/// 原来的 `return-round-icon.png` + `return-arrow-icon.png` 两图叠加已废弃）。
 class FigmaBackButton extends StatelessWidget {
   const FigmaBackButton({super.key, this.onTap});
 
   final VoidCallback? onTap;
 
+  /// 图源画布尺寸(136)里「看得见的白色圆角方块」只占 48.5%，四周全是透明投影留白，
+  /// 所以要画到 62 白块才是 30 —— 与换图前的圆钮等大、左边缘同样落在 16。
+  static const double _artSize = 62;
+
+  /// 投影是往下糊的，白块在画布里偏上 5.15%（画布 136 里偏上 7px）。
+  /// 直接居中会看着偏高，整张图要再往下推自身高度的 5.15%，
+  /// 居中的才是「白块」而不是「图+投影」。
+  static const double _artDownShift = _artSize * 0.0515;
+
   @override
   Widget build(BuildContext context) {
-    // 视觉仍是 30×30 圆钮，但命中区扩到 44×44（无障碍最小触达），
+    // 视觉仍是 30×30 的圆角方块，但命中区扩到 44×44（无障碍最小触达），
     // 并补语义标签让读屏器可识别（此前全 App 顶栏返回键对读屏器不可见）。
     return Semantics(
       button: true,
@@ -190,12 +200,12 @@ class FigmaBackButton extends StatelessWidget {
         child: SizedBox(
           width: 44,
           height: 44,
-          child: Center(
-            child: SizedBox(
-              width: 30,
-              height: 30,
-              child: _backButtonArt(),
-            ),
+          // OverflowBox：让 62 的图画得出 44 的命中盒（多出来的只有透明投影），
+          // 命中仍按 44 算 —— 对齐小程序给溢出图片加的 pointer-events:none。
+          child: OverflowBox(
+            maxWidth: _artSize,
+            maxHeight: _artSize,
+            child: _backButtonArt(),
           ),
         ),
       ),
@@ -203,33 +213,35 @@ class FigmaBackButton extends StatelessWidget {
   }
 
   Widget _backButtonArt() {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Image.asset(
-          'assets/images/return-round-icon.png',
-          width: 30,
-          height: 30,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) => DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.78),
-              shape: BoxShape.circle,
+    return Transform.translate(
+      offset: const Offset(0, _artDownShift),
+      child: Image.asset(
+        'assets/images/ai-back-button.png',
+        width: _artSize,
+        height: _artSize,
+        fit: BoxFit.contain,
+        // 图丢了也要还原「30 的白色圆角方块 + 箭头」这个视觉，不能掉到 62 的空盒。
+        // 兜底图是自己画的、没有投影，所以要把上面为投影补的下移抵消掉。
+        errorBuilder: (context, error, stackTrace) => Transform.translate(
+          offset: const Offset(0, -_artDownShift),
+          child: Center(
+            child: Container(
+              width: 30,
+              height: 30,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.78),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(
+                Icons.arrow_back_rounded,
+                color: Color(0xFF565D67),
+                size: 18,
+              ),
             ),
           ),
         ),
-        Image.asset(
-          'assets/images/return-arrow-icon.png',
-          width: 13,
-          height: 13,
-          fit: BoxFit.contain,
-          errorBuilder: (context, error, stackTrace) => const Icon(
-            Icons.chevron_left_rounded,
-            color: Color(0xFF565D67),
-            size: 20,
-          ),
-        ),
-      ],
+      ),
     );
   }
 }

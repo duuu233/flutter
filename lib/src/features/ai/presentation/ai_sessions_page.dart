@@ -10,13 +10,14 @@ import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../ai_i18n.dart';
 import 'ai_chat_page.dart';
+import 'ai_visuals.dart';
 
 /// AI 会话列表页。对齐小程序 `subpackages/ai/sessions`：
-/// 时间倒序、标题 = 首条消息、每页 20 条滚动加载、长按删除单条、新建会话。
+/// 时间倒序、**按日期分组**、标题 = 首条消息、每页 20 条滚动加载、左滑或长按删除单条、新建会话。
 /// 数据仅保留最近 7 天（后端策略）。
 ///
 /// ## 「原路径返回」（对齐小程序 2026-07-25 重做）
-/// 点某条会话 / 点「新建对话」都是 **push 一个新的聊天页**，本页留在页面栈里 —— 于是新聊天页的
+/// 点某条会话 / 点「新建」都是 **push 一个新的聊天页**，本页留在页面栈里 —— 于是新聊天页的
 /// 返回键天然原路退回本列表，再返回才回到进来时那个聊天页。
 /// 老实现是「pop 回一个结果、由下层那个聊天页就地换会话」：那样返回键直接退出了 AI，
 /// 而且点「新建对话」还会把下层那段对话从界面上抹掉（正是小程序当时用户报的两个现象）。
@@ -27,8 +28,14 @@ import 'ai_chat_page.dart';
 ///
 /// ## ⚠️ 本模块没有也不要再加任何「清空」入口
 /// 接口**没有批量/清空会话的能力**，只能 for 循环串行打 `DELETE /session`（上限 20 条 = 最坏 20 个
-/// 串行请求），且中途任一条失败就留下「删了一半且无法回滚」的状态。要清理一律**长按逐条删**
-/// （列表底部有提示）。2026-07-25 已按用户要求整功能移除，别再加回来。
+/// 串行请求），且中途任一条失败就留下「删了一半且无法回滚」的状态。要清理一律**左滑删 / 长按删**。
+/// 2026-07-25 已按用户要求整功能移除，别再加回来。
+///
+/// ## 2026-07-31 视觉同步（小程序 2026-07-30 / 07-31 两轮）
+/// 日期分组标题、毛玻璃会话卡、左滑露出的删除按钮（`ai-del-btn-bg.png`）、空态插画与
+/// 顶部「仅保留最近 7 天」提示都按视觉稿重做；「新建」从整块主按钮改为导航栏右上的文字入口。
+/// ⚠️ 背景图**本轮不动**（用户指定）：本页仍用全 App 统一的 [FigmaScreenBackground]，
+/// 没有跟着小程序换成 AI 那张 OSS 全屏图。
 class AiSessionsPage extends StatefulWidget {
   const AiSessionsPage({
     super.key,
@@ -45,7 +52,7 @@ class AiSessionsPage extends StatefulWidget {
   final String currentId;
 
   /// 打开本页的那个聊天页是不是「还没开口的新对话空态」。
-  /// 快照即可：本页盖在它上面期间它不会变。点「新建对话」时靠它决定退回去还是叠一张新空页。
+  /// 快照即可：本页盖在它上面期间它不会变。点「新建」时靠它决定退回去还是叠一张新空页。
   final bool openerPristine;
 
   @override
@@ -55,31 +62,48 @@ class AiSessionsPage extends StatefulWidget {
 /// 接口一次回全部，前端按 20 条/页分段展示（需求的分页交互）。
 const int _kPageSize = 20;
 
-/// 「N 条消息」补数的并发上限。
-///
-/// 背景：`/session/list` 回来的 `msg_count` **恒为 0**（排查结论见
-/// photo-album/docs/2026-07-24-AI模块开发进度.md —— **前端取值无误**，同一个对象里的
-/// title/updated_at 都正常，只有 msg_count 是 0），只能拿 `/chat/history` 的 `total` 兜底。
-/// 代价是 N+1 请求，所以严格设限：只补**当前已渲染出来的那几行**、`page_size=1` 只要 total、
-/// 并发 ≤ 本值、失败静默、每条只试一次。
-/// ⚠️ 后端把 msg_count 修好后，把 [_AiSessionsPageState._fillMsgCounts] / `_counted` 及两处调用
-/// 一并删掉即可（自动回落到接口值）。
-const int _kHistoryFillConcurrency = 4;
+/// 左滑露出删除按钮的位移：小程序 152rpx = 删除按钮 136rpx + 与卡片的 16rpx 间距。
+const double _kDeleteReveal = 76;
 
-/// 列表行（接口字段 + 前端补出来的条数）。[msgCount] 为 0 表示**未知**，此时只显示时间，
-/// 不摆一个明知是错的「0 条消息」。
+/// 删除按钮本体宽度（136rpx）与它和卡片之间的间距（16rpx）。
+const double _kDeleteWidth = 68;
+const double _kDeleteGap = 8;
+
+/// 松手吸附判据（对齐小程序 onSessionTouchEnd）：甩得够快直接开，
+/// 否则看有没有拉过 42%。小程序的 0.35 px/ms 换算成 Flutter 的 px/s 就是 350。
+const double _kFlingVelocity = 350;
+const double _kOpenRatio = 0.42;
+
+/// 卡片高度（112rpx）。
+const double _kCardHeight = 56;
+
+/// 列表行。
+///
+/// ⚠️ 2026-07-31 起**不再显示「N 条消息」**（视觉稿改成「标题 + 时间 + 箭头」三栏，日期由分组
+/// 标题承载），所以原先那套「`/session/list` 的 msg_count 恒为 0 → 逐条打 `/chat/history`
+/// 拿 total 补数」的 N+1 兜底一并删除：没有任何界面消费它，留着就是每次进列表白打十几个请求。
+/// 要恢复条数展示时再连同补数逻辑一起加回（历史实现见 git）。
 class _SessionRow {
   _SessionRow({
     required this.sessionId,
     required this.title,
     required this.updatedAt,
-    this.msgCount = 0,
   });
 
   final String sessionId;
   final String title;
   final String updatedAt;
-  int msgCount;
+}
+
+/// 渲染项：日期分组标题只挂在该组第一条上（对齐小程序 `decorateGroups`）——
+/// 列表仍是单层，分页与滚动逻辑不用变形态。
+class _SessionEntry {
+  _SessionEntry({required this.row, required this.groupLabel});
+
+  final _SessionRow row;
+
+  /// 空串 = 不是本组第一条，不画标题。
+  final String groupLabel;
 }
 
 class _AiSessionsPageState extends State<AiSessionsPage> {
@@ -89,10 +113,7 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
   int _shown = _kPageSize;
   bool _loading = true;
 
-  /// sessionId → 已试过补数（不论成败只试一次，防翻页来回反复打接口）。
-  final Set<String> _counted = <String>{};
-
-  /// 上次从本页打开的会话：退回本页时只重新补它的条数（它才刚变过）。
+  /// 上次从本页打开的会话（退回本页后静默刷新时用来对齐标题/时间）。
   String _lastOpened = '';
 
   /// 在途跳转，防连点叠出两页聊天页。
@@ -100,6 +121,13 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
 
   /// 本页高亮的「当前会话」。初值来自打开本页的聊天页，删除后会清掉。
   late String _currentId = widget.currentId;
+
+  /// 左滑后停在「露出删除按钮」位的那条。
+  String _openedId = '';
+
+  /// 正随手指移动的那条 + 它当前的位移（负值向左）。
+  String _draggingId = '';
+  double _dragOffset = 0;
 
   bool get _hasMore => _all.length > _shown;
 
@@ -123,12 +151,11 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     }
     if (_scroll.position.pixels >= _scroll.position.maxScrollExtent - 80) {
       setState(() => _shown += _kPageSize);
-      _fillMsgCounts(); // 新露出来的几行也补
     }
   }
 
   /// [silent] = true：静默刷新（不显示整页 loading、失败也不打扰），用于从聊天页退回本页时对齐
-  /// 最新的标题/时间/条数 —— 本页现在**常驻页面栈**，聊完退回来数据可能已经变了。
+  /// 最新的标题/时间 —— 本页现在**常驻页面栈**，聊完退回来数据可能已经变了。
   Future<void> _load({bool silent = false}) async {
     if (!silent) {
       setState(() => _loading = true);
@@ -138,14 +165,6 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
       if (!mounted) {
         return;
       }
-      // 已经补到的条数带过来，否则静默刷新会把补好的条数刷没了，还得再打一轮 /chat/history。
-      // 只带 _counted 里还认账的那些：退回本页时会把「刚聊过那条」从 _counted 里删掉，
-      // 于是它这里也不被带过来 → msgCount 归 0 → _fillMsgCounts 会重新补它的真实条数。
-      final kept = <String, int>{
-        for (final row in _all)
-          if (row.msgCount > 0 && _counted.contains(row.sessionId))
-            row.sessionId: row.msgCount,
-      };
       setState(() {
         _all = [
           for (final item in sessions)
@@ -153,16 +172,13 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
               sessionId: item.sessionId,
               title: item.title,
               updatedAt: item.updatedAt,
-              msgCount: item.msgCount > 0
-                  ? item.msgCount
-                  : (kept[item.sessionId] ?? 0),
             ),
         ];
         // 静默刷新保持用户已翻到的行数，别把人拉回第一页
         _shown = _shown < _kPageSize ? _kPageSize : _shown;
         _loading = false;
+        _openedId = ''; // 列表换了一批，别让位移状态挂在别人身上
       });
-      _fillMsgCounts(); // 不 await：列表先出来，条数补到了再刷一次
     } catch (error) {
       if (!mounted) {
         return;
@@ -172,62 +188,8 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
       }
       setState(() => _loading = false);
       // 包一层 lambda 而不是直接传 _load：它现在带了可选具名参数，别让重试把 silent 的语义带进来
-      await AiI18n.of(context).handleError(
-        context,
-        error,
-        onRetry: () => _load(),
-      );
+      await AiI18n.of(context).handleError(context, error, onRetry: () => _load());
     }
-  }
-
-  /// 给 `msg_count = 0` 的行补真实条数：逐条拿 `/chat/history` 的 `total`
-  ///（`page_size=1`，只要 total 不要内容）。只处理**已渲染出来的行**，并发
-  /// [_kHistoryFillConcurrency] 条，失败静默 —— 补数只是锦上添花，挂了也不该影响列表本身。
-  /// 结果攒齐后**只 setState 一次**（逐条刷会打出十几次重建）。
-  Future<void> _fillMsgCounts() async {
-    final targets = [
-      for (final row in _all.take(_shown))
-        if (row.msgCount <= 0 && !_counted.contains(row.sessionId)) row,
-    ];
-    if (targets.isEmpty) {
-      return;
-    }
-    final found = <String, int>{};
-    var cursor = 0;
-    Future<void> worker() async {
-      while (cursor < targets.length) {
-        final row = targets[cursor++];
-        _counted.add(row.sessionId);
-        try {
-          final history = await widget.api.getHistory(
-            row.sessionId,
-            page: 1,
-            pageSize: 1,
-          );
-          if (history.total > 0) {
-            found[row.sessionId] = history.total;
-          }
-        } catch (_) {
-          // 静默：补不到就继续「只显示时间、不带条数」
-        }
-      }
-    }
-
-    await Future.wait([
-      for (var i = 0; i < _kHistoryFillConcurrency && i < targets.length; i++)
-        worker(),
-    ]);
-    if (!mounted || found.isEmpty) {
-      return;
-    }
-    setState(() {
-      for (final row in _all) {
-        final count = found[row.sessionId];
-        if (count != null) {
-          row.msgCount = count;
-        }
-      }
-    });
   }
 
   // ── 跳转 ─────────────────────────────────────────────────
@@ -236,6 +198,11 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
   Future<void> _openSession(_SessionRow row) async {
     if (_navigating) {
       return; // 连点去重：否则会叠出两页一样的聊天页
+    }
+    // 有卡片正露着删除按钮：这一下先收起来，不跳转（对齐小程序 onSessionTap）
+    if (_openedId.isNotEmpty) {
+      setState(() => _openedId = '');
+      return;
     }
     // 点的正是下层聊天页已经打开的那条（带「当前」标记的）：没必要再叠一页一样的，直接退回去
     if (row.sessionId.isNotEmpty && row.sessionId == _currentId) {
@@ -284,10 +251,8 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
       return;
     }
     _navigating = false;
-    // 刚聊过的那条条数/标题/时间肯定变了，允许再补一次后静默刷新
-    if (_lastOpened.isNotEmpty) {
-      _counted.remove(_lastOpened);
-    }
+    // 刚聊过的那条标题/时间肯定变了
+    _lastOpened = '';
     await _load(silent: true);
   }
 
@@ -304,8 +269,10 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
         if (row.sessionId == _currentId) {
           _currentId = '';
         }
+        if (row.sessionId == _openedId) {
+          _openedId = '';
+        }
       });
-      _counted.remove(row.sessionId);
       if (row.sessionId == _lastOpened) {
         _lastOpened = '';
       }
@@ -321,6 +288,9 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     }
   }
 
+  /// 长按删除的兜底路径（左滑不便时仍可用），保留二次确认。
+  /// 左滑露出的那颗红按钮是**点了就删**（对齐小程序 `onSessionDeleteTap`）——
+  /// 它本身要「刻意滑开 + 再点一次」，已经够重了。
   Future<void> _confirmDelete(_SessionRow row) async {
     final l10n = AppL10n.of(context);
     final confirmed = await showAppConfirmDialog(
@@ -336,168 +306,380 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     }
   }
 
+  // ── 左滑 ─────────────────────────────────────────────────
+
+  void _onSwipeStart(_SessionRow row) {
+    setState(() {
+      _draggingId = row.sessionId;
+      // 已经是打开态就从 -76 continue，不要一按下去就弹回 0
+      _dragOffset = _openedId == row.sessionId ? -_kDeleteReveal : 0;
+      _openedId = '';
+    });
+  }
+
+  void _onSwipeUpdate(DragUpdateDetails details) {
+    if (_draggingId.isEmpty) {
+      return;
+    }
+    setState(() {
+      _dragOffset = (_dragOffset + details.delta.dx).clamp(-_kDeleteReveal, 0.0);
+    });
+  }
+
+  void _onSwipeEnd(DragEndDetails details, _SessionRow row) {
+    if (_draggingId.isEmpty) {
+      return;
+    }
+    final velocity = details.primaryVelocity ?? 0;
+    final shouldOpen =
+        velocity < -_kFlingVelocity ||
+        (velocity <= _kFlingVelocity &&
+            _dragOffset <= -_kDeleteReveal * _kOpenRatio);
+    setState(() {
+      _openedId = shouldOpen ? row.sessionId : '';
+      _draggingId = '';
+      _dragOffset = 0;
+    });
+  }
+
+  void _onSwipeCancel() {
+    if (_draggingId.isEmpty) {
+      return;
+    }
+    setState(() {
+      _draggingId = '';
+      _dragOffset = 0;
+    });
+  }
+
   // ── UI ───────────────────────────────────────────────────
 
-  /// ISO 时间 → 列表友好展示：今天显示 HH:mm，其余显示 MM-DD HH:mm（对齐小程序 formatTime）。
+  /// ISO 时间 → 卡片右侧只显示 HH:mm；日期由分组标题承载（对齐小程序 formatTime）。
   String _formatTime(String iso) {
     final date = DateTime.tryParse(iso);
     if (date == null) {
       return '';
     }
     final local = date.toLocal();
-    final now = DateTime.now();
     String pad(int n) => n < 10 ? '0$n' : '$n';
-    final hm = '${pad(local.hour)}:${pad(local.minute)}';
-    final sameDay =
-        local.year == now.year &&
+    return '${pad(local.hour)}:${pad(local.minute)}';
+  }
+
+  /// 分组标题：今天单列，其余「几月几日」；时间解析不出来的归到最后一组「更早」。
+  String _dateLabel(String iso) {
+    final l10n = AppL10n.of(context);
+    final date = DateTime.tryParse(iso);
+    if (date == null) {
+      return l10n.aiSessionsTitle; // 极少见：时间字段坏了，标题至少不空
+    }
+    final local = date.toLocal();
+    final now = DateTime.now();
+    if (local.year == now.year &&
         local.month == now.month &&
-        local.day == now.day;
-    return sameDay ? hm : '${pad(local.month)}-${pad(local.day)} $hm';
+        local.day == now.day) {
+      return l10n.aiToday;
+    }
+    return l10n.aiMonthDay(local.month, local.day);
+  }
+
+  String _dateKey(String iso) {
+    final date = DateTime.tryParse(iso)?.toLocal();
+    if (date == null) {
+      return 'unknown';
+    }
+    return '${date.year}-${date.month}-${date.day}';
+  }
+
+  /// 只给每组第一条写标题（对齐小程序 decorateGroups）。
+  List<_SessionEntry> _decorateGroups(List<_SessionRow> rows) {
+    final entries = <_SessionEntry>[];
+    var previousKey = '';
+    for (final row in rows) {
+      final key = _dateKey(row.updatedAt);
+      entries.add(
+        _SessionEntry(
+          row: row,
+          groupLabel: key == previousKey ? '' : _dateLabel(row.updatedAt),
+        ),
+      );
+      previousKey = key;
+    }
+    return entries;
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
-    final visible = _all.take(_shown).toList();
+    final entries = _decorateGroups(_all.take(_shown).toList());
     return FigmaScreen(
       title: l10n.aiSessionsTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
+      // 「新建」从整块主按钮改为导航右上的文字入口（对齐小程序 page-nav 的 right-text）
+      trailing: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: _createNew,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
+          child: Text(
+            l10n.aiNewSessionAction,
+            style: const TextStyle(
+              color: Color(0xFFFF6421),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ),
       body: Column(
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-            child: SizedBox(
-              width: double.infinity,
-              child: FigmaPrimaryButton(
-                label: l10n.aiNewChat,
-                height: 44,
-                onPressed: _createNew,
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    l10n.aiKeep7Days,
-                    style: const TextStyle(
-                      color: Color(0xFF8B9098),
-                      fontSize: 12,
+          if (!_loading && entries.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+              child: Row(
+                children: [
+                  const AiIcon('assets/images/ai-info.png', size: 13),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      l10n.aiKeep7Days,
+                      style: const TextStyle(
+                        color: Color(0xFF8B8B8B),
+                        fontSize: 12.5,
+                      ),
                     ),
                   ),
-                ),
-                // 「清空全部」已下线（见类注释），清理一律长按逐条删 —— 所以这句提示必须有
-                Text(
-                  l10n.aiLongPressToDelete,
-                  style: const TextStyle(
-                    color: Color(0xFFB9BFC8),
-                    fontSize: 12,
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
           Expanded(
             child: _loading
                 ? const PageLoading()
-                : (visible.isEmpty
-                      ? Center(
-                          child: Text(
-                            l10n.aiNoSessions,
-                            style: const TextStyle(
-                              color: Color(0xFF8B9098),
-                              fontSize: 14,
-                            ),
-                          ),
-                        )
-                      : ListView.builder(
-                          controller: _scroll,
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                          itemCount: visible.length + (_hasMore ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index >= visible.length) {
-                              return const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 16),
-                                child: Center(
-                                  child: SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                    ),
-                                  ),
-                                ),
-                              );
-                            }
-                            return _buildItem(visible[index]);
-                          },
-                        )),
+                : (entries.isEmpty ? _buildEmpty() : _buildList(entries)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildItem(_SessionRow row) {
+  Widget _buildEmpty() {
+    final l10n = AppL10n.of(context);
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(20, 150, 20, 0),
+        child: Column(
+          children: [
+            const AiIcon('assets/images/ai-empty-sessions-art.png', size: 110),
+            const SizedBox(height: 18),
+            Text(
+              l10n.aiNoSessions,
+              style: const TextStyle(
+                color: Color(0xFF2E2E2E),
+                fontSize: 19,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 9),
+            Text(
+              l10n.aiNoSessionsDesc,
+              style: const TextStyle(color: Color(0xFF929292), fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildList(List<_SessionEntry> entries) {
+    final l10n = AppL10n.of(context);
+    return ListView.builder(
+      controller: _scroll,
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+      itemCount: entries.length + (_hasMore ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index >= entries.length) {
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(0, 6, 0, 12),
+            child: Text(
+              l10n.aiPullToLoadMore,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFFAAA49C), fontSize: 11.5),
+            ),
+          );
+        }
+        final entry = entries[index];
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (entry.groupLabel.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(0, 13, 0, 9),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 3.5,
+                      height: 14,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFF762E),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      entry.groupLabel,
+                      style: const TextStyle(
+                        color: Color(0xFF292929),
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            _buildSwipeRow(entry.row),
+          ],
+        );
+      },
+    );
+  }
+
+  /// 一条会话：卡片与删除按钮同处一条「轨道」上一起位移，删除按钮排在卡片右侧的轨道外，
+  /// 由外层 [ClipRect] 裁掉 —— 没左滑就看不见它。
+  ///
+  /// ⚠️ 别改成「删除按钮垫在卡片下面」：卡片是半透明毛玻璃（白 0.74），垫在底下的红色会直接
+  /// 透出来，等于没滑就露出删除按钮（小程序 2026-07-31 踩过这个坑）。
+  /// 代价是卡片那层很淡的投影也被裁掉，接受（0.07 透明度，肉眼几乎无差）。
+  Widget _buildSwipeRow(_SessionRow row) {
+    final dragging = _draggingId == row.sessionId;
+    final offset = dragging
+        ? _dragOffset
+        : (_openedId == row.sessionId ? -_kDeleteReveal : 0.0);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final cardWidth = constraints.maxWidth;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            // 只接横向拖动：纵向滚动仍归 ListView（手势竞技场按主轴分派，不用像小程序那样手写轴判定）
+            onHorizontalDragStart: (_) => _onSwipeStart(row),
+            onHorizontalDragUpdate: _onSwipeUpdate,
+            onHorizontalDragEnd: (details) => _onSwipeEnd(details, row),
+            onHorizontalDragCancel: _onSwipeCancel,
+            child: ClipRect(
+              child: SizedBox(
+                height: _kCardHeight,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(end: offset),
+                  // 跟手拖动期间不要过渡，否则位移会慢半拍；松手才吸附
+                  duration: dragging
+                      ? Duration.zero
+                      : const Duration(milliseconds: 260),
+                  curve: Curves.easeOut,
+                  builder: (context, value, child) =>
+                      Transform.translate(offset: Offset(value, 0), child: child),
+                  child: OverflowBox(
+                    alignment: Alignment.centerLeft,
+                    minWidth: 0,
+                    maxWidth: cardWidth + _kDeleteGap + _kDeleteWidth,
+                    child: Row(
+                      children: [
+                        SizedBox(width: cardWidth, child: _buildCard(row)),
+                        const SizedBox(width: _kDeleteGap),
+                        SizedBox(
+                          width: _kDeleteWidth,
+                          child: _buildDeleteButton(row),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCard(_SessionRow row) {
     final l10n = AppL10n.of(context);
     final active = row.sessionId == _currentId;
     final title = row.title.isEmpty ? l10n.aiNewChat : row.title;
-    // 条数未知（后端 msg_count 恒 0 且没补到）时**只显示时间**，不摆一个明知是错的「0 条消息」
-    final time = _formatTime(row.updatedAt);
-    final meta = row.msgCount > 0
-        ? '$time  ·  ${l10n.aiMsgCount(row.msgCount)}'
-        : time;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _openSession(row),
-      // 需求「左滑或长按删除」取长按实现（与小程序一致）
+      // 左滑之外保留长按删除兜底（与小程序一致）
       onLongPress: () => _confirmDelete(row),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 10),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 15),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: Colors.white.withValues(alpha: active ? 0.9 : 0.74),
           borderRadius: BorderRadius.circular(14),
-          border: active
-              ? Border.all(color: const Color(0xFFFF5F1F), width: 1.5)
-              : Border.all(color: const Color(0xFFEDF1F7)),
+          border: Border.all(
+            color: active
+                ? const Color(0x57FF7E39)
+                : Colors.white.withValues(alpha: 0.9),
+          ),
         ),
         child: Row(
           children: [
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF2A2D32),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    meta,
-                    style: const TextStyle(
-                      color: Color(0xFF8B9098),
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF5C5C5C),
+                  fontSize: 14.5,
+                  height: 1.2,
+                ),
               ),
             ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              size: 20,
-              color: Color(0xFFB9BFC8),
+            const SizedBox(width: 11),
+            Text(
+              _formatTime(row.updatedAt),
+              style: const TextStyle(color: Color(0xFF9A9A9A), fontSize: 14),
             ),
+            const SizedBox(width: 11),
+            const AiIcon('assets/images/ai-chevron-right.png', size: 12),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeleteButton(_SessionRow row) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      // 刻意不加二次确认：要走到这一步必须「先滑开、再点」，见 [_confirmDelete] 注释
+      onTap: () => _deleteSession(row),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: ColoredBox(
+          // #d9755f 是图没加载出来时的兜底底色（图本身就是这个红）
+          color: const Color(0xFFD9755F),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                'assets/images/ai-del-btn-bg.png',
+                fit: BoxFit.fill,
+                errorBuilder: (context, error, stackTrace) =>
+                    const SizedBox.shrink(),
+              ),
+              Center(
+                child: Text(
+                  AppL10n.of(context).aiDelete,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
