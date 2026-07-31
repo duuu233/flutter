@@ -1068,6 +1068,14 @@ class AppL10n {
     'Connection failed. Move closer to the device and try again.',
     '接続に失敗しました。デバイスに近づいてもう一度お試しください。',
   );
+  // 连接/搜索超时（2026-08-01）：与上面的「连接失败」分开——超时多为设备没在广播或信号弱，
+  // 用户该做的是等一会儿再试，而不是「靠近设备」。这一句必须跟随语种：此前底层抛的
+  // TimeoutException 会把英文原文透到 toast，中文用户看到一串 "TimeoutException after…"。
+  String get bleConnectTimeout => _pick(
+    '连接超时，稍后再试',
+    'Connection timed out. Please try again later.',
+    '接続がタイムアウトしました。しばらくしてからお試しください。',
+  );
   // 连接保活前台服务的常驻通知文案（Android 通知栏，连接期间可见）。
   String get bleKeepAliveNotification => _pick(
     '正在保持相框连接',
@@ -1172,9 +1180,15 @@ class AppL10n {
   /// 2026-07-31 文案由「分辨率」改为「屏幕尺寸」（对齐小程序 detail.wxml）。
   String get devScreenSize => _pick('屏幕尺寸', 'Screen Size', '画面サイズ');
 
-  /// 设备可存放的照片数量（已用/上限），文案由「设备内存」改为「最大照片数量」。
-  String get devMaxPhotoCount =>
-      _pick('最大照片数量', 'Max Photos', '最大写真枚数', '最大照片數量');
+  /// 设备可存放的照片数量，文案由「设备内存」改为「最大照片数量」。
+  /// 2026-08-01 产品要求改为「最大照片数量-已使用」，值同步改成 `上限-已用`（如 51-8）：
+  /// 只显示上限看不出还能放几张。行文案与取值口径必须成对，改一个要改另一个。
+  String get devMaxPhotoCount => _pick(
+    '最大照片数量-已使用',
+    'Max Photos - Used',
+    '最大写真枚数-使用済み',
+    '最大照片數量-已使用',
+  );
   String get devOtaUpgrade => _pick('OTA升级', 'Firmware Update', 'OTAアップデート');
   String devFirmwareNewVersion(String version) => _pick(
     '发现新版本 $version',
@@ -1498,13 +1512,15 @@ class AppL10n {
 
   // ── 图库 ──
   /// 2026-07-31 标题由「我的图库」改为「设备照片」（对齐小程序 list.wxml 的 page-nav）。
+  /// 2026-08-01 起页面不再显示标题（改由右上角设备下拉承担），本条仅保留给别处引用。
   String get galTitle => _pick('设备照片', 'Device Photos', 'デバイスの写真');
 
   /// 列表顶部的一行说明：这里看到的就是相框当前这块屏上的照片。
+  /// 2026-08-01 产品精简：去掉前半句「当前屏幕照片，可」，只留动作。
   String get galScreenHint => _pick(
-    '当前屏幕照片，可指定显示或删除当前屏幕照片',
-    'These are the photos on the current screen. You can choose one to display, or delete them here.',
-    'これは現在の画面の写真です。表示する写真を指定したり、削除したりできます。',
+    '指定显示或删除当前屏幕照片',
+    'Choose a photo to display on the screen, or delete photos from it.',
+    '画面に表示する写真を指定したり、写真を削除したりできます。',
   );
   String get galFrame => _pick('相框', 'Photo Frame', 'フォトフレーム');
   String get galTip => _pick('提示', 'Notice', 'お知らせ');

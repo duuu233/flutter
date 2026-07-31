@@ -230,8 +230,13 @@ const double _kMinZoomFactor = 0.02;
 const double _kExportRotateDeg = 270;
 const double _kExportRotateRad = _kExportRotateDeg * math.pi / 180;
 
-/// 切图过场时长：Banner 式轮播过场（对齐小程序 swiper `duration=360ms`，需求第 14 项）。
-const Duration _kSlideDuration = Duration(milliseconds: 360);
+/// 切图过场时长：松手后 Banner 轨道补完剩下那段路要花的时间（对齐小程序 `SLIDE_MS`）。
+/// 2026-08-01 由 360ms 收到 300ms —— 现在过场只补「手指没滑完的那一截」，不再是整段路程，
+/// 360ms 会显得拖沓。
+const Duration _kSlideDuration = Duration(milliseconds: 300);
+
+/// 已经是第一张还往右滑 / 最后一张还往左滑时的阻尼系数：滑得动（有反馈），但明显滑不过去。
+const double _kSlideRubber = 3;
 
 /// 「拿起」放大回弹动画时长（对齐小程序 clipPickup 0.34s）。
 const Duration _kPickupDuration = Duration(milliseconds: 340);
@@ -240,7 +245,7 @@ const Duration _kPickupDuration = Duration(milliseconds: 340);
 const double _kClipRadius = 20;
 
 class _CastPreviewPageState extends State<CastPreviewPage>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   /// 待投屏原图路径。**全程不改写**：编辑是非破坏性的，烘焙产物只在 [_startCast] 里临时生成，
   /// 记录/图库要用的原图仍是这份（对齐小程序 `_origSrc` 语义）。
   late final List<String> _paths = List<String>.from(widget.imagePaths);
@@ -276,6 +281,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
 
   Size? _stageSize;
   bool _editing = false;
+  /// Banner 过场进行中：期间不接新手势（此刻 [_edit] 还指着「正在滑走的那张」，
+  /// 接下去只会把状态搅乱），落位后由 [_switchImage] 复位。
   bool _sliding = false;
   bool _dragging = false;
   bool _projecting = false;
@@ -284,6 +291,16 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   _Mode _mode = _Mode.none;
   Offset? _touchStart;
   double _swipeDx = 0;
+
+  /// Banner 轨道的横向平移量(px)：跟手期间逐帧写入，松手后由 [_slide] 补完剩下那段。
+  ///
+  /// 用 ValueNotifier 而不是 setState 的字段——手势期每帧都要改，整页 rebuild 太贵；
+  /// 只有编辑层外面那层 [Transform.translate] 订阅它。
+  /// 底层 [PageView] 同步走 `jumpTo`（见 [_syncPagerToSlide]），邻图才会真从屏幕边缘滑进来。
+  final ValueNotifier<double> _slideDx = ValueNotifier<double>(0);
+  double _slideFrom = 0;
+  double _slideTo = 0;
+
   Timer? _lpTimer;
   _PinchAnchor? _pinch;
   _DragAnchor? _dragAnchor;
@@ -292,6 +309,12 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     vsync: this,
     duration: _kPickupDuration,
   );
+
+  /// 松手后补完 Banner 过场的驱动器：把 [_slideDx] 从 [_slideFrom] 补到 [_slideTo]。
+  late final AnimationController _slide = AnimationController(
+    vsync: this,
+    duration: _kSlideDuration,
+  )..addListener(_onSlideTick);
 
   /// 「拿起」反馈：1 → 1.05 → 1（对齐小程序 @keyframes clipPickup）。
   late final Animation<double> _pickupScale =
@@ -351,6 +374,10 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   void dispose() {
     _clearLongPress();
     _pickup.dispose();
+    _slide
+      ..removeListener(_onSlideTick)
+      ..dispose();
+    _slideDx.dispose();
     _pager.dispose();
     _activeImage?.dispose();
     super.dispose();
@@ -563,7 +590,15 @@ class _CastPreviewPageState extends State<CastPreviewPage>
 
   Offset _pointerAt(int slot) => _pointers[_pointerOrder[slot]]!;
 
+  /// 单指横滑到一半又落下第二指：这一路不会再走 [_commitSwipe]，轨道得自己弹回原位，
+  /// 否则会歪着停在偏移位置上（2026-08-01）。
   void _beginPinch() {
+    _swipeDx = 0;
+    _springBackSlide();
+    _beginPinchAnchor();
+  }
+
+  void _beginPinchAnchor() {
     final g = _edit;
     if (g == null || _pointerOrder.length < 2) {
       return;
@@ -612,7 +647,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   }
 
   void _onPointerDown(PointerDownEvent event) {
-    if (_edit == null) {
+    // 过场进行中不接新手势：_edit 还指着「正在滑走的那张」，接下去只会把状态搅乱
+    if (_edit == null || _sliding) {
       return;
     }
     _pointers[event.pointer] = event.localPosition;
@@ -630,7 +666,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   }
 
   void _onPointerMove(PointerMoveEvent event) {
-    if (_edit == null || !_pointers.containsKey(event.pointer)) {
+    if (_edit == null || _sliding || !_pointers.containsKey(event.pointer)) {
       return;
     }
     _pointers[event.pointer] = event.localPosition;
@@ -696,8 +732,69 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     }
 
     if (_mode == _Mode.swipe) {
-      _swipeDx = dx; // 只记录，松手时按方向切图（PageView 负责滑动过场）
+      _swipeDx = dx;
+      // 跟手：编辑层与底层 PageView 一起随指头平移（2026-08-01，对齐小程序 Banner 轨道）。
+      // 此前只记录 dx、画面纹丝不动，松手才播一整段过场——那不是 banner，是跳帧。
+      _applySlideOffset(dx);
     }
+  }
+
+  /// 跟手平移：滑到头（第一张再往右 / 最后一张再往左）时给阻尼，滑得动但明显滑不过去。
+  void _applySlideOffset(double dx) {
+    final atHead = dx > 0 && _activeIndex <= 0;
+    final atTail = dx < 0 && _activeIndex >= _paths.length - 1;
+    _setSlideDx(atHead || atTail ? dx / _kSlideRubber : dx);
+  }
+
+  /// 写入平移量并把底层 [PageView] 同步到同一位置。
+  /// 编辑层靠 [_slideDx] 的监听者平移，PageView 靠 `jumpTo`——两者必须同步，
+  /// 否则滑走的图和滑进来的图会错位。
+  void _setSlideDx(double dx) {
+    if (_slideDx.value == dx) {
+      return;
+    }
+    _slideDx.value = dx;
+    _syncPagerToSlide();
+  }
+
+  void _syncPagerToSlide() {
+    if (!_pager.hasClients) {
+      return;
+    }
+    final viewport = _pager.position.viewportDimension;
+    if (viewport <= 0) {
+      return;
+    }
+    final maxOffset = (_paths.length - 1) * viewport;
+    if (maxOffset <= 0) {
+      return;
+    }
+    _pager.jumpTo(
+      (_activeIndex * viewport - _slideDx.value).clamp(0.0, maxOffset),
+    );
+  }
+
+  void _onSlideTick() {
+    final t = Curves.easeOut.transform(_slide.value);
+    _setSlideDx(_slideFrom + (_slideTo - _slideFrom) * t);
+  }
+
+  /// 从当前位置补一段过场到 [target]。返回动画走完的 Future。
+  Future<void> _animateSlideTo(double target) {
+    _slideFrom = _slideDx.value;
+    _slideTo = target;
+    if (_slideFrom == _slideTo) {
+      return Future<void>.value();
+    }
+    return _slide.forward(from: 0);
+  }
+
+  /// 轨道弹回原位（没滑够阈值 / 已经滑到头）：平滑归零，不要「啪」地跳回去。
+  void _springBackSlide() {
+    if (_slideDx.value == 0) {
+      return;
+    }
+    _animateSlideTo(0);
   }
 
   void _onPointerFinish(PointerEvent event) {
@@ -722,34 +819,61 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     _swipeDx = 0;
   }
 
-  /// 松手时按横向滑动量切到上/下一张；向右滑 → 上一张，向左滑 → 下一张。
-  /// 2026-07-25：切之前先把当前图烘焙进预览缓存，过场里显示的就是刚构好的图（见 [_bakePreviewForActive]）。
+  /// 松手结算：滑够阈值且方向上还有图 → 补完 Banner 过场切过去；否则轨道弹回原位。
+  /// 向右滑 → 上一张，向左滑 → 下一张。
   void _commitSwipe(double dx) {
-    if (_paths.length <= 1 || dx.abs() < _kSwipeCommitPx) {
-      return;
-    }
     final target = _activeIndex + (dx > 0 ? -1 : 1);
-    if (target < 0 || target >= _paths.length) {
+    final canSwitch =
+        _paths.length > 1 &&
+        dx.abs() >= _kSwipeCommitPx &&
+        target >= 0 &&
+        target < _paths.length;
+    if (!canSwitch) {
+      _springBackSlide(); // 没滑够 / 到头了：平滑弹回
       return;
     }
-    _switchWithBake(target);
+    _slideToNeighbor(target);
   }
 
-  /// 烘焙（如需要）后再切图。烘焙期间加在途锁，避免连续快滑排队出图。
-  Future<void> _switchWithBake(int index) async {
+  /// 补完 Banner 过场并落到相邻那张。
+  ///
+  /// 关键顺序（这三步就是「切换不闪」的全部）：
+  ///   ① 轨道补完到 ∓一屏：滑走的是**编辑层此刻正显示的画面**，起手零跳变；
+  ///      进场那张由底层 PageView 的相邻页承担，整段过场都在屏上，落位时早已解码完毕；
+  ///   ② 过场同时静默烘焙当前构图（不弹「处理中」——那层蒙层本身就是一次闪）；
+  ///      烘焙只改当前页的图源，而当前页此刻被编辑层盖着，看不见；
+  ///   ③ 过场走完后原地换 [_activeIndex]、平移量归零：进场那张就地变成当前页，
+  ///      同一个文件、同一套取景比例、同一个位置，肉眼看不出接缝。
+  Future<void> _slideToNeighbor(int target) async {
     if (_switching) {
       return;
     }
-    _switching = true;
-    try {
-      await _bakePreviewForActive();
-    } finally {
-      _switching = false;
+    if (!_pager.hasClients || _pager.position.viewportDimension <= 0) {
+      await _switchImage(target); // 量不到视口：退回无过场直切，功能不受影响
+      return;
     }
+    _switching = true;
+    _sliding = true;
+    _mode = _Mode.none;
+    _clearLongPress();
+    final viewport = _pager.position.viewportDimension;
+    final direction = target > _activeIndex ? 1 : -1;
+    // 与过场并行：把当前构图烘焙进预览缓存，滑回来时看到的就是刚构好的画面而不是原图。
+    // silent —— 过场已经占满了这 300ms，再压一层「处理中」纯属画蛇添足。
+    // 就地吞错（而不是等下面 await 时才抛）：烘焙失败只影响「滑回来看到的是原图」，
+    // 绝不能把切图流程卡在 _switching = true 上；不就地挂 catch 还会报未捕获的异步错误。
+    final baking = _bakePreviewForActive(silent: true).catchError((
+      Object error,
+    ) {
+      debugPrint('[CastPreview] 过场中的构图烘焙失败，滑回来会退回原图: $error');
+    });
+    await _animateSlideTo(-direction * viewport);
+    await baking;
+    _switching = false;
     if (!mounted) {
       return;
     }
-    await _switchImage(index);
+    await _switchImage(target);
   }
 
   /// 切图前把当前图「按取景框内所见」烘焙成**预览缓存**（2026-07-25 修「左右滑动会闪回未裁剪原图」）。
@@ -761,7 +885,9 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   ///
   /// **缓存不覆盖 [_paths]**（关键）：原图仍是编辑基准，切回来能继续拖；否则横向烘焙图
   /// （竖向文件、内容转过 270°）会被当成新原图，再进编辑层就是躺倒的。
-  Future<void> _bakePreviewForActive() async {
+  /// [silent]：不弹「处理中」遮罩。切图过场里调用时必须为 true——
+  /// 过场只有 300ms，中间闪一层全屏遮罩正是用户抱怨的「切换闪一下」。
+  Future<void> _bakePreviewForActive({bool silent = false}) async {
     final index = _activeIndex;
     final g = _edit;
     if (g == null || g.pristine) {
@@ -778,7 +904,9 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     if (image == null) {
       return;
     }
-    AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
+    if (!silent) {
+      AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
+    }
     try {
       final path = await _bake(g, image);
       if (path != null && mounted) {
@@ -791,8 +919,10 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         });
       }
     } finally {
-      // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
-      AppLoadingDialog.hide(context);
+      if (!silent) {
+        // hide 不做 mounted 门控（不依赖 context）：页面被卸载时也要收掉蒙层。
+        AppLoadingDialog.hide(context);
+      }
     }
   }
 
@@ -808,8 +938,11 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     g.baseScale.toStringAsFixed(6),
   ].join('|');
 
-  /// 切换到某张图：先存当前图的编辑状态（只记变换+方向，不落文件），
-  /// 过场期间隐藏编辑层露出 PageView 做轮播动画，动画结束再对新图重建编辑层。
+  /// 落到某张图并对它重建编辑层。
+  ///
+  /// Banner 过场（[_slideToNeighbor]）走完后由它收尾；量不到视口的兜底路径也走这里直切。
+  /// 顺序很讲究：先把平移量归零、PageView 就位，再把 `_editing` 置 false 让位给底层页面，
+  /// 最后重建编辑层——进场那张在过场里一直在屏上、早已解码，交接期间画面不动。
   Future<void> _switchImage(int index) async {
     if (index < 0 || index >= _paths.length || index == _activeIndex) {
       return;
@@ -818,23 +951,20 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     _edit = null; // 置空使手势自动失效
     _mode = _Mode.none;
     _clearLongPress();
+    _slide.stop();
+    _slideDx.value = 0;
     setState(() {
       _activeIndex = index;
-      _editing = false; // 过场期间隐藏编辑层
-      _sliding = true;
+      _editing = false; // 编辑层让位，露出底层页面（静态、已解码）
+      _sliding = false;
       _dragging = false;
     });
     if (_pager.hasClients) {
-      await _pager.animateToPage(
-        index,
-        duration: _kSlideDuration,
-        curve: Curves.easeOut,
-      );
+      _pager.jumpToPage(index); // 过场已经把画面滑到位，这里只是把控制器对齐，无二次动画
     }
     if (!mounted) {
       return;
     }
-    setState(() => _sliding = false);
     await _enterEdit();
   }
 
@@ -1105,26 +1235,32 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             });
           }
           final g = _edit;
-          final editorUp = _editing && !_sliding && g != null;
+          // 2026-08-01：不再因 _sliding 而摘掉编辑层——过场里滑走的就该是用户此刻所见，
+          // 先切成静态图再动正是「切换闪一下」的来源。现在整条编辑层跟着轨道一起平移。
+          final editorUp = _editing && g != null;
           return Stack(
+            clipBehavior: Clip.hardEdge,
             children: [
-              // 编辑层起来时把底层轮播整条藏掉（2026-07-25，对齐小程序 .preview-swiper.is-hidden）：
-              // 横向取景框比竖向矮，不藏的话框上下会露出底层那张按竖向比例铺的图。
-              // 用 Visibility(maintain*) 而不是从树上摘掉——摘掉会断开 PageController、
-              // 图片也要重新解码，切图过场会闪。
-              Positioned.fill(
-                child: Visibility(
-                  visible: !editorUp,
-                  maintainState: true,
-                  maintainAnimation: true,
-                  maintainSize: true,
-                  child: _buildPager(),
+              // 底层轮播常驻：跟手期间由它把相邻那张从屏幕边缘送进来。
+              // 当前页在编辑层起来时单独藏掉（见 _buildPager），而不是整条 PageView 藏掉——
+              // 整条藏了邻图就永远露不出来，那样就还是「松手才跳一下」的老样子。
+              Positioned.fill(child: _buildPager(editorUp: editorUp)),
+              if (editorUp)
+                // 编辑层与右上角转 90° 按钮一起随轨道平移：轨道位移只订阅 _slideDx，
+                // 不走 setState，手势期每帧只重建这一层 Transform。
+                Positioned.fill(
+                  child: ValueListenableBuilder<double>(
+                    valueListenable: _slideDx,
+                    builder: (context, dx, child) =>
+                        Transform.translate(offset: Offset(dx, 0), child: child),
+                    child: Stack(
+                      children: [
+                        Positioned.fill(child: _buildEditLayer(g)),
+                        _buildRotateFab(stage, g.frame),
+                      ],
+                    ),
+                  ),
                 ),
-              ),
-              if (editorUp) ...[
-                Positioned.fill(child: _buildEditLayer(g)),
-                _buildRotateFab(stage, g.frame),
-              ],
             ],
           );
         },
@@ -1132,9 +1268,13 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     );
   }
 
-  /// 底层轮播：只做切图过场动画，触摸全部被上层编辑层接管，
-  /// 所以 physics 恒为不可滑（对齐小程序「swiper 只负责过场、切图由 _commitSwipe 提交」的取舍）。
-  Widget _buildPager() {
+  /// 底层轮播：承载「相邻那张从屏幕边缘滑进来」这件事。触摸全部被上层编辑层接管，
+  /// 所以 physics 恒为不可滑——位置由 [_syncPagerToSlide] 用 `jumpTo` 跟着手指/过场同步。
+  ///
+  /// [editorUp]：编辑层是否正盖在当前页上。为真时**当前页**留空（编辑层已经把它画了），
+  /// 避免横向取景框比竖向矮时，框上下露出这里按竖向比例铺的那张图。
+  /// 只藏当前页、不藏整条 PageView —— 整条藏了邻图就永远露不出来。
+  Widget _buildPager({bool editorUp = false}) {
     if (_paths.isEmpty) {
       return Center(
         child: Text(
@@ -1148,6 +1288,9 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       physics: const NeverScrollableScrollPhysics(),
       itemCount: _paths.length,
       itemBuilder: (context, index) {
+        if (editorUp && index == _activeIndex) {
+          return const SizedBox.expand();
+        }
         final preview = _previews[index];
         final path = preview?.path ?? _paths[index];
         // 有预览缓存就按它的取景方向铺（横向 = 宽高对调），与编辑层里的取景框严丝合缝；

@@ -125,196 +125,176 @@ class _DeviceNameDialogState extends State<_DeviceNameDialog> {
     final length = deviceNameLength(_controller.text);
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 24),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 24, 20, 18),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFAFFFFFF), Color(0xF5F6FBFF)],
+      // 键盘避让（2026-08-01）：`Dialog` 自带的 viewInsets 让位只保证「弹窗整体被顶到键盘之上」，
+      // 小屏 + 大键盘时剩余高度可能不够，内容会溢出、底部两个按钮被裁掉。
+      // 纵向留 24 的余量并把内容放进可滚动容器，任何机型上「取消/保存」都够得着。
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: SingleChildScrollView(
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFAFFFFFF), Color(0xF5F6FBFF)],
+            ),
+            border: Border.all(color: const Color(0xF0FFFFFF)),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF4E688D).withValues(alpha: 0.22),
+                blurRadius: 40,
+                offset: const Offset(0, 16),
+              ),
+            ],
           ),
-          border: Border.all(color: const Color(0xF0FFFFFF)),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF4E688D).withValues(alpha: 0.22),
-              blurRadius: 40,
-              offset: const Offset(0, 16),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Center(child: _DeviceNameMark()),
-            const SizedBox(height: 11),
-            Text(
-              widget.title ?? l10n.devRenameTitle,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF252B33),
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-                height: 1.25,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              widget.subtitle ?? l10n.devNameDialogTip,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Color(0xFF89919D),
-                fontSize: 12,
-                height: 1.35,
-              ),
-            ),
-            const SizedBox(height: 17),
-            // 输入行：左输入 + 右实时计数（n/20）。
-            Container(
-              height: 52,
-              padding: const EdgeInsets.symmetric(horizontal: 14),
-              decoration: BoxDecoration(
-                color: const Color(0xDBECF4FC),
-                border: Border.all(color: const Color(0x389CB3D1)),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // 图标与标题同一行（2026-08-01 产品要求）：原先 76 的大图独占一行，
+              // 把弹窗撑得很高，键盘一弹底部按钮就没地方放。缩到 32 并与标题并排。
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      autofocus: true,
-                      maxLength: kDeviceNameMaxLength,
-                      // 默认 maxLength 按 UTF-16 码元截断，emoji 会被砍成半个代理对（乱码方块）。
-                      // 换成按码点计数的限制器，与 [deviceNameLength] / 后端校验同口径。
-                      maxLengthEnforcement: MaxLengthEnforcement.none,
-                      inputFormatters: [_RuneLengthLimiter(kDeviceNameMaxLength)],
-                      textInputAction: TextInputAction.done,
-                      onSubmitted: (_) => _confirm(),
-                      cursorColor: const Color(0xFFFF6725),
+                  const _DeviceNameMark(),
+                  const SizedBox(width: 8),
+                  Flexible(
+                    child: Text(
+                      widget.title ?? l10n.devRenameTitle,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF252B33),
-                        fontSize: 15,
-                        height: 1.2,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
                       ),
-                      decoration: InputDecoration(
-                        isCollapsed: true,
-                        border: InputBorder.none,
-                        counterText: '',
-                        hintText: l10n.devNameHint,
-                        hintStyle: const TextStyle(
-                          color: Color(0xFF98A0AB),
-                          fontSize: 15,
-                          height: 1.2,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  Text(
-                    '$length/$kDeviceNameMaxLength',
-                    style: const TextStyle(
-                      color: Color(0xFF98A0AB),
-                      fontSize: 11,
-                      height: 1.2,
                     ),
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                Expanded(
-                  child: _DialogButton(
-                    label: widget.cancelLabel ?? l10n.cancel,
-                    textColor: const Color(0xFF6D7682),
-                    background: const Color(0xFFEDF2F7),
-                    onTap: _cancel,
-                  ),
+              const SizedBox(height: 6),
+              Text(
+                widget.subtitle ?? l10n.devNameDialogTip,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF89919D),
+                  fontSize: 12,
+                  height: 1.35,
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _DialogButton(
-                    label: widget.confirmLabel ?? l10n.save,
-                    textColor: Colors.white,
-                    gradient: const LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [Color(0xFFFF8B42), Color(0xFFFF6122)],
+              ),
+              const SizedBox(height: 14),
+              // 输入行：左输入 + 右实时计数（n/20）。
+              Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xDBECF4FC),
+                  border: Border.all(color: const Color(0x389CB3D1)),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _controller,
+                        autofocus: true,
+                        maxLength: kDeviceNameMaxLength,
+                        // 默认 maxLength 按 UTF-16 码元截断，emoji 会被砍成半个代理对（乱码方块）。
+                        // 换成按码点计数的限制器，与 [deviceNameLength] / 后端校验同口径。
+                        maxLengthEnforcement: MaxLengthEnforcement.none,
+                        inputFormatters: [
+                          _RuneLengthLimiter(kDeviceNameMaxLength),
+                        ],
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _confirm(),
+                        cursorColor: const Color(0xFFFF6725),
+                        style: const TextStyle(
+                          color: Color(0xFF252B33),
+                          fontSize: 15,
+                          height: 1.2,
+                        ),
+                        decoration: InputDecoration(
+                          isCollapsed: true,
+                          border: InputBorder.none,
+                          counterText: '',
+                          hintText: l10n.devNameHint,
+                          hintStyle: const TextStyle(
+                            color: Color(0xFF98A0AB),
+                            fontSize: 15,
+                            height: 1.2,
+                          ),
+                        ),
+                      ),
                     ),
-                    onTap: _confirm,
-                  ),
+                    const SizedBox(width: 9),
+                    Text(
+                      '$length/$kDeviceNameMaxLength',
+                      style: const TextStyle(
+                        color: Color(0xFF98A0AB),
+                        fontSize: 11,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _DialogButton(
+                      label: widget.cancelLabel ?? l10n.cancel,
+                      textColor: const Color(0xFF6D7682),
+                      background: const Color(0xFFEDF2F7),
+                      onTap: _cancel,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _DialogButton(
+                      label: widget.confirmLabel ?? l10n.save,
+                      textColor: Colors.white,
+                      gradient: const LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [Color(0xFFFF8B42), Color(0xFFFF6122)],
+                      ),
+                      onTap: _confirm,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// 弹窗顶部的橙色标记：圆角桃色底 + 相框描边 + 右下角的笔。
-/// 复刻小程序 `.name-dialog__mark`（88rpx=44）——纯绘制，无图片资源。
+/// 弹窗标题行左侧的设备图（2026-07-31 起用 `home-icon02`，与首页/设备列表/设备详情统一）。
+/// 该图四角 alpha=0 自带圆角，故不加底色容器与圆角裁剪，否则四角会露出色晕。
+/// 2026-08-01：由独占一行的 76 缩到与标题同行的 32（小程序 `.name-dialog__device` 64rpx）。
 class _DeviceNameMark extends StatelessWidget {
   const _DeviceNameMark();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 44,
-      height: 44,
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFFFF1E8), Color(0xFFFFE0D0)],
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: Image.asset(
+        'assets/images/home-icon02.png',
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stackTrace) => const Icon(
+          Icons.photo_library_outlined,
+          color: Color(0xFFEB5F1B),
+          size: 22,
         ),
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFF6522).withValues(alpha: 0.15),
-            blurRadius: 14,
-            offset: const Offset(0, 7),
-          ),
-        ],
-      ),
-      child: Stack(
-        children: [
-          // 相框：left 10 / top 11 / 23×18，2 描边、3.5 圆角。
-          Positioned(
-            left: 10,
-            top: 11,
-            child: Container(
-              width: 23,
-              height: 18,
-              decoration: BoxDecoration(
-                border: Border.all(color: const Color(0xFFFF6725), width: 2),
-                borderRadius: BorderRadius.circular(3.5),
-              ),
-            ),
-          ),
-          // 笔：右下角，逆时针 12°（小程序 rotate(-12deg)）。
-          Positioned(
-            right: 4,
-            bottom: 2,
-            child: Transform.rotate(
-              angle: -0.2094, // -12°
-              child: const Text(
-                '✎',
-                style: TextStyle(
-                  color: Color(0xFFFF6725),
-                  fontSize: 19,
-                  fontWeight: FontWeight.w700,
-                  height: 1,
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -365,6 +345,9 @@ class _DialogButton extends StatelessWidget {
             child: Text(
               label,
               maxLines: 1,
+              // 文案恒居中（对齐小程序 2026-07-31 的按钮居中修复）：容器已 center，
+              // 这里再钉一次 textAlign，长短文案、换语种都不会偏。
+              textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: textColor,

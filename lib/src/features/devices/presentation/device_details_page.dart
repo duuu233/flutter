@@ -573,8 +573,10 @@ class DeviceDetailsBody extends StatelessWidget {
                 label: AppL10n.of(context).devMaxPhotoCount,
                 // 内存占用是连接才读得到的实时数据（0x01 的 IMG_MASK）：未连接（含断开设备后）一律 --，
                 // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
+                // 2026-08-01：行文案改成「最大照片数量-已使用」，值随之由 `已用/上限`
+                // 改为 `上限-已用`（对齐小程序 detail.js memoryText），两端同一口径。
                 value: connected
-                    ? '${device.imageCount}/${device.capacity}'
+                    ? '${device.capacity}-${device.imageCount}'
                     : '--',
               ),
               const _ThinDivider(),
@@ -623,22 +625,58 @@ class DeviceDetailsBody extends StatelessWidget {
                 showChevron: true,
                 onTap: onUnbindDevice,
               ),
-              const _ThinDivider(),
-              // 删除设备（放在最底部）：一键清空 + 断开连接 + 解除绑定，需已连接。
-              _DetailRow(
-                iconAsset: 'assets/images/device-detail-icon06.png',
-                fallbackIcon: Icons.delete_outline_rounded,
-                label: AppL10n.of(context).devDeleteDevice,
-                labelColor: const Color(0xFFFF3045),
-                labelWeight: FontWeight.w500,
-                value: AppL10n.of(context).devDeleteDeviceValue,
-                showChevron: true,
-                onTap: onDeleteDevice,
-              ),
             ],
           ),
         ),
+        // 「删除设备」是最重的破坏性操作（一键清空 + 断开连接 + 解除绑定，需已连接）。
+        // 2026-08-01 产品要求：从卡片行改成页面最底部的独立按钮，复用设置页「退出登录」
+        // 那颗描边按钮的形状与尺寸，但去掉实心底色、只保留边框色，并用危险色与之区分。
+        const SizedBox(height: 24),
+        _OutlineDeleteDeviceButton(
+          label: AppL10n.of(context).devDeleteDevice,
+          onTap: onDeleteDevice,
+        ),
       ],
+    );
+  }
+}
+
+/// 页面最底部的「删除设备」描边按钮（2026-08-01，对齐小程序 `.outline-delete-device`）。
+///
+/// 形状/尺寸复用设置页的「退出登录」（高 56、圆角 999、1px 描边），
+/// 按产品要求**不填底色**、只留边框，颜色取危险红以区别于退出登录的橙。
+class _OutlineDeleteDeviceButton extends StatelessWidget {
+  const _OutlineDeleteDeviceButton({required this.label, this.onTap});
+
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const danger = Color(0xFFFF3045);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Container(
+        height: 56,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Colors.transparent,
+          border: Border.all(color: danger),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: danger,
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            height: 1,
+          ),
+        ),
+      ),
     );
   }
 }

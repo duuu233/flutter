@@ -337,7 +337,7 @@ class _RegisterPageState extends State<RegisterPage> {
             child: AuthPillTextField(
               controller: _emailController,
               hintText: l10n.accEmailAddressHint,
-              // 注册页四个输入行统一收窄图标与文字的间距（登录页仍是默认 14）。
+              // 注册页四个输入行统一使用更宽的图标—文字间距（登录页仍是默认 14）。
               iconGap: AuthPillTextField.registerIconGap,
               icon: Image.asset(
                 'assets/images/email_icon.png',

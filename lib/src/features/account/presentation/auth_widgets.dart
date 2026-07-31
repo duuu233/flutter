@@ -162,12 +162,14 @@ class AuthPillTextField extends StatelessWidget {
   /// 密码管理器自动填充提示（AutofillHints.email / .password）。
   final List<String>? autofillHints;
 
-  /// 左图标与输入文字之间的间距。登录页保持设计稿的 14；注册页按产品要求收窄
+  /// 左图标与输入文字之间的间距。登录页保持设计稿的 14；注册页单独取值
   /// （见 [AuthPillTextField.registerIconGap]），所以做成参数而不是直接改死。
   final double iconGap;
 
-  /// 注册页专用的图标—文字间距（需求：注册账号的地方图标和文字的间距缩短）。
-  static const double registerIconGap = 8;
+  /// 注册页专用的图标—文字间距。
+  /// 2026-07-31 曾按需求收窄到 8；2026-08-01 产品复看后要求「每个输入框项的图标和
+  /// label 文案的间距放大一点」，调到 16（比登录页的 14 再宽一档，四行统一）。
+  static const double registerIconGap = 16;
 
   @override
   Widget build(BuildContext context) {

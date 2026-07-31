@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../shared/l10n/app_l10n.dart';
 import '../../state.dart';
+import 'cast_upload_limit.dart';
 
 /// 投屏选图的统一入口：**在选图阶段就把原图降采样**，再交给投屏链路上传。
 ///
@@ -40,8 +41,12 @@ class CastPhotoPicker {
   /// JPEG 重编码质量。90 对后端的六色量化来说绰绰有余。
   static const int _quality = 90;
 
-  /// 单批投屏张数上限（对齐小程序 `media.chooseFromAlbum(count:5)`）。
-  static const int maxBatch = 5;
+  /// 单批投屏张数上限（对齐小程序 `media.chooseFromAlbum` 的常规值 5）。
+  /// 白名单账号会放宽到 100，取值走 [CastUploadLimit.batchLimit]。
+  static const int maxBatch = CastUploadLimit.defaultBatch;
+
+  /// 本次可选张数上限（随登录账号变化，见 [CastUploadLimit]）。
+  static int get batchLimit => CastUploadLimit.batchLimit;
 
   static final ImagePicker _picker = ImagePicker();
 
@@ -57,15 +62,16 @@ class CastPhotoPicker {
     return file == null ? const [] : [file.path];
   }
 
-  /// 从相册多选（最多 [maxBatch] 张）。返回本地文件路径（用户取消返回空列表）。
+  /// 从相册多选（最多 [batchLimit] 张）。返回本地文件路径（用户取消返回空列表）。
   ///
   /// Android 在 `main()` 中全局启用系统 Photo Picker，只授予用户选中图片的读取权，
   /// 不申请 `READ_MEDIA_IMAGES` / `READ_EXTERNAL_STORAGE` 整库权限。
-  /// [limit]：本次最多可选张数，缺省 [maxBatch]。AI 对话的图文多模态一次最多 4 张，
-  /// 且要按「已选了几张」动态收紧，所以开放为参数（会被夹到 1..[maxBatch]）。
+  /// [limit]：本次最多可选张数，缺省 [batchLimit]。AI 对话的图文多模态一次最多 4 张，
+  /// 且要按「已选了几张」动态收紧，所以开放为参数（会被夹到 1..[batchLimit]）。
   static Future<List<String>> pickFromAlbum({int? limit}) async {
+    final cap = batchLimit;
     final files = await _picker.pickMultiImage(
-      limit: (limit ?? maxBatch).clamp(1, maxBatch),
+      limit: (limit ?? cap).clamp(1, cap),
       maxWidth: _maxLongEdge,
       maxHeight: _maxLongEdge,
       imageQuality: _quality,

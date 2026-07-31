@@ -341,7 +341,19 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     final filterOptions = _filterOptions;
 
     return FigmaScreen(
-      title: l10n.castManagementTitle,
+      // 2026-08-01 产品要求：去掉「投屏管理」标题，改由右上角的设备下拉承担标题作用，
+      // 与设备照片页完全一致。title 传空串（而不是 null）：null 会连整条顶栏一起不渲染，
+      // 返回键也没了。
+      title: '',
+      trailing: filterOptions.isEmpty
+          ? null
+          : DeviceFilterChip(
+              label: _filterLabel,
+              options: filterOptions,
+              selectedId: _deviceFilter,
+              onSelected: _pickDeviceFilter,
+              onOpen: _refreshDeviceFiltersForMenu,
+            ),
       scrollable: false,
       bodyPadding: const EdgeInsets.symmetric(horizontal: 24),
       body: Column(
@@ -359,11 +371,11 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
             },
           ),
           const SizedBox(height: 18),
-          // 「共 N 条记录」+ 设备筛选下拉（与图库同一个组件，需求第 13 项）。
-          // 计数也要等接口回来再显示，否则首帧会先闪一行「共 0 条记录」
+          // 「共 N 条记录」。设备筛选下拉已上移到顶栏（见上面的 trailing）。
+          // 计数要等接口回来再显示，否则首帧会先闪一行「共 0 条记录」
           // （小程序把它一并包在 loading 的 else 分支里，同理）。
           SizedBox(
-            height: 31,
+            height: 20,
             child: Row(
               children: [
                 if (!_loading)
@@ -374,15 +386,6 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
                       fontSize: 12,
                       height: 1,
                     ),
-                  ),
-                const Spacer(),
-                if (filterOptions.isNotEmpty)
-                  DeviceFilterChip(
-                    label: _filterLabel,
-                    options: filterOptions,
-                    selectedId: _deviceFilter,
-                    onSelected: _pickDeviceFilter,
-                    onOpen: _refreshDeviceFiltersForMenu,
                   ),
               ],
             ),

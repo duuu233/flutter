@@ -260,32 +260,30 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     }
   }
 
-  /// 图库为空时的正文：设备接口有数据则顶部仍展示设备筛选载体（filter-wrap，不因无照片而隐藏）+
-  /// 空态引导重新投屏；设备也没有则只显示空态（对齐小程序「无照片有设备 / 都空」两态）。
+  /// 顶栏右上角的设备下拉（2026-08-01 从工具栏上移，替代原来的「设备照片」标题）。
+  Widget _buildDeviceFilterChip() {
+    return DeviceFilterChip(
+      label: _filterLabel,
+      options: _filterOptions,
+      selectedId: _deviceFilter,
+      onSelected: _pickDeviceFilter,
+      onOpen: _refreshDeviceFiltersForMenu,
+    );
+  }
+
+  /// 图库为空时的正文：设备接口有数据仍展示当前屏幕照片说明 + 空态引导重新投屏；
+  /// 设备也没有则只显示空态（对齐小程序「无照片有设备 / 都空」两态）。
+  /// 设备下拉已上移到顶栏，两态下都常驻，不必在这里再摆一份。
   Widget _buildEmptyBody() {
     if (state.devices.isEmpty) {
       return const _GalleryEmptyState();
     }
-    return Column(
+    return const Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(23, 7, 23, 11),
-          child: Row(
-            children: [
-              const Spacer(),
-              DeviceFilterChip(
-                label: _filterLabel,
-                options: _filterOptions,
-                selectedId: _deviceFilter,
-                onSelected: _pickDeviceFilter,
-                onOpen: _refreshDeviceFiltersForMenu,
-              ),
-            ],
-          ),
-        ),
-        const _ScreenPhotoHint(),
-        const Expanded(child: _GalleryEmptyState()),
+        SizedBox(height: 7),
+        _ScreenPhotoHint(),
+        Expanded(child: _GalleryEmptyState()),
       ],
     );
   }
@@ -378,7 +376,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     final hasSelection = _selectedIds.isNotEmpty;
 
     return FigmaScreen(
-      title: AppL10n.of(context).galTitle,
+      // 2026-08-01 产品要求：去掉「设备照片」标题，改由右上角的设备下拉承担标题作用。
+      // title 传空串（而不是 null）：null 会连整条顶栏一起不渲染，返回键也没了。
+      title: '',
+      trailing: _filterOptions.isEmpty ? null : _buildDeviceFilterChip(),
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
       // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
@@ -421,14 +422,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                           height: 1,
                         ),
                       ),
-                      const Spacer(),
-                      DeviceFilterChip(
-                        label: _filterLabel,
-                        options: _filterOptions,
-                        selectedId: _deviceFilter,
-                        onSelected: _pickDeviceFilter,
-                        onOpen: _refreshDeviceFiltersForMenu,
-                      ),
+                      // 设备下拉已上移到顶栏（见 build 的 trailing），这里只留照片操作
                     ],
                   ),
                 ),

@@ -19,6 +19,19 @@ import 'serial_match.dart';
 /// 蓝牙信号档位（由 UI 层按当前语言渲染文字，见 [BleController.rssiToSignalLevel]）。
 enum BleSignalLevel { veryStrong, strong, normal, weak, veryWeak }
 
+/// 这个异常是不是「超时」类（2026-08-01，对齐小程序 `active-device.isConnectTimeoutMessage`）。
+///
+/// flutter_blue_plus 的连接超时既可能抛 [TimeoutException]，也可能抛 `FlutterBluePlusException`
+/// 且消息里带 timeout / time out；两种都要认，否则中文用户会看到英文原文
+/// （`TimeoutException after 0:00:08.000000: Future not completed`）。
+bool isBleTimeoutError(Object? error) {
+  if (error is TimeoutException) {
+    return true;
+  }
+  final text = error?.toString().toLowerCase() ?? '';
+  return text.contains('timeout') || text.contains('time out');
+}
+
 /// 直连快路径的结果，见 `BleController._tryDirectConnect`。
 enum _DirectConnectOutcome {
   /// 已连上并通过 0x01 完整 ID 验身。
@@ -626,7 +639,11 @@ class BleController extends ChangeNotifier {
       // 原始异常（含 android-code:133 / ANDROID_SPECIFIC_ERROR 等）只写日志，
       // 返回给 UI 的是本地化友好文案——避免把技术异常串直接弹进 toast，也让提示跟随语种。
       debugPrint('BLE connect failed: $error');
-      return _l10n.bleConnectFailed;
+      // 超时单独成句（2026-08-01）：等一会儿再试比「靠近设备」更贴合超时的成因，
+      // 且必须走 _l10n 才能跟随语种（TimeoutException 的 toString 恒为英文）。
+      return isBleTimeoutError(error)
+          ? _l10n.bleConnectTimeout
+          : _l10n.bleConnectFailed;
     } finally {
       connecting = false;
       _connectionLease.taskFinished(afterTransfer: false);

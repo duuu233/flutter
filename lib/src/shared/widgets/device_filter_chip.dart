@@ -21,6 +21,11 @@ class DeviceFilterOption {
   final String serialTail;
 }
 
+/// 设备筛选胶囊的固定宽度（pt）。
+/// 小程序 `.nav-device-filter` 为 370rpx，750rpx = 屏宽 → 370/750 × 375 ≈ 185。
+/// 图库与投屏管理两页共用同一个值，不允许任一页自己改宽窄。
+const double kDeviceFilterChipWidth = 185;
+
 /// 序列号（AA:BB:…:FF）去分隔符后的尾 4 位（如 D428）；无序列号返回 ''。
 String deviceSerialTail(String serial) {
   final normalized = serial.replaceAll(RegExp(r'[:\-\s]'), '');
@@ -68,6 +73,10 @@ List<DeviceFilterOption> disambiguateDeviceFilterLabels(
 /// 只能再点一次胶囊才收起，在 App 上那是明显的手感缺陷。
 ///
 /// 图库与投屏记录两页共用本组件（需求第 13 项：投屏记录的下拉「样式模仿我的图库」）。
+///
+/// 2026-08-01 起两页都去掉了页面标题，这颗胶囊改挂在顶栏右上角承担标题作用，
+/// 宽度按小程序 `.nav-device-filter` 的 370rpx 钉死（见 [kDeviceFilterChipWidth]），
+/// 两页、两端完全一致——此前图库 112~200 自适应、投屏 370rpx 固定，宽度对不上。
 class DeviceFilterChip extends StatefulWidget {
   const DeviceFilterChip({
     super.key,
@@ -168,13 +177,15 @@ class _DeviceFilterChipState extends State<DeviceFilterChip> {
           behavior: HitTestBehavior.opaque,
           onTap: _toggle,
           child: Container(
-            height: 31,
-            // 2026-07-31 按需求第 10 项加宽：min 224rpx=112、max 400rpx=200（对齐小程序 .filter-btn）。
-            // 上限挡住长设备名——名称再长也只能单行省略，不能把顶部栏撑宽/换行。
-            constraints: const BoxConstraints(minWidth: 112, maxWidth: 200),
+            height: 30,
+            // 2026-08-01 起宽度钉死（不再自适应）：图库与投屏管理两页必须一模一样宽，
+            // 自适应会让两页因设备名长短不同而宽窄不一，也与小程序对不上。
+            // 长设备名单行省略号收尾，绝不把顶栏撑宽/换行。
+            width: kDeviceFilterChipWidth,
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.78),
+              color: Colors.white.withValues(alpha: 0.86),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.94)),
               borderRadius: BorderRadius.circular(999),
               boxShadow: [
                 BoxShadow(
@@ -192,10 +203,12 @@ class _DeviceFilterChipState extends State<DeviceFilterChip> {
                   child: Text(
                     widget.label,
                     maxLines: 1,
+                    textAlign: TextAlign.center,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      color: Color(0xFF777E88),
-                      fontSize: 13,
+                      color: Color(0xFF3B4149),
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
                       height: 1,
                     ),
                   ),
@@ -245,8 +258,8 @@ class _FilterArrow extends StatelessWidget {
 
 /// 小程序 `.filter-menu`：白 0.9、1px 白边、圆角 6、上下留白 4/6。
 ///
-/// 宽度随最长设备名自适应（`width: max-content`），夹在 280~480rpx = 140~240 之间：
-/// 原来钉死 105，20 字设备名几乎整条都被省略号吃掉（需求第 10 项「下拉框加宽」）。
+/// 宽度随最长设备名自适应（`width: max-content`），下限对齐胶囊宽度、上限 420rpx = 210：
+/// 菜单绝不能比胶囊窄（看着像掉了一截），也不能宽到盖住半屏。
 /// 超出上限的名字仍由 [_FilterOption] 单行省略号收尾。
 class _FilterMenu extends StatelessWidget {
   const _FilterMenu({
@@ -266,7 +279,10 @@ class _FilterMenu extends StatelessWidget {
     return Material(
       type: MaterialType.transparency,
       child: Container(
-        constraints: const BoxConstraints(minWidth: 140, maxWidth: 240),
+        constraints: const BoxConstraints(
+          minWidth: kDeviceFilterChipWidth,
+          maxWidth: 210,
+        ),
         padding: const EdgeInsets.only(top: 4, bottom: 6),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.9),

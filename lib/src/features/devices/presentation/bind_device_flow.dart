@@ -156,7 +156,12 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         return; // 本轮已被停扫/重搜作废
       }
       debugPrint('[Bind] 扫描失败: $error');
-      _toast(AppL10n.of(context).bindScanFailed);
+      // 超时单独提示「连接超时，稍后再试」（2026-08-01，对齐小程序）：
+      // 扫描超时和真扫描失败对用户是两回事，且必须走 l10n 才跟随语种。
+      final l10n = AppL10n.of(context);
+      _toast(
+        isBleTimeoutError(error) ? l10n.bleConnectTimeout : l10n.bindScanFailed,
+      );
       setState(() {
         _scanning = false;
         _stage = _Stage.notFound;

@@ -11,6 +11,7 @@ import 'device/device_interaction_trace.dart';
 import 'device/frame_device_protocol.dart';
 import 'device/recently_bound_device.dart';
 import 'device/serial_match.dart';
+import 'features/cast/cast_upload_limit.dart';
 import 'network/api_exception.dart';
 import 'network/api_rows.dart';
 import 'network/api_session.dart';
@@ -1873,15 +1874,20 @@ class PhotoFrameState extends ChangeNotifier {
     ja: 'この写真はデバイス側と一致していません。削除して再アップロードしてください。',
   );
 
-  /// 设备侧错误是否属于「这张照片/槽位在设备上不存在」。
+  /// 设备侧错误是否属于「这张照片/槽位在设备上不存在」——这一类不该中断删除。
   ///
-  /// 与小程序 `list.js isMissingDevicePhotoError` 同口径：只认明确的「不存在 / 异常 / not found /
-  /// 索引无效」，**不**把断联、超时、设备繁忙这类真实链路故障误放行——那样会在设备其实没删掉的
-  /// 情况下删掉后端记录，两边从此对不上。
+  /// 与小程序 `list.js isMissingDevicePhotoError` / `detail.js isBenignDeleteError` 同口径。
+  /// 2026-08-01 扩充：固件结果码 0x07「掩码不一致(该位置已有图/索引越界)」以及各类
+  /// 「索引越界 / out of range」也归到这里——产品明确要求，凡是不影响真正删掉设备与图片的
+  /// 异常都不要抛出来中断流程。
+  ///
+  /// ⚠️ 只认这一类，**不**把断联、超时、设备繁忙(0x0B)、Flash 写失败这类真实链路/硬件故障
+  /// 误放行——那样会在设备其实没删掉的情况下删掉后端记录，两边从此对不上。
   static bool _isMissingDevicePhotoError(Object error) {
     final message = error.toString();
     return RegExp(
-      r'(照片|图片).*(不存在|异常)|not[\s_-]*(found|exist)|无此图片|索引.*(无效|不存在)',
+      r'(照片|图片).*(不存在|异常)|not[\s_-]*(found|exist)|无此图片|索引.*(无效|不存在|越界)'
+      r'|越界|掩码不一致|out[\s_-]*of[\s_-]*(range|bounds|index)',
       caseSensitive: false,
     ).hasMatch(message);
   }
@@ -2602,7 +2608,13 @@ class PhotoFrameState extends ChangeNotifier {
           // 0x12 应答超时/断连——但不少固件其实已把图删干净了，只是应答异常/迟到
           //（设备逐张擦 flash 全删完才回一次应答，慢一点就顶到超时）。设备忙(0x0B)先短路交给下方 busy 分支。
           clearError = deleteError;
-          if (!FrameProtocol.isBusyMessage(deleteError.toString())) {
+          if (_isMissingDevicePhotoError(deleteError)) {
+            // 「槽位越界 / 图片不存在」这类结果码：要删的图设备上本来就没有，对「清空」而言
+            // 已经达成，不该中断流程（2026-08-01 产品要求，对齐小程序 detail.js isBenignDeleteError）。
+            // 连回读核对都免了，直接按成功继续。
+            deviceCleared = true;
+            trace.mark('delete-images-0x12-benign-error');
+          } else if (!FrameProtocol.isBusyMessage(deleteError.toString())) {
             // 回读校验（最多 3 次、每次间隔 4s）：设备可能还在擦除、此刻回不了 0x01，给它删完的时间；
             // 任一次读到空掩码就按成功，全部失败/仍有残留才判失败——治「一键清空 60 张误报设备无法连接」。
             FrameDeviceInfo? after;
@@ -2743,6 +2755,8 @@ class PhotoFrameState extends ChangeNotifier {
     _userLoaded = false;
     _isLoggedIn = false;
     _currentUser.email = '';
+    // 选图上限白名单跟随账号：不清会让下一个登录的账号继承上一个人的放宽额度
+    CastUploadLimit.currentUserNo = '';
     notifyListeners();
   }
 
@@ -2783,6 +2797,8 @@ class PhotoFrameState extends ChangeNotifier {
     _castRecordsLoadError = false;
     _userLoaded = false;
     _isLoggedIn = false;
+    // 选图上限白名单跟随账号：注销后必须清，否则下一个登录的账号会继承放宽额度
+    CastUploadLimit.currentUserNo = '';
     _currentUser = UserProfile(
       id: 'USR-GUEST',
       nickname: tr(zh: '访客', en: 'Guest', ja: 'ゲスト'),
@@ -2975,6 +2991,9 @@ class PhotoFrameState extends ChangeNotifier {
     final id = data['userNo'];
     if (id != null && '$id'.isNotEmpty) {
       _currentUser.id = '$id';
+      // 选图上限按 userNo 放宽（2026-08-01）：CastPhotoPicker 是静态入口、拿不到状态对象，
+      // 在这里把 userNo 单向同步过去（退出登录时由 logout 清空）。
+      CastUploadLimit.currentUserNo = _currentUser.id;
     }
     final nick = data['nickName'];
     if (nick is String && nick.isNotEmpty) {

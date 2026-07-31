@@ -85,6 +85,9 @@
 | [`history/2026-07/2026-07-30-蓝牙搜索连接提速.md`](history/2026-07/2026-07-30-蓝牙搜索连接提速.md) | Historical Change Record |
 | [`history/2026-07/2026-07-30-FBP连接优化与身份登记表.md`](history/2026-07/2026-07-30-FBP连接优化与身份登记表.md) | Historical Change Record |
 | [`history/2026-07/2026-07-30-安卓原生连接AB对比.md`](history/2026-07/2026-07-30-安卓原生连接AB对比.md) | Temporary（临时对照实验，含拆除清单；定版后随代码一并删除） |
+| [`history/2026-07/2026-07-31-设备改名保存Loading.md`](history/2026-07/2026-07-31-设备改名保存Loading.md) | Historical Change Record |
+| [`history/2026-07/2026-07-31-设备与照片交互优化Flutter同步.md`](history/2026-07/2026-07-31-设备与照片交互优化Flutter同步.md) | Historical Change Record |
+| [`history/2026-08/2026-08-01-交互与文案十一项优化.md`](history/2026-08/2026-08-01-交互与文案十一项优化.md) | Historical Change Record |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责
