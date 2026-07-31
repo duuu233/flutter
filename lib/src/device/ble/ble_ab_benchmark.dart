@@ -199,6 +199,18 @@ class BleAbBenchmark {
 
   static bool get nativeSupported => _NativeProbe.isSupported;
 
+  /// 每轮 trial 结束后的强制冷却。
+  ///
+  /// 两个都会污染下一轮的现实：
+  /// ① BLE 设备被 GATT 占着时**完全不广播**，断开后要好几秒才恢复——上一轮刚断就开下一轮，
+  ///    下一轮的扫描窗口有一大截是在对着一台不广播的设备空转，于是记成「停在 scan」，
+  ///    而那和建连快慢毫无关系；
+  /// ② 安卓 5 次/30s 的起扫限额是按 app 算的，交替按两个按钮时两条路径共用同一份限额。
+  static const Duration trialCooldown = Duration(seconds: 4);
+
+  static Future<void> _cooldown() =>
+      Future<void>.delayed(trialCooldown);
+
   /// 扫一轮，把在场的相框列出来供用户点选目标。
   static Future<List<ScanResult>> discoverTargets({
     Duration timeout = const Duration(seconds: 8),
@@ -356,6 +368,7 @@ class BleAbBenchmark {
       if (ctrl.connected) {
         await ctrl.disconnect();
       }
+      await _cooldown();
     }
   }
 
@@ -394,6 +407,10 @@ class BleAbBenchmark {
       );
     }
     try {
+      // 原生侧自己 startScan，同样吃安卓那份 5 次/30s 的 app 级限额。
+      // 不记这一笔，账本就永远差一半，触顶后两条路径会被系统同时静默降级
+      // （报告上表现为「两边都停在 scan」，纯属实验方法污染）。
+      await FrameBleClient.reserveScanStartSlot();
       final map = await _NativeProbe.runTrial(<String, dynamic>{
         'serial': target.serial,
         'screenCode': target.screenCode,
@@ -423,6 +440,8 @@ class BleAbBenchmark {
         totalMs: 0,
         error: '$error',
       );
+    } finally {
+      await _cooldown();
     }
   }
 
@@ -460,6 +479,31 @@ class BleAbBenchmark {
 
     section('现有路径 (flutter_blue_plus)', fbp);
     section('原生路径 (Kotlin BluetoothGatt)', native);
+
+    // 判读提示直接写进报告里：这份文本会被原样贴回文档/聊天窗口，
+    // 而「停在哪一步」的含义每次都要重新解释一遍，写在数据旁边最省事。
+    final scanFails =
+        (fbp.failureStages['scan'] ?? 0) + (native.failureStages['scan'] ?? 0);
+    final samples = fbp.total + native.total;
+    buffer.writeln('## 判读');
+    buffer.writeln(
+      '起扫账本：最近 30s 内 ${FrameBleClient.scanStartsInWindow}/'
+      '${FrameBleClient.scanStartLimit} 次（触顶后安卓会把扫描静默降级成「整窗搜不到」）。',
+    );
+    if (samples < 6) {
+      buffer.writeln(
+        '⚠️ 样本只有 $samples 次，两条路径都不足以比出成功率差异——'
+        '至少各 8~10 次、且**交替**按，否则比的是「前五分钟 vs 后五分钟」的射频环境。',
+      );
+    }
+    if (scanFails > 0 && scanFails == samples - fbp.success - native.success) {
+      buffer.writeln(
+        '⚠️ 失败**全部**停在 scan：这是「目标当时没在广播」，与建连快慢无关。'
+        '常见来源——上一轮的 GATT 还占着设备（占着就不广播）、起扫配额被系统降级、'
+        '设备被别的 App/小程序连着。这组数据不能用来判断建连，'
+        '先把设备断电重启、确认没有别的端连着，再重测。',
+      );
+    }
     return buffer.toString();
   }
 }

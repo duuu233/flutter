@@ -88,6 +88,8 @@
 | [`history/2026-07/2026-07-31-设备改名保存Loading.md`](history/2026-07/2026-07-31-设备改名保存Loading.md) | Historical Change Record |
 | [`history/2026-07/2026-07-31-设备与照片交互优化Flutter同步.md`](history/2026-07/2026-07-31-设备与照片交互优化Flutter同步.md) | Historical Change Record |
 | [`history/2026-08/2026-08-01-交互与文案十一项优化.md`](history/2026-08/2026-08-01-交互与文案十一项优化.md) | Historical Change Record |
+| [`history/2026-08/2026-08-01-安卓弱信号建连预算重排.md`](history/2026-08/2026-08-01-安卓弱信号建连预算重排.md) | Historical Change Record（结论待真机确认，页面留了对照旋钮） |
+| [`history/2026-08/2026-08-02-导航栏设备下拉居中与同宽.md`](history/2026-08/2026-08-02-导航栏设备下拉居中与同宽.md) | Historical Change Record（双端同步） |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责

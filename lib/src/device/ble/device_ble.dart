@@ -210,6 +210,114 @@ void _perfLog(String tag, String message) {
   debugPrint('[BLEPerf] $message');
 }
 
+/// 一次建连的**预算分配**：先用常规定向连接（`autoConnect=false`）按 [directTimeouts]
+/// 逐档尝试，全部失败后（仅 Android）再用 `autoConnect` 兜底 [autoConnectBudget]。
+///
+/// 为什么要把两者装进同一个对象：它们是同一份时间预算的两种花法，必须成对决定。
+/// 此前 `attemptTimeouts` 与 `allowAutoConnectFallback` 是两个独立参数，autoConnect
+/// 的时长只能靠「阶梯是不是空的」反推（`budget.isEmpty ? 20s : 15s`），
+/// 给某一档加一次尝试就会把总预算算错。
+///
+/// ## 分配预算的唯一依据：两种机制的占空比
+///
+/// | 机制 | 控制器扫描参数 | 占空比 | 上限 |
+/// | --- | --- | --- | --- |
+/// | 常规 connect（定向连接） | 60ms 间隔 / 30ms 窗口 | ≈50% | 30s（AOSP `BTM_BLE_DIRECT_CONN_TIMEOUT`） |
+/// | `autoConnect`（后台白名单连接） | 1.28s 间隔 / 11.25ms 窗口 | ≈0.9% | 无 |
+///
+/// （AOSP `BTM_BLE_SCAN_FAST_INT/WIN` 与 `BTM_BLE_SCAN_SLOW_INT_1/WIN_1`。）
+///
+/// 相框广播间隔约 3s：常规定向连接每个广播事件有约一半概率抓到，1~2 个事件（3~6s）
+/// 内通常就能发出 CONNECT_IND；autoConnect 每个广播事件只有约百分之一的概率，
+/// 期望命中时间是**几分钟**量级。所以「信号弱就尽早切 autoConnect」这条恰好是反的：
+/// 弱信号真正需要的是**更长的常规定向连接**——iOS 的 `connect` 正是「无限等到连上」
+/// 的语义，这才是同一台设备 iOS 连得上、安卓连不上的根因。
+///
+/// 因此各档的分配原则是：**总预算不变，把时间从 0.9% 占空比的机制挪到 50% 的那个**；
+/// autoConnect 保留在末位兜底（它仍是唯一能覆盖「设备此刻不在广播、稍后才醒」的机制），
+/// 但不再拿走大头。旧分配保留在 `legacy*` 三个常量里，可在自检页一键切回做对照。
+class BleConnectPlan {
+  const BleConnectPlan({
+    required this.directTimeouts,
+    this.autoConnectBudget = Duration.zero,
+    this.label = '',
+  });
+
+  /// 常规定向连接的超时阶梯。空 = 跳过常规建连（只有 [autoConnectBudget] 非零时才合法）。
+  final List<Duration> directTimeouts;
+
+  /// 常规建连全失败后 `autoConnect` 的等待预算；[Duration.zero] = 不走这条兜底。
+  final Duration autoConnectBudget;
+
+  /// 埋点用的档位名。
+  final String label;
+
+  bool get usesAutoConnect => autoConnectBudget > Duration.zero;
+
+  /// 最坏耗时（不含断开落地等待，那部分只在失败路径上出现且有 600ms 上限）。
+  Duration get worstCase {
+    var total = autoConnectBudget;
+    for (final t in directTimeouts) {
+      total += t;
+    }
+    if (directTimeouts.length > 1) {
+      total += FrameBleClient.connectRetryBackoff * (directTimeouts.length - 1);
+    }
+    return total;
+  }
+
+  /// 正常信号（原始 RSSI ≥ -70dBm）。首档 5s 快速试错（真正的瞬时故障几百毫秒就报错，
+  /// 不会白等满），末档 8s 给「慢但连得上」的情况留余地。
+  static const BleConnectPlan normal = BleConnectPlan(
+    label: 'normal',
+    directTimeouts: <Duration>[Duration(seconds: 5), Duration(seconds: 8)],
+    autoConnectBudget: Duration(seconds: 8),
+  );
+
+  /// 弱信号（-70 ~ -80dBm）：一次 12s 长试，覆盖约 4 个广播事件。
+  ///
+  /// 不再拆成两次短试：重启一次定向连接要付「断开落地 ≤600ms + 退避 400ms」，
+  /// 期间控制器完全不在 initiating 状态，等于白扔一个广播事件；而真正需要重试的
+  /// 那类失败（协议栈 133）是**立刻**报错的，根本走不到超时，拉长超时不影响它们。
+  static const BleConnectPlan weak = BleConnectPlan(
+    label: 'weak',
+    directTimeouts: <Duration>[Duration(seconds: 12)],
+    autoConnectBudget: Duration(seconds: 8),
+  );
+
+  /// 极弱信号（< -80dBm）：一次 16s 长试。此时每个广播事件的成功概率本就低，
+  /// 唯一能补的就是**多覆盖几个广播事件**，而这只有高占空比的定向连接做得到。
+  static const BleConnectPlan veryWeak = BleConnectPlan(
+    label: 'very-weak',
+    directTimeouts: <Duration>[Duration(seconds: 16)],
+    autoConnectBudget: Duration(seconds: 5),
+  );
+
+  /// 快路径「赌一把」（系统已连接表 / 本机直连缓存）：一档短超时、绝不兜底——
+  /// 赌不中必须立刻回落扫描，不能在这里耗掉用户的耐心。
+  static const BleConnectPlan probe = BleConnectPlan(
+    label: 'probe',
+    directTimeouts: <Duration>[FrameBleClient.directConnectProbeTimeout],
+  );
+
+  // ── 旧分配（2026-07-30 版）：自检页可切回来做对照，别删 ──────────
+  static const BleConnectPlan legacyNormal = BleConnectPlan(
+    label: 'legacy-normal',
+    directTimeouts: <Duration>[Duration(seconds: 5), Duration(seconds: 8)],
+    autoConnectBudget: Duration(seconds: 15),
+  );
+  static const BleConnectPlan legacyWeak = BleConnectPlan(
+    label: 'legacy-weak',
+    directTimeouts: <Duration>[Duration(seconds: 5)],
+    autoConnectBudget: Duration(seconds: 15),
+  );
+  static const BleConnectPlan legacyVeryWeak = BleConnectPlan(
+    label: 'legacy-very-weak',
+    directTimeouts: <Duration>[],
+    autoConnectBudget: Duration(seconds: 20),
+  );
+}
+
 /// 单设备 BLE 会话。一个实例管理一台已连接设备的收发与图传。
 class FrameBleClient {
   /// 真实投屏参数，与小程序 `utils/device-ble.js` 保持一致。
@@ -221,37 +329,12 @@ class FrameBleClient {
   static const Duration transferAckAdvanceTimeout = Duration(milliseconds: 600);
   static const int transferMaxRetries = 15;
 
-  /// 建连尝试的超时阶梯（对齐小程序 `device-ble.CONNECT_TIMEOUTS`）。
-  ///
-  /// 为什么逐次拉长而不是固定一个大值：绝大多数首连失败是**瞬时**的（GATT 抖动、
-  /// CONNECT_IND 丢包），首次 5s 快速试错、早失败早重试更划算；末次 8s 才耐心等——
-  /// 弱信号下 CONNECT_IND 可能要经过好几个广播事件才被设备收到，一刀切的短超时会把
-  /// 「本来能连上、只是慢」误杀成失败。此前两次都是 12s，最坏白等 24s 且只有 2 次机会。
-  static const List<Duration> connectAttemptTimeouts = <Duration>[
-    Duration(seconds: 5),
-    Duration(seconds: 8),
-  ];
+  /// 建连预算（阶梯 + autoConnect 兜底）统一由 [BleConnectPlan] 描述，
+  /// 按候选的原始 RSSI 在 `BleController._connectPlanForRssi` 里选档。
 
-  /// 弱信号候选（原始 RSSI 低于连接闸值）的建连超时阶梯——仅 Android 使用。
-  /// 常规 connectGatt 的 CONNECT_IND 只在极短窗口里发，RSSI 已低于 -70dBm 时
-  /// 第二次 8s 长试的命中率依然很低，纯属白等；只快速试错一次，尽早换
-  /// `autoConnect` 这张弱信号唯一有效牌（见 [_connectWithAutoConnect]）。
-  /// iOS 不用：它的 connect 本身就是「等到连上」语义，缩短阶梯只会帮倒忙。
-  static const List<Duration> weakSignalAttemptTimeouts = <Duration>[
-    Duration(seconds: 5),
-  ];
-
-  /// 极弱信号阈值（仅 Android）。低于它时常规 `connectGatt` 的 CONNECT_IND 命中率
-  /// 已接近于零——再花 5 秒试一次是纯粹的白等，不如把整份预算都给 autoConnect。
-  /// 取 -80dBm：-70~-80 还有相当比例能一次连上（保留 5s 快速试错），
-  /// -80 以下现场记录几乎全是超时。
+  /// 极弱信号阈值（仅 Android）。取 -80dBm：-70~-80 还有相当比例能在几个广播事件内
+  /// 连上，-80 以下每个广播事件的成功率都明显下滑，只能靠**覆盖更多广播事件**来补。
   static const int veryWeakSignalRssi = -80;
-
-  /// 极弱信号候选的建连阶梯：**空**，即常规建连一档都不走，直接上 autoConnect
-  /// （见 [_connectWithAutoConnect]）。最坏耗时不比原来长——省下的 5 秒
-  /// 原样加到 autoConnect 的等待预算里（[androidAutoConnectFallbackVeryWeak]），
-  /// 只是这 20 秒全花在真正管用的机制上。
-  static const List<Duration> veryWeakSignalAttemptTimeouts = <Duration>[];
 
   /// 每次建连失败后的退避（让底层把半连状态清干净再试，对齐小程序 `CONNECT_BACKOFF_MS`）。
   static const Duration connectRetryBackoff = Duration(milliseconds: 400);
@@ -260,19 +343,6 @@ class FrameBleClient {
   /// 取 3s：一次建连正常 1~2s 内就起来，超过多半是赌不中（设备重启/换机/地址轮换/离线）；
   /// 短到「赌不中也不明显拖慢」、长到「本来能连、只是慢一点的别误杀」。
   static const Duration directConnectProbeTimeout = Duration(seconds: 3);
-
-  /// Android 弱信号兜底：常规建连全部失败后，用 `autoConnect` 再等这么久。
-  /// autoConnect 是控制器**低占空比**扫描等设备广播：相框广播间隔约 3s、弱信号还丢帧，
-  /// 8s 只覆盖 2~3 个广播事件，经常等不到。iOS 同环境连得上正是因为其 connect 是
-  /// 「无限等到连上」语义；15s（≈5 个广播事件）把差距补到同一量级，且仍有界。
-  static const Duration androidAutoConnectFallback = Duration(seconds: 15);
-
-  /// 极弱信号（[veryWeakSignalRssi] 以下）跳过常规建连后，autoConnect 拿到的预算。
-  /// = 15s + 省下来的那一档 5s：worst case 与改前持平，但不再有任何一秒花在
-  /// 命中率接近零的常规 connectGatt 上。
-  static const Duration androidAutoConnectFallbackVeryWeak = Duration(
-    seconds: 20,
-  );
 
   /// 建连失败后，等底层把「已断开」真正落地的上限。
   ///
@@ -608,6 +678,26 @@ class FrameBleClient {
     _pruneScanStarts(DateTime.now());
   }
 
+  /// 给**不经过 [scan] 的外部扫描**预留一个起扫名额（当前唯一使用者：原生 A/B 探针）。
+  ///
+  /// Android 的 5 次/30s 限额是按 **app** 算的，Kotlin 侧自己 `startScan` 一样计数。
+  /// 交替按两个按钮做对照实验时，若只有 FBP 这一路记账，账本就永远差一半——
+  /// 触顶后两条路径会被系统同时静默降级，报告上表现为「两边都停在 scan」，
+  /// 而那和建连快慢毫无关系，纯属实验方法污染。
+  static Future<void> reserveScanStartSlot() async {
+    await _awaitScanStartSlot();
+    _noteScanStart();
+  }
+
+  /// 最近 [_androidScanStartWindow] 窗口内已经起扫了几次（诊断/报告用）。
+  static int get scanStartsInWindow {
+    _pruneScanStarts(DateTime.now());
+    return _scanStarts.length;
+  }
+
+  /// 起扫限额（诊断/报告用）。
+  static int get scanStartLimit => _androidScanStartLimit;
+
   static void _noteScanStart() {
     if (!Platform.isAndroid) {
       return;
@@ -716,15 +806,11 @@ class FrameBleClient {
   ///    扫描永远搜不到这台设备；且失败会话绝不能把 `connected` 谎报成 true。
   /// ② `_linkAlive`/onLinkStateChanged(true) 要等**通知订阅成功后**才置——它一触发
   ///    控制器就启动保活心跳与 Android 前台服务，置早了失败路径下两者会永不停止。
-  /// [attemptTimeouts]：建连尝试的超时阶梯，默认 [connectAttemptTimeouts]。
-  /// 直连快路径只给一档短超时（[directConnectProbeTimeout]）——它是「赌一把」，
-  /// 赌不中必须马上回落扫描，不能在这里耗掉用户的耐心。
-  /// [allowAutoConnectFallback]：常规建连全失败后是否再走 Android 的 `autoConnect` 兜底
-  /// （见 [_connectWithAutoConnect]）。快路径必须传 false。
+  /// [plan]：本次建连的时间预算分配（阶梯 + autoConnect 兜底），见 [BleConnectPlan]。
+  /// 扫描路径按候选 RSSI 选档；两条快路径必须用 [BleConnectPlan.probe]（赌一把、不兜底）。
   Future<void> connect(
     BluetoothDevice device, {
-    List<Duration>? attemptTimeouts,
-    bool allowAutoConnectFallback = true,
+    BleConnectPlan plan = BleConnectPlan.normal,
   }) async {
     // 先清上一段会话的订阅残留：设备侧断开路径只置 _linkAlive=false、不撤订阅
     // （onValueReceived 是全局流，不随断开自动取消），不清的话重连同一设备后
@@ -742,12 +828,8 @@ class FrameBleClient {
       // ① 连接带重试（对齐小程序 device-ble.createConnectionWithRetry）：安卓 GATT 首次连接
       //    易抖动/超时，失败先物理断开清掉半连状态、等 400ms 再试——单次失败即报错
       //    会让用户手动再点一次，体感明显不如小程序「一次就连上」。
-      //    超时走阶梯（5s→8s），最后再给 Android 的 autoConnect 一次弱信号兜底。
-      await _connectWithRetry(
-        device,
-        timeouts: attemptTimeouts ?? connectAttemptTimeouts,
-        allowAutoConnectFallback: allowAutoConnectFallback,
-      );
+      //    超时按 [plan] 的阶梯走，全失败后再给 Android 的 autoConnect 一次兜底。
+      await _connectWithRetry(device, plan);
 
       _connSub = device.connectionState.listen((state) {
         if (state == BluetoothConnectionState.disconnected) {
@@ -825,31 +907,44 @@ class FrameBleClient {
   }
 
   /// 建立物理连接（带重试，对齐小程序 device-ble.createConnectionWithRetry）：
-  /// 失败先断开清半连状态、等 [connectRetryBackoff] 再试，超时按 [timeouts] 阶梯逐次拉长；
-  /// 全部失败后（Android 且 [allowAutoConnectFallback]）再走一次 autoConnect 兜底；
+  /// 失败先断开清半连状态、等 [connectRetryBackoff] 再试，超时按 [plan] 的阶梯走；
+  /// 全部失败后（仅 Android 且 plan 留了预算）再走一次 autoConnect 兜底；
   /// 仍不成则抛最后一次错误。
-  Future<void> _connectWithRetry(
-    BluetoothDevice device, {
-    List<Duration> timeouts = connectAttemptTimeouts,
-    bool allowAutoConnectFallback = true,
-  }) async {
-    // 空阶梯 = 调用方明确要求「跳过常规建连、直接上 autoConnect」（极弱信号候选，
-    // 见 [veryWeakSignalAttemptTimeouts]）。但若同时又不允许 autoConnect 兜底，
-    // 那就一种建连手段都不剩了——回落默认阶梯兜住，绝不能变成「什么都没试就报失败」。
-    final budget = timeouts.isEmpty && !allowAutoConnectFallback
-        ? connectAttemptTimeouts
-        : timeouts;
+  ///
+  /// 每一档都记一条埋点，**正式包里也记**（[BlePerfLog] → 自检页可复制）。
+  /// 现场只有「连不上」三个字是没法优化的，必须能分清这两类：
+  ///  · `failed@<1s`：协议栈当场拒绝（android-code:133 等）——重试有意义，拉长超时没用；
+  ///  · `failed@≈超时值`：一次 CONNECT_IND 都没被设备收到——需要更长的定向连接窗口
+  ///    或更好的信号，重试同样的短超时纯属白等。
+  Future<void> _connectWithRetry(BluetoothDevice device, BleConnectPlan plan) async {
+    // 空阶梯 = 调用方要求「跳过常规建连、直接上 autoConnect」。若同时又没给 autoConnect
+    // 预算，就一种建连手段都不剩了——回落默认阶梯兜住，绝不能变成「什么都没试就报失败」。
+    final budget = plan.directTimeouts.isEmpty && !plan.usesAutoConnect
+        ? BleConnectPlan.normal.directTimeouts
+        : plan.directTimeouts;
     Object? lastError;
     for (int i = 0; i < budget.length; i++) {
+      final attempt = Stopwatch()..start();
       try {
         await device.connect(
           license: License.nonprofit,
           timeout: budget[i],
           mtu: null,
         );
+        _perfLog(
+          'connect',
+          'direct#${i + 1}/${budget.length} plan=${plan.label} '
+              'ok@${attempt.elapsedMilliseconds}ms',
+        );
         return;
       } catch (error) {
         lastError = error;
+        _perfLog(
+          'connect',
+          'direct#${i + 1}/${budget.length} plan=${plan.label} '
+              'budget=${budget[i].inMilliseconds}ms '
+              'failed@${attempt.elapsedMilliseconds}ms ${_briefBleError(error)}',
+        );
         // 失败先物理断开：清掉半连状态、让设备恢复广播，否则下次扫描/连接更难成功
         //（对齐小程序 closeBLEConnection + sleep(400) 再重试）。
         // ⚠️ 必须**等断开真正落地**再退避，见 [disconnectSettleTimeout]：
@@ -861,14 +956,16 @@ class FrameBleClient {
         }
       }
     }
-    // 极弱信号跳过了常规阶梯，省下的时间原样给 autoConnect（总预算不变）。
-    final fallback = budget.isEmpty
-        ? androidAutoConnectFallbackVeryWeak
-        : androidAutoConnectFallback;
-    if (allowAutoConnectFallback &&
-        await _connectWithAutoConnect(device, fallback)) {
+    if (plan.usesAutoConnect &&
+        await _connectWithAutoConnect(device, plan.autoConnectBudget)) {
       return;
     }
+    _perfLog(
+      'warn',
+      'connect 全部失败 plan=${plan.label} '
+          '阶梯=${budget.map((t) => '${t.inSeconds}s').join('+')} '
+          'auto=${plan.autoConnectBudget.inSeconds}s ${_briefBleError(lastError)}',
+    );
     throw lastError is FrameBleException
         ? lastError
         : FrameBleException(
@@ -908,15 +1005,41 @@ class FrameBleClient {
     }
   }
 
-  /// Android 弱信号兜底：改用 `autoConnect` 再要一次连接，成功返回 true。
+  /// 把建连异常压成埋点里那一小段真正有信息量的内容。
   ///
-  /// 常规建连（autoConnect=false）是「主机立刻发起一次定向连接」——CONNECT_IND 只在
-  /// 极短的窗口里试，弱信号/远距离下丢一次就整轮超时。`autoConnect=true` 走的是完全不同的
-  /// 路径：把设备加进控制器白名单，由**控制器**自己用低占空比持续等它的广播，等到了再连。
-  /// 慢一点，但对「信号弱、时断时续、广播间隔长（本相框约 3s）」的设备成功率明显更高，
-  /// 是安卓侧独有的一张牌——这也正是「设备明明在，就是连不上，多点几次某一次忽然又好了」的解法。
+  /// FBP 的原始串形如 `FlutterBluePlusException | connect | android-code: 133 | ...`，
+  /// 整条塞进日志会把埋点冲得没法读，而**真正要看的只有那个 GATT status**：
+  /// 133=GATT_ERROR（协议栈/句柄问题，重试有意义）、8=链路超时、19=对端主动断开、
+  /// 22=本端终止。分不清这几个就没法判断该拉长超时还是该查句柄泄漏。
+  static String _briefBleError(Object? error) {
+    if (error == null) {
+      return 'unknown';
+    }
+    final text = '$error';
+    final code = RegExp(r'android-code:\s*(\d+)').firstMatch(text);
+    if (code != null) {
+      return 'android-code:${code.group(1)}';
+    }
+    if (error is TimeoutException || text.toLowerCase().contains('timeout')) {
+      return 'timeout';
+    }
+    return text.length > 120 ? '${text.substring(0, 120)}…' : text;
+  }
+
+  /// `autoConnect` 末位兜底：常规定向连接全部失败后再要一次连接，成功返回 true。
   ///
-  /// 只在常规尝试全部失败后才用（它更慢），且只在 Android：iOS 侧 CoreBluetooth 的
+  /// `autoConnect=true` 走的是与常规建连完全不同的路径：把设备加进控制器白名单，
+  /// 由**控制器**自己等它的广播，等到了再连。它的两个特点必须一起记住，只记一半就会
+  /// 把预算分错（2026-07-30 那一版正是只记了前一半）：
+  ///
+  /// ① **没有时间上限**，能覆盖「设备此刻不在广播、过一会儿才醒」——这是常规定向连接
+  ///    （AOSP 上限 30s）做不到的，所以它作为末位兜底仍有价值；
+  /// ② **占空比只有约 0.9%**（1.28s 间隔 / 11.25ms 窗口），是常规定向连接（≈50%）的
+  ///    约 1/57。相框广播间隔约 3s 时，它的期望命中时间是**几分钟**量级。
+  ///
+  /// 所以它绝不是「弱信号唯一有效的牌」，恰恰相反：弱信号需要的是覆盖更多广播事件，
+  /// 而那只有高占空比的常规定向连接给得起（见 [BleConnectPlan] 的预算表）。
+  /// 只在常规尝试全部失败后才用，且只在 Android：iOS 侧 CoreBluetooth 的
   /// `connect` 本身就是「一直等到连上」的语义，没有对应旋钮。
   ///
   /// 三处必须小心：
@@ -959,6 +1082,8 @@ class FrameBleClient {
       );
       return true;
     } catch (_) {
+      _perfLog('connect', 'autoConnect 兜底 ${timeout.inSeconds}s 内未连上');
+      // ③：等不到必须显式取消，否则这条挂起的 autoConnect 会在后台一直连下去。
       try {
         await device.disconnect();
       } catch (_) {}

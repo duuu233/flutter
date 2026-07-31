@@ -9,6 +9,7 @@ import '../network/boltfox_api.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../state.dart' show AppLanguage;
 import 'ble/ble_direct_connect_cache.dart';
+import 'ble/ble_tuning.dart';
 import 'ble/device_ble.dart';
 import 'ble/frame_protocol.dart';
 import 'ble/ota_ble.dart';
@@ -528,37 +529,42 @@ class BleController extends ChangeNotifier {
       // 会话登记广播 4 字节 Device_ID：连接后广播就停了，此刻不记就再也拿不到
       broadcastId: ad?.deviceId ?? '',
       screenType: ad?.screenType ?? 0,
-      attemptTimeouts: _attemptTimeoutsForRssi(result.rssi),
+      plan: _connectPlanForRssi(result.rssi),
     );
   }
 
-  /// 按候选的**原始** RSSI 选建连阶梯。返回 null = 用默认阶梯。
+  /// 按候选的**原始** RSSI 选建连预算（见 [BleConnectPlan]）。
   ///
-  /// 三档（仅 Android；iOS 的 `connect` 本身就是「一直等到连上」的语义，
-  /// 缩短阶梯只会帮倒忙，一律返回 null）：
+  /// 三档（分档仅 Android；iOS 的 `connect` 本身就是「一直等到连上」的语义，
+  /// 而且 autoConnect 兜底在 iOS 上是空操作，一律用正常档）：
   ///
-  /// | 档位 | 判据 | 阶梯 |
-  /// | --- | --- | --- |
-  /// | 正常 | ≥ -70dBm | 5s → 8s → autoConnect 15s |
-  /// | 弱 | < -70dBm | 5s → autoConnect 15s（第二次 8s 长试命中率太低，不值得） |
-  /// | 极弱 | < -80dBm | 常规一档都不走 → autoConnect 20s |
+  /// | 档位 | 判据 | 定向连接 | autoConnect 兜底 | 总预算 |
+  /// | --- | --- | --- | --- | --- |
+  /// | 正常 | ≥ -70dBm | 5s → 8s | 8s | ≈21.4s |
+  /// | 弱 | < -70dBm | 12s | 8s | ≈20.0s |
+  /// | 极弱 | < -80dBm | 16s | 5s | ≈21.0s |
   ///
-  /// 极弱档是本轮新增：-80dBm 以下常规 `connectGatt` 的 CONNECT_IND 命中率接近于零，
-  /// 那 5 秒是纯白等。省下来的时间原样加给 autoConnect，**总预算不变**，
-  /// 只是全花在真正管用的机制上（见 `FrameBleClient.veryWeakSignalAttemptTimeouts`）。
+  /// 2026-08-01 重排：**总预算与上一版持平**，但把时间从 autoConnect（占空比 ≈0.9%）
+  /// 挪回常规定向连接（≈50%）。上一版的分配（弱=5s+15s、极弱=0s+20s）建立在
+  /// 「autoConnect 是弱信号唯一有效的牌」这个判断上，而按占空比算，那 15~20 秒里
+  /// 真正在等广播的时间只有一百多毫秒——等于把弱信号最需要的「多覆盖几个广播事件」
+  /// 花在了几乎不监听的机制上。旧分配可在自检页一键切回做对照
+  /// （[BleTuning.androidConnectStrategy]）。
   ///
   /// `rssi == 0`（读不到）天然落进「正常」档：0 不小于任何一个负阈值。
-  static List<Duration>? _attemptTimeoutsForRssi(int rssi) {
+  static BleConnectPlan _connectPlanForRssi(int rssi) {
+    final legacy =
+        BleTuning.androidConnectStrategy == AndroidConnectStrategy.autoConnectFirst;
     if (!Platform.isAndroid) {
-      return null;
+      return legacy ? BleConnectPlan.legacyNormal : BleConnectPlan.normal;
     }
     if (rssi < FrameBleClient.veryWeakSignalRssi) {
-      return FrameBleClient.veryWeakSignalAttemptTimeouts;
+      return legacy ? BleConnectPlan.legacyVeryWeak : BleConnectPlan.veryWeak;
     }
     if (rssi < weakSignalRssi) {
-      return FrameBleClient.weakSignalAttemptTimeouts;
+      return legacy ? BleConnectPlan.legacyWeak : BleConnectPlan.weak;
     }
-    return null;
+    return legacy ? BleConnectPlan.legacyNormal : BleConnectPlan.normal;
   }
 
   /// 按 remoteId 直接建连（**不经扫描**），供直连快路径使用。
@@ -574,8 +580,7 @@ class BleController extends ChangeNotifier {
       broadcastId: '',
       screenType: 0,
       // 快路径是「赌一把」：赌不中必须马上回落扫描，既不重试也不走 autoConnect 兜底。
-      attemptTimeouts: const <Duration>[FrameBleClient.directConnectProbeTimeout],
-      allowAutoConnectFallback: false,
+      plan: BleConnectPlan.probe,
     );
   }
 
@@ -585,8 +590,7 @@ class BleController extends ChangeNotifier {
     required String label,
     required String broadcastId,
     required int screenType,
-    List<Duration>? attemptTimeouts,
-    bool allowAutoConnectFallback = true,
+    BleConnectPlan plan = BleConnectPlan.normal,
   }) async {
     // 重入护栏：并发连接（列表快速双击 / 自动重连撞上手动点连接）会让两次
     // _client.connect 交错覆盖 _device/订阅/_writeChar，且 broadcastDeviceId 与
@@ -603,11 +607,7 @@ class BleController extends ChangeNotifier {
     notifyListeners();
     try {
       await trace.measure('gatt-connect-and-discover', () async {
-        await _client.connect(
-          device,
-          attemptTimeouts: attemptTimeouts,
-          allowAutoConnectFallback: allowAutoConnectFallback,
-        );
+        await _client.connect(device, plan: plan);
       });
       try {
         // 连接成功只同步页面需要的 0x01 核心信息。固件版本 0x03 不应挡在
@@ -790,72 +790,99 @@ class BleController extends ChangeNotifier {
     }
 
     // ③ 完整扫描 → 筛候选 → 建连 → 0x01 验身。
-    // 同短 ID 设备通常为两台，且每台允许一次「换新句柄重连」，最多 4 轮，
+    // 同短 ID 设备通常为两台，且每台允许一次「原地重连」，最多 4 轮，
     // 避免异常广播环境下无限循环。
+    //
+    // 整条编排有两道刹车，都是为了「连不上时别把用户按在 loading 上磨到天荒地老」：
+    //  · [_connectOrchestrationBudget]：到点后不再**开**新一轮（进行中的那一轮跑完）；
+    //  · 连接失败优先「原地重连」而不是重扫（见下面的 retryTarget）。
+    final orchestration = Stopwatch()..start();
+    // 上一轮连失败、值得原地再试一次的候选（不重扫，直接拿同一个句柄再连）。
+    ScanResult? retryTarget;
     for (var attempt = 0; attempt < 4; attempt += 1) {
-      // 弱信号不抢第一帧：命中即停会在「刚擦边收到第一帧」时就发起连接，而那一帧往往是
-      // 整个窗口里信号最差的时刻，连接成功率最低（现场表现正是高 RSSI 一点就连上、
-      // -67~-78dBm 区间经常连不上）。信号够强/读不到 RSSI 时行为完全不变：扫到即走。
-      final gate = _WeakSignalGate();
-      // 闸门放行的那一台**就地捕获**，不再等扫描返回后重新 match 一遍。两个理由：
-      // ① 同短 ID 的两台都在场时，窗口末尾按 RSSI 重排后「第一个匹配」可能已经换了一台，
-      //    于是连的不是闸门放行的那一台；
-      // ② 建连阶梯是按「开闸那一刻那一帧的 RSSI」选的（见 [_attemptTimeoutsForRssi]），
-      //    重新 match 拿到的是最后一包的 RSSI，两者对不上时会选错档位。
-      ScanResult? gated;
-      final found = await trace.measure(
-        'scan-${attempt + 1}',
-        () => scan(
-          // 12 秒（原 6 秒）：相框被 GATT 占着时不广播，断开后要好几秒才恢复广播。
-          // 排除已验错候选后继续扫，直到找到另一个同短 ID、同尺寸候选。
-          timeout: const Duration(seconds: 12),
-          until: (list) {
-            final hit = matchScannedDevice(
-              list,
+      if (orchestration.elapsed >= _connectOrchestrationBudget) {
+        trace.mark('orchestration-budget-exhausted-${attempt + 1}');
+        break;
+      }
+      var target = retryTarget;
+      retryTarget = null;
+      if (target != null) {
+        // 原地重连：设备刚被我们断开，要几百毫秒~1s 才恢复广播；定向连接靠的正是
+        // 那个广播事件，立刻重发只会白扔一次机会。
+        trace.mark('retry-without-rescan-${target.device.remoteId.str}');
+        await Future<void>.delayed(_directRetryDelay);
+      } else {
+        // 弱信号不抢第一帧：命中即停会在「刚擦边收到第一帧」时就发起连接，而那一帧往往是
+        // 整个窗口里信号最差的时刻，连接成功率最低（现场表现正是高 RSSI 一点就连上、
+        // -67~-78dBm 区间经常连不上）。信号够强/读不到 RSSI 时行为完全不变：扫到即走。
+        final gate = _WeakSignalGate();
+        // 闸门放行的那一台**就地捕获**，不再等扫描返回后重新 match 一遍。两个理由：
+        // ① 同短 ID 的两台都在场时，窗口末尾按 RSSI 重排后「第一个匹配」可能已经换了一台，
+        //    于是连的不是闸门放行的那一台；
+        // ② 建连预算是按「开闸那一刻那一帧的 RSSI」选的（见 [_connectPlanForRssi]），
+        //    重新 match 拿到的是最后一包的 RSSI，两者对不上时会选错档位。
+        ScanResult? gated;
+        final found = await trace.measure(
+          'scan-${attempt + 1}',
+          () => scan(
+            // 12 秒（原 6 秒）：相框被 GATT 占着时不广播，断开后要好几秒才恢复广播。
+            // 排除已验错候选后继续扫，直到找到另一个同短 ID、同尺寸候选。
+            timeout: const Duration(seconds: 12),
+            until: (list) {
+              final hit = matchScannedDevice(
+                list,
+                serial: serial,
+                name: name,
+                screenCode: screenCode,
+                excludedDeviceIds: excludedDeviceIds,
+              );
+              if (hit == null || !gate.shouldConnectNow(hit.rssi)) {
+                return false;
+              }
+              gated = hit;
+              return true;
+            },
+          ),
+        );
+        // 闸门没开过（等满整窗才收网）时才回落到「在最终列表里找」。
+        target =
+            gated ??
+            matchScannedDevice(
+              found,
               serial: serial,
               name: name,
               screenCode: screenCode,
               excludedDeviceIds: excludedDeviceIds,
             );
-            if (hit == null || !gate.shouldConnectNow(hit.rssi)) {
-              return false;
-            }
-            gated = hit;
-            return true;
-          },
-        ),
-      );
-      // 闸门没开过（等满整窗才收网）时才回落到「在最终列表里找」。
-      final target =
-          gated ??
-          matchScannedDevice(
-            found,
-            serial: serial,
-            name: name,
-            screenCode: screenCode,
-            excludedDeviceIds: excludedDeviceIds,
-          );
+      }
       if (target == null) {
         break;
       }
-      final remoteId = target.device.remoteId.str;
+      // 定住这一轮的候选：下面的闭包捕获的必须是不可变的那个引用
+      // （`target` 是可变局部变量，闭包里不参与类型提升）。
+      final chosen = target;
+      final remoteId = chosen.device.remoteId.str;
       // 扫描与 GATT 建连抢同一路射频：等停扫真正沉淀下来再连（弱信号下这是主因之一）。
       await FrameBleClient.settleAfterScan();
       final error = await trace.measure(
         'connect-and-read-info-${attempt + 1}',
-        () => connect(target),
+        () => connect(chosen),
       );
       if (error != null) {
         lastConnectError = error;
         final failures = (connectFailures[remoteId] ?? 0) + 1;
         connectFailures[remoteId] = failures;
-        // 只有同一台反复连不上才排除；否则下一轮重扫拿新鲜句柄再连——这一层
-        // 专治「句柄已失效」，那类失败在同一个句柄上重试多少次都是超时。
+        // 只有同一台反复连不上才排除。第二次机会**不再重扫**：
+        //  · 安卓的 remoteId 就是 MAC，本相框不做地址轮换，句柄不会因为一次失败就失效；
+        //  · 重扫要付 12s + 一个起扫名额，而安卓 5 次/30s 的限额一旦触顶，
+        //    后面的扫描会被系统静默降级成「整窗搜不到」——重试自己把重试搞垮。
+        // 真·句柄失效（设备重启换了地址）由「排除后的下一轮重扫」兜底，语义不变。
         if (failures >= _maxConnectFailuresPerCandidate) {
           excludedDeviceIds.add(remoteId);
           trace.mark('connect-failed-excluded-$remoteId');
         } else {
-          trace.mark('connect-failed-will-rescan-$remoteId');
+          retryTarget = chosen;
+          trace.mark('connect-failed-will-retry-$remoteId');
         }
         if (connected) {
           await disconnect();
@@ -885,6 +912,18 @@ class BleController extends ChangeNotifier {
 
   /// 同一个 remoteId 允许连失败几次才把它排除出候选。
   static const int _maxConnectFailuresPerCandidate = 2;
+
+  /// 「原地重连」前的等待：设备刚被断开要几百毫秒~1s 才恢复广播，
+  /// 而定向连接等的就是那个广播事件——立刻重发等于白扔一次机会。
+  static const Duration _directRetryDelay = Duration(milliseconds: 800);
+
+  /// 整条连接编排的软预算：到点后不再**开**新一轮（已经开始的那一轮跑完）。
+  ///
+  /// 取 35s 的算法：最坏的一轮 = 扫描 12s + 弱档建连 ≈20s ≈ 32s，所以正常情况下
+  /// 「第一轮扫描 + 第一台候选连两次」跑得完；而一旦真的连不上，用户最多在 loading 上
+  /// 等到「当前这一轮结束」，不会像改前那样最坏 4 轮 ≈128s——那种长度用户只会当成卡死，
+  /// 早就自己杀进程了，多出来的那几十秒一点收益都没有。
+  static const Duration _connectOrchestrationBudget = Duration(seconds: 35);
 
   /// 系统已连接表里最多试几个候选（每个都要花一次短超时建连，必须夹住）。
   static const int _maxSystemDeviceCandidates = 2;
@@ -955,10 +994,7 @@ class BleController extends ChangeNotifier {
           broadcastId: '',
           screenType: 0,
           // 链路已经在了，连不上多半是刚被放掉：短超时快速失败、回落扫描。
-          attemptTimeouts: const <Duration>[
-            FrameBleClient.directConnectProbeTimeout,
-          ],
-          allowAutoConnectFallback: false,
+          plan: BleConnectPlan.probe,
         ),
       );
       if (error == null &&

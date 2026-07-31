@@ -2,7 +2,7 @@
 
 > 文档类型：Architecture Decision  
 > 状态：Active  
-> 最后核验：2026-07-30  
+> 最后核验：2026-08-01  
 > 维护责任：BLE、设备列表/详情、绑定与投屏维护者  
 > 事实来源：`ble_controller.dart`、`serial_match.dart`、`device_ble.dart`、
 > `ble/ble_direct_connect_cache.dart`
@@ -108,6 +108,7 @@
   → 发现服务/特征并订阅通知
   → 读取 0x01 完整 ID
   ├── 匹配：登记完整身份、写入直连缓存、读取设备信息、发布连接状态
+  ├── 连接失败：同一句柄原地再连一次（不重扫）；再失败才排除该候选、重扫找另一台
   └── 不匹配：断开、排除 remoteId、删除该设备直连缓存、继续扫描
 ```
 
@@ -147,24 +148,55 @@
 
 ### 提速与弱信号参数
 
+#### 建连预算（`BleConnectPlan`，2026-08-01 重排）
+
+阶梯与 autoConnect 兜底是**同一份预算的两种花法**，装在同一个对象里成对决定；
+按候选的原始 RSSI 在 `BleController._connectPlanForRssi` 选档。
+
+| 档位 | 判据 | 定向连接 | autoConnect | 总预算 |
+| --- | --- | --- | --- | --- |
+| 正常 | ≥ -70dBm | 5s → 8s | 8s | ≈21.4s |
+| 弱 | < -70dBm | 12s（一次长试） | 8s | ≈20.0s |
+| 极弱 | < -80dBm（`veryWeakSignalRssi`） | 16s（一次长试） | 5s | ≈21.0s |
+| 快路径（系统已连接表 / 直连缓存） | — | 3s | 不走 | 3s |
+
+分配依据是两种机制的**占空比**，这是全表唯一需要记住的原理：
+
+| 机制 | 控制器扫描间隔 / 窗口 | 占空比 | 上限 |
+| --- | --- | --- | --- |
+| 常规 connect（定向连接） | 60ms / 30ms | **≈50%** | 30s |
+| `autoConnect`（后台白名单连接） | 1.28s / 11.25ms | **≈0.9%** | 无 |
+
+相框广播间隔约 3s：定向连接 1~2 个广播事件内通常就能发出 CONNECT_IND，`autoConnect`
+的期望命中时间是**几分钟**量级。所以「信号弱就尽早切 autoConnect」是反的——弱信号需要的是
+覆盖更多广播事件，只有高占空比的定向连接给得起；iOS 的 `connect` 正是「一直等到连上」，
+这才是同一台设备 iOS 连得上、安卓连不上的根因。`autoConnect` 保留在末位兜底的理由只有一条：
+它**没有时间上限**，能覆盖「设备此刻不在广播、过一会儿才醒」。
+
+旧分配（弱=5s+15s、极弱=0s+20s）保留在 `BleConnectPlan.legacy*`，自检页「④ 调优旋钮 →
+安卓建连预算」可一键切回做现场对照（`BleTuning.androidConnectStrategy`）。
+
+#### 其余参数
+
 | 参数 | 值 | 位置 | 作用 |
 | --- | --- | --- | --- |
-| 建连超时阶梯 | 5s → 8s | `FrameBleClient.connectAttemptTimeouts` | 首次快速试错，末次耐心等弱信号的 CONNECT_IND |
-| 弱信号候选短阶梯 | 仅 5s 一档（仅 Android） | `weakSignalAttemptTimeouts` | RSSI < -70 时第二次 8s 长试命中率极低，尽早切 autoConnect |
-| 极弱信号阶梯 | **空**（仅 Android） | `veryWeakSignalAttemptTimeouts` / `veryWeakSignalRssi=-80` | -80dBm 以下常规 CONNECT_IND 命中率接近零，常规一档都不走、直接 autoConnect |
-| 极弱信号 autoConnect 预算 | 20s | `androidAutoConnectFallbackVeryWeak` | = 15s + 省下的那一档 5s，总预算与改前持平 |
 | 断开落地等待 | ≤600ms | `disconnectSettleTimeout` | `disconnect()` 返回 ≠ 链路拆干净；半连状态上重连是 133 常客，且每轮新建 GATT client |
 | 建连退避 | 400ms | `connectRetryBackoff` | 让底层清干净半连状态再试 |
 | 直连探测超时 | 3s | `directConnectProbeTimeout` | 快路径「赌一把」的上限 |
-| Android autoConnect 兜底 | 15s | `androidAutoConnectFallback` | 常规建连全失败后的弱信号唯一有效手段；低占空比等广播，3s 广播间隔下 8s 只有 2~3 次机会，15s ≈ 5 次 |
 | 停扫沉淀 | 120ms | `scanSettleDelay` / `settleAfterScan` | 扫描与建连抢同一路射频 |
 | 连接信号闸 | -70dBm / 最多等 1.5s | `BleController.weakSignalRssi` / `weakSignalWait` | 不抢窗口里最差的第一帧；等满照常连 |
 | 建连后高优先级窗口 | 2s | `postConnectFastWindow` | 首屏 0x01/0x04 读完再回落省电档 |
 | Android 起扫配额 | 5 次 / 30s，触顶最多等 10s | `FrameBleClient._awaitScanStartSlot` | 越限会被系统静默降级成「整窗搜不到」 |
-| 同候选失败容忍 | 2 次 | `_maxConnectFailuresPerCandidate` | 连接失败 ≠ 不是这台，重扫拿新句柄再连 |
+| 同候选失败容忍 | 2 次 | `_maxConnectFailuresPerCandidate` | 连接失败 ≠ 不是这台；**第二次机会是原地重连，不是重扫** |
+| 原地重连间隔 | 800ms | `_directRetryDelay` | 设备刚被断开要几百毫秒~1s 才恢复广播 |
+| 编排软预算 | 35s | `_connectOrchestrationBudget` | 到点不再开新一轮；改前最坏 4 轮 ≈128s |
 
 规则：**信号弱只能推迟连接、绝不能阻断连接**；等满窗口无论多弱都必须发起连接。
 连接策略一律使用原始 RSSI，与保守下调过一级的展示档位（`rssiToSignalLevel`）互不牵连。
+
+**连接失败的第二次机会不重扫**：安卓 `remoteId` 就是 MAC、本相框不做地址轮换，一次失败不会
+让句柄失效；而重扫要付 12s + 一个起扫名额，触顶后扫描被系统静默降级 = 重试自己把重试搞垮。
+真·句柄失效由「排除该候选后的下一轮重扫」兜底。一次 `connectBoundDevice` 起扫 ≤ 2 次。
 
 ## 5. 单连接与状态展示
 
@@ -215,10 +247,16 @@
 `test/ble_connection_lease_test.dart`、`test/ble_direct_connect_cache_test.dart`、
 `test/ble_signal_level_test.dart`、`test/device_identity_registry_test.dart`。
 
+- 建连预算：每一档都至少留了一种建连手段；总预算 ≤22s；信号越弱定向连接窗口越长；
+  autoConnect 不得拿走任一档一半以上的预算；快路径只有一档短超时且不兜底
+  （`test/ble_connect_plan_test.dart`）。
+
 真机回归（自动测试覆盖不到，发版前必做）：
 
 - Android 弱信号（-70~-85dBm）复连成功率，含 `autoConnect` 兜底命中后无幽灵连接残留。
-- 极弱档：相框放到 -80dBm 以下，日志应直接进 autoConnect，不得先白等一档常规超时。
+- 弱/极弱档：日志里应看到一次 12s / 16s 的定向连接（`direct#1/1 plan=weak budget=12000ms`），
+  autoConnect 只在它之后出现且时长 ≤8s。
+- 自检页可切「安卓建连预算」两档做现场对照，各 10 次交替测，比成功率与成功耗时中位数。
 - GATT client 不泄漏：连续 20 次失败重试后
   `adb shell dumpsys bluetooth_manager | grep -i client` 的数量不得只增不减
   （只增不减 = 「怎么连都是 133、重启 App 才好」的来源）。
@@ -234,3 +272,4 @@
 - `../history/2026-07/2026-07-30-蓝牙搜索连接提速.md`
 - `../history/2026-07/2026-07-30-FBP连接优化与身份登记表.md`
 - `../history/2026-07/2026-07-30-安卓原生连接AB对比.md`（临时对照实验）
+- `../history/2026-08/2026-08-01-安卓弱信号建连预算重排.md`（占空比推翻「autoConnect 优先」）

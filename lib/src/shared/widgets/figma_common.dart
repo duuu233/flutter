@@ -14,6 +14,7 @@ class FigmaScreen extends StatelessWidget {
   const FigmaScreen({
     super.key,
     this.title,
+    this.centerContent,
     this.showBack = true,
     this.onBack,
     this.trailing,
@@ -26,6 +27,15 @@ class FigmaScreen extends StatelessWidget {
   });
 
   final String? title;
+
+  /// 顶栏**标题位**的自定义内容；给了它就顶掉标题文字（[title] 仍需非 null，
+  /// 否则整条顶栏连返回键一起不渲染）。
+  ///
+  /// 「设备照片 / 投屏管理」两页用它把设备下拉放进标题位：产品要求去掉页面标题、
+  /// 由下拉承担标题作用，那它就该站在标题该在的位置——屏幕水平居中。
+  /// 放 [trailing] 会靠右贴边（小程序那边正是因此压上了微信胶囊）。
+  final Widget? centerContent;
+
   final bool showBack;
   final VoidCallback? onBack;
   final Widget? trailing;
@@ -60,6 +70,7 @@ class FigmaScreen extends StatelessWidget {
                   if (title != null)
                     FigmaTopBar(
                       title: title!,
+                      centerContent: centerContent,
                       showBack: showBack,
                       onBack: onBack,
                       trailing: trailing,
@@ -117,12 +128,18 @@ class FigmaTopBar extends StatelessWidget {
   const FigmaTopBar({
     super.key,
     required this.title,
+    this.centerContent,
     this.showBack = true,
     this.onBack,
     this.trailing,
   });
 
   final String title;
+
+  /// 标题位的自定义内容（见 [FigmaScreen.centerContent]）。非空时替换标题文字，
+  /// 位置不变——仍然是屏幕水平居中。
+  final Widget? centerContent;
+
   final bool showBack;
   final VoidCallback? onBack;
   final Widget? trailing;
@@ -133,17 +150,21 @@ class FigmaTopBar extends StatelessWidget {
       height: 56,
       child: Stack(
         children: [
+          // 居中位：自定义内容优先，否则是标题文字。
+          // [Center] 只在子组件自身的尺寸内接收点击，外侧仍然让给返回键/trailing。
           Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 56),
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: FigmaTextStyles.navigationTitle,
-              ),
-            ),
+            child:
+                centerContent ??
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 56),
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: FigmaTextStyles.navigationTitle,
+                  ),
+                ),
           ),
           if (showBack)
             Align(

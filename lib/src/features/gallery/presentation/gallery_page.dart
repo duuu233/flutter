@@ -260,7 +260,8 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     }
   }
 
-  /// 顶栏右上角的设备下拉（2026-08-01 从工具栏上移，替代原来的「设备照片」标题）。
+  /// 顶栏标题位的设备下拉（2026-08-01 从工具栏上移，替代原来的「设备照片」标题；
+  /// 2026-08-02 从右上角挪到居中的标题位）。
   Widget _buildDeviceFilterChip() {
     return DeviceFilterChip(
       label: _filterLabel,
@@ -376,10 +377,11 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     final hasSelection = _selectedIds.isNotEmpty;
 
     return FigmaScreen(
-      // 2026-08-01 产品要求：去掉「设备照片」标题，改由右上角的设备下拉承担标题作用。
+      // 2026-08-01 产品要求：去掉「设备照片」标题，改由设备下拉承担标题作用。
       // title 传空串（而不是 null）：null 会连整条顶栏一起不渲染，返回键也没了。
+      // 2026-08-02：下拉从 trailing（靠右贴边）挪到 centerContent（标题位、水平居中）。
       title: '',
-      trailing: _filterOptions.isEmpty ? null : _buildDeviceFilterChip(),
+      centerContent: _filterOptions.isEmpty ? null : _buildDeviceFilterChip(),
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
       // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。

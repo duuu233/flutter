@@ -738,6 +738,23 @@ class _BlePerfPageState extends State<BlePerfPage> {
           options: const {false: '无应答（默认）', true: '有应答'},
           onPick: (v) => BleTuning.forceAckedWrite = v,
         ),
+        _choiceRow<AndroidConnectStrategy>(
+          label: '安卓建连预算',
+          current: BleTuning.androidConnectStrategy,
+          options: const {
+            AndroidConnectStrategy.directFirst: '长直连优先（默认）',
+            AndroidConnectStrategy.autoConnectFirst: '早切 autoConnect（旧）',
+          },
+          onPick: (v) => BleTuning.androidConnectStrategy = v,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          '「安卓建连预算」两档的总时长几乎一样，差别只在钱花在哪：\n'
+          '· 长直连优先＝弱 12s / 极弱 16s 常规定向连接（控制器占空比≈50%），autoConnect 只留 5~8s 兜底；\n'
+          '· 早切 autoConnect＝弱 5s 后就切、极弱直接切，把 15~20s 全给 autoConnect（占空比≈0.9%）。\n'
+          '在同一个弱信号位置交替切换、各连 8~10 次比成功率与耗时，别一口气测完一档再测另一档。',
+          style: TextStyle(fontSize: 12, color: Color(0xFF808690), height: 1.5),
+        ),
         const SizedBox(height: 8),
         const Text(
           '「有应答写」只用来证伪：它每包都等设备确认，一定更慢，但绝不静默丢包。'

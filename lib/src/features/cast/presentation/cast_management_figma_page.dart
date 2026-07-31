@@ -341,11 +341,12 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     final filterOptions = _filterOptions;
 
     return FigmaScreen(
-      // 2026-08-01 产品要求：去掉「投屏管理」标题，改由右上角的设备下拉承担标题作用，
+      // 2026-08-01 产品要求：去掉「投屏管理」标题，改由设备下拉承担标题作用，
       // 与设备照片页完全一致。title 传空串（而不是 null）：null 会连整条顶栏一起不渲染，
       // 返回键也没了。
+      // 2026-08-02：下拉从 trailing（靠右贴边）挪到 centerContent（标题位、水平居中）。
       title: '',
-      trailing: filterOptions.isEmpty
+      centerContent: filterOptions.isEmpty
           ? null
           : DeviceFilterChip(
               label: _filterLabel,

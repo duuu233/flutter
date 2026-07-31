@@ -1,6 +1,19 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// 图传发送参数的**运行时旋钮**——正式包（release / TestFlight）里也可调。
+/// 安卓建连预算的两种分配方式（见 `BleConnectPlan`）。
+///
+/// 这个旋钮存在的唯一理由：两种分配的优劣**只能在真实弱信号现场用成功率分辨**，
+/// 而每换一版就重新出一个包、隔几天再测，环境早漂了，比出来的东西不作数。
+/// 放进正式包后可以在同一段时间、同一个位置交替切换对照。
+enum AndroidConnectStrategy {
+  /// 默认（2026-08-01 起）：长直连优先，autoConnect 只当末位兜底。
+  directFirst,
+
+  /// 旧分配（2026-07-30 版）：弱信号尽早切 autoConnect 并给它大头预算。
+  autoConnectFirst,
+}
+
+/// 图传发送参数与安卓建连策略的**运行时旋钮**——正式包（release / TestFlight）里也可调。
 ///
 /// 为什么要有这个文件：iOS 侧没有任何应用内日志（`CrashLogger` 只有 Android 实现），
 /// 正式包又拿不到 Xcode / Console 输出。要判断「0x13 请求的 15ms 连接间隔到底生没生效」
@@ -48,13 +61,20 @@ class BleTuning {
   /// 特征不支持有应答写时 [FrameBleClient] 会忽略本开关。
   static bool forceAckedWrite = false;
 
+  /// 安卓建连预算的分配方式。默认 [AndroidConnectStrategy.directFirst]；
+  /// 切到 `autoConnectFirst` 即整体退回 2026-07-30 那一版的阶梯与兜底时长。
+  /// iOS 忽略（那边 autoConnect 兜底本就是空操作）。
+  static AndroidConnectStrategy androidConnectStrategy =
+      AndroidConnectStrategy.directFirst;
+
   static bool get isDefault =>
       paceMs == defaultPaceMs &&
       paceFloorMs == defaultPaceFloorMs &&
       windowPackets == defaultWindowPackets &&
       connIntervalOverrideMs == null &&
       !skipConnIntervalRequest &&
-      !forceAckedWrite;
+      !forceAckedWrite &&
+      androidConnectStrategy == AndroidConnectStrategy.directFirst;
 
   static const String _kPace = 'ble_tuning_pace_ms';
   static const String _kPaceFloor = 'ble_tuning_pace_floor_ms';
@@ -62,6 +82,7 @@ class BleTuning {
   static const String _kConnInterval = 'ble_tuning_conn_interval_ms';
   static const String _kSkipConn = 'ble_tuning_skip_conn_interval';
   static const String _kAckedWrite = 'ble_tuning_acked_write';
+  static const String _kConnectStrategy = 'ble_tuning_android_connect_strategy';
 
   /// 冷启动时读回上次调好的值。失败（prefs 不可用）静默保持默认值——
   /// 这只是调优旋钮，绝不能因为读不到偏好就影响正常投屏。
@@ -74,6 +95,12 @@ class BleTuning {
       connIntervalOverrideMs = sp.getDouble(_kConnInterval);
       skipConnIntervalRequest = sp.getBool(_kSkipConn) ?? false;
       forceAckedWrite = sp.getBool(_kAckedWrite) ?? false;
+      // 按名字读回，别用 index：枚举以后加一项就会把旧偏好读成另一种策略。
+      final strategy = sp.getString(_kConnectStrategy);
+      androidConnectStrategy = AndroidConnectStrategy.values.firstWhere(
+        (v) => v.name == strategy,
+        orElse: () => AndroidConnectStrategy.directFirst,
+      );
     } catch (_) {
       // 保持默认
     }
@@ -93,6 +120,7 @@ class BleTuning {
       }
       await sp.setBool(_kSkipConn, skipConnIntervalRequest);
       await sp.setBool(_kAckedWrite, forceAckedWrite);
+      await sp.setString(_kConnectStrategy, androidConnectStrategy.name);
     } catch (_) {}
   }
 
@@ -103,6 +131,7 @@ class BleTuning {
     connIntervalOverrideMs = null;
     skipConnIntervalRequest = false;
     forceAckedWrite = false;
+    androidConnectStrategy = AndroidConnectStrategy.directFirst;
     await save();
   }
 
@@ -111,6 +140,6 @@ class BleTuning {
     if (isDefault) return 'default';
     return 'pace=$paceMs floor=$paceFloorMs win=$windowPackets '
         'conn=${skipConnIntervalRequest ? 'skip' : (connIntervalOverrideMs?.toString() ?? 'auto')} '
-        'ackedWrite=$forceAckedWrite';
+        'ackedWrite=$forceAckedWrite connect=${androidConnectStrategy.name}';
   }
 }

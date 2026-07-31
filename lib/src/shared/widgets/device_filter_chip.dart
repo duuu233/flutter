@@ -21,10 +21,12 @@ class DeviceFilterOption {
   final String serialTail;
 }
 
-/// 设备筛选胶囊的固定宽度（pt）。
-/// 小程序 `.nav-device-filter` 为 370rpx，750rpx = 屏宽 → 370/750 × 375 ≈ 185。
-/// 图库与投屏管理两页共用同一个值，不允许任一页自己改宽窄。
-const double kDeviceFilterChipWidth = 185;
+/// 设备筛选胶囊的固定宽度（pt）。**胶囊与下拉菜单同宽，两页共用，谁都不许自己改。**
+///
+/// 小程序 `.nav-device-filter` 为 330rpx，750rpx = 屏宽 → 330/750 × 375 = 165。
+/// 2026-08-02 从 185（370rpx）收窄：小程序那边靠右排时右边缘正好压上微信胶囊，
+/// 收窄 + 居中后两侧都留出间距；App 没有胶囊，跟着同一个值走以保持两端一致。
+const double kDeviceFilterChipWidth = 165;
 
 /// 序列号（AA:BB:…:FF）去分隔符后的尾 4 位（如 D428）；无序列号返回 ''。
 String deviceSerialTail(String serial) {
@@ -74,9 +76,12 @@ List<DeviceFilterOption> disambiguateDeviceFilterLabels(
 ///
 /// 图库与投屏记录两页共用本组件（需求第 13 项：投屏记录的下拉「样式模仿我的图库」）。
 ///
-/// 2026-08-01 起两页都去掉了页面标题，这颗胶囊改挂在顶栏右上角承担标题作用，
-/// 宽度按小程序 `.nav-device-filter` 的 370rpx 钉死（见 [kDeviceFilterChipWidth]），
-/// 两页、两端完全一致——此前图库 112~200 自适应、投屏 370rpx 固定，宽度对不上。
+/// 2026-08-01 起两页都去掉了页面标题，这颗胶囊承担标题作用；
+/// 2026-08-02 起它挂在顶栏的**标题位**（屏幕水平居中，`FigmaScreen.centerContent`）
+/// 而不再是右上角——它既然是标题，就该在标题的位置。
+///
+/// 宽度按小程序 `.nav-device-filter` 的 330rpx 钉死（见 [kDeviceFilterChipWidth]），
+/// **胶囊与展开后的菜单同宽**，两页、两端完全一致。
 class DeviceFilterChip extends StatefulWidget {
   const DeviceFilterChip({
     super.key,
@@ -157,9 +162,10 @@ class _DeviceFilterChipState extends State<DeviceFilterChip> {
             ),
             CompositedTransformFollower(
               link: _link,
-              // 菜单右边缘与胶囊右边缘对齐，间隔 4（小程序 top:70rpx − 胶囊 62rpx）。
-              targetAnchor: Alignment.bottomRight,
-              followerAnchor: Alignment.topRight,
+              // 菜单与胶囊**同宽**，按中线对齐（小程序是 left/right 都钉 0，等价）。
+              // 间隔 4 = 小程序 `top:70rpx` − 胶囊高 62rpx。
+              targetAnchor: Alignment.bottomCenter,
+              followerAnchor: Alignment.topCenter,
               offset: const Offset(0, 4),
               child: _FilterMenu(
                 options: widget.options,
@@ -256,11 +262,12 @@ class _FilterArrow extends StatelessWidget {
   }
 }
 
-/// 小程序 `.filter-menu`：白 0.9、1px 白边、圆角 6、上下留白 4/6。
+/// 小程序 `.nav-device-filter__menu`：白 0.9、1px 白边、圆角 6、上下留白 4/6。
 ///
-/// 宽度随最长设备名自适应（`width: max-content`），下限对齐胶囊宽度、上限 420rpx = 210：
-/// 菜单绝不能比胶囊窄（看着像掉了一截），也不能宽到盖住半屏。
-/// 超出上限的名字仍由 [_FilterOption] 单行省略号收尾。
+/// 宽度**恒等于胶囊宽度**（[kDeviceFilterChipWidth]，小程序侧是 `left/right: 0`）。
+/// 2026-08-02 之前是「随最长设备名自适应、夹在 185~210」，于是同一个下拉展开前后
+/// 两个宽度对不上（菜单比胶囊宽出一截）。长设备名一律由 [_FilterOption] 的
+/// 单行省略号收尾，**不靠加宽菜单来兜**。
 class _FilterMenu extends StatelessWidget {
   const _FilterMenu({
     required this.options,
@@ -279,10 +286,7 @@ class _FilterMenu extends StatelessWidget {
     return Material(
       type: MaterialType.transparency,
       child: Container(
-        constraints: const BoxConstraints(
-          minWidth: kDeviceFilterChipWidth,
-          maxWidth: 210,
-        ),
+        width: kDeviceFilterChipWidth,
         padding: const EdgeInsets.only(top: 4, bottom: 6),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.9),
@@ -296,37 +300,39 @@ class _FilterMenu extends StatelessWidget {
             ),
           ],
         ),
-        // IntrinsicWidth = CSS 的 `width: max-content`：菜单宽度取最长选项的自然宽度，
-        // 再由上面的 constraints 夹到 140~240。少了它，选项里的 Container(alignment:center)
-        // 会把自己撑满 maxWidth，菜单就永远是 240 宽（短名字时右侧一大片空白）。
-        child: IntrinsicWidth(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            // 无「全部设备」项：对齐小程序单设备模型（图库跨设备选中会删错槽位；
-            // 投屏记录也按设备分档查看）。选中态与回调都按设备ID，label 仅用于显示。
-            children: [
-              if (loading)
-                const SizedBox(
-                  height: 28,
-                  child: Center(
-                    child: SizedBox.square(
-                      dimension: 13,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 1.5,
-                        color: Color(0xFFFF6A24),
-                      ),
+        // 宽度已经钉死，选项直接铺满即可（此前这里套 IntrinsicWidth 模拟
+        // CSS `width: max-content`，是「菜单宽度自适应」时代的产物，现在留着反而
+        // 会让选项按最长名字的自然宽度排版，与固定宽度打架）。
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          // stretch：选项铺满菜单宽度（对齐小程序 `.nav-device-filter__option` 的
+          // `display: block`）。少了它，Column 默认按内容宽居中，选中项的橙色药丸
+          // 会缩成文字那么宽，短名字时看着像块补丁。
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          // 无「全部设备」项：对齐小程序单设备模型（图库跨设备选中会删错槽位；
+          // 投屏记录也按设备分档查看）。选中态与回调都按设备ID，label 仅用于显示。
+          children: [
+            if (loading)
+              const SizedBox(
+                height: 28,
+                child: Center(
+                  child: SizedBox.square(
+                    dimension: 13,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.5,
+                      color: Color(0xFFFF6A24),
                     ),
                   ),
-                )
-              else
-                for (final option in options)
-                  _FilterOption(
-                    label: option.label,
-                    active: option.id == selectedId,
-                    onTap: () => onSelected(option.id),
-                  ),
-            ],
-          ),
+                ),
+              )
+            else
+              for (final option in options)
+                _FilterOption(
+                  label: option.label,
+                  active: option.id == selectedId,
+                  onTap: () => onSelected(option.id),
+                ),
+          ],
         ),
       ),
     );
