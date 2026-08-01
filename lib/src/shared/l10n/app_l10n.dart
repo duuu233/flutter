@@ -1142,9 +1142,11 @@ class AppL10n {
     'すぐ分かる名前をデバイスに付けてください',
   );
 
-  /// 绑定成功后的命名引导标题：弱性强制，可以「暂不修改」。
+  /// 绑定成功后的命名引导标题：弱性强制，可以点「稍后」跳过。
   String get devBindNameTitle => _pick('设备命名', 'Name Your Device', 'デバイスに名前を付ける');
-  String get devBindNameLater => _pick('暂不修改', 'Not now', '後で変更');
+
+  /// 命名引导的取消按钮：2026-08-02 产品把「暂不修改」改成更短的「稍后」（对齐小程序 bind.wxml）。
+  String get devBindNameLater => _pick('稍后', 'Later', '後で');
   String devNameTooLong(int max) => _pick(
     '设备名称最多$max个字符',
     'Device name must be at most $max characters.',
@@ -1181,14 +1183,11 @@ class AppL10n {
   String get devScreenSize => _pick('屏幕尺寸', 'Screen Size', '画面サイズ');
 
   /// 设备可存放的照片数量，文案由「设备内存」改为「最大照片数量」。
-  /// 2026-08-01 产品要求改为「最大照片数量-已使用」，值同步改成 `上限-已用`（如 51-8）：
-  /// 只显示上限看不出还能放几张。行文案与取值口径必须成对，改一个要改另一个。
-  String get devMaxPhotoCount => _pick(
-    '最大照片数量-已使用',
-    'Max Photos - Used',
-    '最大写真枚数-使用済み',
-    '最大照片數量-已使用',
-  );
+  /// 2026-08-01 曾改为「最大照片数量-已使用」+ 值 `上限-已用`；2026-08-02 产品定稿：
+  /// 行名回到「最大照片数量」，已用与上限全部挪进右侧值里，写成分数式 `已用/上限`（如 8/51）。
+  /// 行文案与取值口径必须成对，改一个要改另一个（值见 device_details_page.dart）。
+  String get devMaxPhotoCount =>
+      _pick('最大照片数量', 'Max Photos', '最大写真枚数', '最大照片數量');
   String get devOtaUpgrade => _pick('OTA升级', 'Firmware Update', 'OTAアップデート');
   String devFirmwareNewVersion(String version) => _pick(
     '发现新版本 $version',

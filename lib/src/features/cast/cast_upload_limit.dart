@@ -1,6 +1,6 @@
 /// 一次投屏可选照片张数的上限（对应小程序 `utils/upload-limit.js`）。
 ///
-/// 常规用户 5 张（产品既定的投屏批量上限）；白名单用户放宽到 100 张——
+/// 常规用户 10 张（2026-08-02 产品要求由 5 张放宽）；白名单用户放宽到 100 张——
 /// 2026-08-01 产品要求：登录接口返回的 `userInfo.userNo` 命中 [whitelistUserNos] 时，
 /// 该账号用于内部批量压测/展会演示，需要一次投几十上百张。
 ///
@@ -10,8 +10,8 @@
 class CastUploadLimit {
   CastUploadLimit._();
 
-  /// 常规上限：与产品「一次最多投 5 张」口径一致。
-  static const int defaultBatch = 5;
+  /// 常规上限：与产品「一次最多投 10 张」口径一致（2026-08-02 由 5 张调整）。
+  static const int defaultBatch = 10;
 
   /// 白名单账号的放宽上限。
   static const int whitelistBatch = 100;

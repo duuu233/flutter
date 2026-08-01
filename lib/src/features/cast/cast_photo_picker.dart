@@ -41,7 +41,7 @@ class CastPhotoPicker {
   /// JPEG 重编码质量。90 对后端的六色量化来说绰绰有余。
   static const int _quality = 90;
 
-  /// 单批投屏张数上限（对齐小程序 `media.chooseFromAlbum` 的常规值 5）。
+  /// 单批投屏张数上限（对齐小程序 `media.chooseFromAlbum` 的常规值 10）。
   /// 白名单账号会放宽到 100，取值走 [CastUploadLimit.batchLimit]。
   static const int maxBatch = CastUploadLimit.defaultBatch;
 

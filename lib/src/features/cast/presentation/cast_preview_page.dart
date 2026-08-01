@@ -492,7 +492,34 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     });
     final g = _edit!;
     _applyEdit(g.zoom, g.tx, g.ty, g.angle);
+    _precacheNeighbors(index);
     return true;
+  }
+
+  /// 预热相邻两张（对齐小程序 `preview.js _prefetchNeighbors`）。
+  ///
+  /// 底层 [PageView] 的邻页是**手指开始滑动的那一刻**才建 [Image.file] 的，几 MB 的手机照片
+  /// 读盘 + 解码常要一两百毫秒，正好压在 300ms 过场里——用户看到的就是「每切一张都要重新加载
+  /// 一遍」：过场里先是一张白卡，落位后图才姗姗补上。提前喂进 ImageCache 后过场直接命中，
+  /// 落位零解码。文件缺失/损坏时 onError 静默吞掉：预热失败不该冒泡成未捕获异常，
+  /// 真正展示时 `Image.file` 自己的 errorBuilder 还会兜底。
+  void _precacheNeighbors(int index) {
+    if (!mounted) {
+      return; // 页面已卸载：context 失效，precacheImage 会抛
+    }
+    for (final i in <int>[index - 1, index + 1]) {
+      if (i < 0 || i >= _paths.length) {
+        continue;
+      }
+      // 与 _buildPager 同一套取源优先级：预热的才是过场里真正要显示的那张
+      final path = _previews[i]?.path ?? _paths[i];
+      precacheImage(
+        FileImage(File(path)),
+        context,
+        onError: (error, stackTrace) =>
+            debugPrint('[CastPreview] 邻图预热失败（不影响展示）: $error'),
+      );
+    }
   }
 
   /// 把当前图的编辑数值快照进 [_states]（整份存下来：烘焙要用 frame/baseScale 等几何量）。

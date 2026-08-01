@@ -573,10 +573,10 @@ class DeviceDetailsBody extends StatelessWidget {
                 label: AppL10n.of(context).devMaxPhotoCount,
                 // 内存占用是连接才读得到的实时数据（0x01 的 IMG_MASK）：未连接（含断开设备后）一律 --，
                 // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
-                // 2026-08-01：行文案改成「最大照片数量-已使用」，值随之由 `已用/上限`
-                // 改为 `上限-已用`（对齐小程序 detail.js memoryText），两端同一口径。
+                // 2026-08-02：行文案回到「最大照片数量」，值定为分数式 `已用/上限`（如 8/51，
+                // 对齐小程序 detail.js memoryText），两端同一口径。
                 value: connected
-                    ? '${device.capacity}-${device.imageCount}'
+                    ? '${device.imageCount}/${device.capacity}'
                     : '--',
               ),
               const _ThinDivider(),
@@ -629,9 +629,9 @@ class DeviceDetailsBody extends StatelessWidget {
           ),
         ),
         // 「删除设备」是最重的破坏性操作（一键清空 + 断开连接 + 解除绑定，需已连接）。
-        // 2026-08-01 产品要求：从卡片行改成页面最底部的独立按钮，复用设置页「退出登录」
-        // 那颗描边按钮的形状与尺寸，但去掉实心底色、只保留边框色，并用危险色与之区分。
-        const SizedBox(height: 24),
+        // 2026-08-01 产品要求：从卡片行改成页面最底部的独立入口；同日二次调整——去掉描边、
+        // 字号字重与上面各行 label 拉平、再往下移，避免像主按钮一样引导用户去删除。
+        const SizedBox(height: 32),
         _OutlineDeleteDeviceButton(
           label: AppL10n.of(context).devDeleteDevice,
           onTap: onDeleteDevice,
@@ -641,10 +641,10 @@ class DeviceDetailsBody extends StatelessWidget {
   }
 }
 
-/// 页面最底部的「删除设备」描边按钮（2026-08-01，对齐小程序 `.outline-delete-device`）。
+/// 页面最底部的「删除设备」入口（2026-08-01，对齐小程序 `.outline-delete-device`）。
 ///
-/// 形状/尺寸复用设置页的「退出登录」（高 56、圆角 999、1px 描边），
-/// 按产品要求**不填底色**、只留边框，颜色取危险红以区别于退出登录的橙。
+/// 产品要求「不要引导用户去删除」：无描边、无底色，字号/字重与上方各行 label 一致
+/// （14 / w500，见 [_DetailRow]），只留危险红提示后果。高度 56 仅作点击热区。
 class _OutlineDeleteDeviceButton extends StatelessWidget {
   const _OutlineDeleteDeviceButton({required this.label, this.onTap});
 
@@ -657,23 +657,19 @@ class _OutlineDeleteDeviceButton extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
-      child: Container(
+      child: SizedBox(
         height: 56,
-        alignment: Alignment.center,
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          border: Border.all(color: danger),
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: danger,
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            height: 1,
+        child: Center(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: danger,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+            ),
           ),
         ),
       ),

@@ -90,6 +90,7 @@
 | [`history/2026-08/2026-08-01-交互与文案十一项优化.md`](history/2026-08/2026-08-01-交互与文案十一项优化.md) | Historical Change Record |
 | [`history/2026-08/2026-08-01-安卓弱信号建连预算重排.md`](history/2026-08/2026-08-01-安卓弱信号建连预算重排.md) | Historical Change Record（结论待真机确认，页面留了对照旋钮） |
 | [`history/2026-08/2026-08-02-导航栏设备下拉居中与同宽.md`](history/2026-08/2026-08-02-导航栏设备下拉居中与同宽.md) | Historical Change Record（双端同步） |
+| [`history/2026-08/2026-08-02-选图上限与预览切图四项.md`](history/2026-08/2026-08-02-选图上限与预览切图四项.md) | Historical Change Record（双端同步） |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责
