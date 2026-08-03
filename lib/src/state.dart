@@ -1767,15 +1767,25 @@ class PhotoFrameState extends ChangeNotifier {
         final info = await client.readTransferInfo();
         final occupied = FrameProtocol.maskToIndexes(info.imgMask);
         final slotIndexes = <int>[];
+        var resolvedCount = 0;
         for (final photo in photos) {
           final slot = _resolveDeviceImageIndex(photo, occupied);
-          if (slot >= 0 && !slotIndexes.contains(slot)) {
+          if (slot < 0) {
+            continue;
+          }
+          resolvedCount += 1;
+          if (!slotIndexes.contains(slot)) {
             slotIndexes.add(slot);
           }
         }
-        // 一条槽位都解析不出来 = 这些照片在设备上已经不存在（在别处被删/被清空）。
+        // 有照片解析不出槽位 = 它在设备上已经不存在（在另一端删过 / 被一键清空 / 删除半成功）。
         // 这不是失败，继续往下删后端记录，只是最后给一句「照片在此设备异常」的提示。
-        if (slotIndexes.isEmpty) {
+        // 2026-08-03 触发条件由「一条都解析不出来」放宽到「有一条解析不出来」，与小程序
+        // album/list.js 的 `slotIndexes.length < ids.length` 对齐——批量删除时部分照片对不上
+        // 设备（两端交替上传/删除后很常见），此前 App 会静默按「全部删除成功」提示。
+        // 用 resolvedCount 而不是 slotIndexes.length 判定：后者去过重，两张照片指向同一槽位时
+        // 会误报（小程序侧不去重，计数天然等价）。
+        if (resolvedCount < photos.length) {
           devicePhotoAbnormal = true;
         }
         if (slotIndexes.isNotEmpty) {

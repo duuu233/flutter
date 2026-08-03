@@ -18,7 +18,8 @@ class CastUploadLimit {
 
   /// 可一次选 [whitelistBatch] 张的账号 `userNo`（登录接口 `UserInfoApiOut.userNo`）。
   /// 与小程序 `utils/upload-limit.js` 的 `WHITELIST` 同值，改要一起改。
-  static const Set<String> whitelistUserNos = {'EF7293235'};
+  /// （2026-08-03 追加 `GA6473224`。）
+  static const Set<String> whitelistUserNos = {'EF7293235', 'GA6473224'};
 
   /// 当前登录用户的 `userNo`。由 `PhotoFrameState._applyUserInfo` 写入、`logout` 清空——
   /// 选图入口是静态方法、拿不到 BuildContext/状态对象，故用这个单向同步的静态字段承载。

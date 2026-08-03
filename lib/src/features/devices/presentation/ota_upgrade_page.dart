@@ -567,6 +567,10 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
               label: l10n.otaDryRunTest,
               onPressed: _canDryRun ? () => _runUpgrade(dryRun: true) : null,
             ),
+          // 内容与底部固定按钮之间的留白：FigmaScreen 给 bottom 的上内边距只有 8，
+          // 卡片多/报错卡片出现时滚到底就会顶在按钮上（对齐小程序 2026-08-03 把
+          // .ota-body / .result-body 下内边距补到 40rpx=20px：8 + 12 = 20）。
+          const SizedBox(height: 12),
         ],
       ),
       bottom: FigmaPrimaryButton(

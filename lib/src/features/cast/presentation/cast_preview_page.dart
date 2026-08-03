@@ -244,6 +244,44 @@ const Duration _kPickupDuration = Duration(milliseconds: 340);
 /// 可视区域圆角（小程序 .edit-clip 40rpx = 20px）。
 const double _kClipRadius = 20;
 
+/// 跨页带回上一轮构图（对齐小程序 `pendingProjection.editStates`，2026-08-03）。
+///
+/// 投屏失败后点「重新投屏」会新建一个 [CastPreviewPage]，[_CastPreviewPageState._states]
+/// 随旧页一起销毁——用户得把每张图重新拖一遍。这里在点「开始投屏」时把当轮状态挂到静态槽位，
+/// 新页 `initState` 按**图片路径列表完全一致**认领回来。
+///
+/// 小程序那边是写进 Storage 的 `pendingProjection.editStates`，App 没有这个跨页存储，
+/// 用一个进程内静态槽位承载同样的语义（进程重启即失效，正合适：临时文件那时也没了）。
+///
+/// 路径对不上（「继续投屏」重新选的图）就整份丢弃，绝不会把 A 组图的构图套到 B 组图上；
+/// 单张的 `src` 在 [_CastPreviewPageState._enterEdit] 里还会再校验一次。
+class _CarriedEdits {
+  _CarriedEdits._();
+
+  static List<String> _paths = const <String>[];
+  static Map<int, _EditState> _states = const <int, _EditState>{};
+
+  static void save(List<String> paths, Map<int, _EditState> states) {
+    _paths = List<String>.from(paths);
+    _states = <int, _EditState>{
+      for (final e in states.entries) e.key: e.value.copy(),
+    };
+  }
+
+  /// 认领并清空：只有紧接着的那一次「重新投屏」能拿到，避免久留后串到别的批次。
+  static Map<int, _EditState> take(List<String> paths) {
+    final matched =
+        _paths.length == paths.length &&
+        List<int>.generate(paths.length, (i) => i).every(
+          (i) => _paths[i] == paths[i],
+        );
+    final states = matched ? _states : const <int, _EditState>{};
+    _paths = const <String>[];
+    _states = const <int, _EditState>{};
+    return states;
+  }
+}
+
 class _CastPreviewPageState extends State<CastPreviewPage>
     with TickerProviderStateMixin {
   /// 待投屏原图路径。**全程不改写**：编辑是非破坏性的，烘焙产物只在 [_startCast] 里临时生成，
@@ -365,6 +403,9 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   @override
   void initState() {
     super.initState();
+    // 接回上一轮构图：投屏失败点「重新投屏」跳回本页时，底图仍是原图（_paths 全程不改写），
+    // 构图还是用户上次构好的那个，不用重新拖一遍（见 [_CarriedEdits]）。
+    _states.addAll(_CarriedEdits.take(_paths));
     // 进预览页即预热 seekink 抖动接口 token（对齐小程序 preview.js onLoad 的 prefetchAuthToken）：
     // 用户构图的这几秒先把 token 取回会话缓存，点「开始投屏」出帧零等待；失败静默。
     DitheringApi.prefetchAuthToken();
@@ -1168,6 +1209,11 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     if (!mounted) {
       return;
     }
+
+    // 把当轮构图挂到跨页槽位：投屏失败点「重新投屏」跳回预览页时原样恢复（见 [_CarriedEdits]）。
+    // 先把当前图的实时手势快照进 _states，否则带回去的是它上次切图时的旧构图。
+    _saveEditState();
+    _CarriedEdits.save(_paths, _states);
 
     // pushReplacement：投屏页返回时直接回到上一页（首页/设备页），
     // 不要退回这个已经用过的预览页（对齐小程序 redirectTo）。
