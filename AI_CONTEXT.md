@@ -202,7 +202,7 @@ Inside `lib/src/features/`, the current domains are `account`, `ai`, `cast`, `de
 | Device feature | Bind/search/found/not-found flows, list/detail, carousel, clear, unbind, OTA, BLE debug, and performance diagnostics | `lib/src/features/devices/` |
 | Cast feature | Source selection, persistent preview editor, strict device-resolution export, backend conversion, BLE projection, progress/results, recast | `lib/src/features/cast/` |
 | Account feature | Email/WeChat auth, registration, password/email/profile maintenance, local email history | `lib/src/features/account/` |
-| Gallery feature | User image list, device filtering, delete, display refresh, and recast entry | `lib/src/features/gallery/` |
+| Gallery feature ("My Album") | Successfully cast photos grouped by device (source: cast records with `deviceUploadState:1`), device filtering, batch recast, and delete (device slot + album record + source cast record). Merged from the former "Device Photos" and "Casting" entries on 2026-08-04 | `lib/src/features/gallery/` |
 | Home and Mine | Primary product entry points, selected-device summary, account statistics, navigation cards | `lib/src/features/home/`, `lib/src/features/mine/` |
 | Settings and guide | Language, multilingual legal documents including the AI service agreement, version/update, logout/deletion, FAQ pagination and HTML-subset rendering | `lib/src/features/settings/`, `lib/src/features/guide/`, `lib/src/shared/l10n/` |
 | AI feature | Sessions, chat history, up to four public image URLs, image compression/upload/enhancement, localized error mapping, and per-user/version consent gating before requests | `lib/src/features/ai/`, `lib/src/network/boltstar_ai_api.dart`, `lib/src/shared/ai_service_consent.dart` |

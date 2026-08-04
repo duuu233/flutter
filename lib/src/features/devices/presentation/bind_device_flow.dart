@@ -271,22 +271,42 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     );
   }
 
-  /// 展示用「设备ID」：取广播里的 Device_ID，归一化成 8 位十六进制（如 `1A2B3C4D`）。
+  /// 展示用「设备ID」：取广播里的 Device_ID，**带冒号**展示（如 `AA:BB:CC:DD:EE:FF`），
+  /// 与设备详情页、设备列表同一套格式。
+  ///
+  /// 2026-08-04 两处修正：
+  ///   ① **不再截断**——新固件广播 6 字节，旧代码无脑取末 8 位会把完整 ID 砍掉一半，
+  ///      正是用户反馈的「和详情页不一致、看着像被裁剪」；老固件仍只有 4 字节，如实显示；
+  ///   ② **补上冒号**——本页原来显示 `1A2B3C4D`，而详情页是 `AA:BB:CC:DD:EE:FF`，
+  ///      同一个东西两种写法，本身就是不一致。
   ///
   /// 为什么要展示：默认设备名 = 产品广播名，同型号设备必然重名，绑定前这是唯一能把两台区分开的标识。
+  /// 展示放宽不等于身份放宽：判重、认领会话、绑定入库一律仍只认连上后 0x01 读到的完整 ID。
   /// 与小程序 `bind.js` 的 `displayDeviceCode()` 同规则，两端展示的值要一致。
   ///
-  /// 兜底：广播厂商数据解析不出来时（`advertisingOf` 返回 null）退回平台的 remoteId
-  /// ——安卓是 MAC（12 hex）、iOS 是 UUID（32 hex），又长又对用户无意义，故只取末 8 位。
+  /// 兜底（广播厂商数据解析不出来时）：
+  ///   · 安卓的 `remoteId` 就是 MAC（12 hex）——设备方口径里它就是那个完整身份，整串显示；
+  ///   · iOS 给的是与设备无关、换台手机就变的随机 UUID（32 hex），它根本不是设备ID，
+  ///     以前截成 8 位显示只会让用户以为「设备ID 被裁了」，现在直接不显示（该行有空值判断）。
   static String _displayDeviceCode(ScanResult result) {
     final broadcast = normalizeSerial(
       BleController.advertisingOf(result)?.deviceId,
     );
-    final raw = broadcast.isNotEmpty
-        ? broadcast
-        : normalizeSerial(result.device.remoteId.str);
-    if (raw.isEmpty) return '';
-    return raw.length > 8 ? raw.substring(raw.length - 8) : raw;
+    if (broadcast.isNotEmpty) {
+      return _withColons(broadcast);
+    }
+    final handle = normalizeSerial(result.device.remoteId.str);
+    return RegExp(r'^[0-9A-F]{12}$').hasMatch(handle)
+        ? _withColons(handle)
+        : '';
+  }
+
+  /// 十六进制串按字节补冒号（`AABBCC` → `AA:BB:CC`）；长度为奇数等异常输入返回空串。
+  static String _withColons(String hex) {
+    if (hex.isEmpty || hex.length.isOdd) return '';
+    return <String>[
+      for (var i = 0; i < hex.length; i += 2) hex.substring(i, i + 2),
+    ].join(':');
   }
 
   /// 蓝牙未开启 / 权限未授予时的引导弹窗：给一个「去设置 / 去打开蓝牙」的直达按钮

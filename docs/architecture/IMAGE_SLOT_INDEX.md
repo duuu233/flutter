@@ -9,6 +9,13 @@
 
 ## 决策沿革
 
+- **2026-08-04**：「设备照片」页并入「我的相册」（列表数据源改为投屏成功记录，见
+  `../history/2026-08/2026-08-04-我的相册合并与折叠屏核对.md`）。**本文的槽位规则完全不变**，
+  只有两处调用口径要注意：
+  - 页面上手动的「刷新屏幕(0x24)」入口已移除（改为「再次投屏」），`_resolveDeviceImageIndex`
+    现在只服务「删除图片」与「删除后的自动补刷屏」；`refreshGalleryPhotoOnScreen` 暂无调用方；
+  - 页面选中项是**投屏记录 id（upirId）**，必须先按 `CastRecord.photoId`（后端 `uProductImgId`）
+    换算成 `AlbumPhoto` 再进删除链路——`_resolveDeviceImageIndex` 的入参仍是 `AlbumPhoto`，未改签名。
 - **2026-07-18**：App 接入 imgIndex，与小程序 2026-07-18 那版对齐。投屏成功时上报设备物理槽位，图库「删除图片」「刷新屏幕」改为按该索引定位。
 
 ---

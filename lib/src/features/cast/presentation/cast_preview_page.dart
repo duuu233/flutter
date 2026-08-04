@@ -40,9 +40,12 @@ import 'casting_progress_page.dart';
 ///
 /// ## 导出铁律（改这里前先读完，错了不报错、设备直接花屏）
 /// 两种取景方向**恒导出竖向设备物理分辨率**（480×720 / 680×960）：
-/// - 竖向：画布坐标系直接对应取景框，放大系数 `k = outW / frameW`；
-/// - 横向：把框内所见整幅转 **[_kExportRotateDeg] = 270°** 再画进**竖向**画布
-///   （90° 进竖向 + 180° 真机倒置校正，2026-07-20 结论），`k = outH / frameW`。
+/// - 竖向：把框内所见整幅转设备字段 `verticalRotation`（2026-08-04 新增，**缺省 0 = 不转**）后画进画布；
+/// - 横向：把框内所见整幅转 **[_kLandscapeExportRotateDeg] = 270°** 再画进**竖向**画布
+///   （90° 进竖向 + 180° 真机倒置校正，2026-07-20 结论）。
+///
+/// 放大系数 `k` 只看**导出角是否对调轴向**：奇数直角（90/270，横向默认即属此类）时
+/// 取景框的「宽」落到画布的「高」→ `k = outH / frameW`；0/180 时 → `k = outW / frameW`。
 ///
 /// **横向绝不能直接输出横向尺寸**（如 960×680）：像素总数与竖向相同、帧字节数(宽×高÷2)也相同，
 /// 所以 seekink 抖动接口不会报错——但设备按 680px 一行解析 960px 一行的数据会整幅错位，
@@ -172,19 +175,27 @@ class _PinchAnchor {
 }
 
 /// 切图前烘焙出的预览成图：底层轮播过场时显示它，避免闪回未裁剪的原图。
-/// [landscape] 决定展示时要不要把「竖向文件、内容转过 270°」的成图反向转正。
+/// [landscape] 决定展示框的形状，[exportDeg] 决定要反向转回多少度。
 class _BakedPreview {
   const _BakedPreview({
     required this.path,
     required this.key,
     required this.landscape,
+    this.exportDeg = 0,
   });
 
   final String path;
 
   /// 生成它时的编辑指纹，用于判断缓存是否仍新鲜。
   final String key;
+
+  /// 生成它时的取景方向：决定**展示框的形状**（横向 = 宽高对调的框）。
+  /// 与 [exportDeg] 是两件事——框的形状看方向，画面转多少看导出角。
   final bool landscape;
+
+  /// 生成它时的导出角（度，顺时针）：展示时要按 `-exportDeg` 反向转回来。
+  /// 横向恒 270°；竖向取设备 `verticalRotation`（2026-08-04 起，缺省 0 = 不转）。
+  final double exportDeg;
 }
 
 /// 拖拽基准（长按进入拖拽态时的起手点 + 当时的变换）。
@@ -225,10 +236,40 @@ const double _kMaxZoomFactor = 8;
 /// 不取 0 是因为 scale=0 之后任何倍率手势都乘不回来，图片会永久消失、手势再也救不回。
 const double _kMinZoomFactor = 0.02;
 
-/// 横向导出时整幅构图的旋转量（度，顺时针）：90°（横转竖）+ 180°（真机倒置校正）。
-/// **唯一真源**，别在别处另写角度。
-const double _kExportRotateDeg = 270;
-const double _kExportRotateRad = _kExportRotateDeg * math.pi / 180;
+/// **横向**导出时整幅构图的旋转量（度，顺时针）：90°（横转竖）+ 180°（真机倒置校正）。
+/// 横向的**唯一真源**，别在别处另写角度。
+///
+/// ⚠️ 小程序侧横向角取的是后端设备字段 `rotationDegree`（缺失才回退 270°），App 仍写死 270°，
+/// 两端在这一点上尚未对齐（属既有差异，不在 2026-08-04 竖向旋转这一轮的范围内）。
+const double _kLandscapeExportRotateDeg = 270;
+
+/// **竖向**导出时整幅构图的旋转量：取设备字段 `verticalRotation`（[DeviceItem.verticalRotation]），
+/// 2026-08-04 新增；**未下发即 0 = 不旋转**（此前竖向从不旋转，行为等价）。
+///
+/// 这个角度决定的是「上传给抖动接口、随后图传到设备的那张成品图」的朝向，不是页面展示朝向；
+/// 展示侧要按同一角度**反向**转回来（见 `_buildPager` 的 RotatedBox），两处必须同源取值，
+/// 否则会出现「设备上正了、手机预览里倒了」。
+double _verticalExportRotateDeg(DeviceItem device) =>
+    device.verticalRotation.toDouble();
+
+/// 角度归一到 [0,360)：负角、720 这类值都能正确落位。
+double _normalizeDeg(double degree) => ((degree % 360) + 360) % 360;
+
+/// 是否为奇数个直角（90/270）：这类角度把画面宽高**对调**，
+/// 放大系数与展示侧的布局约束都要跟着换。
+bool _isQuarterTurn(double degree) => _normalizeDeg(degree) % 180 == 90;
+
+/// 展示侧要反向转回来的**四分之一圈数**（[RotatedBox.quarterTurns] 顺时针计）。
+/// 导出转了 deg，展示就转 -deg：`(4 - deg/90) % 4`。
+/// 非 90 的倍数（后端给了奇怪角度）时返回 0——布局期旋转只支持直角，
+/// 宁可展示不转（用户仍能看清构图），也不要把画面切歪。
+int _reverseQuarterTurns(double degree) {
+  final normalized = _normalizeDeg(degree);
+  if (normalized % 90 != 0) {
+    return 0;
+  }
+  return (4 - (normalized ~/ 90)) % 4;
+}
 
 /// 切图过场时长：松手后 Banner 轨道补完剩下那段路要花的时间（对齐小程序 `SLIDE_MS`）。
 /// 2026-08-01 由 360ms 收到 300ms —— 现在过场只补「手指没滑完的那一截」，不再是整段路程，
@@ -391,6 +432,15 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     final size = _deviceSize;
     return size.width / size.height;
   }
+
+  /// 指定取景方向下的**导出旋转角**（度，顺时针）。烘焙、展示反向旋转、缓存标记都必须走这一处：
+  /// 分头取值就会出现「设备上正了、手机预览里倒了」。
+  ///   · 横向 → [_kLandscapeExportRotateDeg]（270°，App 侧仍写死）；
+  ///   · 竖向 → 设备 `verticalRotation`（2026-08-04 新增，未下发即 0 = 不旋转）。
+  double _exportRotateDegOf(_Orientation orientation) =>
+      orientation == _Orientation.landscape
+      ? _kLandscapeExportRotateDeg
+      : _verticalExportRotateDeg(widget.device);
 
   /// 指定取景方向下的可视区域宽高：竖向 = 设备物理分辨率；横向 = 宽高对调。
   Size _viewSize(_Orientation orientation) {
@@ -983,6 +1033,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             path: path,
             key: key,
             landscape: g.orientation == _Orientation.landscape,
+            // 展示要按同一角度反向转回来，所以把生成时用的导出角一并记下（见 _buildPager）
+            exportDeg: _exportRotateDegOf(g.orientation),
           );
         });
       }
@@ -1071,14 +1123,19 @@ class _CastPreviewPageState extends State<CastPreviewPage>
   ///
   /// 绘制顺序与小程序 canvas 完全一致（Flutter Canvas 与 CSS/微信 canvas 同为 y 轴向下、
   /// 正角顺时针，矩阵语义可 1:1 照抄）：
-  /// `translate(画布中心) → [横向: rotate(270°)] → translate(tx*k, ty*k) → rotate(用户角) → scale(s)`
+  /// `translate(画布中心) → rotate(导出角) → translate(tx*k, ty*k) → rotate(用户角) → scale(s)`
   Future<String?> _bake(_EditState g, ui.Image image) async {
     final dev = _deviceSize;
     final outW = dev.width;
     final outH = dev.height;
-    final landscape = g.orientation == _Orientation.landscape;
-    // 取景框 px → 画布 px 的放大系数：横向时取景框的「宽」对应画布的「高」
-    final k = landscape ? outH / g.frame.width : outW / g.frame.width;
+    // 导出角：横向固定 270°，竖向取设备 verticalRotation（缺省 0 = 不转）。
+    final exportDeg = _exportRotateDegOf(g.orientation);
+    final exportRad = exportDeg * math.pi / 180;
+    // 取景框 px → 画布 px 的放大系数：只看导出角是否对调轴向——
+    // 奇数直角（90/270，横向默认即属此类）时取景框的「宽」对应画布的「高」。
+    final k = _isQuarterTurn(exportDeg)
+        ? outH / g.frame.width
+        : outW / g.frame.width;
     // 原图 px → canvas px：baseScale(显示/原图) × zoom × k
     final s = g.baseScale * g.zoom * k;
     final rad = g.angle * math.pi / 180;
@@ -1095,11 +1152,11 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         Paint()..color = const Color(0xFFFFFFFF),
       );
       canvas.save();
-      // 先落到画布中心（横向再把整幅构图转 270°）：此后坐标系就等价于取景框，
+      // 先落到画布中心，再按导出角把整幅构图转过去：此后坐标系就等价于取景框，
       // 图片相对取景框中心的平移(tx,ty)、用户自己的旋转、缩放都能原样套用。
       canvas.translate(outW / 2, outH / 2);
-      if (landscape) {
-        canvas.rotate(_kExportRotateRad);
+      if (exportRad != 0) {
+        canvas.rotate(exportRad);
       }
       canvas.translate(g.tx * k, g.ty * k);
       canvas.rotate(rad);
@@ -1190,10 +1247,14 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         }
         if (out == null) {
           try {
+            // 未编辑图走中心裁切，但**旋转角必须与编辑图一致**：都取竖向导出角
+            //（设备 verticalRotation，缺省 0 = 不转）。未编辑图必然是竖向取景，
+            // 少转这一下就会出现「编辑过的正着、没编辑的倒着」。
             final result = await CastImageEditor.coverCropToSize(
               path: src,
               width: dev.width,
               height: dev.height,
+              rotateDegrees: _exportRotateDegOf(_Orientation.portrait).round(),
             );
             out = result?.path;
           } catch (_) {
@@ -1366,8 +1427,10 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         }
         final preview = _previews[index];
         final path = preview?.path ?? _paths[index];
-        // 有预览缓存就按它的取景方向铺（横向 = 宽高对调），与编辑层里的取景框严丝合缝；
-        // 没有就按设备（竖向）比例铺 —— 未编辑图在编辑层里也正是 cover 铺满竖向框。
+        // 展示框形状只看**取景方向**：有预览缓存就按它的方向铺（横向 = 宽高对调），
+        // 与编辑层里的取景框严丝合缝；没有就按设备（竖向）比例铺 ——
+        // 未编辑图在编辑层里也正是 cover 铺满竖向框。
+        // ⚠️ 别把它和下面的反向旋转混成一件事：框的形状看方向，画面转多少看导出角。
         final ratio = preview != null && preview.landscape
             ? 1 / _deviceRatio
             : _deviceRatio;
@@ -1382,11 +1445,16 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             ),
           ),
         );
-        if (preview != null && preview.landscape) {
-          // 横向成图是「竖向设备分辨率文件 + 内容顺时针转过 270°」，展示要转回来：
-          // -270° ≡ 顺时针 90° = quarterTurns 1。用 RotatedBox（布局期旋转、交换约束）
-          // 而不是 Transform.rotate（只在绘制期转，会上下留白左右被切）。
-          image = RotatedBox(quarterTurns: 1, child: image);
+        // 成图是「竖向设备分辨率文件 + 内容按导出角转过」，展示要按 -导出角转回来。
+        // 横向 270° → quarterTurns 1（历史行为不变）；竖向 2026-08-04 起随设备
+        // verticalRotation 走：0 不转（常态）、180 → 2、90 → 3。
+        // 用 RotatedBox（布局期旋转、交换约束）而不是 Transform.rotate
+        //（后者只在绘制期转，会上下留白、左右被切）。
+        final reverseTurns = preview == null
+            ? 0
+            : _reverseQuarterTurns(preview.exportDeg);
+        if (reverseTurns != 0) {
+          image = RotatedBox(quarterTurns: reverseTurns, child: image);
         }
         return Center(
           child: AspectRatio(

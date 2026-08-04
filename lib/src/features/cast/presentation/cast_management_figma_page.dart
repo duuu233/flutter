@@ -1,8 +1,5 @@
-import 'dart:io';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import '../../../network/api_client.dart';
 
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
@@ -12,6 +9,7 @@ import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/device_filter_chip.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
+import '../recast_download.dart';
 import 'cast_preview_page.dart';
 
 /// 投屏管理（投屏记录），对照微信小程序 `photo-album/subpackages/projection/records`。
@@ -256,7 +254,8 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
         return;
       }
       device = state.deviceById(record.deviceId);
-      localPath = await _downloadToTemp(recordImageUrl);
+      // 下载实现收口到 RecastDownload（与「我的相册」批量再次投屏共用同一份超时/命名规则）。
+      localPath = await RecastDownload.toTempFile(recordImageUrl);
     } finally {
       _recasting = false;
       AppLoadingDialog.hide(context);
@@ -284,26 +283,6 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
     }
     // 再次投屏会新增一条投屏记录：返回后按当前 tab 刷新列表。
     await _loadTab();
-  }
-
-  /// 把记录原图下载到本地临时文件，供投屏预览页（裁剪流程）使用；失败返回 null。
-  Future<String?> _downloadToTemp(String url) async {
-    try {
-      // 共用 ApiClient 的连接池，并加超时（无超时弱网会永久挂起）。
-      final resp = await ApiClient.instance.httpClient
-          .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 20));
-      if (resp.statusCode != 200) {
-        return null;
-      }
-      final file = File(
-        '${Directory.systemTemp.path}/recast_${DateTime.now().microsecondsSinceEpoch}.jpg',
-      );
-      await file.writeAsBytes(resp.bodyBytes, flush: true);
-      return file.path;
-    } catch (_) {
-      return null;
-    }
   }
 
   void _showSnack(String message) {

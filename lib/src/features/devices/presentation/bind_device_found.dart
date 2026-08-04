@@ -9,8 +9,9 @@ import 'bind_device_debug_entry.dart';
 ///
 /// [id]：本次扫描会话内稳定的设备标识（BLE remoteId），用于单选与回传绑定/调试目标；
 /// [name]：展示名（广播名/平台名）；[subtitle]：尺寸 · 电量XX% · 信号XX（对齐小程序 `nearby-sub`）；
-/// [deviceId]：展示用设备ID（广播 Device_ID 归一化后的 8 位十六进制）——**与 [id] 不是一回事**，
-/// [id] 是平台给的 MAC/UUID、只作选中键从不展示，[deviceId] 才是给用户看、用来区分同型号同名设备的那个。
+/// [deviceId]：展示用设备ID（广播 Device_ID，带冒号；新固件 6 字节、老固件 4 字节，不截断）——
+/// **与 [id] 不是一回事**，[id] 是平台给的 MAC/UUID、只作选中键从不展示，
+/// [deviceId] 才是给用户看、用来区分同型号同名设备的那个。
 class BindDeviceEntry {
   const BindDeviceEntry({
     required this.id,

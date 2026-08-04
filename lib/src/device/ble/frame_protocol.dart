@@ -40,12 +40,21 @@ class FrameAdvertising {
     required this.model,
     required this.deviceId,
     required this.battery,
+    this.deviceIdComplete = false,
   });
 
   final int screenType;
   final String screen;
   final String model;
+
+  /// 广播里的 Device_ID：老固件 4 字节、新固件 6 字节（见 [FrameProtocol.parseAdvertising]）。
   final String deviceId;
+
+  /// [deviceId] 是否已是完整 6 字节（新固件）。展示层据此决定能否与设备详情页对齐；
+  /// ⚠️ **身份判定不看它**——判重、认领会话、绑定入库一律仍只认连上后 0x01 读到的值，
+  /// 广播是明文、可被伪造重放。见 `docs/architecture/BLE_CONNECTION_AND_IDENTITY.md`。
+  final bool deviceIdComplete;
+
   final int battery;
 }
 
@@ -568,31 +577,59 @@ class FrameProtocol {
     );
   }
 
-  /// 解析广播厂商数据（6.10.7）：Screen_Type(1) + Device_ID(4) + Battery(1)，
+  /// 广播厂商数据里 Device_ID 的两种长度（6.10.7）。
+  ///
+  /// 老固件 4 字节（MAC 中的 4 个字节）；**2026-08-04 起新固件改播完整 6 字节 MAC**，
+  /// 使扫描阶段就能拿到与 0x01 GET_INFO 一致的完整设备 ID——这条路对 iOS 同样成立
+  /// （iOS 系统不给外设 MAC，但厂商广播数据两端都拿得到）。
+  static const int adDeviceIdLenV2 = 6;
+  static const int adDeviceIdLenV1 = 4;
+
+  /// 解析广播厂商数据（6.10.7）：Screen_Type(1) + Device_ID(**4 或 6**) + Battery(1)，
   /// 可能带 0xFF 0xFF Company_ID 前缀（此时从第 2 字节起为 Screen_Type）。
   /// 屏型不认识或电量非法（>100）视为非相框广播，返回 null。
+  ///
+  /// ⚠️ 新旧固件必须同时支持（灰度期两种设备并存）：靠「Company_ID 之后的剩余长度」区分，
+  /// 这是唯一可靠的判据——老包恒为 6 字节(1+4+1)、新包恒为 8 字节(1+6+1)。
+  /// 长度够 8 时**只按新版解**，绝不回退老版：回退会把 Device_ID 的第 5 个字节当成电量，
+  /// 校验碰巧通过时就会**静默给出错误的设备 ID 和错误的电量**（无报错，极难排查）。
+  /// 与小程序 `frame-protocol.js parseAdvertising` 逐条对齐，改一端必须同步另一端。
   static FrameAdvertising? parseAdvertising(List<int> bytes) {
-    FrameAdvertising? attempt(int offset) {
-      if (bytes.length < offset + 6) return null;
+    FrameAdvertising? attempt(int offset, int idLength) {
+      // 屏型(1) + ID(idLength) + 电量(1)
+      if (bytes.length < offset + idLength + 2) return null;
       final screenType = bytes[offset] & 0xFF;
-      final battery = bytes[offset + 5] & 0xFF;
+      // 电量紧跟在 Device_ID 之后，位置随 ID 长度浮动
+      final battery = bytes[offset + 1 + idLength] & 0xFF;
       final screen = screenTypes[screenType];
       if (screen == null || battery > 100) return null;
       return FrameAdvertising(
         screenType: screenType,
         screen: screen.label,
         model: screen.model,
-        deviceId: _bytesToId(bytes, offset + 1, 4),
+        deviceId: _bytesToId(bytes, offset + 1, idLength),
+        deviceIdComplete: idLength == adDeviceIdLenV2,
         battery: battery,
       );
     }
 
+    FrameAdvertising? attemptAt(int offset) {
+      final rest = bytes.length - offset;
+      if (rest >= adDeviceIdLenV2 + 2) {
+        return attempt(offset, adDeviceIdLenV2); // 新固件：屏型1 + ID6 + 电量1
+      }
+      if (rest >= adDeviceIdLenV1 + 2) {
+        return attempt(offset, adDeviceIdLenV1); // 老固件：屏型1 + ID4 + 电量1
+      }
+      return null;
+    }
+
     // 含 Company_ID：前两字节为 0xFF 0xFF，则从第 2 字节起为 Screen_Type
     if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFF) {
-      final withId = attempt(2);
+      final withId = attemptAt(2);
       if (withId != null) return withId;
     }
-    return attempt(0);
+    return attemptAt(0);
   }
 
   /// CMD=0x03 软件版本：ASCII，遇 \0 截断(6.7.5)。

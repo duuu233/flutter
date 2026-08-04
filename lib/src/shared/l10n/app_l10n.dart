@@ -1509,17 +1509,18 @@ class AppL10n {
   String get homeConnectBluetooth =>
       _pick('连接蓝牙', 'Connect Bluetooth', 'Bluetooth接続');
 
-  // ── 图库 ──
+  // ── 我的相册（2026-08-04 由「设备照片」+「投屏管理」合并而来）──
   /// 2026-07-31 标题由「我的图库」改为「设备照片」（对齐小程序 list.wxml 的 page-nav）。
-  /// 2026-08-01 起页面不再显示标题（改由右上角设备下拉承担），本条仅保留给别处引用。
-  String get galTitle => _pick('设备照片', 'Device Photos', 'デバイスの写真');
+  /// 2026-08-01 起页面不再显示标题（改由设备下拉承担），2026-08-04 模块更名为「我的相册」。
+  /// 本条仅保留给别处引用。
+  String get galTitle => _pick('我的相册', 'My Album', 'マイアルバム');
 
-  /// 列表顶部的一行说明：这里看到的就是相框当前这块屏上的照片。
-  /// 2026-08-01 产品精简：去掉前半句「当前屏幕照片，可」，只留动作。
+  /// 列表顶部的一行说明。2026-08-04：页面从「设备照片」改成「我的相册」（投屏成功的照片），
+  /// 底部动作也由「刷新屏幕/删除」变成「再次投屏/删除」，说明条同步改写。
   String get galScreenHint => _pick(
-    '指定显示或删除当前屏幕照片',
-    'Choose a photo to display on the screen, or delete photos from it.',
-    '画面に表示する写真を指定したり、写真を削除したりできます。',
+    '选中照片可再次投屏或删除，支持多选/全选',
+    'Select photos to cast again or delete. Multi-select and select-all supported.',
+    '写真を選んで再キャストまたは削除できます。複数選択・全選択に対応。',
   );
   String get galFrame => _pick('相框', 'Photo Frame', 'フォトフレーム');
   String get galTip => _pick('提示', 'Notice', 'お知らせ');
@@ -1532,26 +1533,71 @@ class AppL10n {
   String get galDeleting => _pick('删除中', 'Deleting…', '削除中…');
   String get galRefreshing => _pick('刷新中', 'Refreshing…', '更新中…');
   String get galRefreshScreen => _pick('刷新屏幕', 'Refresh Screen', '画面を更新');
-  String get galRefreshSingleOnly => _pick(
-    '刷新屏幕只能选中一张图片',
-    'You can only refresh the screen with one photo selected.',
-    '画面の更新は写真を1枚だけ選択してください。',
+
+  /// 底部第一枚圆钮：2026-08-04 由「刷新屏幕(0x24)」改为「再次投屏」（对齐小程序底栏）。
+  /// 本页只展示投屏成功的照片，所以恒为「再次投屏」，没有「重新投屏」这一态。
+  String get galRecast => _pick('再次投屏', 'Cast Again', '再キャスト');
+
+  /// 多选/全选超过一次可投的张数上限（[CastUploadLimit.batchLimit]，常规 10 张）。
+  String galRecastLimit(int limit) => _pick(
+    '一次最多投屏 $limit 张照片',
+    'You can cast at most $limit photos at a time.',
+    '一度にキャストできるのは最大$limit枚です。',
+  );
+
+  /// 所选记录都没有可用的图片地址（相册原图与记录图都缺失）。
+  String get galRecastNoImage => _pick(
+    '所选照片没有可投屏的图片',
+    'The selected photos have no image to cast.',
+    '選択した写真にキャストできる画像がありません。',
+  );
+
+  /// 批量再次投屏时的准备提示（连接完成后下载原图阶段）。
+  String get galRecastPreparing => _pick('准备照片中', 'Preparing photos…', '写真を準備中…');
+
+  /// 记录与设备下拉都定位不到目标设备（后端两处都没回 userProductId 时的兜底）。
+  String get galRecastNoDevice => _pick(
+    '未找到这些照片所属的设备，请刷新后重试',
+    'Could not find the device these photos belong to. Please refresh and retry.',
+    'これらの写真が属するデバイスが見つかりません。更新して再試行してください。',
   );
   String get galSelectAll => _pick('全选', 'Select All', 'すべて選択');
   String galTotalCount(int count) =>
       _pick('共 $count 张', '$count total', '合計$count枚');
   String get galDeletePhotos => _pick('删除照片', 'Delete Photos', '写真を削除');
+
+  /// 2026-08-04：删除同时清掉设备槽位、相册记录与来源投屏记录，文案同步说明。
   String galDeleteConfirm(int count) => _pick(
-    '确认删除已选的$count张照片吗？删除后将从当前设备图库中移除，且无法恢复',
-    'Delete the $count selected photo(s)? They will be removed from this device gallery and cannot be recovered.',
-    '選択した$count枚の写真を削除しますか？現在のデバイスのギャラリーから削除され、復元できません。',
+    '确认删除已选的$count张照片吗？删除后将同时从设备与我的相册中移除，且无法恢复',
+    'Delete the $count selected photo(s)? They will be removed from both the device and My Album, and cannot be recovered.',
+    '選択した$count枚の写真を削除しますか？デバイスとマイアルバムの両方から削除され、復元できません。',
   );
-  String get galEmptyTitle =>
-      _pick('当前没有可查看的设备照片', 'No device photos to view', '表示できるデバイスの写真がありません');
+
+  /// 只删掉了投屏记录（这条记录没有对应的相册照片，设备侧本就无从删起）。
+  String get galDeleted => _pick('已删除', 'Deleted', '削除しました');
+
+  /// 相册账本这次没加载成功：继续删会变成「只删记录、不删设备上的图」，先拦下让用户重试。
+  String get galDeleteNeedAlbum => _pick(
+    '相册数据未加载完整，请下拉刷新后重试',
+    'Album data is incomplete. Pull to refresh and try again.',
+    'アルバムのデータが不完全です。引っ張って更新してから再試行してください。',
+  );
+
+  /// 设备与相册记录都删掉了，但来源投屏记录没删干净（照片下次进来可能还在列表里）。
+  String get galDeleteRecordPartialFail => _pick(
+    '照片已删除，投屏记录未全部删除，请稍后重试',
+    'Photos deleted, but some cast records could not be removed. Please retry later.',
+    '写真は削除しましたが、一部の投映履歴を削除できませんでした。後で再試行してください。',
+  );
+  String get galEmptyTitle => _pick(
+    '当前设备还没有投屏成功的照片',
+    'No successfully cast photos on this device yet',
+    'この端末にキャスト成功した写真はまだありません',
+  );
   String get galEmptySubtitle => _pick(
-    '你可以重新投屏照片到设备',
-    'You can cast photos to the device again',
-    '写真をデバイスに再度キャストできます',
+    '投屏成功的照片会自动出现在这里',
+    'Photos cast successfully will show up here',
+    'キャストに成功した写真がここに表示されます',
   );
 
   // ── 引导 ──
@@ -1561,10 +1607,12 @@ class AppL10n {
   // ── 我的 ──
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
   String get mineServiceHelp => _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
-  // 日语「マイギャラリー」在「我的」宫格卡（102 宽）里过长换行，缩为「ギャラリー」。
-  String get mineMyGallery => _pick('我的图库', 'My Gallery', 'ギャラリー');
+  /// 2026-08-04：「设备照片」与「投屏管理」两张卡合并为「我的相册」（投屏成功的照片）。
+  /// 合并后宫格由三卡变两卡、卡片等分宽度，日语不再需要为 102 宽缩写。
+  String get mineMyGallery => _pick('我的相册', 'My Album', 'マイアルバム');
   String get mineMyDevices => _pick('我的设备', 'My Devices', 'マイデバイス');
-  // 英语「Cast Management」在「我的」宫格卡（102 宽）里过长换行，缩为单词「Casting」。
+  // 英语「Cast Management」在窄卡里过长换行，缩为单词「Casting」。
+  // 2026-08-04 起「我的」不再有这张卡，本条仍供投屏管理页自身（投屏结果页「投屏明细」进入）使用。
   String get mineCastManagement => _pick('投屏管理', 'Casting', 'キャスト管理');
   String get mineGuide => _pick('操作指南', 'User Guide', '操作ガイド');
   String get mineSettings => _pick('设置', 'Settings', '設定');

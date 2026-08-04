@@ -58,15 +58,25 @@ class CastImageEditor {
   /// 与小程序不一致（2026-07-17 修复）。现在：先中心裁切到设备比例，再无论大小
   /// **严格缩放到 width×height**（小图放大，与 canvas 固定尺寸绘制一致），
   /// 后端按同尺寸转码零缩放、预览所见即设备所得，上传体积也更小更快。
+  ///
+  /// [rotateDegrees]（顺时针，2026-08-04 新增）：竖向导出角，来源是设备字段 `verticalRotation`，
+  /// **缺省 0 = 不旋转**。未编辑图与编辑图必须转同样的角度，否则同一台设备上「编辑过的正着、
+  /// 没编辑的倒着」。⚠️ 只支持 90 的整数倍——见 [_coverCrop] 里的说明。
   static Future<CastEditResult?> coverCropToSize({
     required String path,
     required int width,
     required int height,
+    int rotateDegrees = 0,
   }) async {
     final bytes = await File(path).readAsBytes();
     final result = await compute(
       _coverCrop,
-      _CoverCropRequest(bytes: bytes, width: width, height: height),
+      _CoverCropRequest(
+        bytes: bytes,
+        width: width,
+        height: height,
+        rotateDegrees: rotateDegrees,
+      ),
     );
     return _write(result);
   }
@@ -127,11 +137,15 @@ class _CoverCropRequest {
     required this.bytes,
     required this.width,
     required this.height,
+    this.rotateDegrees = 0,
   });
 
   final Uint8List bytes;
   final int width;
   final int height;
+
+  /// 竖向导出角（顺时针，度）。0 = 不旋转。
+  final int rotateDegrees;
 }
 
 /// RGBA8888 → JPEG。`numChannels: 4` 时 `image` 包默认通道序就是 RGBA，
@@ -159,7 +173,18 @@ _EncodedImage? _coverCrop(_CoverCropRequest req) {
   if (decoded == null) {
     return null;
   }
-  final ratio = req.width / req.height;
+  // 竖向导出角（顺时针）。**只应用 90 的整数倍**：`copyRotate` 对非直角会把画布放大并留出
+  // 空白边，直接破坏「上传图必须正好是设备像素」这条铁律（帧字节数 = 宽×高÷2，尺寸一错
+  // 设备必然花屏或直接失败）。后端约定 verticalRotation 只会是 0/90/180/270；
+  // 万一给了别的值，这里保持不旋转，宁可方向不对也不能把尺寸搞错。
+  final normalized = ((req.rotateDegrees % 360) + 360) % 360;
+  final applied = normalized % 90 == 0 ? normalized : 0;
+  // 奇数直角(90/270)会把画面宽高对调：裁切比例与缩放目标都要先按对调后的尺寸算，
+  // 转完才正好是 req.width×req.height。
+  final quarterTurn = applied % 180 == 90;
+  final destW = quarterTurn ? req.height : req.width;
+  final destH = quarterTurn ? req.width : req.height;
+  final ratio = destW / destH;
   final srcRatio = decoded.width / decoded.height;
   int w;
   int h;
@@ -177,16 +202,18 @@ _EncodedImage? _coverCrop(_CoverCropRequest req) {
   final x = ((decoded.width - w) / 2).round();
   final y = ((decoded.height - h) / 2).round();
   final cropped = img.copyCrop(decoded, x: x, y: y, width: w, height: h);
-  // 严格缩放到设备像素尺寸（对齐小程序：canvas 画布 = 设备分辨率，小图同样被
+  // 严格缩放到目标像素尺寸（对齐小程序：canvas 画布 = 设备分辨率，小图同样被
   // 绘制放大到画布尺寸）。cubic 插值兼顾缩小与放大的画质。
-  final sized = (cropped.width == req.width && cropped.height == req.height)
+  final sized = (cropped.width == destW && cropped.height == destH)
       ? cropped
       : img.copyResize(
           cropped,
-          width: req.width,
-          height: req.height,
+          width: destW,
+          height: destH,
           interpolation: img.Interpolation.cubic,
         );
-  final bytes = img.encodeJpg(sized, quality: CastImageEditor.exportQuality);
-  return _EncodedImage(bytes, sized.width, sized.height);
+  // 最后整幅转到设备要求的朝向；0° 时完全跳过，路径与改动前逐像素一致。
+  final rotated = applied == 0 ? sized : img.copyRotate(sized, angle: applied);
+  final bytes = img.encodeJpg(rotated, quality: CastImageEditor.exportQuality);
+  return _EncodedImage(bytes, rotated.width, rotated.height);
 }

@@ -124,57 +124,56 @@ class _MinePageState extends State<MinePage> with RouteAware {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        // 宫格整宽 space-evenly，卡片固定 204×296rpx(=102×148)。
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _FeatureCard(
-                              iconAsset: 'assets/images/mine-icon07.png',
-                              iconBackground: const Color(0xFFE7F2FF),
-                              fallbackIcon: Icons.devices_other_outlined,
-                              fallbackColor: const Color(0xFF4A98FF),
-                              title: AppL10n.of(context).mineMyDevices,
-                              subtitle: AppL10n.of(context).mineDeviceCountText(
-                                state.userLoaded || state.devicesLoaded,
-                                state.mineDeviceCount,
+                        // 2026-08-04：原「设备照片」「投屏管理」两张卡合并为「我的相册」，
+                        // 宫格由三卡变两卡。卡片改为**等分剩余宽度**（原来是 102 定宽 +
+                        // space-evenly，两卡时中间会空出一大块），中缝 21rpx≈10.5，
+                        // 与小程序 `.quick-grid { gap: 21rpx } .quick-card { flex: 1 1 0 }` 同口径。
+                        Padding(
+                          padding: _inset,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: _FeatureCard(
+                                  iconAsset: 'assets/images/mine-icon07.png',
+                                  iconBackground: const Color(0xFFE7F2FF),
+                                  fallbackIcon: Icons.devices_other_outlined,
+                                  fallbackColor: const Color(0xFF4A98FF),
+                                  title: AppL10n.of(context).mineMyDevices,
+                                  subtitle: AppL10n.of(context)
+                                      .mineDeviceCountText(
+                                        state.userLoaded || state.devicesLoaded,
+                                        state.mineDeviceCount,
+                                      ),
+                                  onTap: () {
+                                    Navigator.of(
+                                      context,
+                                    ).pushNamed<void>(AppRoutes.figmaMyDevices);
+                                  },
+                                ),
                               ),
-                              onTap: () {
-                                Navigator.of(
-                                  context,
-                                ).pushNamed<void>(AppRoutes.figmaMyDevices);
-                              },
-                            ),
-                            _FeatureCard(
-                              iconAsset: 'assets/images/mine-icon06.png',
-                              iconBackground: const Color(0x1AFFAF8B),
-                              fallbackIcon:
-                                  Icons.photo_size_select_actual_outlined,
-                              fallbackColor: const Color(0xFFFF6A24),
-                              title: AppL10n.of(context).mineMyGallery,
-                              subtitle: AppL10n.of(context).minePhotoCountText(
-                                state.userLoaded || state.albumLoaded,
-                                state.minePhotoCount,
+                              const SizedBox(width: 10.5),
+                              Expanded(
+                                child: _FeatureCard(
+                                  iconAsset: 'assets/images/mine-icon06.png',
+                                  iconBackground: const Color(0x1AFFAF8B),
+                                  fallbackIcon:
+                                      Icons.photo_size_select_actual_outlined,
+                                  fallbackColor: const Color(0xFFFF6A24),
+                                  title: AppL10n.of(context).mineMyGallery,
+                                  subtitle: AppL10n.of(context)
+                                      .minePhotoCountText(
+                                        state.userLoaded || state.albumLoaded,
+                                        state.minePhotoCount,
+                                      ),
+                                  onTap: () {
+                                    Navigator.of(
+                                      context,
+                                    ).pushNamed<void>(AppRoutes.figmaGallery);
+                                  },
+                                ),
                               ),
-                              onTap: () {
-                                Navigator.of(
-                                  context,
-                                ).pushNamed<void>(AppRoutes.figmaGallery);
-                              },
-                            ),
-                            _FeatureCard(
-                              iconAsset: 'assets/images/mine-icon08.png',
-                              iconBackground: const Color(0x1AFFAF8B),
-                              fallbackIcon: Icons.view_list_rounded,
-                              fallbackColor: const Color(0xFFFF6A24),
-                              title: AppL10n.of(context).mineCastManagement,
-                              subtitle: '',
-                              onTap: () {
-                                Navigator.of(context).pushNamed<void>(
-                                  AppRoutes.figmaCastManagement,
-                                );
-                              },
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                         // 服务与帮助：margin-top 86rpx(=43)。
                         const SizedBox(height: 43),
@@ -397,8 +396,10 @@ class _Avatar extends StatelessWidget {
   }
 }
 
-/// 常用功能宫格卡片（小程序 `.quick-card`，204×296rpx=102×148）：
+/// 常用功能宫格卡片（小程序 `.quick-card`，高 296rpx=148）：
 /// 底图 `mine-bg02.png` + 图标（`mine-icon0x.png`，112rpx≈56）+ 标题 + 说明。
+///
+/// 2026-08-04 起宽度由外层 [Expanded] 等分决定（三卡→两卡），不再写死 102。
 class _FeatureCard extends StatelessWidget {
   const _FeatureCard({
     required this.iconAsset,
@@ -424,7 +425,6 @@ class _FeatureCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 102,
         height: 148,
         child: Stack(
           fit: StackFit.expand,

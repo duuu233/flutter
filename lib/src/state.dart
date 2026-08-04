@@ -118,6 +118,7 @@ class DeviceItem {
     required this.carouselEnabled,
     this.screenWidth = 0,
     this.screenHeight = 0,
+    this.verticalRotation = 0,
     this.isUpdate = 0,
     this.newVersionNo = '',
     this.downloadPath = '',
@@ -166,6 +167,16 @@ class DeviceItem {
   /// 没下发尺寸时会**回落 5.89 寸**，反查就会显示一个臆造的 `680*960`。原始宽高为 0 就老实显示 `--`。
   int screenWidth;
   int screenHeight;
+
+  /// **竖向**构图导出时整幅画面的顺时针旋转角（度）。后端设备字段 `verticalRotation`
+  /// （2026-08-04 新增），投屏预览页据此旋转上传给抖动接口、随后图传到设备的成品图。
+  ///
+  /// **未下发 / 非法值一律 0，即不旋转**——这是产品口径，不要改成 180 之类的「历史默认角」。
+  /// ⚠️ 0 是合法值（设备明确要求不旋转），判空只能判 null/空串，绝不能用真假值。
+  ///
+  /// 横向构图的旋转角是另一个字段（`rotationDegree`），当前 App 侧仍写死 270°
+  /// （见 `cast_preview_page.dart` 的 `_kLandscapeExportRotateDeg`），与小程序尚未对齐。
+  final int verticalRotation;
 
   // ── 连接后由真机 0x01(readDeviceInfo) 回填的实时内存（对齐小程序 applyConnectedDevice
   //    的 usedMemory/totalMemory）。真机容量最多 95 槽，超出 int 位掩码(最多 32)的表示范围，
@@ -1902,8 +1913,13 @@ class PhotoFrameState extends ChangeNotifier {
     ).hasMatch(message);
   }
 
-  /// 图库「刷新屏幕」：把选中的这张照片切到相框当前显示（对齐小程序 list.js:474-533 refreshScreen）。
-  /// 需已连接设备；读设备信息 → 解析该照片槽位 → 0x24 切图。
+  /// 「刷新屏幕」：把选中的这张照片切到相框当前显示。需已连接设备；
+  /// 读设备信息 → 解析该照片槽位 → 0x24 切图。
+  ///
+  /// ⚠️ 2026-08-04 起**没有调用方**：「设备照片」页并入「我的相册」后，底部第一枚圆钮
+  /// 由「刷新屏幕」改成「再次投屏」，小程序侧同步删掉了这个入口（两端一致）。
+  /// 能力本身保留（删除后自动补刷屏仍在 [deleteAlbumPhotos] 里，走的是同一套槽位解析），
+  /// 产品确认不再需要手动刷屏入口后可连同 `galRefreshScreen` / `galRefreshing` 文案一起删除。
   Future<ActionFeedback> refreshGalleryPhotoOnScreen(String photoId) async {
     AlbumPhoto? photo;
     try {
@@ -2091,6 +2107,30 @@ class PhotoFrameState extends ChangeNotifier {
       notifyListeners();
       return _apiFailure(error);
     }
+  }
+
+  /// 批量删除投屏记录（「我的相册」删照片时连同来源记录一并删，否则删掉的照片还会留在列表里）。
+  ///
+  /// 后端没有批量接口，这里串行逐条调用；**允许部分失败**——设备槽位与相册记录此时已经删掉，
+  /// 不能因为记录没删干净就整体报错回滚（对齐小程序 `api.deleteProjectionRecords`）。
+  /// 返回 `(total, failed)` 由调用方决定提示文案。
+  Future<({int total, int failed})> deleteCastRecords(
+    Iterable<String> recordIds,
+  ) async {
+    final ids = recordIds.where((id) => id.isNotEmpty).toSet().toList();
+    var failed = 0;
+    for (final id in ids) {
+      try {
+        await BoltFoxApi.delUserProductImgRecord(id);
+        _castRecords.removeWhere((record) => record.id == id);
+      } catch (_) {
+        failed += 1;
+      }
+    }
+    if (ids.isNotEmpty) {
+      notifyListeners();
+    }
+    return (total: ids.length, failed: failed);
   }
 
   /// 删除投屏记录：先调用 `/Client/UserProduct/delUserProductImgRecord`，成功后移除本地。
@@ -3052,6 +3092,14 @@ class PhotoFrameState extends ChangeNotifier {
       // 原始宽高另存一份：屏型是「归一化后的枚举」，未下发时会回落 589，不能拿来展示分辨率。
       screenWidth: _asInt(data['width']),
       screenHeight: _asInt(data['height']),
+      // 竖向导出旋转角（2026-08-04 新增字段）。_asInt 对缺失/非法值返回 0，
+      // 正好等于产品要求的「没有这个参数就不旋转」，不需要额外兜底。
+      // 兼容名只是大小写/后缀差异，后端定稿后可删。
+      verticalRotation: _asInt(
+        data['verticalRotation'] ??
+            data['verticalRotationDegree'] ??
+            data['verticalrotation'],
+      ),
       batteryLevel: 0,
       charging: false,
       connected: false,
@@ -3365,8 +3413,14 @@ class PhotoFrameState extends ChangeNotifier {
     final status = _castStatusFromJson(data);
     // 设备槽位（后端 String，可能缺失）：-1 表无索引，CastRecord 用 null 表达。
     final slot = _parseImgIndex(data['imgIndex']);
+    // 这条记录对应的相册照片主键。2026-08-04「我的相册」靠它把记录关联回 [AlbumPhoto]：
+    // 设备槽位解析(imageIndex 账本)、删相册记录、取原图都按它走。
+    // 后端两种大小写都出现过（对齐小程序 records.js resolveAlbumOriginalUrl 的两个键）。
+    final photoId = (data['uProductImgId'] ?? data['uproductImgId'] ?? '')
+        .toString();
     return CastRecord(
       id: id,
+      photoId: photoId.isEmpty ? null : photoId,
       title: deviceName.isNotEmpty ? deviceName : '投屏记录',
       deviceId: deviceId,
       deviceName: deviceName,
