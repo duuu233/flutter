@@ -137,6 +137,28 @@ void main() {
     expect(ApiSession.instance.isLoggedIn, isTrue);
   });
 
+  test('后端 406 拒绝未登录调用时，不把「请重新登录」原样弹给用户', () async {
+    // 2026-08-04 线上实测：不带 userToken 调 setWechatAuthorizLogin 恒返回这一条
+    // （接口没进后端免登录白名单）。用户此刻就在登录页，透传「请重新登录」
+    // 既没信息量，还会把排查方向带到微信 SDK / 签名上去。
+    useClient(
+      (_) async => http.Response(
+        jsonEncode({'retCode': 406, 'retMsg': '请重新登录！', 'retData': null}),
+        200,
+        headers: {'content-type': 'application/json; charset=utf-8'},
+      ),
+    );
+    final state = PhotoFrameState.seeded();
+
+    final feedback = await state.loginWithWeChatCode('wx-code-7');
+
+    expect(feedback.success, isFalse);
+    expect(feedback.message, isNot('请重新登录'));
+    // retCode 要能在真机 toast 上看到，否则排查还得连 adb。
+    expect(feedback.message, contains('406'));
+    expect(ApiSession.instance.isLoggedIn, isFalse);
+  });
+
   test('缺 jwtToken 时不切登录态', () async {
     useClient(
       (_) async => http.Response(

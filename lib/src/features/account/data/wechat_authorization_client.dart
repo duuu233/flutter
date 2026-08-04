@@ -18,6 +18,18 @@ abstract interface class WeChatAuthorizationClient {
 final WeChatAuthorizationClient defaultWeChatAuthorizationClient =
     FluwxWeChatAuthorizationClient.instance;
 
+/// 微信登录排查开关：为 true 时把原始错误细节（SDK 错误类别 / 后端 retCode+retMsg）
+/// 一并弹进 toast，见 `auth_page._withDiagnostics`。
+///
+/// 默认**开**：微信按开放平台登记的签名校验，授权链路只有 release 包能走通，
+/// 而 release 包里 `kDebugMode` 恒 false、`debugPrint` 也没有出口，
+/// 出问题时屏幕上只剩一句笼统文案，等于没有现场。
+/// 发版前关掉：`flutter build apk --dart-define=WECHAT_LOGIN_DIAGNOSTICS=false`。
+const bool kWeChatLoginDiagnostics = bool.fromEnvironment(
+  'WECHAT_LOGIN_DIAGNOSTICS',
+  defaultValue: true,
+);
+
 /// 微信授权错误类别：UI 层据此映射当前语言的用户文案（见 auth_page 的 code→l10n 映射）。
 /// [message] 保留中文细节仅供日志排查，**不要**直接展示给非中文用户。
 enum WeChatAuthErrorCode {

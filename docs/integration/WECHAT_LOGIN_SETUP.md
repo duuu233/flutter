@@ -1,8 +1,8 @@
 # App 微信快捷登录专项记录
 
 > 文档类型：Integration Runbook / Troubleshooting
-> 状态：Active（客户端已按确认接口接通，待真机验收）
-> 最后核验：2026-07-29
+> 状态：Active（客户端已就绪；**卡在后端**：接口未放行未登录调用，见第五节 5.1）
+> 最后核验：2026-08-04
 > 适用范围：Flutter Android / iOS App 的微信开放平台移动应用 OAuth 登录
 > 不适用范围：微信小程序手机号快捷登录
 > 本文件是 App 微信快捷登录的当前权威记录；其他文档中的旧接口描述待后续同步。
@@ -19,11 +19,20 @@ App 不需要手工下载并导入微信 SDK。项目已经通过 `fluwx 6.0.0` 
 2026-07-29 更新：App 专用后端接口已确认为 `POST /Client/User/setWechatAuthorizLogin`
 （swagger 摘要「微信授权登录」，入参 `WechatAuthorizLoginApiIn`），客户端已按它改完（见第八节）。
 
+2026-08-04 更新（安卓真机现象定位）：**微信侧是通的，卡在后端**。
+现象是「点微信图标 → 微信授权界面 → 回到登录页弹『请重新登录』」，那句提示不是微信 SDK 报的，
+是 BoltFox 对 `setWechatAuthorizLogin` 返回的 `retCode 406 / retMsg 请重新登录！`——
+该接口没进后端的免登录白名单，未带 `userToken` 的请求根本进不到业务逻辑（复现见 5.1）。
+换句话说：授权成功、code 已拿到，死在换 token 这一步。
+
 剩余阻塞项：
 
-1. 后端是否已配置移动应用 AppID 对应的 AppSecret（`wx4cf0c5f38a70d0bc`，不是小程序的那把）。
-2. 微信开放平台移动应用是否已过审并开通「微信登录」、正式签名是否已登记。
-3. iOS 的 Universal Link 与 Bundle ID 仍是占位（见第三、九节），iOS 侧尚不能验收。
+1. **（当前唯一实锤阻塞）** 后端把 `/Client/User/setWechatAuthorizLogin` 加入免登录白名单，
+   与 `userLogin` / `userRegister` / `setWechatAppLogin` 同级 —— 它是登录接口，
+   调用时用户按定义就没有 `userToken`。
+2. 后端是否已配置移动应用 AppID 对应的 AppSecret（`wx4cf0c5f38a70d0bc`，不是小程序的那把）。
+3. 微信开放平台移动应用是否已过审并开通「微信登录」、正式签名是否已登记。
+4. iOS 的 Universal Link 与 Bundle ID 仍是占位（见第三、九节），iOS 侧尚不能验收。
 
 ## 二、必须区分的两条登录链路
 
@@ -190,6 +199,42 @@ WECHAT_MOBILE_APP_ID=wx4cf0c5f38a70d0bc
 WECHAT_MOBILE_APP_SECRET=<移动应用对应的AppSecret>
 ```
 
+### 5.1 ⚠️ 该接口目前拒绝未登录调用（2026-08-04 实测，安卓真机现象的根因）
+
+安卓真机现象：点微信图标 → 微信授权界面 → 选择后回到登录页 → 弹「请重新登录」。
+那句提示来自后端 `retMsg`（`AppL10n._serverMessages` 把「请重新登录！」重译后展示），
+不是微信 SDK 的任何一个错误码——**微信授权其实已经成功、code 已经拿到**。
+
+curl 直打生产复现（无需 App）：
+
+```bash
+curl -s -X POST "https://api.boltfox.cn/Client/User/setWechatAuthorizLogin?terminal=1&language=2" \
+  -H 'content-type: application/json' -H 'terminal: 1' -H 'language: 2' \
+  -d '{"code":"probe"}'
+# {"retCode":406,"retMsg":"请重新登录！","retData":null}
+```
+
+对照组（同样不带 `userToken`，全部正常进入业务逻辑）：
+
+| 接口 | 响应 | 说明 |
+| --- | --- | --- |
+| `/Client/User/userLogin` | `403 Email does not exist` | 已进业务逻辑 |
+| `/Client/User/userRegister` | `403 Please enter the correct email address` | 已进业务逻辑 |
+| `/Client/User/setWechatAppLogin` | `retMsg "40029, errmsg"` | 已进业务逻辑，且确实拿 code 找微信换过 |
+| `/Client/User/setWechatAuthorizLogin` | `406 请重新登录！` | **没进业务逻辑** |
+
+进一步排除参数因素——下列变体全部返回同一条 406，说明拦截发生在业务逻辑之前：
+`terminal` 改 3、不带任何 query 只发 headers、`userToken` 传空串、`userToken` 传垃圾值、
+body 连 `code` 都不发。
+
+结论：路径、DTO、公共参数都对（swagger 响应模型是 `BaseOutput«UserInfoDetailApiOut»`，
+即它本来就该返回 `userToken`/`jwtToken`），只是**后端拦截器的免登录白名单漏了这个方法**。
+客户端无解——登录接口天然拿不出 `userToken`。需要后端把它与 `userLogin` 同级放行。
+
+在后端放行前，客户端已做的兜底（2026-08-04）：`loginWithWeChatCode` 不再把登录接口自身的
+401/406 当「本地会话过期」处理，也不再原样透传「请重新登录」，而是提示
+「微信登录被服务端拒绝（retCode 406：…）：微信授权本身已成功，是后端接口未放行未登录调用」。
+
 ## 六、后端换码要求
 
 后端收到 App 的一次性 code 后，应调用：
@@ -317,6 +362,8 @@ flutter build apk --release `
 - [x] App 专用 BoltFox 登录接口的最终路径 —— `/Client/User/setWechatAuthorizLogin`（2026-07-29）。
 - [x] App 专用接口的请求和响应字段 —— 见第五节（swagger `WechatAuthorizLoginApiIn` /
       `UserInfoDetailApiOut`）。
+- [x] 安卓「回登录页弹请重新登录」的归属 —— 后端 406，非微信 SDK（2026-08-04，见 5.1）。
+- [ ] **后端把 `/Client/User/setWechatAuthorizLogin` 加入免登录白名单**（当前唯一实锤阻塞）。
 - [ ] 微信开放平台移动应用是否已审核通过并开通微信登录。
 - [ ] 正式签名 `93d4d761713340c5645dc4faa378ddd1` 是否已登记。
 - [ ] 后端是否持有 AppID `wx4cf0c5f38a70d0bc` 对应的移动应用 AppSecret。

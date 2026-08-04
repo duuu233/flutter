@@ -1210,6 +1210,34 @@ class PhotoFrameState extends ChangeNotifier {
           ja: 'WeChat でログインしました。',
         ),
       );
+    } on ApiException catch (error) {
+      // ⚠️ 登录接口**自己**返回 401/406 不是「本地会话过期」：用户此刻就在登录页，
+      // 没有会话可过期。走 _apiFailure 会把后端的 retMsg「请重新登录！」原样弹出
+      // （经 AppL10n 重译成「请重新登录」）——这条提示既没有信息量，还把排查方向
+      // 全带到微信 SDK / 签名 / AppID 上去，而微信侧其实已经成功返回 code 了。
+      //
+      // 2026-08-04 实测（curl 直打生产）：不带 userToken 调
+      // `/Client/User/setWechatAuthorizLogin` 恒返回 `retCode 406 请重新登录！`，
+      // 换 terminal、置空/乱填 userToken、省略 code 一律同一结果，即请求根本没
+      // 进业务逻辑；同样不带 token 的 `userLogin` / `userRegister` / `setWechatAppLogin`
+      // 都正常进业务逻辑（分别回 "Email does not exist" / 邮箱格式错误 / 微信 40029）。
+      // 结论：该接口没进后端的免登录白名单，**要后端放行**，客户端改不了。
+      if (error.isAuthError) {
+        return ActionFeedback(
+          success: false,
+          message: tr(
+            zh: '微信登录被服务端拒绝（retCode ${error.code}：${error.message}）：'
+                '微信授权本身已成功，是后端接口未放行未登录调用。',
+            en:
+                'The server rejected WeChat sign-in (retCode ${error.code}: ${error.message}). '
+                'WeChat authorization itself succeeded; the endpoint refuses unauthenticated calls.',
+            ja:
+                'サーバーが WeChat ログインを拒否しました（retCode ${error.code}：${error.message}）。'
+                'WeChat 認証自体は成功しています。',
+          ),
+        );
+      }
+      return _apiFailure(error);
     } catch (error) {
       return _apiFailure(error);
     }

@@ -234,14 +234,19 @@ class _AuthPageState extends State<AuthPage>
       }
       if (!feedback.success) {
         // 同邮箱登录：成功不弹提示，失败才提示。
-        _showFeedback(feedback.message);
+        // 调试期补一条「微信侧已拿到 code」的事实：微信授权成功、后端换 token 失败时，
+        // 只看 toast 文案分不清是哪一段挂了（详见 _withDiagnostics）。code 本身是
+        // 一次性凭证且此刻已消费，只报长度不外泄内容。
+        _showFeedback(
+          _withDiagnostics(feedback.message, '微信 code 已取得(${code.length} 位)'),
+        );
       }
     } on WeChatAuthorizationException catch (error) {
       if (mounted) {
-        // 按错误类别取当前语言文案；exception.message 是中文详情，只进日志。
+        // 按错误类别取当前语言文案；exception.message 是中文详情，调试期一并进 toast。
         debugPrint('[WeChatAuth] ${error.code}: ${error.message}');
         final l10n = AppL10n.of(context);
-        _showFeedback(switch (error.code) {
+        final message = switch (error.code) {
           WeChatAuthErrorCode.notInstalled => l10n.accWechatNotInstalled,
           WeChatAuthErrorCode.canceled => l10n.accWechatCanceled,
           WeChatAuthErrorCode.denied => l10n.accWechatDenied,
@@ -250,11 +255,19 @@ class _AuthPageState extends State<AuthPage>
           WeChatAuthErrorCode.timeout => l10n.accWechatTimeout,
           WeChatAuthErrorCode.config ||
           WeChatAuthErrorCode.generic => l10n.accWechatAuthFailed,
-        });
+        };
+        _showFeedback(
+          _withDiagnostics(message, '${error.code.name}: ${error.message}'),
+        );
       }
-    } catch (_) {
+    } catch (error, stack) {
+      // 预期外异常（插件 MissingPluginException、类型错误等）：原来整条被吞成
+      // 「微信授权失败，请稍后重试」，真机上无从判断挂在哪。日志留全量，toast 留摘要。
+      debugPrint('[WeChatAuth] unexpected: $error\n$stack');
       if (mounted) {
-        _showFeedback(AppL10n.of(context).accWechatAuthFailed);
+        _showFeedback(
+          _withDiagnostics(AppL10n.of(context).accWechatAuthFailed, '$error'),
+        );
       }
     } finally {
       if (mounted) {
@@ -284,6 +297,20 @@ class _AuthPageState extends State<AuthPage>
 
   void _showFeedback(String message) {
     AppToast.show(context, message);
+  }
+
+  /// 微信登录失败时把原始错误细节拼在提示文案后面（[kWeChatLoginDiagnostics] 为 true 时）。
+  ///
+  /// 排查期必须能在**真机屏幕上**看到细节：微信按开放平台登记的签名校验，
+  /// 授权只有用 release 包才能走通，而 release 包 `kDebugMode` 恒 false、
+  /// 也没有 `adb logcat` 之外的出口，`debugPrint` 等于没有。上线前用
+  /// `--dart-define=WECHAT_LOGIN_DIAGNOSTICS=false` 关掉即可恢复纯净文案。
+  String _withDiagnostics(String message, String detail) {
+    final trimmed = detail.trim();
+    if (!kWeChatLoginDiagnostics || trimmed.isEmpty) {
+      return message;
+    }
+    return '$message\n[$trimmed]';
   }
 
   /// 校验失败的统一提示。
