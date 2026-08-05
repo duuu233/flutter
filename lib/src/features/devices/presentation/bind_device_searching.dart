@@ -16,7 +16,10 @@ class BindDeviceSearching extends StatelessWidget {
   Widget build(BuildContext context) {
     return FigmaScreen(
       title: AppL10n.of(context).bindDeviceTitle,
-      scrollable: false,
+      // 折叠屏/横屏/分屏适配（2026-08-05）：本页靠 Spacer 按一屏排版，装不下会直接
+      // RenderFlex overflow 被裁掉且滚不动；改成「够高时撑满视口、不够高时可滚动」。
+      // 装得下时 Spacer 的分配与改动前完全一致（见 FigmaScreen.fillViewport）。
+      fillViewport: true,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

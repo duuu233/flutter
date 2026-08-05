@@ -433,7 +433,19 @@ Logout / successful account deletion / session expiry
 15. **Android gallery access is selection-scoped.** `main()` globally enables the system Photo
     Picker for `image_picker`. Projection, AI, home-avatar, and profile-avatar flows must not request
     broad photo-library access or reintroduce Android media-read permissions.
-16. **AI-service consent is versioned and user-scoped.** `AiServiceConsent` stores acceptance under
+16. **Adaptive page skeleton lives in `FigmaScreen`, not per page.** (2026-08-05) The fold/split/
+    landscape/large-font contract is: fixed top bar + scrollable content + fixed bottom slot.
+    `scrollable: true` (default) covers ordinary pages; `fillViewport: true` covers pages that lay
+    themselves out with `Spacer` for one screen (content fills the viewport when short, scrolls when
+    tall). Pages whose body already contains an unbounded scrollable keep `scrollable: false` and
+    must not enable `fillViewport` (`IntrinsicHeight` cannot measure them). Mirrors the mini-program
+    `styles/fold-adapt.wxss`.
+17. **The "My Album" count is cast-success records, not `imgCount`.** (2026-08-05) `minePhotoCount`
+    comes from `refreshMineCastSuccessCount()` (all devices, `deviceUploadState: 1`), matching what
+    the album list shows. It is stored separately from `castRecords`, whose contents are owned by the
+    gallery/cast-management pages' own filters. `UserProfile.imgCount` is still parsed but no longer
+    displayed.
+18. **AI-service consent is versioned and user-scoped.** `AiServiceConsent` stores acceptance under
     agreement version plus raw login user ID. A missing cache blocks requests, account switching
     never inherits another user's choice, and logout/deletion/session expiry remove the current
     user's key before identity is cleared.
@@ -587,7 +599,9 @@ Current history groups include:
 - 2026-07-22 iOS projection-performance changes;
 - 2026-07-27 device-identity/battery review;
 - 2026-07-28 strict device-identity and `0x04` battery-cache synchronization;
-- the July runbook change digest.
+- the July runbook change digest;
+- `docs/history/2026-08/` August change records, including 2026-08-04 "My Album" module merge plus
+  fold-screen review and 2026-08-05 cast-success count + `FigmaScreen.fillViewport`.
 
 ## AI Working Notes
 

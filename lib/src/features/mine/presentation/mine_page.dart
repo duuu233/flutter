@@ -25,7 +25,7 @@ class _MinePageState extends State<MinePage> with RouteAware {
   @override
   void initState() {
     super.initState();
-    // 对齐小程序 mine.onShow：刷新用户资料 + 设备/图库计数。
+    // 对齐小程序 mine.onShow：刷新用户资料 + 设备数 + 「我的相册」张数。
     // 不再判 isLoggedIn —— App 是强制登录的（见 bolt_star_app.dart），
     // 本页挂载时必然已登录，加判断只会让下面的 loaded 标记有翻不了身的风险。
     _reload();
@@ -50,20 +50,23 @@ class _MinePageState extends State<MinePage> with RouteAware {
 
   /// 被覆盖的页 pop 回来（如投屏/上传完再返回）：重新拉数，等价小程序 mine.onShow。
   ///
-  /// 这是「上传图片后回我的，图库数字不更新」的根因：计数取的是 `getUserInfo` 的
-  /// `imgCount`/`productCount`（账号级总数），而 `refreshAlbum`/`refreshDevices`
-  /// **不会**更新这两个字段——不重新打 `getUserInfo` 就永远是旧值。
+  /// 这是「上传图片后回我的，设备数字不更新」的根因：设备数取的是 `getUserInfo` 的
+  /// `productCount`（账号级总数），而 `refreshDevices` **不会**更新该字段——
+  /// 不重新打 `getUserInfo` 就永远是旧值。
   @override
   void didPopNext() {
     _reload();
   }
 
   void _reload() {
-    // 三个接口并发：计数以 refreshCurrentUser 的账号级总数为准，
-    // 另外两个用于总数缺失时的兜底（state.minePhotoCount / mineDeviceCount）。
+    // 三个接口并发：
+    // · refreshCurrentUser —— 头像/昵称/ID 与设备数（账号级 productCount）；
+    // · refreshDevices     —— productCount 缺失时的设备数兜底（state.mineDeviceCount）；
+    // · refreshMineCastSuccessCount —— 「我的相册」张数 = 全部设备的投屏成功记录条数
+    //   （2026-08-05 起不再用账号级 imgCount，所以这里也不必再拉相册列表）。
     widget.state.refreshCurrentUser();
     widget.state.refreshDevices();
-    widget.state.refreshAlbum();
+    widget.state.refreshMineCastSuccessCount();
   }
 
   @override
@@ -162,7 +165,7 @@ class _MinePageState extends State<MinePage> with RouteAware {
                                   title: AppL10n.of(context).mineMyGallery,
                                   subtitle: AppL10n.of(context)
                                       .minePhotoCountText(
-                                        state.userLoaded || state.albumLoaded,
+                                        state.mineCastSuccessLoaded,
                                         state.minePhotoCount,
                                       ),
                                   onTap: () {

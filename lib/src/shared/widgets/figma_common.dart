@@ -21,6 +21,7 @@ class FigmaScreen extends StatelessWidget {
     required this.body,
     this.bottom,
     this.scrollable = true,
+    this.fillViewport = false,
     this.bodyPadding = const EdgeInsets.symmetric(horizontal: 24),
     this.background,
     this.resizeToAvoidBottomInset = true,
@@ -42,6 +43,23 @@ class FigmaScreen extends StatelessWidget {
   final Widget body;
   final Widget? bottom;
   final bool scrollable;
+
+  /// 折叠屏/分屏/横屏适配（2026-08-05）：内容**不够高时撑满视口、够高时可滚动**。
+  ///
+  /// 给的是那些「靠 [Spacer]/[Expanded] 把内容顶开、按一屏排版」的页面用的
+  /// （绑定设备的搜索中 / 未发现设备等）。它们原本传 `scrollable: false`：一屏装得下时
+  /// 排版正确，装不下（折叠屏展开、横屏、分屏、系统大字号）就直接 RenderFlex overflow 被裁掉，
+  /// 且没有任何办法滚到下面。
+  ///
+  /// 打开后：`minHeight = 视口高`，内容不够高时 [Spacer] 照旧按比例分配剩余空间，
+  /// **观感与改动前逐像素一致**；内容超过视口时按内容高度排并允许滚动。
+  ///
+  /// ⚠️ body 里已经有 `Expanded(child: ListView/SingleChildScrollView…)` 的页面**不要**打开：
+  /// [IntrinsicHeight] 量不出无界滚动子树的固有高度。那类页面本来就有自己的滚动区，
+  /// 继续用 `scrollable: false` 即可。
+  ///
+  /// 对齐小程序 `styles/fold-adapt.wxss` 的 `.fold-scroll` + `.fold-scroll-body`。
+  final bool fillViewport;
   final EdgeInsets bodyPadding;
   final Widget? background;
   final bool resizeToAvoidBottomInset;
@@ -49,7 +67,25 @@ class FigmaScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Widget content = scrollable
-        ? SingleChildScrollView(padding: bodyPadding, child: body)
+        ? (fillViewport
+              ? LayoutBuilder(
+                  builder: (context, constraints) {
+                    // 减掉 padding：ConstrainedBox 在 padding 之内，直接用 maxHeight
+                    // 会把内容撑高一个 padding，短窗口下反而多出一截空滚动。
+                    final double available =
+                        constraints.maxHeight - bodyPadding.vertical;
+                    return SingleChildScrollView(
+                      padding: bodyPadding,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: available > 0 ? available : 0.0,
+                        ),
+                        child: IntrinsicHeight(child: body),
+                      ),
+                    );
+                  },
+                )
+              : SingleChildScrollView(padding: bodyPadding, child: body))
         : Padding(padding: bodyPadding, child: body);
 
     return AnnotatedRegion<SystemUiOverlayStyle>(

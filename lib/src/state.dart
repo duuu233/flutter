@@ -430,6 +430,12 @@ class PhotoFrameState extends ChangeNotifier {
   bool _castRecordsLoaded = false;
   bool _userLoaded = false;
 
+  // 「我的」页「我的相册」卡片上的张数：**全部设备**的投屏成功记录条数（2026-08-05）。
+  // 单独存一份计数（而不是复用 _castRecords.length）：那份列表被图库页/投屏管理页按各自的
+  // 设备与状态条件反复覆盖，长度随最后一次谁刷的而变，不能当账号级合计用。
+  int _mineCastSuccessCount = 0;
+  bool _mineCastSuccessLoaded = false;
+
   // 「最近一次刷新是否失败」：与 loaded 标记配合，列表页据此把断网等失败
   // 渲染成「加载失败 + 重试」，而不是误导性的「暂无数据」空态
   // （空态文案只在确认成功且确实为空时出现）。成功刷新会清掉。
@@ -457,6 +463,9 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 用户资料首屏是否已出结果（「我的」页据此决定显示真实统计还是占位 `--`）。
   bool get userLoaded => _userLoaded;
+
+  /// 「我的相册」张数是否已出结果（「我的」页据此在拿到数字前显示 `--张照片`）。
+  bool get mineCastSuccessLoaded => _mineCastSuccessLoaded;
 
   AppLanguage get language => _language;
 
@@ -582,12 +591,16 @@ class PhotoFrameState extends ChangeNotifier {
     return '${value.year}-$month-$day $hour:$minute';
   }
 
-  /// 「我的」页的照片数 / 设备数：优先后端统计（getUserInfo 的 `imgCount` / `productCount`），
-  /// 未下发（0）时回退本地列表长度——对齐小程序 mine.js
-  /// `photoCount: Number(userInfo.imgCount) || photos.length`。
-  int get minePhotoCount =>
-      _currentUser.imgCount > 0 ? _currentUser.imgCount : myAlbum.length;
+  /// 「我的」页「我的相册」卡片上的张数 = **全部设备**的投屏成功记录条数
+  /// （2026-08-05，由 [refreshMineCastSuccessCount] 写入；对齐小程序 mine.js
+  /// `photoCount: castSuccessCount`）。
+  ///
+  /// 不再用账号级 `imgCount`（相册口径）：那个数把投屏失败的、已从设备删掉的都算在内，
+  /// 与点进「我的相册」看到的列表对不上。
+  int get minePhotoCount => _mineCastSuccessCount;
 
+  /// 「我的」页的设备数：优先后端统计（getUserInfo 的 `productCount`），
+  /// 未下发（0）时回退本地列表长度——对齐小程序 mine.js。
   int get mineDeviceCount => _currentUser.productCount > 0
       ? _currentUser.productCount
       : _devices.length;
@@ -2137,6 +2150,85 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 「我的」页「我的相册」卡片的张数：**全部设备**的投屏成功记录条数（写入 [minePhotoCount]）。
+  ///
+  /// 与「我的相册」列表同口径（`deviceUploadState:1` + 本地按状态兜底），只是不带
+  /// `userProductId`——卡片统计的是全部设备的合计，不是当前选中的那台。
+  ///
+  /// **不写 [castRecords]**：那份列表是图库页/投屏管理页按各自的设备与状态条件拉的，
+  /// 被这里的全量结果覆盖会串页（对齐小程序 `api.getProjectionSuccessCount` 只回数字）。
+  ///
+  /// 只要数字不要数据，所以尽量少打请求：
+  /// - 后端认 `deviceUploadState` 时（整页都是成功记录），直接用分页元数据 `recordCount`，
+  ///   一次请求就拿到真实总数，超过一页也不会被截断；
+  /// - 后端忽略它时 `recordCount` 是「成功+失败」的合计，不能当成功数用，只能逐页翻并按状态数。
+  ///   判停优先看 `pageCount`/`recordCount`，不拿「回包条数 < pageSize」当依据
+  ///   （后端可能无视 pageSize 按默认值分页，见 [refreshFaq] 的同款坑）。
+  Future<ActionFeedback> refreshMineCastSuccessCount() async {
+    const pageSize = 100;
+    // 安全上限：后端分页字段异常时不至于把请求打成死循环（同 refreshFaq）。
+    const maxPages = 20;
+    final epoch = _sessionEpoch;
+    try {
+      var pageIndex = 1;
+      var scanned = 0;
+      var counted = 0;
+      var total = -1; // ≥0 = 后端过滤成立，直接采信 recordCount
+      while (true) {
+        final data = await BoltFoxApi.getUserProductImgRecordList({
+          'pageIndex': pageIndex,
+          'pageSize': pageSize,
+          'deviceUploadState': 1,
+        });
+        if (epoch != _sessionEpoch) {
+          // 会话代际已变（登出/换号）：丢弃旧会话的在途响应，防跨账号串数。
+          return ActionFeedback(success: true, message: '');
+        }
+        final rows = extractApiRows(data);
+        final success = rows
+            .where((row) => _castStatusFromJson(row) == CastStatus.success)
+            .length;
+        scanned += rows.length;
+        counted += success;
+
+        final pageCount = data is Map ? _asInt(data['pageCount']) : 0;
+        final recordCount = data is Map ? _asInt(data['recordCount']) : 0;
+
+        // 整页都是成功记录 → 后端确实过滤了，recordCount 即成功总数，不必再翻页。
+        if (recordCount > 0 && rows.isNotEmpty && success == rows.length) {
+          total = recordCount;
+          break;
+        }
+        // 空页 = 没有更多了。
+        if (rows.isEmpty || pageIndex >= maxPages) {
+          break;
+        }
+        if (pageCount > 0 && pageIndex >= pageCount) {
+          break;
+        }
+        if (pageCount == 0 && recordCount > 0 && scanned >= recordCount) {
+          break;
+        }
+        // 两个元数据都没有时，才退回按「不满一页即最后一页」判断。
+        if (pageCount == 0 && recordCount == 0 && rows.length < pageSize) {
+          break;
+        }
+        pageIndex++;
+      }
+
+      _mineCastSuccessCount = total >= 0 ? total : counted;
+      _mineCastSuccessLoaded = true;
+      notifyListeners();
+      return ActionFeedback(success: true, message: '');
+    } catch (error) {
+      // 失败保留上次成功值（弱网进「我的」把张数清零，用户会以为照片没了）；
+      // 首屏加载态照样结束，否则数字永远停在占位 `--`。
+      _mineCastSuccessLoaded = true;
+      notifyListeners();
+      return _apiFailure(error);
+    }
+  }
+
   /// 批量删除投屏记录（「我的相册」删照片时连同来源记录一并删，否则删掉的照片还会留在列表里）。
   ///
   /// 后端没有批量接口，这里串行逐条调用；**允许部分失败**——设备槽位与相册记录此时已经删掉，
@@ -2831,6 +2923,9 @@ class PhotoFrameState extends ChangeNotifier {
     _albumLoadError = false;
     _castRecordsLoadError = false;
     _userLoaded = false;
+    // 「我的相册」张数跟随账号：不清会让下一个登录的账号先看到上一个人的数字
+    _mineCastSuccessCount = 0;
+    _mineCastSuccessLoaded = false;
     _isLoggedIn = false;
     _currentUser.email = '';
     // 选图上限白名单跟随账号：不清会让下一个登录的账号继承上一个人的放宽额度
@@ -2874,6 +2969,9 @@ class PhotoFrameState extends ChangeNotifier {
     _albumLoadError = false;
     _castRecordsLoadError = false;
     _userLoaded = false;
+    // 「我的相册」张数跟随账号：不清会让下一个登录的账号先看到上一个人的数字
+    _mineCastSuccessCount = 0;
+    _mineCastSuccessLoaded = false;
     _isLoggedIn = false;
     // 选图上限白名单跟随账号：注销后必须清，否则下一个登录的账号会继承放宽额度
     CastUploadLimit.currentUserNo = '';
@@ -3536,6 +3634,9 @@ class PhotoFrameState extends ChangeNotifier {
     _albumLoadError = false;
     _castRecordsLoadError = false;
     _userLoaded = false;
+    // 「我的相册」张数跟随账号：不清会让下一个登录的账号先看到上一个人的数字
+    _mineCastSuccessCount = 0;
+    _mineCastSuccessLoaded = false;
     _isLoggedIn = false;
     notifyListeners();
   }
