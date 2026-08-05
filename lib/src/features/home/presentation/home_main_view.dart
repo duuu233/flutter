@@ -8,8 +8,21 @@ part of 'home_page.dart';
 /// - [activeDevice] == null → 「首页-未绑定设备」：空设备插画 +「绑定设备」按钮。
 ///
 /// 两种场景顶部共用居中「首页」标题栏，底部共用「选择投屏方式」卡片区与底部 Tab 栏
-/// （见 [_castSection]）。整体用 `SingleChildScrollView + ConstrainedBox + IntrinsicHeight`
-/// 包裹：屏幕够高时用 `Spacer` 撑开布局，屏幕过矮时可滚动，避免溢出。
+/// （见 [_castSection]）。
+///
+/// 竖向结构（2026-08-05 调整，对齐小程序 `pages/home`）：
+/// ```text
+/// 标题栏                         ← 固定
+/// Expanded(滚动区)               ← 只有中间内容进来
+///   SingleChildScrollView + ConstrainedBox(minHeight: 视口) + IntrinsicHeight
+/// 底部 Tab 栏                    ← 固定，永远在视口内
+/// ```
+/// 底部 Tab 栏**留在滚动区外**：小程序侧它是 `position: fixed` 的 `custom-tabbar`，
+/// 本来就不跟着内容滚。之前它排在滚动内容的末尾，窗口一矮就被顶到视口以外，
+/// 用户得先滚一段才能点到「我的」——正是 2026-08-05 反馈的「首页样式错乱、还自己出滚动条」。
+///
+/// 短窗口下的降级顺序：**先压可压缩间距（[_CollapsibleGap]），压完仍装不下才滚动**。
+/// `IntrinsicHeight` 量到的是「间距压没之后的高度」，所以只要压一压能装下就不会出现滚动。
 ///
 /// 横向留白对齐小程序：文字内容区 48rpx(=24)，设备卡 / 投屏卡区 24rpx(=12)，
 /// 因此不再使用统一外层 padding，而是按区块分别设置。
@@ -89,6 +102,13 @@ class _HomeMainView extends StatelessWidget {
             },
           ),
         ),
+        // 底部 Tab 栏固定在滚动区外（同小程序的 fixed `custom-tabbar`）：
+        // 无论内容多高，「我的」入口都在视口里，不会被内容顶出去。
+        Padding(
+          padding: _textInset,
+          child: _HomeTabBar(onOpenMine: onOpenMine),
+        ),
+        const SizedBox(height: 13),
       ],
     );
   }
@@ -132,22 +152,23 @@ class _HomeMainView extends StatelessWidget {
         ),
         const Spacer(),
         ..._castSection(context),
+        // 末尾的 Spacer 吃掉剩余高度：Tab 栏已移到滚动区外，这里留白的观感与之前一致。
         const Spacer(),
-        Padding(
-          padding: _textInset,
-          child: _HomeTabBar(onOpenMine: onOpenMine),
-        ),
-        const SizedBox(height: 13),
       ],
     );
   }
 
   /// 「首页-未绑定设备」布局。
+  ///
+  /// 本页是全 App 最高的一屏（插画 189 + 提示 + 按钮 + 投屏卡片区），在 360×760 一类
+  /// 常见 Android 机型上，按设计稿的固定间距排下来会比可用高度多出几十 dp。
+  /// 顶部 95 与按钮下方 68 这两处纯留白因此改用 [_CollapsibleGap]：装得下时就是设计值
+  /// （逐像素一致），装不下时按 95:68 的比例一起收缩，收缩到 0 仍装不下才交给滚动。
   Widget _buildUnbound(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 95),
+        const Flexible(flex: 95, child: _CollapsibleGap(95)),
         const Center(
           child: SizedBox(width: 240, height: 189, child: _UnboundDeviceArt()),
         ),
@@ -187,14 +208,10 @@ class _HomeMainView extends StatelessWidget {
           ),
         ),
         // const Spacer(flex: 6),
-        const SizedBox(height: 68),
+        const Flexible(flex: 68, child: _CollapsibleGap(68)),
         ..._castSection(context),
+        // 末尾的 Spacer 吃掉剩余高度：Tab 栏已移到滚动区外，这里留白的观感与之前一致。
         const Spacer(),
-        Padding(
-          padding: _textInset,
-          child: _HomeTabBar(onOpenMine: onOpenMine),
-        ),
-        const SizedBox(height: 13),
       ],
     );
   }
@@ -256,4 +273,84 @@ class _HomeMainView extends StatelessWidget {
       ),
     ];
   }
+}
+
+/// 可压缩留白：**够高时占满设计值（逐像素一致），不够高时按 flex 份额收缩**。
+///
+/// 必须放进 [Flexible]（`fit` 用默认的 loose），flex 取设计高度，多处间距之间
+/// 就按设计比例分摊收缩量：
+/// ```dart
+/// const Flexible(flex: 95, child: _CollapsibleGap(95)),
+/// ```
+///
+/// 与 `Flexible(child: SizedBox(height: 95))` 的唯一区别是**固有高度恒为 0**，
+/// 而这正是本类存在的理由：首页内容外面套着
+/// `SingleChildScrollView + ConstrainedBox(minHeight: 视口) + IntrinsicHeight`，
+/// [IntrinsicHeight] 会把内容按**最大固有高度**定高——
+/// 用 SizedBox 时固有高度里含着这 95/68 的留白，于是内容只要比视口高一点点，
+/// 整页就直接进入滚动：`Spacer` 全部归零、元素挤成一坨、底部 Tab 栏被顶出视口
+/// （2026-08-05 反馈的「首页样式错乱 + 自己出现滚动条」，未绑定态在 360×760
+/// 一类机型上稳定复现）。
+///
+/// 固有高度记 0 之后，[IntrinsicHeight] 量到的是「留白压没之后仍需要的高度」：
+/// - 视口 ≥ 该高度 → 内容高度 = 视口高，剩余空间按 flex 分配，
+///   本类拿到的份额若 ≥ 设计值就取设计值（大屏与改动前完全一致），
+///   否则按比例收缩（短窗口先让留白，不滚动）；
+/// - 视口 < 该高度 → 留白压到 0 仍装不下，这时才真的滚动（横屏/分屏/超小窗口的兜底）。
+class _CollapsibleGap extends LeafRenderObjectWidget {
+  const _CollapsibleGap(this.height);
+
+  /// 设计稿留白高度，也是本留白能占到的上限。
+  final double height;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderCollapsibleGap(height);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderCollapsibleGap renderObject,
+  ) {
+    renderObject.designHeight = height;
+  }
+}
+
+class _RenderCollapsibleGap extends RenderBox {
+  _RenderCollapsibleGap(this._designHeight);
+
+  double _designHeight;
+
+  set designHeight(double value) {
+    if (value == _designHeight) {
+      return;
+    }
+    _designHeight = value;
+    markNeedsLayout();
+  }
+
+  // 固有尺寸恒为 0：见类注释——外层 IntrinsicHeight 据此量出「压缩后的最小高度」。
+  @override
+  double computeMinIntrinsicWidth(double height) => 0;
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => 0;
+
+  @override
+  double computeMinIntrinsicHeight(double width) => 0;
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => 0;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => _sizeFor(constraints);
+
+  @override
+  void performLayout() {
+    size = _sizeFor(constraints);
+  }
+
+  /// Flexible(loose) 给下来的 maxHeight 就是本项分到的份额：取「份额与设计值的较小者」。
+  Size _sizeFor(BoxConstraints constraints) =>
+      constraints.constrain(Size(0, _designHeight));
 }

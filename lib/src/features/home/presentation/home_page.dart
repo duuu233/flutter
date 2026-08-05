@@ -2,6 +2,9 @@ import 'dart:async';
 import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+// home_main_view.dart 里的 _CollapsibleGap 自带一个 RenderBox（可压缩留白，
+// 固有高度记 0），需要 rendering 层的类型；part 文件不能单独 import，只能挂在这里。
+import 'package:flutter/rendering.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../shared/l10n/app_l10n.dart';

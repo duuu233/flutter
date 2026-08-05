@@ -97,6 +97,7 @@
 | [`history/2026-08/2026-08-04-微信登录回登录页弹请重新登录.md`](history/2026-08/2026-08-04-微信登录回登录页弹请重新登录.md) | Historical Change Record（定位为后端 406；待后端放行免登录白名单） |
 | [`history/2026-08/2026-08-05-微信AppID及Android签名统一.md`](history/2026-08/2026-08-05-微信AppID及Android签名统一.md) | Historical Change Record（其中的 AppID 已被同日更正记录取代；签名统一部分仍有效） |
 | [`history/2026-08/2026-08-05-微信AppID更正为wx4cf0c5f38a70d0bc.md`](history/2026-08/2026-08-05-微信AppID更正为wx4cf0c5f38a70d0bc.md) | Historical Change Record（AppID 更正为 `wx4cf0c5f38a70d0bc`，Android/iOS、debug/release 同值） |
+| [`history/2026-08/2026-08-05-首页未绑定态样式错乱与滚动条修复.md`](history/2026-08/2026-08-05-首页未绑定态样式错乱与滚动条修复.md) | Historical Change Record（仅 App；底部 Tab 移出滚动区 + 可压缩留白 `_CollapsibleGap`，普通手机不再挤成一坨并出滚动） |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责

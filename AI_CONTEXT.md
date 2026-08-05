@@ -439,7 +439,11 @@ Logout / successful account deletion / session expiry
     themselves out with `Spacer` for one screen (content fills the viewport when short, scrolls when
     tall). Pages whose body already contains an unbounded scrollable keep `scrollable: false` and
     must not enable `fillViewport` (`IntrinsicHeight` cannot measure them). Mirrors the mini-program
-    `styles/fold-adapt.wxss`.
+    `styles/fold-adapt.wxss`. The home page (`_HomeMainView`, not a `FigmaScreen`) follows the same
+    contract by hand: `_HomeTabBar` sits **outside** the scroll area, and its pure-whitespace gaps use
+    `_CollapsibleGap` (zero intrinsic height) so a short window shrinks the whitespace first and only
+    scrolls once it is fully collapsed — never `Flexible(child: SizedBox(...))`, whose intrinsic height
+    makes `IntrinsicHeight` jump straight to scrolling (2026-08-05 home-page regression).
 17. **The "My Album" count is cast-success records, not `imgCount`.** (2026-08-05) `minePhotoCount`
     comes from `refreshMineCastSuccessCount()` (all devices, `deviceUploadState: 1`), matching what
     the album list shows. It is stored separately from `castRecords`, whose contents are owned by the
