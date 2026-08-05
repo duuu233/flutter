@@ -25,15 +25,18 @@ App 不需要手工下载并导入微信 SDK。项目已经通过 `fluwx 6.0.0` 
 该接口没进后端的免登录白名单，未带 `userToken` 的请求根本进不到业务逻辑（复现见 5.1）。
 换句话说：授权成功、code 已拿到，死在换 token 这一步。
 
-2026-08-05 更新：移动应用 AppID 修正为 `wx5bc2000b3207f370`；Android 的
-debug/profile/release 三种构建统一使用 `boltstar-release.jks`，包名与签名不再因构建类型变化。
+2026-08-05 更新：移动应用 AppID 更正为 `wx4cf0c5f38a70d0bc`（此前配置的 `wx5bc2000b3207f370`
+不是本 App 对应的移动应用，已作废）。iOS URL Scheme、Flutter 默认 `WECHAT_APP_ID`、打包命令
+三处同步为同一值，Android 与 iOS、debug 与 release 一致。Android 的 debug/profile/release
+三种构建统一使用 `boltstar-release.jks`，包名与签名不再因构建类型变化。
 
 剩余阻塞项：
 
 1. **（当前唯一实锤阻塞）** 后端把 `/Client/User/setWechatAuthorizLogin` 加入免登录白名单，
    与 `userLogin` / `userRegister` / `setWechatAppLogin` 同级 —— 它是登录接口，
    调用时用户按定义就没有 `userToken`。
-2. 后端是否已配置移动应用 AppID 对应的 AppSecret（`wx5bc2000b3207f370`，不是小程序的那把）。
+2. 后端是否已配置移动应用 AppID 对应的 AppSecret（`wx4cf0c5f38a70d0bc`，不是小程序的那把，
+   也不是旧的 `wx5bc2000b3207f370`）。
 3. 微信开放平台移动应用是否已过审并开通「微信登录」、正式签名是否已登记。
 4. iOS Bundle ID 当前为 `com.boltfox.boltstar`，仍需确认已在微信开放平台登记；Universal Link
    仍是占位（见第三、九节），iOS 侧尚不能验收。
@@ -92,10 +95,15 @@ Flutter App
 ### 3.1 AppID
 
 ```text
-wx5bc2000b3207f370
+wx4cf0c5f38a70d0bc
 ```
 
-代码未传 `--dart-define` 时也会使用该默认值。正式构建仍建议显式传入，避免环境混淆。
+代码未传 `--dart-define` 时也会使用该默认值，因此 Android 与 iOS、debug 与 release 天然一致
+（Android 不在原生侧写 AppID，fluwx 由 Dart 侧 `registerApi()` 注入；iOS 只有 URL Scheme
+需要同步）。正式构建仍建议显式传入，避免环境混淆。
+
+⚠️ 旧值 `wx5bc2000b3207f370` 已作废（2026-08-05 更正），源码与文档中不应再出现；
+用旧值打出的安装包必须重打，否则微信侧按未登记的 AppID 处理。
 
 ### 3.2 Android
 
@@ -118,7 +126,7 @@ com.boltfox.boltstar
 
 ### 3.3 iOS
 
-- `Info.plist` URL Scheme：已填真实 AppID `wx5bc2000b3207f370`（2026-08-05 修正）。
+- `Info.plist` URL Scheme：已填真实 AppID `wx4cf0c5f38a70d0bc`（2026-08-05 更正，与 Android 同值）。
 - `Info.plist` `LSApplicationQueriesSchemes`：已含 `weixin` / `weixinULAPI` 等。
 - `Runner.entitlements` Associated Domain：仍是占位 `applinks:example.boltfox.cn`。
 - `WECHAT_UNIVERSAL_LINK`：仍需在构建时传入真实值。
@@ -134,7 +142,7 @@ Universal Link 未落地前，iOS 微信登录仍不能视为配置完成（`Flu
 ## 四、微信开放平台配置步骤
 
 登录微信开放平台，进入“管理中心 → 移动应用”，找到 AppID
-`wx5bc2000b3207f370` 对应的移动应用并逐项确认：
+`wx4cf0c5f38a70d0bc` 对应的移动应用并逐项确认：
 
 1. 移动应用已经审核通过。
 2. “微信登录”能力已经开通。
@@ -194,7 +202,7 @@ App 要求 `userToken` 与 `jwtToken` 同时非空才置登录态（与邮箱登
 建议服务端环境变量：
 
 ```text
-WECHAT_MOBILE_APP_ID=wx5bc2000b3207f370
+WECHAT_MOBILE_APP_ID=wx4cf0c5f38a70d0bc
 WECHAT_MOBILE_APP_SECRET=<移动应用对应的AppSecret>
 ```
 
@@ -245,7 +253,7 @@ GET https://api.weixin.qq.com/sns/oauth2/access_token
 参数：
 
 ```text
-appid=wx5bc2000b3207f370
+appid=wx4cf0c5f38a70d0bc
 secret=<移动应用AppSecret>
 code=<本次新code>
 grant_type=authorization_code
@@ -301,7 +309,8 @@ https://api.weixin.qq.com/sns/jscode2session
    其余接口的连接层重试行为不变（测试里有对照组守着）。
 4. `lib/src/state.dart` `loginWithWeChatCode()` 记录已提交过的 code，
    同一个 code 第二次提交直接在客户端拒绝，提示重新发起微信登录。
-5. `ios/Runner/Info.plist` URL Scheme 由占位符改为真实 AppID。
+5. `ios/Runner/Info.plist` URL Scheme 由占位符改为真实 AppID（2026-08-05 更正为
+   `wx4cf0c5f38a70d0bc`）。
 6. `android/app/src/main/AndroidManifest.xml` 的 `<queries>` 增加 `com.tencent.mm`。
 7. 新增 `test/wechat_login_test.dart`：接口路径与 body、一次调用只发一次 HTTP、
    同一 code 不二次提交、双凭证缺一不置登录态、以及普通接口仍重试的对照组。
@@ -310,14 +319,17 @@ Android 构建（debug/release 使用同一 AppID 与签名）：
 
 ```powershell
 flutter build apk --release `
-  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370
+  --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc
+
+flutter build apk --debug `
+  --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc
 ```
 
 ## 九、iOS 后续配置
 
 确认最终 Bundle ID 并取得真实 Universal Link 后：
 
-1. 确认 `Info.plist` 的 URL Scheme 保持为 `wx5bc2000b3207f370`。
+1. 确认 `Info.plist` 的 URL Scheme 保持为 `wx4cf0c5f38a70d0bc`。
 2. 在 Xcode 启用 Associated Domains。
 3. 将 `Runner.entitlements` 改为真实 `applinks:<域名>`。
 4. 在域名部署正确的 `/.well-known/apple-app-site-association`。
@@ -325,7 +337,7 @@ flutter build apk --release `
 6. 构建时传入：
 
 ```shell
---dart-define=WECHAT_APP_ID=wx5bc2000b3207f370
+--dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc
 --dart-define=WECHAT_UNIVERSAL_LINK=https://真实域名/真实路径/
 ```
 
@@ -335,7 +347,7 @@ flutter build apk --release `
 2. App 拉起微信并完成授权。
 3. Flutter 收到非空 code，且 state 校验通过。
 4. App 只调用一次 App 专用 BoltFox 登录接口。
-5. 后端日志确认使用 AppID `wx5bc2000b3207f370`。
+5. 后端日志确认使用 AppID `wx4cf0c5f38a70d0bc`。
 6. 后端日志确认调用 `/sns/oauth2/access_token`，没有调用 `/sns/jscode2session`。
 7. 后端返回 BoltStar `userToken`。
 8. App 写入登录态并进入首页。
@@ -365,10 +377,12 @@ flutter build apk --release `
 - [ ] **后端把 `/Client/User/setWechatAuthorizLogin` 加入免登录白名单**（当前唯一实锤阻塞）。
 - [ ] 微信开放平台移动应用是否已审核通过并开通微信登录。
 - [ ] 统一签名 `93d4d761713340c5645dc4faa378ddd1` 是否已登记。
-- [ ] 后端是否持有 AppID `wx5bc2000b3207f370` 对应的移动应用 AppSecret。
+- [ ] 后端是否持有 AppID `wx4cf0c5f38a70d0bc` 对应的移动应用 AppSecret（2026-08-05 换过 AppID，
+      后端旧配置必须一并替换）。
 - [ ] 后端是否使用 `/sns/oauth2/access_token`（而不是小程序的 `/sns/jscode2session`）。
 - [ ] iOS Bundle ID 在微信开放平台的登记状态，以及 Universal Link、AASA 配置。
 - [ ] 真机微信完整往返验收（2026-08-05 已编译 debug/release 并验证包名与签名；尚未真机授权）。
+- [ ] 用新 AppID `wx4cf0c5f38a70d0bc` 重打 Android/iOS 包（旧产物内嵌的是作废 AppID）。
 
 ## 十二、信息来源
 

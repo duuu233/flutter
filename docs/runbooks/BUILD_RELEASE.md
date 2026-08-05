@@ -14,9 +14,13 @@
 
 | 位置 | 当前值 | 要求 |
 | --- | --- | --- |
-| `ios/Runner/Info.plist` → `CFBundleURLSchemes` | `wx5bc2000b3207f370` | 必须与微信开放平台移动应用 AppID 一致 |
+| `ios/Runner/Info.plist` → `CFBundleURLSchemes` | `wx4cf0c5f38a70d0bc` | 必须与微信开放平台移动应用 AppID 一致 |
 | `ios/Runner/Runner.entitlements` → `associated-domains` | `applinks:example.boltfox.cn` | 真实 Universal Link 域名 |
-| 构建命令 `--dart-define` | `WECHAT_APP_ID=wx5bc2000b3207f370` / `WECHAT_UNIVERSAL_LINK` | 与上述配置一致 |
+| 构建命令 `--dart-define` | `WECHAT_APP_ID=wx4cf0c5f38a70d0bc` / `WECHAT_UNIVERSAL_LINK` | 与上述配置一致 |
+
+AppID 于 2026-08-05 由作废的 `wx5bc2000b3207f370` 更正为 `wx4cf0c5f38a70d0bc`：Android 与 iOS、
+debug 与 release 必须是同一个值（Dart 默认值已同步，不传 `--dart-define` 也一致）。旧 AppID 打出的
+安装包一律作废重打。
 
 微信侧配套（不做则微信登录不可用）：
 - 域名根目录部署 `/.well-known/apple-app-site-association`（含 TeamID `S2HZK3227W` + bundle id `com.boltfox.boltstar`）；
@@ -44,14 +48,14 @@ flutter pub get
 # 上架 Google Play（AAB）：
 flutter build appbundle --release ^
   --obfuscate --split-debug-info=build/symbols ^
-  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 ^
+  --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/app/outputs/bundle/release/app-release.aab
 
 # 直接分发 APK（可选）：
 flutter build apk --release --split-per-abi ^
   --obfuscate --split-debug-info=build/symbols ^
-  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 ^
+  --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk 等
 ```
@@ -60,7 +64,7 @@ flutter build apk --release --split-per-abi ^
 
 ```bash
 flutter build apk --debug ^
-  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 ^
+  --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/app/outputs/flutter-apk/app-debug.apk（含全部 ABI，直接安装）
 ```
@@ -86,7 +90,7 @@ flutter pub get
 cd ios && pod install --repo-update && cd ..   # Podfile.lock 严重过期，必须跑一次
 flutter build ipa --release --export-method app-store \
   --obfuscate --split-debug-info=build/symbols \
-  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 \
+  --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc \
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/ios/ipa/BoltStar.ipa → Transporter / Xcode Organizer 上传
 ```

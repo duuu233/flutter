@@ -97,7 +97,7 @@ OpenHarmony/HAP is not integrated.
 - The device method channel is also implemented by `Runner/AppDelegate.swift`.
 - `UIBackgroundModes` contains `bluetooth-central`.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.
-- The WeChat URL Scheme and mobile AppID are fixed to `wx5bc2000b3207f370`; the Universal Link
+- The WeChat URL Scheme and mobile AppID are fixed to `wx4cf0c5f38a70d0bc`; the Universal Link
   remains a build/external-platform input. See the setup and release runbooks.
 - Android-style persistent crash-file capture is not implemented on iOS. BLE performance diagnostics
   keep a bounded in-memory log for the hidden self-test page.

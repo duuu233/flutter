@@ -3,6 +3,8 @@
 > 文档类型：Change Record
 > 日期：2026-08-05
 > 权威运行手册：`../../integration/WECHAT_LOGIN_SETUP.md`
+> ⚠️ 本文中的 AppID `wx5bc2000b3207f370` 当日晚些时候即被判定为错误应用，已由
+> `2026-08-05-微信AppID更正为wx4cf0c5f38a70d0bc.md` 取代；Android 签名统一部分仍然有效。
 
 ## 变更
 
