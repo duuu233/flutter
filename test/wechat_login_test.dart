@@ -157,6 +157,19 @@ void main() {
     // retCode 要能在真机 toast 上看到，否则排查还得连 adb。
     expect(feedback.message, contains('406'));
     expect(ApiSession.instance.isLoggedIn, isFalse);
+
+    // ⚠️ 临时排查设施（2026-08-05）：后端要按客户端实际发出的参数复现这条 406，
+    // 于是把请求现场随 feedback 一起带上去（auth_page 弹进 toast + 写剪贴板）。
+    // 后端放行该接口后，本段断言与 describeWeChatMobileLogin 一并删除。
+    final diagnostics = feedback.diagnostics;
+    expect(diagnostics, isNotNull);
+    // 描述必须与真实发出的那次请求对得上，否则后端照着调是白调。
+    final request = sent.single;
+    expect(diagnostics, contains('POST'));
+    expect(diagnostics, contains(request.url.toString()));
+    expect(diagnostics, contains('"code":"wx-code-7"'));
+    expect(diagnostics, contains('terminal='));
+    expect(diagnostics, contains('language='));
   });
 
   test('缺 jwtToken 时不切登录态', () async {

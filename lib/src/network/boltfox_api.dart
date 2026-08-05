@@ -175,13 +175,33 @@ class BoltFoxApi {
   /// 失败一律让用户重新拉起微信取新 code（见 docs/integration/WECHAT_LOGIN_SETUP.md 七）。
   static Future<dynamic> weChatMobileLogin({required String code}) {
     return _http.postJson(
-      '/Client/User/setWechatAuthorizLogin',
-      body: {'code': code},
+      _weChatMobileLoginPath,
+      body: _weChatMobileLoginBody(code),
       auth: false,
       retryOnTimeout: false,
       retryOnConnectionError: false,
     );
   }
+
+  /// 微信登录的接口路径与请求体。真实调用与下面的请求描述**共用同一份**，
+  /// 免得「toast 上显示的」与「实际发出的」各写一遍后悄悄漂移。
+  static const String _weChatMobileLoginPath =
+      '/Client/User/setWechatAuthorizLogin';
+
+  static Map<String, dynamic> _weChatMobileLoginBody(String code) => {
+    'code': code,
+  };
+
+  /// ⚠️ 临时排查设施（2026-08-05）：后端要按客户端实际发出的参数复现 406，
+  /// 于是把这次请求的现场（方法 / URL / 公共参数 / body）交给 UI 弹到 toast 上。
+  /// 后端放行 `setWechatAuthorizLogin` 后，本方法与其调用点一并删除。
+  static String describeWeChatMobileLogin({required String code}) =>
+      _http.describeRequest(
+        'POST',
+        _weChatMobileLoginPath,
+        body: _weChatMobileLoginBody(code),
+        auth: false,
+      );
 
   /// 邮箱注册。[emailCode] 为 `sendEmail(sendType:1)` 收到的验证码。
   ///

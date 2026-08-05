@@ -111,6 +111,61 @@ class ApiClient {
     return uri.replace(queryParameters: merged);
   }
 
+  /// 凭证类字段：展示时只留前 6 位 + 长度。现场要能看出「带没带、带的是哪一个」，
+  /// 但截图转发出去也不足以拿去复用。
+  static const Set<String> _secretFields = {
+    'userToken',
+    'Authorization',
+    'Authentication',
+  };
+
+  String _maskSecret(String key, String value) {
+    if (!_secretFields.contains(key) || value.isEmpty) {
+      return value;
+    }
+    final head = value.length <= 6 ? value : value.substring(0, 6);
+    return '$head…(${value.length})';
+  }
+
+  /// 排查用：还原一次调用的**请求现场**——方法、真实 URL（含公共 query）、请求头、JSON body。
+  ///
+  /// 只拼字符串，不发请求；URL 与 header 走的是与真实请求同一套装配
+  /// （[_uri] / [_clientQuery] / [_headers]），因此不会与实际发出的内容漂移。
+  /// 用途：release 包在真机屏幕上把「客户端到底发了什么」交给后端定位——微信授权链路
+  /// 只有 release 包能走通，而 release 包既没有 `kDebugMode` 也没有 `debugPrint` 出口。
+  /// 凭证字段（userToken / Authorization / Authentication，无论在 query 还是 header）
+  /// 一律按 [_maskSecret] 打码，业务 body 原样展示。
+  String describeRequest(
+    String method,
+    String path, {
+    Map<String, dynamic>? query,
+    Map<String, dynamic>? body,
+    bool auth = true,
+  }) {
+    final merged = <String, dynamic>{
+      ..._clientQuery(path, auth: auth),
+      ...?query,
+    };
+    final shown = merged.map(
+      (key, value) => MapEntry(key, _maskSecret(key, value.toString())),
+    );
+    final headers = _headers(
+      auth: auth,
+      extra: body == null ? null : const {'content-type': 'application/json'},
+    );
+    final buffer = StringBuffer('${method.toUpperCase()} ${_uri(path, shown)}')
+      ..write('\nheaders: ')
+      ..write(
+        headers.entries
+            .map((e) => '${e.key}=${_maskSecret(e.key, e.value)}')
+            .join('; '),
+      );
+    if (body != null) {
+      buffer.write('\nbody: ${jsonEncode(body)}');
+    }
+    return buffer.toString();
+  }
+
   Future<dynamic> getJson(
     String path, {
     Map<String, dynamic>? query,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -235,11 +237,27 @@ class _AuthPageState extends State<AuthPage>
       if (!feedback.success) {
         // 同邮箱登录：成功不弹提示，失败才提示。
         // 调试期补一条「微信侧已拿到 code」的事实：微信授权成功、后端换 token 失败时，
-        // 只看 toast 文案分不清是哪一段挂了（详见 _withDiagnostics）。code 本身是
-        // 一次性凭证且此刻已消费，只报长度不外泄内容。
-        _showFeedback(
-          _withDiagnostics(feedback.message, '微信 code 已取得(${code.length} 位)'),
-        );
+        // 只看 toast 文案分不清是哪一段挂了（详见 _withDiagnostics）。
+        // 其后跟着状态层给的请求现场（[ActionFeedback.diagnostics]，当前是被 406 拒掉
+        // 的那次调用的方法/URL/公共参数/body），后端据此复现。
+        final diagnostics = feedback.diagnostics;
+        final copyable = kWeChatLoginDiagnostics && diagnostics != null;
+        final detail = <String>[
+          '微信 code 已取得(${code.length} 位)',
+          if (diagnostics != null) diagnostics,
+          // toast 最长只停 6 秒（[AppToast] 的硬上限），一屏请求现场根本抄不完，
+          // 所以同一份内容再落一次剪贴板——但得让人知道可以直接粘给后端。
+          if (copyable) '（以上内容已复制到剪贴板）',
+        ].join('\n');
+        _showFeedback(_withDiagnostics(feedback.message, detail));
+        if (copyable) {
+          debugPrint('[WeChatLogin] rejected\n$diagnostics');
+          unawaited(
+            Clipboard.setData(
+              ClipboardData(text: '${feedback.message}\n$detail'),
+            ),
+          );
+        }
       }
     } on WeChatAuthorizationException catch (error) {
       if (mounted) {

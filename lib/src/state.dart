@@ -37,10 +37,16 @@ class ActionFeedback {
     required this.success,
     required this.message,
     this.warn = false,
+    this.diagnostics,
   });
 
   final bool success;
   final String message;
+
+  /// 排查期附带的技术现场（当前仅微信登录用：本次实际发出的请求方法/URL/参数）。
+  /// **不是**面向用户的文案，也不跟随语种；由调用页决定是否展示（见
+  /// `auth_page._withDiagnostics`，受 `kWeChatLoginDiagnostics` 开关控制）。
+  final String? diagnostics;
 
   /// 「成功了，但结果不理想」——如照片已在设备侧异常、刷屏失败。
   /// 调用方据此用 `AppToast.warn` 而不是普通 toast（对齐两端 toast 语义约定）。
@@ -1247,6 +1253,11 @@ class PhotoFrameState extends ChangeNotifier {
             ja:
                 'サーバーが WeChat ログインを拒否しました（retCode ${error.code}：${error.message}）。'
                 'WeChat 認証自体は成功しています。',
+          ),
+          // ⚠️ 临时（2026-08-05）：后端要拿客户端实际发出的参数复现，这里把请求现场
+          // 带给 UI 弹到 toast 上。接口放行后连同 describeWeChatMobileLogin 一起删。
+          diagnostics: BoltFoxApi.describeWeChatMobileLogin(
+            code: authorizationCode,
           ),
         );
       }
