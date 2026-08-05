@@ -97,8 +97,8 @@ OpenHarmony/HAP is not integrated.
 - The device method channel is also implemented by `Runner/AppDelegate.swift`.
 - `UIBackgroundModes` contains `bluetooth-central`.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.
-- WeChat URL schemes/universal-link configuration is build-parameter dependent; see the setup and
-  release runbooks.
+- The WeChat URL Scheme and mobile AppID are fixed to `wx5bc2000b3207f370`; the Universal Link
+  remains a build/external-platform input. See the setup and release runbooks.
 - Android-style persistent crash-file capture is not implemented on iOS. BLE performance diagnostics
   keep a bounded in-memory log for the hidden self-test page.
 
@@ -106,8 +106,8 @@ OpenHarmony/HAP is not integrated.
 
 - The repository does not pin a human-readable Flutter release number with FVM or an equivalent
   version manager: 「待确认」 which Flutter release all development machines must use.
-- Android/iOS signing material and WeChat production values are intentionally external to source
-  control.
+- Android/iOS signing material, the WeChat AppSecret, and the iOS Universal Link are intentionally
+  external to source control. The non-secret mobile AppID is fixed in source.
 
 ## Architecture Overview
 
@@ -499,8 +499,9 @@ Logout / successful account deletion / session expiry
 
     BLE transfer, connection intervals, OTA, camera/gallery, WeChat login, background behavior, and
     release-only platform configuration require real-device validation.
-21. Android release builds require complete `android/key.properties`; do not add signing secrets to
-    Git. iOS release setup and WeChat values are external build inputs.
+21. Android debug/profile/release artifacts all use the same release certificate and require complete
+    `android/key.properties`; do not add signing secrets to Git. iOS release setup and the WeChat
+    Universal Link remain external build inputs.
 
 ## Known Risks
 

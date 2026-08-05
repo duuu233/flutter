@@ -19,13 +19,20 @@ val releaseSigningPropertyNames =
 val hasReleaseSigning =
     keystorePropertiesFile.exists() &&
         releaseSigningPropertyNames.all { !keystoreProperties.getProperty(it).isNullOrBlank() }
-val isReleaseBuild =
-    gradle.startParameter.taskNames.any { it.contains("release", ignoreCase = true) }
+val unifiedSigningBuildTypes = setOf("debug", "profile", "release")
+val aggregateArtifactTasks = setOf("assemble", "build", "bundle", "install", "package")
+val isAndroidVariantBuild =
+    gradle.startParameter.taskNames.any { taskName ->
+        val simpleTaskName = taskName.substringAfterLast(':')
+        unifiedSigningBuildTypes.any { simpleTaskName.contains(it, ignoreCase = true) } ||
+            aggregateArtifactTasks.any { simpleTaskName.equals(it, ignoreCase = true) }
+    }
 
-if (isReleaseBuild && !hasReleaseSigning) {
+if (isAndroidVariantBuild && !hasReleaseSigning) {
     throw org.gradle.api.GradleException(
-        "Release signing is not configured. Add storeFile, keyAlias, keyPassword, " +
-            "and storePassword to ${keystorePropertiesFile.path}",
+        "Unified Android signing is not configured. Debug, profile, and release must all use " +
+            "the release certificate. Add storeFile, keyAlias, keyPassword, and storePassword " +
+            "to ${keystorePropertiesFile.path}",
     )
 }
 
@@ -70,10 +77,15 @@ android {
     }
 
     buildTypes {
-        release {
+        // 微信开放平台按「包名 + 证书 MD5」识别应用。debug/profile/release 必须共用
+        // 正式证书，避免调试包与正式包在微信侧被识别成两个应用。
+        configureEach {
             if (hasReleaseSigning) {
                 signingConfig = signingConfigs.getByName("release")
             }
+        }
+
+        release {
             // Flutter 的 Gradle 插件默认对 release 开 R8 + shrinkResources；
             // 这里追加微信 OpenSDK / uCrop 的 keep 规则（见 proguard-rules.pro）。
             proguardFiles(

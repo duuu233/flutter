@@ -1,8 +1,8 @@
 # BoltStar 打包发布指南（Android + iOS）
 
-> 文档类型：Release Runbook  
-> 状态：Active  
-> 最后核验：2026-07-28  
+> 文档类型：Release Runbook
+> 状态：Active
+> 最后核验：2026-08-05
 > 微信登录的完整平台配置见 `../integration/WECHAT_LOGIN_SETUP.md`。
 > 2026-07-16 全面审查后整理。本次审查已修复的构建阻断项：
 > ① 主 Manifest 缺 `INTERNET` 权限（release 包全部网络请求失败）；
@@ -10,18 +10,18 @@
 > ③ App Store 1024 图标含 alpha 通道（上传直接被拒，已转 RGB）；
 > ④ Android 8+ 无自适应图标（已补 `mipmap-anydpi-v26`）。
 
-## 〇、打包前必须人工替换的占位符
+## 〇、打包前必须核对的微信配置
 
-| 位置 | 占位符 | 替换为 |
+| 位置 | 当前值 | 要求 |
 | --- | --- | --- |
-| `ios/Runner/Info.plist` → `CFBundleURLSchemes` | `wxYOUR_WECHAT_APPID` | 微信开放平台移动应用 AppID（形如 `wx1234567890abcdef`） |
+| `ios/Runner/Info.plist` → `CFBundleURLSchemes` | `wx5bc2000b3207f370` | 必须与微信开放平台移动应用 AppID 一致 |
 | `ios/Runner/Runner.entitlements` → `associated-domains` | `applinks:example.boltfox.cn` | 真实 Universal Link 域名 |
-| 构建命令 `--dart-define` | `WECHAT_APP_ID` / `WECHAT_UNIVERSAL_LINK` | 同上，三处必须一致 |
+| 构建命令 `--dart-define` | `WECHAT_APP_ID=wx5bc2000b3207f370` / `WECHAT_UNIVERSAL_LINK` | 与上述配置一致 |
 
 微信侧配套（不做则微信登录不可用）：
 - 域名根目录部署 `/.well-known/apple-app-site-association`（含 TeamID `S2HZK3227W` + bundle id `com.boltfox.boltstar`）；
 - 微信开放平台后台填写同一 Universal Link；
-- **Android**：开放平台登记的必须是 `boltstar-release.jks`（release 签名）的 MD5，不是 debug 签名——否则 release 包授权静默失败。
+- **Android**：开放平台登记 `boltstar-release.jks` 的 MD5；debug/profile/release 已统一使用这把证书。
 
 ## 〇.5、国内网络前置：pub.dev 镜像（不配则 pub get 报 socket error）
 
@@ -35,7 +35,7 @@ setx FLUTTER_STORAGE_BASE_URL "https://storage.flutter-io.cn"
 
 已开系统代理的机器可改用 `HTTPS_PROXY` 环境变量，二选一，别混用。
 
-## 一、Android（Windows 打包机，keystore 在 `D:/application/AndroidKeys/`）
+## 一、Android（Windows 打包机，keystore 路径由 `android/key.properties` 指定）
 
 ```bash
 flutter clean
@@ -44,14 +44,14 @@ flutter pub get
 # 上架 Google Play（AAB）：
 flutter build appbundle --release ^
   --obfuscate --split-debug-info=build/symbols ^
-  --dart-define=WECHAT_APP_ID=wx你的AppID ^
+  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/app/outputs/bundle/release/app-release.aab
 
 # 直接分发 APK（可选）：
 flutter build apk --release --split-per-abi ^
   --obfuscate --split-debug-info=build/symbols ^
-  --dart-define=WECHAT_APP_ID=wx你的AppID ^
+  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk 等
 ```
@@ -60,19 +60,19 @@ flutter build apk --release --split-per-abi ^
 
 ```bash
 flutter build apk --debug ^
-  --dart-define=WECHAT_APP_ID=wx你的AppID ^
+  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/app/outputs/flutter-apk/app-debug.apk（含全部 ABI，直接安装）
 ```
 
-- debug 包自动用 debug keystore，不需要 `key.properties`；不做 R8 混淆/资源裁剪。
-- 微信登录在 debug 包必然静默失败（开放平台登记的是 release 签名 MD5），用邮箱登录测试。
+- debug/profile/release 全部使用 `key.properties` 指向的正式证书；缺配置时对应构建会主动失败。
+- debug 包不做 R8 混淆/资源裁剪，但包名、微信 AppID、签名与 release 完全一致，可以验证微信登录。
 - 崩溃二分：debug 不崩 + release 崩 → 查 R8/proguard；两者都崩 → 查渲染驱动（Impeller）或代码，
   看 App 启动弹窗的崩溃日志或 `adb logcat -b crash -d`。
 - 手机连电脑时优先 `flutter run`（debug 模式 + 终端实时堆栈 + 热重载），比打包快。
 
 说明：
-- 签名已接线 `android/key.properties`，缺配置会主动构建失败（不会静默用 debug 签名）。
+- 统一签名已接线 `android/key.properties`，所有 Android 产包环境都必须持有同一把正式 JKS。
 - Flutter 3.4x 默认对 release 开 R8 + shrinkResources；本次已补 `android/app/proguard-rules.pro`
   （微信 OpenSDK / uCrop keep 规则）。
 - `--split-debug-info` 的符号表（build/symbols）要留存，崩溃堆栈还原用。
@@ -86,7 +86,7 @@ flutter pub get
 cd ios && pod install --repo-update && cd ..   # Podfile.lock 严重过期，必须跑一次
 flutter build ipa --release --export-method app-store \
   --obfuscate --split-debug-info=build/symbols \
-  --dart-define=WECHAT_APP_ID=wx你的AppID \
+  --dart-define=WECHAT_APP_ID=wx5bc2000b3207f370 \
   --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
 # 产物: build/ios/ipa/BoltStar.ipa → Transporter / Xcode Organizer 上传
 ```

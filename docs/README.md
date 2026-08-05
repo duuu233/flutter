@@ -95,6 +95,7 @@
 | [`history/2026-08/2026-08-05-我的相册计数与折叠屏方案.md`](history/2026-08/2026-08-05-我的相册计数与折叠屏方案.md) | Historical Change Record（双端同步；「我的相册」张数改口径 + `FigmaScreen.fillViewport`） |
 | [`history/2026-08/2026-08-04-广播设备ID扩到6字节.md`](history/2026-08/2026-08-04-广播设备ID扩到6字节.md) | Historical Change Record（双端同步；⚠️ 客户端须先于固件灰度上线） |
 | [`history/2026-08/2026-08-04-微信登录回登录页弹请重新登录.md`](history/2026-08/2026-08-04-微信登录回登录页弹请重新登录.md) | Historical Change Record（定位为后端 406；待后端放行免登录白名单） |
+| [`history/2026-08/2026-08-05-微信AppID及Android签名统一.md`](history/2026-08/2026-08-05-微信AppID及Android签名统一.md) | Historical Change Record（AppID 修正；debug/profile/release 统一正式签名） |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责
