@@ -812,6 +812,14 @@ class AppL10n {
   );
   String get aiImageUploading =>
       _pick('图片上传中，请稍候…', 'Uploading images…', '画像をアップロード中…');
+
+  /// 流式回复收完了，却一句话一张图都没有（服务端只推了进度就结束）。
+  /// 留个空气泡纯属让人以为坏了，所以整条撤掉并提示一句。
+  String get aiEmptyReply => _pick(
+    '本次没有生成内容，请重试',
+    'Nothing was generated this time. Please try again.',
+    '今回は生成されませんでした。もう一度お試しください',
+  );
   String get aiMaxImages => _pick(
     '一次最多选择 4 张图片',
     'You can select up to 4 images at a time.',

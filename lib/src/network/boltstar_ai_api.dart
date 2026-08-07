@@ -1,19 +1,32 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'api_session.dart';
+
 /// BoltStar AI（星宝）第三方接口层。对齐小程序 `utils/ai-api.js`
-/// （文档：`photo-album/assets/ai/BoltStar-API-Doc-v2-1.0.4.md`，**当前对接版本**）。
+/// （文档：`photo-album/assets/BoltStar-SSE-前端接入文档 -改.md` 与
+/// `photo-album/docs/reference/ai/BoltStar-API-Doc-v2-1.0.4.md`，**当前对接版本**）。
 ///
 /// **不复用 `ApiClient`**：AI 服务是独立第三方（阿里云 FC），Base URL、响应结构
 /// （`success/code/data/params/detail`）、错误码体系都与 BoltFox 后端不同，
 /// 公共参数（userToken/language 头）也不适用，硬塞进去只会两边互相迁就。
 /// 失败一律抛 [AiApiException]，由 `features/ai/ai_i18n.dart` 按语种/区间分发提示。
 ///
-/// ## 流式 vs 非流式
-/// 小程序 `wx.request` 不支持 SSE，只能走非流式 URL + 客户端打字机；**App 侧本可以走流式**，
-/// 但本轮先与小程序保持同一条链路（非流式 + 打字机），避免两端表现不一致、也少一处联调面。
-/// 流式 Base URL 保留在 [streamBaseUrl] 备后续启用。
+/// ## 鉴权（2026-07-29 起网关强制）
+/// 每个请求带 `Authentication: Bearer <jwtToken>`（注意是 **Authentication** 不是
+/// Authorization），token 取自 [ApiSession]，与 BoltFox 后端用的是同一枚。
+/// 缺失时网关直接回 `{Code: JWTTokenIsMissing}`，由 [gatewayErrorMessage] 转成可展示文案。
+///
+/// ⚠️ 这一段是 2026-08-07 才补上的：此前本文件**从未发送过该头**，而网关早在 07-29 就强制了。
+/// 之所以一直没炸出来，只是因为 `features/ai/ai_entry.dart` 的 `kAiEntryEnabled = false`
+/// 把入口整体屏蔽着。开放入口前这条必须在真机上验一次。
+///
+/// ## 流式（SSE）
+/// 2026-08-07 起 `/chat` 走 SSE（[chatStream]），服务地址整体切到流式版部署 [baseUrl]。
+/// 此前这里写着「小程序 `wx.request` 不支持 SSE，所以 App 也先不上」—— **该结论已作废**：
+/// 小程序靠 `enableChunked` + `onChunkReceived` 早就收上流了，两端现在是同一条链路。
 class BoltStarAiApi {
   BoltStarAiApi({required this.userId});
 
@@ -21,19 +34,37 @@ class BoltStarAiApi {
   /// 未登录时调用方应传入兜底值 `boltfox_demo_user`（见 [demoUserId]）。
   final String userId;
 
+  /// 服务地址（流式版部署）。会话/历史/删除这些接口也都在这个域名下，
+  /// 与 `/chat` 共用同一份会话数据。
+  static const String baseUrl =
+      'https://boltstagent-web-jncfttrxvt.ap-southeast-1.fcapp.run';
+
+  /// 旧的非流式部署。只剩一个用途：[chat] 这条降级链路（流式异常时手动回退用），
+  /// 两个部署是同一套服务、同一份会话数据，回退期间会话/历史不会对不上。
   static const String nonStreamBaseUrl =
       'https://boltstaat-agent-fwdomalzks.ap-southeast-1.fcapp.run';
-
-  /// 流式（SSE）地址，本轮未启用，勿在本文件内使用。
-  static const String streamBaseUrl =
-      'https://boltstagent-web-jncfttrxvt.ap-southeast-1.fcapp.run';
 
   /// 未登录兜底 user_id（保证 demo 可跑通，对齐小程序 getAiUserId）。
   static const String demoUserId = 'boltfox_demo_user';
 
-  /// 普通接口 15s；`/chat` 与 `/image/enhance` 涉及生图（上游文生图可能 30s+）放宽到 120s。
+  /// 普通接口 15s。建会话/列表/历史这些秒级接口就该早点报错，让用户对着菊花等几分钟没意义。
   static const Duration defaultTimeout = Duration(seconds: 15);
-  static const Duration generateTimeout = Duration(seconds: 120);
+
+  /// `/chat` 与 `/image/enhance` 涉及生图，放宽到 600s（对齐小程序）：切流式后长回复 + 生图
+  /// 很容易顶到这条线，而流式下用户看得见进度，被前端掐断比干等更糟。
+  ///
+  /// ⚠️ 这只是**客户端**这一侧的上限。若真机失败稳定发生在明显更短的时刻（60s/180s 之类），
+  /// 那是上游 FC 函数超时或网关空闲回收先跳了，调这个数字没用，得找后端。
+  static const Duration generateTimeout = Duration(seconds: 600);
+
+  /// 流式请求等**响应头**的超时。不能用 [defaultTimeout] 那 15s：SSE 的响应头虽然通常立刻
+  /// 就回，但网关排队/冷启动时会拖，被 15s 掐掉会变成一个莫名其妙的 30002。
+  static const Duration streamHeaderTimeout = Duration(seconds: 60);
+
+  /// 流式收流的**空闲**超时：两个 chunk 之间超过这么久没动静就判定连接已死。
+  /// 用空闲而非总时长，是因为 SSE 本来就会持续推进度事件；真卡死时也不必干等满 600s。
+  /// 首个事件前的等待（约 15s，等 LLM 第一轮返回）远在这条线内。
+  static const Duration streamIdleTimeout = Duration(seconds: 120);
 
   /// 阿里云网关 JWT 缺失错误的大写字段签名。
   ///
@@ -60,6 +91,46 @@ class BoltStarAiApi {
     return id.isEmpty ? demoUserId : 'boltfox_$id';
   }
 
+  /// 请求头。每次现取 token（登录/退出后立即生效，不必重建 [BoltStarAiApi]）。
+  ///
+  /// 未登录（无 jwtToken）时**不带这个头照发**：网关会回 `JWTTokenIsMissing`，
+  /// 走 [gatewayErrorMessage] 的白名单提示，不在端上另造一套错误。
+  static Map<String, String> get _headers {
+    final jwtToken = ApiSession.instance.jwtToken;
+    return {
+      'Content-Type': 'application/json',
+      if (jwtToken.isNotEmpty) 'Authentication': 'Bearer $jwtToken',
+    };
+  }
+
+  /// 响应结构兜底：流式版部署实测把 `/session/new` 的 `data.session` 包装层去掉了 ——
+  /// 字段直接挂在 `data` 下，而文档 v1.0.4 §二写的仍是嵌套结构。两种都得吃：
+  /// 先按文档取包装层，取不到就把 `data` 自己当结果。
+  /// `/session/list`、`/chat/history` 是同样的「data 里再套一层」结构，一并兜住。
+  static T? _unwrap<T>(
+    Map<String, dynamic> body,
+    String key,
+    bool Function(Object?) isValid,
+  ) {
+    final data = body['data'];
+    if (data is! Map) {
+      // 扁平到极致：data 直接就是想要的东西（比如 sessions 直接是数组）
+      return isValid(data) ? data as T : null;
+    }
+    final nested = data[key];
+    if (isValid(nested)) {
+      return nested as T;
+    }
+    return isValid(data) ? data as T : null;
+  }
+
+  /// 排障用：只留个头 + 总长度。响应体几十 KB，整段灌进日志既看不清也刷屏。
+  static String _preview(String value, {int limit = 200}) {
+    return value.length > limit
+        ? '${value.substring(0, limit)}…(共 ${value.length} 字符)'
+        : value;
+  }
+
   // ── 基础请求 ─────────────────────────────────────────────
 
   /// 发一次请求并返回**整个响应体**（`code=10001`「历史已过期」这类「成功但带语义」的场景
@@ -72,11 +143,12 @@ class BoltStarAiApi {
     String method = 'POST',
     Map<String, dynamic>? body,
     Duration? timeout,
+    String? base,
   }) {
     final client = http.Client();
     var aborted = false;
-    final uri = Uri.parse('$nonStreamBaseUrl$path');
-    const headers = {'Content-Type': 'application/json'};
+    final uri = Uri.parse('${base ?? baseUrl}$path');
+    final headers = _headers;
     final payload = body == null ? null : jsonEncode(body);
 
     Future<http.Response> send() {
@@ -173,11 +245,19 @@ class BoltStarAiApi {
   /// 进页面/点「新对话」就先建，用户看看就走会白占额度。
   Future<AiSession> newSession() async {
     final body = await _await(path: '/session/new', body: {'user_id': userId});
-    final data = body['data'];
-    final session = data is Map ? data['session'] : null;
-    return AiSession.fromJson(
-      session is Map ? Map<String, dynamic>.from(session) : const {},
+    // 嵌套（data.session，文档 v1.0.4）与扁平（字段直接在 data 上，流式版部署实测）都认
+    final session = _unwrap<Map>(
+      body,
+      'session',
+      (value) =>
+          value is Map && '${value['session_id'] ?? ''}'.isNotEmpty,
     );
+    if (session == null) {
+      // 两种结构都对不上（又改协议了）：别让调用方拿着空 sessionId 往下跑，
+      // 那会在 /chat 上以一个不知所云的错误爆出来。按上游错误抛，日志里留 detail 好定位。
+      throw const AiApiException(code: 30001, detail: 'SESSION_MISSING');
+    }
+    return AiSession.fromJson(Map<String, dynamic>.from(session));
   }
 
   /// `GET /session/list` — 会话列表（后端按更新时间倒序）。
@@ -186,9 +266,9 @@ class BoltStarAiApi {
       path: '/session/list?user_id=${Uri.encodeQueryComponent(userId)}',
       method: 'GET',
     );
-    final data = body['data'];
-    final list = data is Map ? data['sessions'] : null;
-    if (list is! List) {
+    // data.sessions（文档）与 data 直接是数组（若后端同样扁平化）都认
+    final list = _unwrap<List>(body, 'sessions', (value) => value is List);
+    if (list == null) {
       return const [];
     }
     return list
@@ -223,18 +303,21 @@ class BoltStarAiApi {
     ].join('&');
     final body = await _await(path: '/chat/history?$query', method: 'GET');
     final data = body['data'];
-    final list = data is Map ? data['data'] : null;
+    // data.data（文档）与 data 直接是数组（若后端同样扁平化）都认
+    final list = _unwrap<List>(body, 'data', (value) => value is List);
     return AiHistory(
       expired: '${body['code']}' == '10001',
-      list: list is List
-          ? list
+      list: list == null
+          ? const []
+          : list
                 .whereType<Map>()
                 .map(
                   (item) =>
                       AiHistoryItem.fromJson(Map<String, dynamic>.from(item)),
                 )
-                .toList()
-          : const [],
+                .toList(),
+      // 扁平结构下没有 total 这个字段。不拿 list.length 顶替：会话列表页用 page_size=1
+      // 探总数，顶替出来的 1 会被当成「1 条消息」显示，比不显示更糟。
       total: data is Map ? (int.tryParse('${data['total']}') ?? 0) : 0,
     );
   }
@@ -260,7 +343,250 @@ class BoltStarAiApi {
 
   // ── 对话 / 生图 ───────────────────────────────────────────
 
-  /// `POST /chat`（非流式）— 对话 / 一键生图 / 图文多模态。
+  /// `/chat` 的请求体。流式与非流式**完全一致**（接入文档：请求参数一个字没动）。
+  Map<String, dynamic> _chatPayload({
+    required String sessionId,
+    required String message,
+    required String imgOrientation,
+    String? imgStyle,
+    String? modelType,
+    List<String> imageUrls = const [],
+    double? temperature,
+  }) {
+    return {
+      'user_id': userId,
+      'session_id': sessionId,
+      'message': message,
+      'img_orientation': imgOrientation,
+      if (imgStyle != null && imgStyle.isNotEmpty) 'img_style': imgStyle,
+      // 生图模型档位（lite / pro，**不传即 pro**）。页面暂无选档入口，所以正常情况下
+      // 这一项不会出现在请求体里，行为与加这个参数之前完全一致。
+      if (modelType != null && modelType.isNotEmpty) 'model_type': modelType,
+      if (imageUrls.isNotEmpty) 'image_urls': imageUrls,
+      if (temperature != null) 'temperature': temperature,
+    };
+  }
+
+  /// `POST /chat`（**流式 SSE，当前主链路**）— 对话 / 一键生图 / 图文多模态。
+  ///
+  /// [onEvent] 逐个收原始事件：
+  /// - `pre_text {content}` 预描述。推**两条**：先秒回一句占位的「星宝努力思考创作中」，
+  ///   约 3s 后 LLM 出结果再推真文案。调用方直接覆盖即可，不必分辨是哪一条；
+  /// - `progress {progress, stage, message}` 里程碑，只有 5/15/30/45/50/80/85/90/100 这几级
+  ///   （中间读数要调用方自己补，见 `ai_chat_page` 的 `_pumpProgress`）。
+  ///   `message` 是服务端下发的进度文案，有就直接显示，不必再自己维护 stage→文案 映射表；
+  /// - `image {content}` 生成图 URL，排在 `progress 90 (uploaded)` **之后**，不是 50%
+  ///   （50 那级只是初稿完成，图还没下载上传完、URL 拿不到）；
+  /// - `text {content}` 回复文字，每次 1~3 字，调用方自行追加渲染；
+  /// - `done {orientation}` 结束。
+  ///
+  /// 同时把 text/image 汇总成与 [chat] 一样的 [AiChatReply] 返回，供调用方兜底校对。
+  /// 返回的 [AiCall] 带 `abort()`，页面「停止生成」时调用。
+  AiCall<AiChatReply> chatStream({
+    required String sessionId,
+    required String message,
+    required String imgOrientation,
+    String? imgStyle,
+    String? modelType,
+    List<String> imageUrls = const [],
+    double? temperature,
+    void Function(AiStreamEvent event)? onEvent,
+  }) {
+    final client = http.Client();
+    var aborted = false;
+
+    Future<AiChatReply> run() async {
+      final textBuffer = StringBuffer();
+      final images = <String>[];
+      var orientation = '';
+      var done = false;
+      var eventCount = 0;
+      AiApiException? streamError;
+      // 原始文本只在「还没解析出任何事件」时留着（用来把非 SSE 的错误体解出来）。
+      // 正常流一旦跑起来就别再攒了，几十 KB 的回复没必要在内存里存两份。
+      final rawBuffer = StringBuffer();
+
+      final parser = AiSseParser((json) {
+        eventCount += 1;
+        final event = AiStreamEvent.fromJson(json);
+        switch (event.type) {
+          case 'text':
+            textBuffer.write(event.content);
+          case 'image':
+            if (event.content.isNotEmpty) {
+              images.add(event.content);
+            }
+          case 'done':
+            done = true;
+            if (event.orientation.isNotEmpty) {
+              orientation = event.orientation;
+            }
+          case 'error':
+            // 服务端在流里报错（事件形状未在文档中固定，尽量兼容）
+            streamError = AiApiException(
+              code: event.code ?? 30001,
+              detail: event.detail.isNotEmpty ? event.detail : 'stream error',
+            );
+          default:
+            break;
+        }
+        // 回调抛错不能连累整条流（页面 setState 出问题时尤其）
+        try {
+          onEvent?.call(event);
+        } catch (error) {
+          debugPrint('[BoltStar] SSE 事件处理异常 $error');
+        }
+      });
+
+      http.StreamedResponse response;
+      try {
+        final request = http.Request('POST', Uri.parse('$baseUrl/chat'))
+          ..headers.addAll(_headers)
+          ..body = jsonEncode(
+            _chatPayload(
+              sessionId: sessionId,
+              message: message,
+              imgOrientation: imgOrientation,
+              imgStyle: imgStyle,
+              modelType: modelType,
+              imageUrls: imageUrls,
+              temperature: temperature,
+            ),
+          );
+        response = await client.send(request).timeout(streamHeaderTimeout);
+      } on Object catch (error) {
+        client.close();
+        if (aborted) {
+          throw const AiApiException.aborted();
+        }
+        throw AiApiException(code: 30002, detail: '$error');
+      }
+
+      // 非 200 一律不是 SSE，是网关/服务端直接回的 JSON 错误体：整段读出来按它报错
+      if (response.statusCode != 200) {
+        String body;
+        try {
+          body = await response.stream.transform(_utf8Stream).join();
+        } on Object {
+          body = '';
+        } finally {
+          client.close();
+        }
+        throw _errorFromBody(body) ??
+            AiApiException(
+              code: 30001,
+              detail: 'HTTP ${response.statusCode} body=${_preview(body)}',
+            );
+      }
+
+      try {
+        // ⚠️ 多字节字符必然被切在 chunk 边界上（一个汉字 3 字节）。Dart 的 [Utf8Decoder]
+        // 作为流转换器**自带跨块续接**（内部保留半个序列等下一块），所以这里不必像小程序
+        // 那样手写字节缓存 —— 但顺序不能反：必须先 timeout(字节流) 再 transform(解码)。
+        await for (final chunk
+            in response.stream.timeout(streamIdleTimeout).transform(
+              _utf8Stream,
+            )) {
+          if (eventCount == 0) {
+            rawBuffer.write(chunk);
+          }
+          parser.push(chunk);
+        }
+      } on Object catch (error) {
+        if (aborted) {
+          throw const AiApiException.aborted();
+        }
+        // 流中途断了。已经吐出过事件的话页面上是有内容的，仍按错误抛，
+        // 由页面决定「保留已上屏的部分 + 提示一句」还是整条换失败卡。
+        throw AiApiException(code: 30002, detail: '$error');
+      } finally {
+        client.close();
+      }
+
+      parser.flush();
+      final error = streamError;
+      if (error != null) {
+        throw error;
+      }
+
+      if (eventCount == 0) {
+        final body = rawBuffer.toString();
+        // 最后一搏：服务端曾把事件分隔符转义成**字面的 `\n`**（反斜杠 + n 两个字符），
+        // 整个响应体成了一行、一个真换行都没有，解析器一个事件都拿不到。
+        // 只在这条「否则必然失败」的路径上还原一次，正常流一步都不碰。
+        if (kEscapedEventSeparator.hasMatch(body)) {
+          parser.push(unescapeEventSeparators(body));
+          parser.flush();
+        }
+        if (eventCount > 0) {
+          debugPrint(
+            '[BoltStar] 响应体的事件分隔符是字面 \\n 而非真换行（SSE 格式不合规，需后端修）；'
+            '已还原并解析出 $eventCount 个事件，本次无逐字流式效果',
+          );
+          final lateError = streamError;
+          if (lateError != null) {
+            throw lateError;
+          }
+        } else {
+          // 还原也救不回来：多半是服务端直接回了 JSON（错误体），按它报错；
+          // 都不是的话就是响应体形状不对，把开头一并带上，一次就能定位。
+          throw _errorFromBody(body) ??
+              AiApiException(
+                code: 30001,
+                detail: 'EMPTY_STREAM body=${_preview(body)}',
+              );
+        }
+      }
+
+      return AiChatReply(
+        text: textBuffer.toString(),
+        images: images,
+        orientation: orientation,
+        done: done,
+      );
+    }
+
+    return AiCall<AiChatReply>(run(), () {
+      aborted = true;
+      client.close();
+    });
+  }
+
+  /// 流式响应里混进来的**非 SSE** 响应体（网关 403 JSON、服务端直接回业务错误 JSON）。
+  static AiApiException? _errorFromBody(String text) {
+    if (text.trim().isEmpty) {
+      return null;
+    }
+    Map<String, dynamic>? json;
+    try {
+      final decoded = jsonDecode(text);
+      if (decoded is Map<String, dynamic>) {
+        json = decoded;
+      }
+    } catch (_) {
+      return null;
+    }
+    final gatewayMessage = gatewayErrorMessage(json);
+    if (gatewayMessage != null) {
+      return AiApiException(
+        code: 31001,
+        detail: gatewayMessage,
+        userMessage: gatewayMessage,
+      );
+    }
+    if (json != null && json['success'] == false && json['code'] != null) {
+      return AiApiException(
+        code: int.tryParse('${json['code']}') ?? 31001,
+        params: json['params'] is Map
+            ? Map<String, dynamic>.from(json['params'] as Map)
+            : null,
+        detail: json['detail']?.toString(),
+      );
+    }
+    return null;
+  }
+
+  /// `POST /chat`（非流式）— **仅降级用**：流式在某些网络环境下异常时手动回退这条链路。
   ///
   /// - [imgOrientation] **必传**：vertical / horizontal / square；
   /// - [imgStyle] 仅一键生图传：cartoon / landscape / portrait / anime（文档 §5.3.2）；
@@ -278,20 +604,23 @@ class BoltStarAiApi {
     required String message,
     required String imgOrientation,
     String? imgStyle,
+    String? modelType,
     List<String> imageUrls = const [],
     double? temperature,
   }) {
     final call = _request(
       path: '/chat',
-      body: {
-        'user_id': userId,
-        'session_id': sessionId,
-        'message': message,
-        'img_orientation': imgOrientation,
-        if (imgStyle != null && imgStyle.isNotEmpty) 'img_style': imgStyle,
-        if (imageUrls.isNotEmpty) 'image_urls': imageUrls,
-        if (temperature != null) 'temperature': temperature,
-      },
+      // 非流式响应只有旧部署给得了，这里显式打回旧地址（见 [nonStreamBaseUrl]）
+      base: nonStreamBaseUrl,
+      body: _chatPayload(
+        sessionId: sessionId,
+        message: message,
+        imgOrientation: imgOrientation,
+        imgStyle: imgStyle,
+        modelType: modelType,
+        imageUrls: imageUrls,
+        temperature: temperature,
+      ),
       timeout: generateTimeout,
     );
     return AiCall<AiChatReply>(
@@ -332,6 +661,126 @@ class BoltStarAiApi {
       call.abort,
     );
   }
+}
+
+/// 收流用的 UTF-8 解码器。`allowMalformed: true` 是有意的：单个坏字节不该把整条流带崩，
+/// 顶多糊一个字符。作为流转换器时它**自带跨块续接**，半个多字节序列会留到下一块再拼。
+const Utf8Decoder _utf8Stream = Utf8Decoder(allowMalformed: true);
+
+/// 服务端曾把 SSE 的事件分隔符转义成**字面的 `\n`**（反斜杠 + n 两个字符），
+/// 整个响应体成了一行、一个真换行都没有 —— 解析器一个事件都拿不到。
+///
+/// ⚠️ 只还原**当分隔符用的**那些：即后面紧跟着 `data:`（中间可以再夹几个）或者已经到结尾的。
+/// JSON 字符串正文里的 `\n`（回复文字本身带换行时就长这样）必须原样留着，
+/// 否则会把一个事件的 JSON 从中间劈开，反而更糟。
+final RegExp kEscapedEventSeparator = RegExp(r'\\n(?=(?:\\n)*(?:data:|$))');
+
+String unescapeEventSeparators(String text) =>
+    text.replaceAll(kEscapedEventSeparator, '\n');
+
+/// SSE `data:` 行解析器。
+///
+/// 抽成独立类有两个理由：一是收流与解析可以分开测（不必起真网络，见
+/// `test/boltstar_ai_sse_test.dart`）；二是「chunk 边界不保证落在行尾」这条约束
+/// 只在这里体现，不必散到调用处。
+class AiSseParser {
+  AiSseParser(this.onEvent);
+
+  final void Function(Map<String, dynamic> event) onEvent;
+
+  /// 上一块结尾那半行，等下一块来拼。
+  String _pending = '';
+
+  void push(String text) {
+    if (text.isEmpty) {
+      return;
+    }
+    _pending += text;
+    final lines = _pending.split('\n');
+    _pending = lines.removeLast(); // 最后一行可能不完整
+    for (final line in lines) {
+      _emit(line);
+    }
+  }
+
+  /// 连接结束时把残留的最后一行也吐出去（服务端最后一条没带换行时用得上）。
+  void flush() {
+    final rest = _pending;
+    _pending = '';
+    if (rest.trim().isNotEmpty) {
+      _emit(rest);
+    }
+  }
+
+  void _emit(String raw) {
+    final line = raw.endsWith('\r')
+        ? raw.substring(0, raw.length - 1)
+        : raw;
+    if (!line.startsWith('data:')) {
+      return; // event:/id:/retry:/注释行/空行，本协议用不上
+    }
+    // 按 `data:` 之后 trim，而不是写死 slice(6)：服务端哪天不带那个空格也照样认
+    final payload = line.substring(5).trim();
+    if (payload.isEmpty || payload == '[DONE]') {
+      return;
+    }
+    try {
+      final decoded = jsonDecode(payload);
+      if (decoded is Map<String, dynamic>) {
+        onEvent(decoded);
+      }
+    } catch (_) {
+      // 半条/脏数据：丢掉这一行就好，别把整条流带崩
+      debugPrint('[BoltStar] SSE 数据行解析失败 ${BoltStarAiApi._preview(payload)}');
+    }
+  }
+}
+
+/// 一个 SSE 事件。字段按 [type] 取用，缺的给空值 —— 未知类型也照样构造出来，
+/// 原样透传给页面，别在这一层把没见过的事件吃掉。
+class AiStreamEvent {
+  const AiStreamEvent({
+    required this.type,
+    this.content = '',
+    this.progress,
+    this.stage = '',
+    this.message = '',
+    this.orientation = '',
+    this.code,
+    this.detail = '',
+  });
+
+  factory AiStreamEvent.fromJson(Map<String, dynamic> json) {
+    return AiStreamEvent(
+      type: json['type']?.toString() ?? '',
+      content: json['content']?.toString() ?? '',
+      progress: json['progress'] == null
+          ? null
+          : num.tryParse('${json['progress']}')?.toDouble(),
+      stage: json['stage']?.toString() ?? '',
+      message: json['message']?.toString() ?? '',
+      orientation: json['orientation']?.toString() ?? '',
+      code: json['code'] == null ? null : int.tryParse('${json['code']}'),
+      detail:
+          json['detail']?.toString() ??
+          json['message']?.toString() ??
+          json['content']?.toString() ??
+          '',
+    );
+  }
+
+  final String type;
+  final String content;
+  final double? progress;
+  final String stage;
+
+  /// 服务端下发的进度文案（2026-08-07 新增）。有就直接显示，不必再自己维护 stage→文案 映射。
+  final String message;
+  final String orientation;
+
+  /// 仅 `error` 事件带。
+  final int? code;
+  final String detail;
 }
 
 /// 一次可中断的 AI 请求：[future] 拿结果，[abort] 主动终止（对齐小程序 promise.abort()）。
@@ -432,9 +881,20 @@ class AiHistory {
 }
 
 /// `/chat` 的回复：文字 + 生成的图片地址（可能只有其一）。
+///
+/// 流式（[BoltStarAiApi.chatStream]）下这是**汇总结果**：事件已经逐个回调过了，
+/// 这里再给一份完整的，供调用方兜底校对（比如某个 image 事件漏了，用它补上）。
+/// [orientation] / [done] 只有流式会填。
 class AiChatReply {
-  const AiChatReply({required this.text, required this.images});
+  const AiChatReply({
+    required this.text,
+    required this.images,
+    this.orientation = '',
+    this.done = false,
+  });
 
   final String text;
   final List<String> images;
+  final String orientation;
+  final bool done;
 }

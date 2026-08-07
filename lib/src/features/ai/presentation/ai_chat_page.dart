@@ -101,13 +101,87 @@ class AiChatPage extends StatefulWidget {
 /// 当前活着的聊天页实例（页面栈里可能同时躺着好几个：每从会话列表打开一条会话就多一个）。
 final Set<_AiChatPageState> _livePages = <_AiChatPageState>{};
 
-/// 打字机（2026-07-27 优化顺滑度）。原实现是 `Timer.periodic(30ms)` 每帧追 3 字 —— 30ms 一跳、
-/// 一跳 3 字，肉眼能看出「一顿一顿」。现在按 ~60fps 出字、每帧尽量只追 1 字：
-/// - [_kTypeTick] 16ms ≈ 一帧，用**递归 Timer** 自计时（`Timer.periodic` 遇上 setState 慢会堆帧，
-///   追上来时一次吐一大段，就是那种「卡一下、蹦一截」的观感）；
-/// - 每帧字数 = `max(1, ceil(总字数 / _kTypeMaxTicks))`，长回复自动加快，整段最长 ~6.7s 打完。
+/// 打字机的出字节拍（2026-07-27 优化顺滑度）。原实现是 `Timer.periodic(30ms)` 每帧追 3 字
+/// —— 30ms 一跳、一跳 3 字，肉眼能看出「一顿一顿」。现在按 ~60fps 出字、每帧尽量只追 1 字。
+///
+/// 用**递归 Timer** 自计时而非 `Timer.periodic`：后者遇上 setState 慢会堆帧、追上来时一次吐
+/// 一大段，就是那种「卡一下、蹦一截」的观感；自计时永远「渲染完再排下一帧」。
+///
+/// 切字一律用 `runes` 而不是 `split('')`：后者按 UTF-16 **码元**切，会把 emoji / 生僻字的
+/// 代理对劈成两半，打到一半那一帧渲染出乱码方块 —— 星宝回复里 ✨ 之类相当常见。
 const Duration _kTypeTick = Duration(milliseconds: 16);
-const int _kTypeMaxTicks = 420;
+
+/// 流式打字机（2026-08-07 SSE 接入）：服务端一段一段推 `text` 事件，打字机不再一次拿到全文，
+/// 而是「一路追着积压的字打」。每帧字数 = `max(1, ceil(未打字数 / _kStreamTypeTicks))`
+/// —— 即任意时刻的积压都在约 _kStreamTypeTicks 帧内打完：来得慢就一字一字（最顺滑），
+/// 突然来一大段也不会落下十几秒的尾巴。
+///
+/// 180 帧 ≈ 2.9s。别调回 60（≈1s）：服务端的 text 事件常常是连着涌进来的（尤其响应体一次性
+/// 到达、靠 [unescapeEventSeparators] 兜底解析的那条路，所有事件在同一帧解析完），积压瞬间就是
+/// 全文 —— 压在 1 秒内打完，100 字就是每帧 2 字、0.8 秒冲完，肉眼基本看不出在打字。
+const int _kStreamTypeTicks = 180;
+
+/// 字打完了但流还没结束时的空转间隔。这时没内容可渲染，没必要还按 16ms 空跑。
+const Duration _kStreamIdleTick = Duration(milliseconds: 60);
+
+/// 进度补间（接入文档「后端只发里程碑，前端负责平滑动画」）。
+/// 后端只推 5/15/30/45/50/80/85/90/100 这几级，而占位盒正中间摆的是一个**数字**——
+/// 数字没法像进度条宽度那样靠动画抹平，直接贴上去就是 45→50→80 地跳。
+/// 每 [_kProgressTick] 走一步（离目标远时一步 3、近了一步 1），补成 46、47、48… 的连续读数。
+///
+/// ⚠️ 只补到服务端给的目标值，绝不自己往前跑：宁可停在 45% 等下一条，也不能爬到 99% 再倒回去。
+const Duration _kProgressTick = Duration(milliseconds: 80);
+const int _kProgressStepFar = 3;
+const int _kProgressStepNear = 1;
+const int _kProgressNearGap = 20;
+
+/// 进度文案的**兜底**映射（文档 §四 对照表）。
+///
+/// 正常情况下直接用服务端 `progress` 事件里的 `message` 字段（2026-08-07 新增，文案归后端管，
+/// 改文案不用发版）。这张表只在 `message` 缺失时用：`pre_text` / `done` 本来就没有 message，
+/// 老部署也没有 —— 删了占位盒里会空着一行。
+///
+/// **认 stage 而不只看数值**：`progress=5` 有 starting / request_sent 两种 stage，光看数字分不开。
+const Map<String, String> _kStageLabels = <String, String>{
+  'starting': '正在连接生图引擎…',
+  'request_sent': '正在连接生图引擎…',
+  'generating': 'AI 正在创作中…',
+  'partial_succeeded': '初稿已完成 ✨',
+  'completed': '正在优化细节…',
+  'downloading': '正在下载图片…',
+  'uploaded': '正在下载图片…',
+  'done': '生成完成',
+};
+
+/// 进度文案：服务端 message > stage 映射 > 数值分档。
+/// 数值分档的边界与 [_kStageLabels] 对齐，所以「45→50 爬到一半」和「刚好落在 50」
+/// 不会给出矛盾的两句话。
+String _progressLabel(int progress, {String stage = '', String message = ''}) {
+  final fromServer = message.trim();
+  if (fromServer.isNotEmpty) {
+    return fromServer;
+  }
+  final byStage = stage.isEmpty ? null : _kStageLabels[stage];
+  if (byStage != null) {
+    return byStage;
+  }
+  if (progress < 5) {
+    return '正在连接生图引擎…';
+  }
+  if (progress < 50) {
+    return 'AI 正在创作中…';
+  }
+  if (progress < 80) {
+    return '初稿已完成 ✨';
+  }
+  if (progress < 85) {
+    return '正在优化细节…';
+  }
+  if (progress < 100) {
+    return '正在下载图片…';
+  }
+  return '生成完成';
+}
 
 /// 打字期间贴底的节流间隔：每帧都滚会和出字的 setState 抢主线程，反而更卡。
 /// 80ms 一次 ≈ 落后不到 5 个字，打完还会强制贴一次底。
@@ -250,11 +324,55 @@ class _AiMessage {
   bool loading;
   bool typing;
 
+  /// 流式预描述（SSE `pre_text`）：秒回的一句「正在为您绘制…」，生成完成后保留，
+  /// 当作这条回复的前情提要。
+  String preText = '';
+
+  /// 生成中：挂着渐变占位盒、显示 [progress] / [progressLabel]。
+  /// 读数真的爬到 100 时才落下，占位盒原地换成真图。
+  bool streaming = false;
+  int progress = 0;
+  String progressLabel = '';
+
+  /// 渐变占位盒的比例（高/宽×100），与这轮回复图将来的占位比例取同一个值，
+  /// 100% 换真图时高度不跳。
+  double genPad = _kPadDefault;
+
   /// 30xxx / 未知上游失败：气泡原地变成可重试的失败卡（2026-07-30 视觉稿），
   /// 重试所需的原始请求参数记在 [_AiChatPageState._retryByMessage] 里。
   bool failed = false;
 
   bool get isUser => role == 'user';
+}
+
+/// 在途流式回复的状态。一次只可能有一条（`_sending` 期间不许再发）。
+class _StreamState {
+  _StreamState(this.holderId);
+
+  /// 内容写进哪个气泡。
+  final int holderId;
+
+  /// 已收到的全部文字，按 rune 拆好（emoji / 生僻字的代理对不会被劈成两半）。
+  final List<String> chars = <String>[];
+
+  /// 已经打上屏的字数。[chars] 与它的差就是「积压」。
+  int shown = 0;
+
+  /// 流已结束（成功或中断），打字机排空后才收尾。
+  bool ended = false;
+
+  /// 已经吐出过预描述/图/文字 —— 决定中断时是保留已上屏的部分还是换失败卡。
+  bool hasContent = false;
+
+  /// 服务端最新推到的里程碑，只增不减（重复/乱序推也不会让进度倒退）。
+  int target = 0;
+
+  /// 当前**上屏**的进度，由 `_pumpProgress` 一步步爬向 [target]。
+  int progress = 0;
+
+  /// [target] 那一级的 stage 与服务端文案，用来出文案（见 [_progressLabel]）。
+  String stage = '';
+  String message = '';
 }
 
 /// 失败卡「重新生成」要重发的原始请求参数。
@@ -329,6 +447,15 @@ class _AiChatPageState extends State<AiChatPage> {
   int _uid = 0;
   int _pid = 0;
   Timer? _typeTimer;
+
+  /// 进度补间的定时器。与打字机分开用一支：文字和进度是两条互不等待的流，
+  /// 共用一支会互相拖节奏。
+  Timer? _progressTimer;
+
+  /// 在途流式回复的状态（见 [_StreamState]）。被停止生成/切会话清空后，
+  /// 迟到的 SSE 事件会认出「这条流已经不归我管」而被丢弃。
+  _StreamState? _stream;
+
   AiCall<AiChatReply>? _chatCall;
 
   /// 在途的建会话请求，用于连点发送时去重（见 [_createSession]）。
@@ -409,11 +536,20 @@ class _AiChatPageState extends State<AiChatPage> {
       if (!mounted) {
         return;
       }
+      final newChatTitle = AppL10n.of(context).aiNewChat;
+      final serverTitle = session.title.isNotEmpty
+          ? session.title
+          : newChatTitle;
       setState(() {
         _sessionId = session.sessionId;
-        _sessionTitle = session.title.isNotEmpty
-            ? session.title
-            : AppL10n.of(context).aiNewChat;
+        // 刚建出来的会话，后端给的标题一律是占位的「新对话」（要等首条用户消息入库才自动填）。
+        // 而这一刻页面上的标题**可能已经**同步成首条用户消息了 —— [_sendChat] 现在是
+        // 「气泡先上屏、再建会话」，顺序与 2026-08-07 前相反。别让这个占位把它盖回去。
+        if (serverTitle != newChatTitle ||
+            _sessionTitle.isEmpty ||
+            _sessionTitle == newChatTitle) {
+          _sessionTitle = serverTitle;
+        }
       });
     } catch (error) {
       if (!mounted) {
@@ -776,36 +912,29 @@ class _AiChatPageState extends State<AiChatPage> {
         !_guardToken()) {
       return;
     }
-    // 空态下发出第一条消息，这时才真正建会话——**全项目唯一的建会话时机**。
-    // [_onSendTap] 走到这之前已经建过了（它要先建再清输入框），这里主要给「一键生图」兜底；
-    // [_createSession] 自带在途去重，重复调不会多建。
-    if (_sessionId.isEmpty) {
-      await _createSession();
-      if (!mounted || _sessionId.isEmpty) {
-        return;
-      }
-    }
     final newChatTitle = AppL10n.of(context).aiNewChat;
+    final prevTitle = _sessionTitle;
+    final userMsgIds = <int>[];
     setState(() {
       // 用户消息：先按张追加图片气泡，再追加文字气泡（需求 6.3 用户侧维持原样）
       for (final image in images) {
-        _messages.add(
-          _AiMessage(
-            id: ++_uid,
-            role: 'user',
-            kind: _MsgKind.image,
-            images: [image],
-          ),
-        );
-      }
-      _messages.add(
-        _AiMessage(
+        final bubble = _AiMessage(
           id: ++_uid,
           role: 'user',
-          kind: _MsgKind.text,
-          content: message,
-        ),
+          kind: _MsgKind.image,
+          images: [image],
+        );
+        userMsgIds.add(bubble.id);
+        _messages.add(bubble);
+      }
+      final textBubble = _AiMessage(
+        id: ++_uid,
+        role: 'user',
+        kind: _MsgKind.text,
+        content: message,
       );
+      userMsgIds.add(textBubble.id);
+      _messages.add(textBubble);
       // 首条消息后标题自动变为首条内容（与后端 session.title 行为一致，本地同步免重拉）。
       // v1.0.4 §二明确后端只取**前 20 字**，这里同样截断，免得列表页重拉后标题突然变短对不上。
       if (_sessionTitle.isEmpty || _sessionTitle == newChatTitle) {
@@ -815,6 +944,28 @@ class _AiChatPageState extends State<AiChatPage> {
       }
     });
     _stickToBottom(force: true, animate: true);
+
+    // 空态下发出第一条消息，这时才真正建会话——**全项目唯一的建会话时机**。
+    // [_onSendTap] 走到这之前已经建过了（它要先建再清输入框），这里主要给「一键生图」兜底；
+    // [_createSession] 自带在途去重，重复调不会多建。
+    //
+    // ⚠️ 顺序：用户气泡**先上屏，再** await 建会话。反过来（2026-08-07 前的写法）时，
+    // 「一键生图」点完要干等一整趟 POST /session/new（真机上约 1s）文案才出现在对话框里，
+    // 点下去像没反应。建会话失败时把刚上屏的这几条撤掉、标题也还原，界面回到点击前的样子
+    // ——错误提示由 [_createSession] 内部弹，用户重点一次即可。
+    if (_sessionId.isEmpty) {
+      await _createSession();
+      if (!mounted) {
+        return;
+      }
+      if (_sessionId.isEmpty) {
+        setState(() {
+          _messages.removeWhere((item) => userMsgIds.contains(item.id));
+          _sessionTitle = prevTitle;
+        });
+        return;
+      }
+    }
     await _dispatchChat(
       message,
       styleKey,
@@ -834,6 +985,14 @@ class _AiChatPageState extends State<AiChatPage> {
   double get _orientationPad =>
       _clampPad(_kOrientationPad[_normalizedOrientation]);
 
+  /// 本轮回复图的占位比例。渐变占位盒与真图取同一个值，100% 换图时高度才不跳。
+  ///
+  /// 🔶 与小程序的差异：小程序在图生图/融合图时会改用**用户原图**的比例（后端等比放大、
+  /// 不改宽高比），App 侧从来没接过那一段（`_sendChat` 不往下传用户图的 pad），
+  /// 这次同步维持现状 —— 图加载完会用真实尺寸改写比例（见 [_AiBubbleImage]），
+  /// 差别只是加载中那一下的占位高度。
+  double get _replyImagePad => _orientationPad;
+
   /// 发一次 `/chat` 并渲染回复（可被「重试」重复调用，不再追加用户气泡）。
   Future<void> _dispatchChat(
     String message,
@@ -846,20 +1005,24 @@ class _AiChatPageState extends State<AiChatPage> {
       role: 'assistant',
       kind: _MsgKind.rich,
       loading: true,
-    );
+    )..genPad = _orientationPad;
     setState(() {
       _messages.add(holder);
       _sending = true;
     });
     _stickToBottom(force: true, animate: true);
 
+    // 局部持有这次的流状态：[_stream] 会被停止生成/切会话清空，catch 里靠它分辨
+    // 「这条流是不是还归我管」，以及「断线前已经吐出内容了没有」。
+    final stream = _beginStream(holder.id);
     try {
-      final call = _api.chat(
+      final call = _api.chatStream(
         sessionId: _sessionId,
         message: message,
         imgOrientation: _normalizedOrientation,
         imgStyle: styleKey,
         imageUrls: urls,
+        onEvent: (event) => _onStreamEvent(holder.id, event),
       );
       _chatCall = call;
       final reply = await call.future;
@@ -868,18 +1031,44 @@ class _AiChatPageState extends State<AiChatPage> {
         return;
       }
       _spendToken();
-      _renderReply(holder.id, reply.text, reply.images);
+      _finishStream(holder.id, reply);
+      return;
     } catch (error) {
       _chatCall = null;
       if (!mounted) {
         return;
       }
+      // 走到任何一条失败分支，这条流就都不归 _stream 管了（迟到的事件一律丢弃）。
+      // ⚠️ 必须在动界面之前清，否则 _onStreamEvent 还会往一个正在被拆的气泡里写。
+      if (identical(_stream, stream)) {
+        _stream = null;
+      }
+      _progressTimer?.cancel();
+      _progressTimer = null;
+      _typeTimer?.cancel();
+      _typeTimer = null;
       if (error is AiApiException && error.aborted) {
         setState(() {
           _messages.removeWhere((item) => item.id == holder.id);
           _sending = false;
         });
         return; // 用户主动停止，静默
+      }
+      // 流中途断了、但预描述/图/文字已经上屏：保留已生成的部分（用户明明已经看到图了，
+      // 这时候把整条换成失败卡片更像 bug）。错误照常按码分发提示，但**不给重试入口**
+      // —— 这一轮服务端已经算过、也可能已扣过费，重试等于再来一遍。
+      if (stream.hasContent) {
+        final aiError = error is AiApiException ? error : null;
+        debugPrint(
+          '[BoltStar] 流中断，保留已上屏内容 code=${aiError?.code} ${aiError?.detail}',
+        );
+        _settleStreamAt(holder.id);
+        await _ai.handleError(
+          context,
+          error,
+          onBanned: (_) => setState(() => _banned = true),
+        );
+        return;
       }
       // 30xxx 上游失败 / 未知错误（31001）：气泡**原地**变成可重试的失败卡，而不是弹一次性
       // 提示后把这一轮抹掉（对齐小程序 2026-07-30）。网关白名单那类自带 userMessage 的错误
@@ -937,85 +1126,317 @@ class _AiChatPageState extends State<AiChatPage> {
     setState(() => _messages.removeWhere((item) => item.id == messageId));
   }
 
-  /// 回复渲染（需求 3：文字与图片渲染进**同一个气泡**）：文字走打字机，图片打完字后挂到
-  /// 同一条消息的 images 上。图片先按当前 `img_orientation` 占好高度（需求 1.2），
-  /// 加载完再用真实尺寸校正（见 [_AiBubbleImage]）。
-  void _renderReply(int holderId, String text, List<String> images) {
-    final pad = _orientationPad;
-    final replyImages = [
-      for (final url in images)
-        if (url.isNotEmpty) _AiImage(url: url, pad: pad),
-    ];
+  // ⚠️ 2026-08-07 起没有「一次性拿到全文再渲染」这条路了（原 `_renderReply` / `_startTyping`
+  //    已删）：主链路是流式，文字边收边打（[_pumpTyping]），服务端只在汇总结果里给全文的
+  //    情况由 [_finishStream] 兜底补进同一个打字机。
+  //    非流式的 `BoltStarAiApi.chat()` 仍在，但只作手动回退用，页面没有接它的渲染路径。
 
-    final index = _messages.indexWhere((item) => item.id == holderId);
-    if (index < 0) {
-      setState(() => _sending = false);
-      return;
-    }
+  // ── 流式回复（SSE） ───────────────────────────────────────
+  //
+  // 事件顺序（生图场景）：
+  //   pre_text ×2 → progress(5/5/15/30/45) → progress(50) → progress(80/85/90) → image
+  //   → text（逐条）→ progress(100) → done
+  // ⚠️ image 排在 progress 90(uploaded) **之后**，不是 50% —— 50 那级只是「初稿完成」，
+  //    图还没下载上传完、URL 拿不到。占位盒因此几乎会挂满整个生成过程。
+  // 纯文字场景只有 text + done，没有进度事件，界面表现与非流式一致（加载图 → 打字机）。
 
-    if (text.isEmpty) {
-      // 只有图没有文字：占位气泡直接变成图片气泡（仍是同一个气泡）
-      setState(() {
-        _messages[index]
-          ..loading = false
-          ..typing = false
-          ..images.addAll(replyImages);
-        _sending = false;
-      });
-      _stickToBottom(force: true, animate: true);
-      return;
-    }
-
-    setState(() {
-      _messages[index]
-        ..loading = false
-        ..typing = true;
-    });
-    _startTyping(holderId, text, replyImages);
+  _StreamState _beginStream(int holderId) {
+    final stream = _StreamState(holderId);
+    _stream = stream;
+    return stream;
   }
 
-  /// 客户端打字机。两点与旧实现不同（2026-07-27 需求 2.1「再顺滑一点」）：
-  /// ① **递归 Timer** 而非 `Timer.periodic` —— setState 偶尔慢一点时 periodic 会堆帧、
-  ///    追上来时一次吐一大段（就是那种「卡一下、蹦一截」的观感）；自计时永远「渲染完再排下一帧」。
-  /// ② 切字用 `runes` 而不是 `split('')`：后者按 UTF-16 **码元**切，会把 emoji / 生僻字的
-  ///    代理对劈成两半，打到一半那一帧渲染出乱码方块 —— 星宝回复里 ✨ 之类相当常见。
-  void _startTyping(int holderId, String text, List<_AiImage> replyImages) {
-    final chars = text.runes.map(String.fromCharCode).toList();
-    final perTick = (chars.length / _kTypeMaxTicks).ceil().clamp(1, chars.length);
-    final buffer = StringBuffer();
-    var pos = 0;
+  void _onStreamEvent(int holderId, AiStreamEvent event) {
+    final stream = _stream;
+    if (stream == null || stream.holderId != holderId || !mounted) {
+      return; // 已被停止生成/切会话清掉，这条流的后续事件一律丢弃
+    }
+    final index = _messages.indexWhere((item) => item.id == holderId);
+    if (index < 0) {
+      return; // 气泡被删了（用户长按删除），静默丢弃
+    }
+
+    switch (event.type) {
+      // 预描述。服务端会推**两条**：先秒回一句占位的「星宝努力思考创作中」顶掉空等，
+      // 约 3s 后 LLM 出结果，再推真正的「正在为您绘制…」。
+      // 前端不用分辨是哪一条，直接覆盖即可 —— 所以这里没有「只写第一次」的判断，别加。
+      case 'pre_text':
+        {
+          final content = event.content.trim();
+          if (content.isEmpty) {
+            return;
+          }
+          // 第一条是「凭空多出一块内容」，必须强制贴底；后一条只是就地换字，
+          // 这时候还硬拽用户回底部，正在上翻看历史的人会被打断。
+          final first = _messages[index].preText.isEmpty;
+          stream.hasContent = true;
+          setState(() {
+            _messages[index]
+              ..loading = false
+              ..streaming = true
+              ..preText = content;
+          });
+          _applyProgress(
+            stream.target == 0 ? 5 : stream.target,
+            stage: 'starting',
+          );
+          _stickToBottom(force: first, animate: true);
+        }
+
+      case 'progress':
+        // ⚠️ `stream.target < 100` 这个闸不能省：读数走到 100 时占位盒已经收起、真图已经上屏，
+        // 这时候服务端再补推一条 progress（重复/迟到的都可能），不挡就会把占位盒重新翻出来
+        // 盖在真图上。[_applyProgress] 那边只挡了「进度倒退」，挡不住这里的显形。
+        if (stream.target < 100 &&
+            (!_messages[index].streaming || _messages[index].loading)) {
+          setState(() {
+            _messages[index]
+              ..loading = false
+              ..streaming = true;
+          });
+        }
+        _applyProgress(
+          (event.progress ?? 0).round(),
+          stage: event.stage,
+          message: event.message,
+        );
+
+      // 图到了先收进 images，但要等读数真的爬到 100% 才换掉占位盒（见 [_showProgress]）
+      case 'image':
+        {
+          final url = event.content.trim();
+          if (url.isEmpty) {
+            return;
+          }
+          stream.hasContent = true;
+          setState(() {
+            _messages[index]
+              ..loading = false
+              ..images.add(_AiImage(url: url, pad: _replyImagePad));
+          });
+          _stickToBottom(force: true, animate: true);
+        }
+
+      // 文字逐条推送：只往队列里追加，真正上屏交给 _pumpTyping（边收边打）
+      case 'text':
+        if (event.content.isEmpty) {
+          return;
+        }
+        stream.hasContent = true;
+        stream.chars.addAll(event.content.runes.map(String.fromCharCode));
+        if (_messages[index].loading || !_messages[index].typing) {
+          setState(() {
+            _messages[index]
+              ..loading = false
+              ..typing = true;
+          });
+        }
+        _pumpTyping();
+
+      case 'done':
+        _applyProgress(100, stage: 'done');
+
+      default:
+        break; // 文档未列出的事件类型：忽略，别让未知事件把这一轮搞挂
+    }
+  }
+
+  /// 收到服务端的里程碑：只记成**目标值**，不直接上屏 —— 上屏交给 [_pumpProgress] 一步步爬过去。
+  /// 目标只增不减，迟到/乱序的小值连同它的 stage 一起丢。
+  void _applyProgress(int value, {String stage = '', String message = ''}) {
+    final stream = _stream;
+    // ⚠️ 别写成 `value.clamp(0, 100)`：`num.clamp` 回的是 **num**，赋给 int 字段编译不过
+    //（同一个坑见 [_clampPad] 上方注释）。
+    final int next = value < 0
+        ? 0
+        : value > 100
+        ? 100
+        : value;
+    if (stream == null || next <= stream.target) {
+      return;
+    }
+    stream.target = next;
+    stream.stage = stage;
+    stream.message = message;
+    _pumpProgress();
+  }
+
+  /// 进度补间：每 [_kProgressTick] 往 target 走一步，到了就停表（下一条里程碑再把它叫醒）。
+  void _pumpProgress() {
+    if (_progressTimer != null) {
+      return; // 已经在爬了，新的 target 自然会被追上
+    }
+
+    void step() {
+      _progressTimer = null;
+      final stream = _stream;
+      if (stream == null || !mounted) {
+        return;
+      }
+      final index = _messages.indexWhere((item) => item.id == stream.holderId);
+      final gap = stream.target - stream.progress;
+      if (index < 0 || gap <= 0) {
+        return;
+      }
+      final stride = gap > _kProgressNearGap
+          ? _kProgressStepFar
+          : _kProgressStepNear;
+      final next = stream.progress + stride > stream.target
+          ? stream.target
+          : stream.progress + stride;
+      _showProgress(index, next);
+      if (stream.progress < stream.target) {
+        _progressTimer = Timer(_kProgressTick, step);
+      }
+    }
+
+    step(); // 首步立即走，别让占位盒先亮一下 0%
+  }
+
+  /// 把补间出来的值写上屏。文案按**已上屏**的值出，爬到目标那一刻才用目标的 stage/message
+  /// —— 否则会出现「52% + 正在优化细节…」这种数字与文案对不上的组合。
+  ///
+  /// 到 100% 就把 [_AiMessage.streaming] 落下：占位盒收起、真图原地顶上。
+  /// **不能等 [_settleStreamAt]** —— 那要等打字机把几十条 text 全打完才收，
+  /// 图会被压到文字之后好几秒才出来。服务端漏推 100 时仍由它兜底置 false。
+  void _showProgress(int index, int value) {
+    final stream = _stream;
+    if (stream == null) {
+      return;
+    }
+    stream.progress = value;
+    final reached = value >= stream.target;
+    setState(() {
+      _messages[index]
+        ..progress = value
+        ..progressLabel = _progressLabel(
+          value,
+          stage: reached ? stream.stage : '',
+          message: reached ? stream.message : '',
+        );
+      if (value >= 100) {
+        _messages[index].streaming = false;
+      }
+    });
+    if (value >= 100) {
+      _stickToBottom(); // 占位盒换成真图，高度一般会变，跟着贴一下底
+    }
+  }
+
+  /// 流式打字机：一路追着积压的字打，队列空了就等下一段（每帧字数见 [_kStreamTypeTicks]）。
+  /// 与 [_startTyping] 共用 [_typeTimer]，所以 [_stopGenerate] 那套清理原样有效。
+  void _pumpTyping() {
+    if (_typeTimer != null) {
+      return; // 已经在打了，新来的字自然会被追上
+    }
 
     void step() {
       _typeTimer = null;
-      if (!mounted) {
+      final stream = _stream;
+      if (stream == null || !mounted) {
         return;
       }
-      // 打字期间用户可能删掉了前面的消息导致下标变化，每帧按 id 重新定位
-      final index = _messages.indexWhere((item) => item.id == holderId);
+      final index = _messages.indexWhere((item) => item.id == stream.holderId);
       if (index < 0) {
+        _stream = null;
         setState(() => _sending = false);
         return;
       }
-      if (pos >= chars.length) {
-        setState(() {
-          _messages[index]
-            ..typing = false
-            ..images.addAll(replyImages);
-          _sending = false;
-        });
-        _stickToBottom(force: true, animate: true);
+      final backlog = stream.chars.length - stream.shown;
+      if (backlog <= 0) {
+        if (stream.ended) {
+          _settleStream(index);
+          return;
+        }
+        _typeTimer = Timer(_kStreamIdleTick, step); // 等服务端推下一段
         return;
       }
-      final end = pos + perTick > chars.length ? chars.length : pos + perTick;
-      buffer.writeAll(chars.getRange(pos, end));
-      pos = end;
-      setState(() => _messages[index].content = buffer.toString());
+      final perTick = (backlog / _kStreamTypeTicks).ceil();
+      stream.shown += perTick < 1 ? 1 : perTick;
+      if (stream.shown > stream.chars.length) {
+        stream.shown = stream.chars.length;
+      }
+      setState(() {
+        _messages[index].content = stream.chars.take(stream.shown).join();
+      });
       _stickToBottom(); // 内部按 _kStickThrottle 节流，并尊重「用户已上翻」
       _typeTimer = Timer(_kTypeTick, step);
     }
 
-    _typeTimer?.cancel();
     step();
+  }
+
+  /// 流结束（成功）：标记 ended 并按汇总结果兜底补齐，剩下的交给打字机排空后 [_settleStream] 收尾。
+  /// 兜底是必要的 —— 事件流里漏推、或服务端某次只在最终结果里给全文时，界面不能少内容。
+  void _finishStream(int holderId, AiChatReply reply) {
+    final stream = _stream;
+    if (stream == null || stream.holderId != holderId) {
+      return; // 期间被停止生成/切会话清掉了
+    }
+    stream.ended = true;
+    final index = _messages.indexWhere((item) => item.id == holderId);
+    if (index < 0) {
+      _stream = null;
+      setState(() => _sending = false);
+      return;
+    }
+    final shown = _messages[index].images.map((item) => item.url).toSet();
+    final missing = [
+      for (final url in reply.images)
+        if (url.isNotEmpty && !shown.contains(url)) url,
+    ];
+    if (missing.isNotEmpty) {
+      setState(() {
+        _messages[index].images.addAll(
+          missing.map((url) => _AiImage(url: url, pad: _replyImagePad)),
+        );
+      });
+    }
+    // 一个 text 事件都没收到、但汇总里有文字：按最终文本补上，照样走打字机
+    if (stream.chars.isEmpty && reply.text.isNotEmpty) {
+      stream.chars.addAll(reply.text.runes.map(String.fromCharCode));
+      setState(() => _messages[index].typing = true);
+    }
+    _pumpTyping();
+  }
+
+  /// 按 id 收尾（流中断时用：这时打字机不一定还在跑，不能等它来触发）。
+  void _settleStreamAt(int holderId) {
+    final index = _messages.indexWhere((item) => item.id == holderId);
+    if (index < 0) {
+      _stream = null;
+      setState(() => _sending = false);
+      return;
+    }
+    _settleStream(index);
+  }
+
+  /// 收尾：隐藏占位盒、结束打字机、放行发送。
+  /// 流都结束了就没什么可等的，补间没爬完也直接落到 100（服务端漏推 100 时也靠这一手兜底）。
+  void _settleStream(int index) {
+    _stream = null;
+    _progressTimer?.cancel();
+    _progressTimer = null;
+    final message = _messages[index];
+    // 一句话、一张图都没有（服务端只推了进度就结束）：留个空气泡纯属让人以为坏了
+    if (message.content.isEmpty &&
+        message.preText.isEmpty &&
+        message.images.isEmpty) {
+      setState(() {
+        _messages.removeWhere((item) => item.id == message.id);
+        _sending = false;
+      });
+      AppToast.show(context, AppL10n.of(context).aiEmptyReply);
+      return;
+    }
+    setState(() {
+      _messages[index]
+        ..typing = false
+        ..streaming = false
+        ..progress = 100;
+      _sending = false;
+    });
+    _stickToBottom(force: true, animate: true);
   }
 
   /// 停止生成：中断请求 + 结束打字机（已打出的内容保留）。
@@ -1025,13 +1446,28 @@ class _AiChatPageState extends State<AiChatPage> {
     _chatCall = null;
     _typeTimer?.cancel();
     _typeTimer = null;
+    _progressTimer?.cancel(); // 进度补间同理（见 [_pumpProgress]）
+    _progressTimer = null;
+    // 之后 abort 的错误与迟到的 SSE 事件都会认出「这条流已经不归我管」
+    _stream = null;
     if (silent || !mounted) {
       return;
     }
     setState(() {
-      _messages.removeWhere((item) => item.loading);
+      // 还什么都没渲染出来的气泡直接去掉：加载态的占位气泡，以及只收到进度、
+      // 连预描述都还没来的流式气泡（留着就是一条空白气泡）
+      _messages.removeWhere(
+        (item) =>
+            item.loading ||
+            (item.streaming &&
+                item.content.isEmpty &&
+                item.preText.isEmpty &&
+                item.images.isEmpty),
+      );
       for (final item in _messages) {
-        item.typing = false;
+        item
+          ..typing = false
+          ..streaming = false;
       }
       _sending = false;
     });
@@ -2067,25 +2503,161 @@ class _AiChatPageState extends State<AiChatPage> {
             ),
           ],
         ),
+        // 气泡内顺序：预描述 → 占位盒 → 真图 → 正文。
+        //
+        // ⚠️ 正文在**图片下方**（2026-08-07）：SSE 里 text 事件本来就排在 image 之后，
+        //    先出图、文字再往下续，比「文字在上、图从下面顶出来」更贴事件顺序。
+        // ⚠️ 占位盒与真图必须**都在正文之前** —— 它俩是同一个位置的两个状态，
+        //    跨到正文两边去的话，100% 换图那一下图会整块跳过正文。
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (message.content.isNotEmpty) _buildBubbleText(message),
-            for (var i = 0; i < message.images.length; i++) ...[
+            if (message.preText.isNotEmpty) _buildPreText(message),
+            if (message.streaming)
               Padding(
                 padding: EdgeInsets.only(
-                  // 文字与图之间 18rpx，图与图之间 14rpx
-                  top: i == 0 ? (message.content.isEmpty ? 0.0 : 9.0) : 7.0,
+                  top: message.preText.isEmpty ? 0.0 : 9.0,
                 ),
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 255),
-                  child: _buildBubbleImage(message, i),
+                  child: _buildGenCanvas(message),
                 ),
               ),
-              if (_activeImageMessageId == message.id && _activeImageIndex == i)
-                _buildImageActions(message, i),
-            ],
+            // 生成中先不显示真图：占位盒还占着这个位置，等读数爬到 100%（streaming 落下）再上屏
+            if (!message.streaming)
+              for (var i = 0; i < message.images.length; i++) ...[
+                Padding(
+                  padding: EdgeInsets.only(
+                    // 与上一块之间 18rpx，图与图之间 14rpx
+                    top: i == 0 ? (message.preText.isEmpty ? 0.0 : 9.0) : 7.0,
+                  ),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 255),
+                    child: _buildBubbleImage(message, i),
+                  ),
+                ),
+                if (_activeImageMessageId == message.id &&
+                    _activeImageIndex == i)
+                  _buildImageActions(message, i),
+              ],
+            if (message.content.isNotEmpty)
+              Padding(
+                padding: EdgeInsets.only(
+                  top:
+                      (message.preText.isEmpty &&
+                          !message.streaming &&
+                          message.images.isEmpty)
+                      ? 0.0
+                      : 9.0,
+                ),
+                child: _buildBubbleText(message),
+              ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 流式预描述（SSE `pre_text`）：橙色淡底的小胶囊 + 火花图标，与正文在视觉上分开
+  /// —— 它是「前情提要」不是回复本身。生成完成后保留。
+  Widget _buildPreText(_AiMessage message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEF641E).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(9),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 3),
+            child: AiIcon('assets/images/ai-spark-orange.png', size: 14),
+          ),
+          const SizedBox(width: 5),
+          Expanded(
+            child: Text(
+              message.preText,
+              style: const TextStyle(
+                color: Color(0xFF8A6A52),
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 生成中的图片占位：一整块跟成图同尺寸的渐变盒，百分比摆正中间、进度文案压在它下面。
+  ///
+  /// 出图要几十秒，光有一条细进度条的话用户就是在盯一片空白等。
+  ///
+  /// ⚠️ 圆角与宽高比必须与真图那个盒子**逐一对齐**（[_AiBubbleImage] 是
+  /// `ClipRRect(10)` + `AspectRatio(100 / pad)`），读数到 100% 原地换图才不跳。
+  /// 改这里就得同时改那里。
+  Widget _buildGenCanvas(_AiMessage message) {
+    return AspectRatio(
+      // pad 是「高/宽×100」，AspectRatio 要的是宽/高
+      aspectRatio: 100 / message.genPad,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(10),
+          // 底色取项目那套暖调（橙 #EF641E / 用户气泡 #FFE0CD）的柔化版，
+          // 压住饱和度别抢成图的风头
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Color(0xFFF0C2E0),
+              Color(0xFFE3C6E4),
+              Color(0xFFC8BCE9),
+            ],
+          ),
+        ),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const AiIcon('assets/images/ai-magic-white.png', size: 26),
+                const SizedBox(height: 5),
+                Text(
+                  '${message.progress}%',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.5,
+                    shadows: [
+                      // 渐变亮处白字会发飘，垫一层很淡的暖影
+                      Shadow(color: Color(0x38785C4A), blurRadius: 4),
+                    ],
+                  ),
+                ),
+                if (message.progressLabel.isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    message.progressLabel,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      // 压在渐变上用半透明白：与百分比拉开层级，
+                      // 一眼分得出「47%」是主、文案是注解
+                      color: Colors.white.withValues(alpha: 0.88),
+                      fontSize: 12,
+                      letterSpacing: 0.25,
+                      shadows: const [
+                        Shadow(color: Color(0x38785C4A), blurRadius: 4),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ),
       ),
     );
