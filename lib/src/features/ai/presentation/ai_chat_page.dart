@@ -4,7 +4,6 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../network/boltfox_api.dart';
 import '../../../network/boltstar_ai_api.dart';
@@ -20,6 +19,7 @@ import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../ai_i18n.dart';
 import '../ai_image_compress.dart';
+import '../ai_token.dart';
 import 'ai_sessions_page.dart';
 import 'ai_visuals.dart';
 
@@ -39,15 +39,25 @@ import 'ai_visuals.dart';
 ///   缩略图**停在输入框内**（每张可删、上传中转圈）→ **必须配文字**一起发，随 `image_urls` 走
 ///   `/chat`，服务端按「张数 + 生图关键词」自行分流，前端不判关键词；
 /// - 一键生图（漫画/风景/肖像/动漫 → img_style）+ 图片比例（竖/横/方 → img_orientation，必传）；
-/// - 长按气泡→删除整条；长按 AI 气泡里的**某一张图**→下载 / 投屏 / 只删这一张。
-///   投屏复用现有投屏链路（下载成本地文件后进预览页）；
-/// - 无绑定设备拦截（文档 §5.5）、Token 余额展示 + 每次成功对话扣 1（**本地模拟**，支付未接）、
-///   22002/22003 封禁弹窗 + 禁用输入 + 顶部横幅、20013 会话数达上限引导去清理。
+/// - 长按气泡**空白处**→删除确认框；每张图下方**常驻**「下载 / 投屏 / 删除」操作条
+///   （2026-08-10 起，见下）。投屏复用现有投屏链路（下载成本地文件后进预览页）；
+/// - 无绑定设备拦截（文档 §5.5）、22002/22003 封禁弹窗 + 禁用输入 + 顶部横幅、
+///   20013 会话数达上限引导去清理。Token 余额移到「历史会话」页展示（见 [AiToken]）。
+///
+/// ## 2026-08-10 AI 助手八项优化（小程序同日同批，逐项对齐）
+/// 1.3 标题**屏幕正中**、定宽 170 超出省略；5 默认页（还没建会话）标题留空，不写「新对话」；
+/// 2 长按不再弹底部面板：正文长按只走选字/复制，气泡空白处长按弹全站同版式的删除确认框；
+/// 3 比例浮层顶部加标题「设置文生图比例」；4 右侧按钮三态（语音/发送/麦克风）同盒不位移，
+/// 发送图标按「除去阴影后上下居中」放大；6 会话删除加 loading 闸（在 [AiSessionsPage]）；
+/// 7 图片操作条常驻（AI 回复里的每张图 + 用户自己发的图气泡），删除统一走确认框；
+/// 8 输入框默认文案改为「按住说话或输入您的想法...」。
+/// 🔶 **第 5 项两端排布不同**：小程序把「会话列表」排在返回键右边（它的顶栏右侧被微信原生胶囊
+///    占着），App 按需求把会话列表放到**最右**；App 本来就没有底部 tabbar 可隐藏。
 ///
 /// ## 2026-07-31 视觉同步（小程序 2026-07-30 UI 接入 + 07-31 校准两轮）
-/// 按 `assets/ai/UI` 视觉稿重做：顶部历史入口 + 会话标题 + Token 胶囊、暖米白配色、
+/// 按 `assets/ai/UI` 视觉稿重做：顶部历史入口 + 会话标题（Token 胶囊已于 08-10 移走）、暖米白配色、
 /// 欢迎页星标与三条灵感词、常驻四工具输入卡（相册 / 拍照 / 比例 / 一键生图）、比例与风格两个上拉
-/// 浮层、长按 AI 图片后的内联「下载 / 投屏 / 删除」操作条、30xxx 失败原地变成可重试的失败卡、
+/// 浮层、图下方的「下载 / 投屏 / 删除」操作条、30xxx 失败原地变成可重试的失败卡、
 /// 投屏设备底部弹层。图标全部改用与小程序**同一批** `assets/images/ai-*.png`。
 /// ⚠️ 背景图**本轮不动**（用户指定「flutter 先不改背景图」）：本页仍用全 App 统一的
 /// [FigmaScreenBackground]，没有跟着小程序换成 AI 那张 OSS 全屏图。
@@ -197,9 +207,8 @@ const int _kMaxImages = 4;
 /// 本地同步标题时按同一规则截，避免列表页重拉后标题突然变短、两处对不上。
 const int _kSessionTitleMax = 20;
 
-/// Token 余额本地模拟（支付体系未接）：接入真实接口后把读写换成后端调用即可。
-const String _kTokenPrefsKey = 'aiTokenBalanceDemo';
-const int _kTokenDefault = 100;
+// Token 余额本地模拟（支付体系未接）2026-08-10 提取到 `features/ai/ai_token.dart`：
+// 会话列表页顶部也要显示同一份余额（需求 1.1），常量再复制一份必然会漂。
 
 /// 一键生图风格（需求文案：漫画/风景/肖像/动漫；API 值：cartoon/landscape/portrait/anime）。
 /// 顺序与小程序 `STYLE_OPTIONS` 一致（漫画 / 人物 / 风景 / 卡通）。
@@ -413,7 +422,7 @@ class _AiChatPageState extends State<AiChatPage> {
 
   String _sessionId = '';
   String _sessionTitle = '';
-  int _tokenBalance = _kTokenDefault;
+  int _tokenBalance = AiToken.defaultBalance;
 
   bool _historyLoading = false;
 
@@ -434,10 +443,8 @@ class _AiChatPageState extends State<AiChatPage> {
   bool _showOrientationPicker = false;
   bool _showStylePicker = false;
 
-  /// 长按 AI 气泡里某张图后展开的内联「下载 / 投屏 / 删除」操作条：
-  /// 消息 id + 图在气泡里的下标（0 / -1 表示没有展开的）。
-  int _activeImageMessageId = 0;
-  int _activeImageIndex = -1;
+  // 「长按某张图才展开操作条」的 _activeImageMessageId / _activeImageIndex 2026-08-10 整套删除：
+  // 操作条改为常驻（需求 7），没有「展开中的那一条」这个状态了。
 
   String _orientation = 'vertical'; // 默认竖向（电子相框主流为竖屏）
 
@@ -511,9 +518,8 @@ class _AiChatPageState extends State<AiChatPage> {
   // ── 会话 ─────────────────────────────────────────────────
 
   Future<void> _loadTokenBalance() async {
-    final prefs = await SharedPreferences.getInstance();
-    final value = prefs.getInt(_kTokenPrefsKey) ?? _kTokenDefault;
-    if (mounted) {
+    final value = await AiToken.readBalance();
+    if (mounted && value != _tokenBalance) {
       setState(() => _tokenBalance = value);
     }
   }
@@ -784,8 +790,6 @@ class _AiChatPageState extends State<AiChatPage> {
       _messages.clear();
       _showOrientationPicker = false;
       _showStylePicker = false;
-      _activeImageMessageId = 0;
-      _activeImageIndex = -1;
       _sessionTitle = AppL10n.of(context).aiNewChat;
       _sessionId = '';
       _banned = false;
@@ -1474,8 +1478,9 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   /// Token 权限控制（文档 §5.5）：不足时弹窗引导购买并拦截 AI 调用。
+  /// [AiToken.limitEnabled] = false 时整条限制屏蔽、一律放行（见 [AiToken] 的说明）。
   bool _guardToken() {
-    if (_tokenBalance > 0) {
+    if (!AiToken.limitEnabled || _tokenBalance > 0) {
       return true;
     }
     final l10n = AppL10n.of(context);
@@ -1491,33 +1496,28 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   Future<void> _spendToken() async {
-    final balance = (_tokenBalance - 1).clamp(0, 1 << 30);
-    if (mounted) {
+    final balance = await AiToken.spend(_tokenBalance);
+    if (mounted && balance != _tokenBalance) {
       setState(() => _tokenBalance = balance);
     }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setInt(_kTokenPrefsKey, balance);
   }
 
   // ── 工具面板 ──────────────────────────────────────────────
 
-  /// 「点外面就收起」（对齐小程序 `closeTools`）。收的是两个上拉浮层与图片内联操作条。
+  /// 「点外面就收起」（对齐小程序 `closeTools`）。收的是两个上拉浮层
+  /// （图片操作条 2026-08-10 起常驻，不再参与收起）。
   /// 入口：点消息区任意位置、点顶部导航行、输入框获得焦点（键盘和浮层不该同时占着底部）。
   ///
   /// ⚠️ 故意**不做**全屏透明遮罩：遮罩会把拖动一起吃掉，浮层开着时聊天记录就滑不动了。
   /// 挂在容器上的 onTap 只吃点击，滚动照常交给 ListView（手势竞技场里拖动归可滚动组件）。
   /// 气泡里的图有自己的 onTap（要看大图），点图不会收浮层 —— 与小程序一致，是有意的。
   void _closeTools() {
-    if (!_showOrientationPicker &&
-        !_showStylePicker &&
-        _activeImageMessageId == 0) {
+    if (!_showOrientationPicker && !_showStylePicker) {
       return;
     }
     setState(() {
       _showOrientationPicker = false;
       _showStylePicker = false;
-      _activeImageMessageId = 0;
-      _activeImageIndex = -1;
     });
   }
 
@@ -1629,8 +1629,6 @@ class _AiChatPageState extends State<AiChatPage> {
     setState(() {
       _showStylePicker = !_showStylePicker;
       _showOrientationPicker = false;
-      _activeImageMessageId = 0;
-      _activeImageIndex = -1;
     });
   }
 
@@ -1639,8 +1637,6 @@ class _AiChatPageState extends State<AiChatPage> {
     setState(() {
       _showOrientationPicker = !_showOrientationPicker;
       _showStylePicker = false;
-      _activeImageMessageId = 0;
-      _activeImageIndex = -1;
     });
   }
 
@@ -1661,54 +1657,44 @@ class _AiChatPageState extends State<AiChatPage> {
 
   // ── 消息长按菜单 ──────────────────────────────────────────
 
-  /// 长按气泡本体：用户纯图气泡 → 下载/投屏/删除；其余（文字 / AI 图文气泡）→ 删除整条。
-  /// AI 气泡里**某一张图**的长按走 [_onImageLongPress]，否则「图文同一个气泡」之后就没法
-  /// 只针对某张图下载/投屏了。
+  /// 长按气泡的**空白处**（内边距、边缘）→ 删除确认框。
+  ///
+  /// 2026-08-10 需求 2 重做：原先长按整个气泡弹底部操作面板，与正文的「选字/复制」是两套
+  /// 叠在一起的交互。现在按**区域**分工，互不重叠：
+  /// - 正文是 [SelectableText]，它在手势竞技场里自己吃掉落在文字上的长按 → 只走选字/复制；
+  /// - 长按气泡内边距、边缘等空白处才冒泡到这里 → 弹与全站同版式的删除确认框
+  ///   （小程序侧同步撤掉了 `wx.showActionSheet`，两端从此都不再用系统面板）。
+  ///
+  /// 图片的下载/投屏/删除不再靠长按，改成常驻在图下方的操作条（需求 7，见 [_onImageActionTap]）。
   Future<void> _onBubbleLongPress(_AiMessage message) async {
-    if (message.loading || message.typing) {
+    // 生成中的气泡不给删：请求还在途，删了本地这条也停不下服务端那边（要停用「停止生成」）
+    if (message.loading || message.typing || message.streaming) {
       return;
     }
-    final onlyImage =
-        message.kind == _MsgKind.image && message.images.length == 1;
-    final action = await _showMessageActions(withImageActions: onlyImage);
-    if (action == null || !mounted) {
-      return;
-    }
-    switch (action) {
-      case 'delete':
-        await _deleteMessage(message);
-      case 'download':
-        await _downloadImage(message.images.first.url);
-      case 'cast':
-        await _castImage(message.images.first.url);
+    final l10n = AppL10n.of(context);
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: l10n.aiDeleteMessageTitle,
+      message: message.images.isEmpty
+          ? l10n.aiDeleteMessageDesc
+          : l10n.aiDeleteMessageWithImagesDesc,
+      icon: Icons.delete_outline_rounded,
+      tone: AppDialogTone.danger,
+      confirmLabel: l10n.aiDelete,
+    );
+    if (confirmed == true && mounted) {
+      await _runDelete(() => _deleteMessage(message));
     }
   }
 
-  /// 长按 AI 气泡里的单张图：展开视觉稿里的内联操作条（下载 / 投屏 / 删除），
-  /// 不再弹底部菜单 —— 操作条就贴在这张图下面，指哪张就是哪张。
-  void _onImageLongPress(_AiMessage message, int index) {
-    if (message.loading || message.typing || index >= message.images.length) {
-      return;
-    }
-    setState(() {
-      _activeImageMessageId = message.id;
-      _activeImageIndex = index;
-      _showOrientationPicker = false;
-      _showStylePicker = false;
-    });
-  }
-
-  /// 内联操作条上的一次点击：下载/投屏都只针对这一张；删除也只摘掉这一张
-  ///（气泡里还有文字或别的图就留着，都没了才整条移除）。
+  /// 图下方**常驻**操作条上的一次点击（需求 7）：下载/投屏都只针对这一张；
+  /// 删除也只摘掉这一张（气泡里还有文字或别的图就留着，都没了才整条移除），
+  /// 且同样过一次确认框 —— 按钮从「长按才出现」变成常驻后，误触一下就少一张图。
   Future<void> _onImageActionTap(
     String action,
     _AiMessage message,
     int index,
   ) async {
-    setState(() {
-      _activeImageMessageId = 0;
-      _activeImageIndex = -1;
-    });
     if (index >= message.images.length) {
       return;
     }
@@ -1719,43 +1705,30 @@ class _AiChatPageState extends State<AiChatPage> {
       case 'cast':
         await _castImage(url);
       case 'delete':
-        await _deleteBubbleImage(message, index);
+        final l10n = AppL10n.of(context);
+        final confirmed = await showAppConfirmDialog(
+          context,
+          title: l10n.aiDeleteImageTitle,
+          message: l10n.aiDeleteImageDesc,
+          icon: Icons.delete_outline_rounded,
+          tone: AppDialogTone.danger,
+          confirmLabel: l10n.aiDelete,
+        );
+        if (confirmed == true && mounted) {
+          await _runDelete(() => _deleteBubbleImage(message, index));
+        }
     }
   }
 
-  Future<String?> _showMessageActions({required bool withImageActions}) {
-    final l10n = AppL10n.of(context);
-    return showModalBottomSheet<String>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) => _AiSheet(
-        title: l10n.aiMessageActions,
-        cancelLabel: l10n.cancel,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (withImageActions) ...[
-              _AiSheetAction(
-                label: l10n.aiDownload,
-                icon: Icons.download_rounded,
-                onTap: () => Navigator.of(sheetContext).pop('download'),
-              ),
-              _AiSheetAction(
-                label: l10n.aiCast,
-                icon: Icons.cast_rounded,
-                onTap: () => Navigator.of(sheetContext).pop('cast'),
-              ),
-            ],
-            _AiSheetAction(
-              label: l10n.aiDelete,
-              icon: Icons.delete_outline_rounded,
-              danger: true,
-              onTap: () => Navigator.of(sheetContext).pop('delete'),
-            ),
-          ],
-        ),
-      ),
-    );
+  /// 删除是一次真实往返（历史消息要逐个 message_id 打接口），期间加 loading 遮罩挡住重复点击，
+  /// 与会话列表页的删除同款（对齐小程序 `confirmDeleteMessage`）。
+  Future<void> _runDelete(Future<void> Function() task) async {
+    AppLoadingDialog.show(context, AppL10n.of(context).galDeleting);
+    try {
+      await task();
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
   }
 
   /// 删整条消息。图文合并进一个气泡后一条消息可能对应**多个** message_id
@@ -1780,14 +1753,11 @@ class _AiChatPageState extends State<AiChatPage> {
       _retryByMessage.remove(message.id);
       setState(() {
         _messages.removeWhere((item) => item.id == message.id);
-        // 内联操作条正指着这条消息里的图：连它一起收掉，别留一条指向空气的浮条
-        if (_activeImageMessageId == message.id) {
-          _activeImageMessageId = 0;
-          _activeImageIndex = -1;
-        }
       });
       AppToast.show(context, AppL10n.of(context).aiDeleted);
     } catch (error) {
+      // 错误提示要盖在「删除中」遮罩之上，先关掉它再弹（[_runDelete] 的 finally 再关一次是空操作）
+      AppLoadingDialog.hide(context);
       if (mounted) {
         await _ai.handleError(context, error);
       }
@@ -1806,6 +1776,7 @@ class _AiChatPageState extends State<AiChatPage> {
         await _api.deleteMessage(_sessionId, serverId);
       }
     } catch (error) {
+      AppLoadingDialog.hide(context); // 同 [_deleteMessage]：错误提示要盖在遮罩之上
       if (mounted) {
         await _ai.handleError(context, error);
       }
@@ -2168,14 +2139,17 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
-  /// 顶部导航：左「返回 + 历史会话」，中间会话标题，右 Token 胶囊。
+  /// 顶部导航（2026-08-10 需求 1.3 / 5）：左**返回**、右**会话列表**，标题屏幕正中、定宽超出省略。
   ///
-  /// 🔶 与小程序的差异：小程序的聊天页是 tab 页、没有返回键，左上角只有历史入口；
-  /// App 这页是 push 进来的，必须留返回键，于是左侧是「返回 + 历史」两颗并排。
-  /// 两张图（`ai-back-button.png` / `ai-history-button.png`）几何完全一致，并排不违和。
+  /// 🔶 与小程序**有意的排布差异**（见 `docs/changes/2026-08-10-AI助手八项优化.md`）：
+  /// 小程序两颗按钮都在左边（返回 + 会话列表并排），App 把会话列表放到**最右**——
+  /// App 顶栏右侧没有微信原生胶囊占位，空着反而失衡；返回键仍在最左，与全站一致。
+  ///
+  /// Token 胶囊本轮从这里**移除**，改在「历史会话」页顶部展示（需求 1.1）：标题要真正居中，
+  /// 两侧就必须等距，右边挂着一颗 100+ 宽的胶囊时标题只能偏左，两者不可兼得。
   Widget _buildHeader() {
-    final l10n = AppL10n.of(context);
-    final title = _sessionTitle.isEmpty ? l10n.aiNewChat : _sessionTitle;
+    // 默认页（还没建会话）标题留空，不再写「新对话」（需求 5）。
+    final title = _sessionId.isEmpty ? '' : _sessionTitle;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _closeTools, // 点导航行空白处也收起浮层
@@ -2183,13 +2157,11 @@ class _AiChatPageState extends State<AiChatPage> {
         height: 44,
         child: Stack(
           children: [
-            // 标题真正居中：左右各让开按钮簇的宽度（左 96 = 4+44+44，右 120 ≈ Token 胶囊 + 边距）
-            Positioned(
-              left: 96,
-              right: 120,
-              top: 0,
-              bottom: 0,
-              child: Center(
+            // 标题真正屏幕居中（不是「按钮之间居中」），定宽 170 超出省略：
+            // 两侧按钮各占 ~48，170 的盒子在最窄机型上也压不到它们。
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 170),
                 child: Text(
                   title,
                   maxLines: 1,
@@ -2206,20 +2178,16 @@ class _AiChatPageState extends State<AiChatPage> {
             ),
             Align(
               alignment: Alignment.centerLeft,
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const SizedBox(width: 4),
-                  FigmaBackButton(onTap: () => Navigator.maybePop(context)),
-                  _buildHistoryButton(),
-                ],
+              child: Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: FigmaBackButton(onTap: () => Navigator.maybePop(context)),
               ),
             ),
             Align(
               alignment: Alignment.centerRight,
               child: Padding(
-                padding: const EdgeInsets.only(right: 16),
-                child: _buildTokenPill(),
+                padding: const EdgeInsets.only(right: 4),
+                child: _buildHistoryButton(),
               ),
             ),
           ],
@@ -2252,47 +2220,9 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
-  /// Token 余额胶囊（本地模拟，支付未接）。
-  /// 小程序那颗要读微信原生胶囊的位置来避让，App 没有原生胶囊，直接靠右 16 即可。
-  Widget _buildTokenPill() {
-    return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.94)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1A53493C),
-            blurRadius: 7,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const AiIcon('assets/images/ai-token-spark.png', size: 12.5),
-          const SizedBox(width: 4),
-          Text(
-            '$_tokenBalance',
-            style: const TextStyle(
-              color: kAiOrangeStrong,
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              height: 1,
-            ),
-          ),
-          const SizedBox(width: 4),
-          const Text(
-            'Token',
-            style: TextStyle(color: Color(0xFF777777), fontSize: 11, height: 1),
-          ),
-        ],
-      ),
-    );
-  }
+  // Token 余额胶囊 2026-08-10 从本页顶栏移除（需求 1.1/1.3），改在「历史会话」页顶部展示
+  //（`ai_sessions_page._buildTokenPill`）。余额本身仍由 [AiToken] 统一读写，本页只剩
+  // 「扣费 + 不足拦截」两处调用。若日后要在聊天页恢复展示，必须重新核对与居中标题的几何冲突。
 
   Widget _buildBannedBar() {
     return Container(
@@ -2536,9 +2466,8 @@ class _AiChatPageState extends State<AiChatPage> {
                     child: _buildBubbleImage(message, i),
                   ),
                 ),
-                if (_activeImageMessageId == message.id &&
-                    _activeImageIndex == i)
-                  _buildImageActions(message, i),
+                // 下载/投屏/删除**常驻**在每张图下方（2026-08-10 需求 7），不再靠长按唤起
+                _buildImageActions(message, i),
               ],
             if (message.content.isNotEmpty)
               Padding(
@@ -2686,51 +2615,69 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
-  /// 长按某张 AI 图后贴在它下面的内联操作条（下载 / 投屏 / 删除）。
-  Widget _buildImageActions(_AiMessage message, int index) {
+  /// 贴在每张图下方的**常驻**操作条（下载 / 投屏 / 删除，2026-08-10 需求 7）。
+  ///
+  /// [onUserBubble]：用户自己发的图气泡里那条 —— 气泡本身已经是白底，再画一层白底白框
+  /// 「白压白」看不出边界，改成一条顶部细分隔线（对齐小程序 `.image-actions--user`）。
+  Widget _buildImageActions(
+    _AiMessage message,
+    int index, {
+    bool onUserBubble = false,
+  }) {
     final l10n = AppL10n.of(context);
+    final row = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildImageAction(
+          label: l10n.aiDownload,
+          icon: 'assets/images/ai-download.png',
+          onTap: () => _onImageActionTap('download', message, index),
+        ),
+        _buildImageActionDivider(),
+        _buildImageAction(
+          label: l10n.aiCast,
+          icon: 'assets/images/ai-project.png',
+          onTap: () => _onImageActionTap('cast', message, index),
+        ),
+        _buildImageActionDivider(),
+        _buildImageAction(
+          label: l10n.aiDelete,
+          icon: 'assets/images/ai-delete-red.png',
+          danger: true,
+          onTap: () => _onImageActionTap('delete', message, index),
+        ),
+      ],
+    );
     return Padding(
       padding: const EdgeInsets.only(top: 6),
       child: Align(
-        alignment: Alignment.centerLeft,
+        alignment: onUserBubble ? Alignment.center : Alignment.centerLeft,
         child: Container(
           height: 38,
           padding: const EdgeInsets.symmetric(horizontal: 9),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(999),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.92)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x1F4A3E2E),
-                blurRadius: 14,
-                offset: Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildImageAction(
-                label: l10n.aiDownload,
-                icon: 'assets/images/ai-download.png',
-                onTap: () => _onImageActionTap('download', message, index),
-              ),
-              _buildImageActionDivider(),
-              _buildImageAction(
-                label: l10n.aiCast,
-                icon: 'assets/images/ai-project.png',
-                onTap: () => _onImageActionTap('cast', message, index),
-              ),
-              _buildImageActionDivider(),
-              _buildImageAction(
-                label: l10n.aiDelete,
-                icon: 'assets/images/ai-delete-red.png',
-                danger: true,
-                onTap: () => _onImageActionTap('delete', message, index),
-              ),
-            ],
-          ),
+          decoration: onUserBubble
+              ? const BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: Color(0x14594C3A)),
+                  ),
+                )
+              : BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.92)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x1F4A3E2E),
+                      blurRadius: 14,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+          // 用户图气泡只有 215 宽，英文/日文标签比中文长得多（Download/Cast/Delete 就撑不下）：
+          // 放不下时整体等比缩一点，好过一条红黄条的溢出警告。AI 气泡是整行宽度，用不着。
+          child: onUserBubble
+              ? FittedBox(fit: BoxFit.scaleDown, child: row)
+              : row,
         ),
       ),
     );
@@ -2949,7 +2896,15 @@ class _AiChatPageState extends State<AiChatPage> {
               ),
             ],
           ),
-          child: _buildBubbleImage(message, 0, handleLongPressHere: false),
+          // 用户自己发的图同样常驻三颗按钮（需求 7）：长按菜单撤掉后，这里是「下载/投屏」
+          // 仅剩的入口，不补上等于功能回退（需求原文只写了「回复内容」，但两处都得有）。
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildBubbleImage(message, 0),
+              _buildImageActions(message, 0, onUserBubble: true),
+            ],
+          ),
         ),
       );
     }
@@ -2982,13 +2937,9 @@ class _AiChatPageState extends State<AiChatPage> {
 
   /// 气泡里的一张图。占位比例先按已知值把高度占住，加载完用真实尺寸校正（需求 1.2 / 5.2）。
   ///
-  /// [handleLongPressHere]：AI 气泡里要按张长按（下载/投屏/只删这张），所以图自己接住长按；
-  /// 用户的纯图气泡整条就是这一张，长按交给气泡本体处理即可（传 false 让手势冒泡上去）。
-  Widget _buildBubbleImage(
-    _AiMessage message,
-    int index, {
-    bool handleLongPressHere = true,
-  }) {
+  /// ⚠️ 2026-08-10 起图本身**吃掉长按**（[_AiBubbleImage] 收到 onLongPress 就不再往上冒泡）：
+  /// 下载/投屏/删除已改成图下方的常驻操作条（需求 7），长按图片再弹「删除整条」是误触源。
+  Widget _buildBubbleImage(_AiMessage message, int index) {
     final image = message.images[index];
     return _AiBubbleImage(
       key: ValueKey('${message.id}-${image.url}'),
@@ -3002,9 +2953,9 @@ class _AiChatPageState extends State<AiChatPage> {
         }
       },
       onTap: () => _previewImage(image.url),
-      onLongPress: handleLongPressHere
-          ? () => _onImageLongPress(message, index)
-          : null,
+      // 空实现而不是 null：给了回调，[_AiBubbleImage] 的 GestureDetector 才会在竞技场里
+      // 认领这次长按，长按图片就不会冒泡到气泡上弹出「删除整条」的确认框。
+      onLongPress: () {},
     );
   }
 
@@ -3364,51 +3315,31 @@ class _AiChatPageState extends State<AiChatPage> {
                   ),
           ),
           const SizedBox(width: 7),
-          // 有草稿就是发送键，否则是语音/键盘切换键（与小程序同一格位置互斥出现）
-          if (_input.text.isNotEmpty && !_voiceMode)
+          // 右侧那一颗按钮的三态（2026-08-10 需求 4）。三态**同一个 35 的盒子**，切换不位移：
+          //   · 语音模式 → 画发送图标，点它切回键盘（原先是灰底「键」字占位块，即「UI 没同步」）；
+          //   · 有草稿   → 发送；
+          //   · 空输入框 → 麦克风，点它进语音模式。
+          if (_voiceMode)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _toggleVoiceMode,
+              child: _buildSendIcon(),
+            )
+          else if (_input.text.isNotEmpty)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: _onSendTap,
-              child: Opacity(
-                opacity: canSend ? 1 : 0.42,
-                child: const SizedBox(
-                  width: 35,
-                  height: 35,
-                  child: AiIcon('assets/images/ai-send-active.png', size: 35),
-                ),
-              ),
+              child: Opacity(opacity: canSend ? 1 : 0.42, child: _buildSendIcon()),
             )
           else
             GestureDetector(
               behavior: HitTestBehavior.opaque,
-              onTap: () => setState(() {
-                _voiceMode = !_voiceMode;
-                _showOrientationPicker = false;
-                _showStylePicker = false;
-              }),
-              child: SizedBox(
+              onTap: _toggleVoiceMode,
+              child: const SizedBox(
                 width: 35,
                 height: 35,
                 child: Center(
-                  child: _voiceMode
-                      // 语音态下这颗是「切回键盘」：小程序也是个自绘的方块占位（没有图源）
-                      ? Container(
-                          width: 24,
-                          height: 24,
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF7C7C7C),
-                            borderRadius: BorderRadius.circular(7.5),
-                          ),
-                          child: const Text(
-                            '键',
-                            style: TextStyle(color: Colors.white, fontSize: 10),
-                          ),
-                        )
-                      : const AiIcon(
-                          'assets/images/ai-microphone.png',
-                          size: 24,
-                        ),
+                  child: AiIcon('assets/images/ai-microphone.png', size: 24),
                 ),
               ),
             ),
@@ -3417,16 +3348,62 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
-  /// 比例浮层：竖向 / 横向 / 方形，选中项橙底 + 右侧对勾。
+  void _toggleVoiceMode() {
+    setState(() {
+      _voiceMode = !_voiceMode;
+      _showOrientationPicker = false;
+      _showStylePicker = false;
+    });
+  }
+
+  /// 发送图标（2026-08-10 需求 4 的「除去阴影后上下居中 + 放大」）。
+  ///
+  /// `ai-send-active.png` 是 141×141 的画布，实心橙圆只占中间 64px（45.4%），其余是外发光，
+  /// 且圆心偏上（y=63.5 而非 70）。按 35 画的话圆实际只有 ~16，比左邻的麦克风（24）还小。
+  /// 所以图放大到 57 画（圆 ≈26）再下推 4.61%，让「圆」而不是「圆+阴影」在盒子里上下居中；
+  /// 命中盒仍是 35，与麦克风态一致，切换时不位移。
+  Widget _buildSendIcon() {
+    return SizedBox(
+      width: 35,
+      height: 35,
+      child: OverflowBox(
+        maxWidth: 57,
+        maxHeight: 57,
+        child: Transform.translate(
+          offset: const Offset(0, 57 * 0.0461),
+          child: const AiIcon('assets/images/ai-send-active.png', size: 57),
+        ),
+      ),
+    );
+  }
+
+  /// 比例浮层：顶部标题「设置文生图比例」（2026-08-10 需求 3）+ 竖向 / 横向 / 方形，
+  /// 选中项橙底 + 右侧对勾。
   Widget _buildOrientationPopover() {
     final l10n = AppL10n.of(context);
     return _buildPopover(
       cellIndex: 2,
-      width: 125,
+      width: 145,
       padding: const EdgeInsets.all(6),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                l10n.aiImageRatioPickerTitle,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF8C8C8C),
+                  fontSize: 12,
+                  height: 1.2,
+                ),
+              ),
+            ),
+          ),
           for (final key in _kOrientationKeys)
             GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -4016,117 +3993,9 @@ class _AiToolItem extends StatelessWidget {
   }
 }
 
-/// 底部弹层外壳（标题 + 内容 + 取消），对齐小程序 `.sheet`。
-class _AiSheet extends StatelessWidget {
-  const _AiSheet({
-    required this.title,
-    required this.cancelLabel,
-    required this.child,
-  });
-
-  final String title;
-  final String cancelLabel;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Container(
-        margin: const EdgeInsets.all(12),
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              title,
-              style: const TextStyle(
-                color: Color(0xFF2A2D32),
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Flexible(child: SingleChildScrollView(child: child)),
-            const SizedBox(height: 6),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).pop(),
-              child: Container(
-                height: 44,
-                alignment: Alignment.center,
-                child: Text(
-                  cancelLabel,
-                  style: const TextStyle(
-                    color: Color(0xFF777E88),
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AiSheetAction extends StatelessWidget {
-  const _AiSheetAction({
-    required this.label,
-    required this.icon,
-    required this.onTap,
-    this.subtitle,
-    this.danger = false,
-  });
-
-  final String label;
-  final String? subtitle;
-  final IconData icon;
-  final bool danger;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = danger ? const Color(0xFFD64541) : const Color(0xFF2A2D32);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(label, style: TextStyle(color: color, fontSize: 14)),
-                  if (subtitle != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 2),
-                      child: Text(
-                        subtitle!,
-                        style: const TextStyle(
-                          color: Color(0xFF8B9098),
-                          fontSize: 12,
-                        ),
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
+// 底部弹层外壳 _AiSheet / _AiSheetAction 2026-08-10 随「消息长按 → 底部操作面板」一起删除
+// （需求 2：删除改走全站统一的确认框，图片操作改走常驻操作条）。设备选择弹窗有自己的
+// _buildDeviceSheet，不依赖这两个类。
 
 class _AiStyleTile extends StatelessWidget {
   const _AiStyleTile({

@@ -99,6 +99,9 @@
 | [`history/2026-08/2026-08-07-AI流式SSE与JWT补齐.md`](history/2026-08/2026-08-07-AI流式SSE与JWT补齐.md) | Historical Change Record（双端同步；⚠️ 补上了 07-29 起就欠着的 `Authentication` 头 —— 此前 AI 请求全都会被网关 403，只是入口屏蔽着没炸出来。同时 `/chat` 改 SSE、进度补间、一键生图即时上屏） |
 | [`history/2026-08/2026-08-05-微信AppID更正为wx4cf0c5f38a70d0bc.md`](history/2026-08/2026-08-05-微信AppID更正为wx4cf0c5f38a70d0bc.md) | Historical Change Record（AppID 更正为 `wx4cf0c5f38a70d0bc`，Android/iOS、debug/release 同值） |
 | [`history/2026-08/2026-08-05-首页未绑定态样式错乱与滚动条修复.md`](history/2026-08/2026-08-05-首页未绑定态样式错乱与滚动条修复.md) | Historical Change Record（仅 App；底部 Tab 移出滚动区 + 可压缩留白 `_CollapsibleGap`，普通手机不再挤成一坨并出滚动） |
+| [`history/2026-08/2026-08-11-相册删除跳过空槽位与AI八项优化.md`](history/2026-08/2026-08-11-相册删除跳过空槽位与AI八项优化.md) | Historical Change Record（双端同步小程序 08-10 两份变更；⚠️ 顺带修掉 `deleteImage` **吞掉失败结果码**——固件回 0x04/0x07/0x09 时 App 会当成删除成功照删后端记录。AI 侧第 5 项顶栏排布两端有意不同） |
+| [`history/2026-08/2026-08-11-文案口径统一与多图首图刷新.md`](history/2026-08/2026-08-11-文案口径统一与多图首图刷新.md) | Historical Change Record（双端同步小程序 08-04 文案清单 + 08-05「我的相册」默认选中；短标签「设备」/ 完整提示语「电子纸设备·e-paper device·電子ペーパー」、称谓「您」，四语种共 200+ 处；多图投屏收尾改刷**首张**槽位。⚠️ 08-04 清单里的「竖向固定 180°」已被同日 `verticalRotation` 变更取代，**未执行**） |
+| [`history/2026-08/2026-08-11-iOS微信UniversalLink定为badmin域名.md`](history/2026-08/2026-08-11-iOS微信UniversalLink定为badmin域名.md) | Historical Change Record（仅 App/iOS；Universal Link = `https://badmin.boltfox.cn/app/`，entitlements + Dart 默认值已落地。⚠️ 域名侧 AASA **未部署**，实测返回后台 SPA 的 HTML，iOS 微信登录仍不可验收） |
 | [`history/2026-07/RUNBOOK_CHANGELOG.md`](history/2026-07/RUNBOOK_CHANGELOG.md) | Historical Change Record |
 
 ## 4. CodeGraph 与 Markdown 的职责

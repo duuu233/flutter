@@ -56,7 +56,7 @@ class PrivacyPolicyPage extends StatelessWidget {
               '• 注册 / 登录信息：如手机号、验证码、账号信息等。\n'
               '• 您在使用服务时主动上传或填写的内容，例如资料、反馈信息等。\n'
               '2. 自动收集的信息\n'
-              '• 设备信息：设备型号、操作系统版本、唯一设备识别码、网络类型、IP 地址等。\n'
+              '• 终端信息：终端型号、操作系统版本、唯一终端识别码、网络类型、IP 地址等。\n'
               '• 日志信息：使用时长、功能访问路径、异常日志等，用于优化产品体验。',
           '1. Information you provide\n'
               '• Registration / login information, such as phone number, '

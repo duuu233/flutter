@@ -9,6 +9,7 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../ai_i18n.dart';
+import '../ai_token.dart';
 import 'ai_chat_page.dart';
 import 'ai_visuals.dart';
 
@@ -30,6 +31,14 @@ import 'ai_visuals.dart';
 /// 接口**没有批量/清空会话的能力**，只能 for 循环串行打 `DELETE /session`（上限 20 条 = 最坏 20 个
 /// 串行请求），且中途任一条失败就留下「删了一半且无法回滚」的状态。要清理一律**左滑删 / 长按删**。
 /// 2026-07-25 已按用户要求整功能移除，别再加回来。
+///
+/// ## 2026-08-10 AI 助手八项优化（本页三项）
+/// - 1.1 顶部显示 **Token 余额**（占「仅保留最近 7 天」原来那一行，提示整体下移一行）。
+///   余额与聊天页同源（[AiToken]）；聊天页顶栏那颗胶囊已撤，**这里是余额唯一的展示位**。
+/// - 1.2 右上「新建」由文字改为图标 `ai-new-chat.png`。
+/// - 6 删除会话加 loading 闸；左滑手势由「整条轨道」收到**卡片**上 —— 罩住轨道时，手指落在
+///   已滑开的删除按钮上也算新一轮滑动，点按时那一两像素抖动就把卡片吸回去，表现就是「点不动」。
+///   删除按钮同步加宽到 80（小程序 160rpx）。
 ///
 /// ## 2026-07-31 视觉同步（小程序 2026-07-30 / 07-31 两轮）
 /// 日期分组标题、毛玻璃会话卡、左滑露出的删除按钮（`ai-del-btn-bg.png`）、空态插画与
@@ -62,11 +71,12 @@ class AiSessionsPage extends StatefulWidget {
 /// 接口一次回全部，前端按 20 条/页分段展示（需求的分页交互）。
 const int _kPageSize = 20;
 
-/// 左滑露出删除按钮的位移：小程序 152rpx = 删除按钮 136rpx + 与卡片的 16rpx 间距。
-const double _kDeleteReveal = 76;
+/// 左滑露出删除按钮的位移：小程序 176rpx = 删除按钮 160rpx + 与卡片的 16rpx 间距。
+/// ⚠️ 与 [_kDeleteWidth] + [_kDeleteGap] 是同一组数，改一处要改三处（小程序侧同样）。
+const double _kDeleteReveal = 88;
 
-/// 删除按钮本体宽度（136rpx）与它和卡片之间的间距（16rpx）。
-const double _kDeleteWidth = 68;
+/// 删除按钮本体宽度（2026-08-10 需求 6：136rpx → 160rpx）与它和卡片之间的间距（16rpx）。
+const double _kDeleteWidth = 80;
 const double _kDeleteGap = 8;
 
 /// 松手吸附判据（对齐小程序 onSessionTouchEnd）：甩得够快直接开，
@@ -113,6 +123,13 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
   int _shown = _kPageSize;
   bool _loading = true;
 
+  /// 顶部 Token 余额（2026-08-10 需求 1.1）。与聊天页同源，见 [AiToken]；
+  /// 聊天页顶栏那颗胶囊已撤，**这里是余额唯一的展示位**。
+  int _tokenBalance = AiToken.defaultBalance;
+
+  /// 在途删除，删除期间不接第二次点击（见 [_deleteSession]）。
+  bool _deleting = false;
+
   /// 上次从本页打开的会话（退回本页后静默刷新时用来对齐标题/时间）。
   String _lastOpened = '';
 
@@ -136,6 +153,15 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     super.initState();
     _scroll.addListener(_onScroll);
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    _refreshTokenBalance();
+  }
+
+  /// 余额可能在聊天页扣过（[AiToken.limitEnabled] 打开后），进页面和退回本页时都对齐一次。
+  Future<void> _refreshTokenBalance() async {
+    final balance = await AiToken.readBalance();
+    if (mounted && balance != _tokenBalance) {
+      setState(() => _tokenBalance = balance);
+    }
   }
 
   @override
@@ -253,14 +279,23 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     _navigating = false;
     // 刚聊过的那条标题/时间肯定变了
     _lastOpened = '';
+    await _refreshTokenBalance();
     await _load(silent: true);
   }
 
   // ── 删除 ─────────────────────────────────────────────────
 
+  /// 删除一条会话。接口是一次真实往返，慢的时候界面毫无反馈、用户会以为没点上而反复点
+  /// （2026-08-10 需求 6）：加 loading 遮罩 + [_deleting] 闸，删除期间不再接第二次点击。
   Future<void> _deleteSession(_SessionRow row) async {
+    if (_deleting) {
+      return;
+    }
+    _deleting = true;
+    AppLoadingDialog.show(context, AppL10n.of(context).galDeleting);
     try {
       await widget.api.deleteSession(row.sessionId);
+      AppLoadingDialog.hide(context);
       if (!mounted) {
         return;
       }
@@ -282,9 +317,14 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
       // 也**不替他建新会话** —— 这是「没得可显示了」，不是用户要新建。
       AiChatPage.notifySessionDeleted(row.sessionId);
     } catch (error) {
+      // 错误提示要盖在 loading 之上，所以先关遮罩再弹（hide 可重复调用，成功路径已关过）。
+      AppLoadingDialog.hide(context);
       if (mounted) {
         await AiI18n.of(context).handleError(context, error);
       }
+    } finally {
+      AppLoadingDialog.hide(context);
+      _deleting = false;
     }
   }
 
@@ -415,27 +455,30 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
       title: l10n.aiSessionsTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
-      // 「新建」从整块主按钮改为导航右上的文字入口（对齐小程序 page-nav 的 right-text）
+      // 「新建」2026-08-10 需求 1.2 由文字改为图标（与小程序 page-nav 的 right-icon 同一张图）。
       trailing: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: _createNew,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 10),
-          child: Text(
-            l10n.aiNewSessionAction,
-            style: const TextStyle(
-              color: Color(0xFFFF6421),
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
+        child: const SizedBox(
+          width: 32,
+          height: 32,
+          child: Center(child: AiIcon('assets/images/ai-new-chat.png', size: 22)),
         ),
       ),
       body: Column(
         children: [
+          // Token 余额（2026-08-10 需求 1.1）：占「仅保留最近 7 天」原来那一行，提示整体下移一行。
+          // 聊天页顶栏那颗胶囊已撤（标题要真正屏幕居中，两者几何上放不下），这里是余额唯一展示位。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _buildTokenPill(),
+            ),
+          ),
           if (!_loading && entries.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 6),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 6),
               child: Row(
                 children: [
                   const AiIcon('assets/images/ai-info.png', size: 13),
@@ -456,6 +499,48 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
             child: _loading
                 ? const PageLoading()
                 : (entries.isEmpty ? _buildEmpty() : _buildList(entries)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Token 余额胶囊（本地模拟，支付未接，见 [AiToken]）。
+  /// 与聊天页原先右上角那颗同一套视觉，这里靠左排、不与任何原生元素对位。
+  Widget _buildTokenPill() {
+    return Container(
+      height: 29,
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.92),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.94)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1A53493C),
+            blurRadius: 7,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const AiIcon('assets/images/ai-token-spark.png', size: 12.5),
+          const SizedBox(width: 4),
+          Text(
+            '$_tokenBalance',
+            style: const TextStyle(
+              color: Color(0xFFFF6F25),
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              height: 1,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Text(
+            'Token',
+            style: TextStyle(color: Color(0xFF777777), fontSize: 11, height: 1),
           ),
         ],
       ),
@@ -559,39 +644,46 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
       child: LayoutBuilder(
         builder: (context, constraints) {
           final cardWidth = constraints.maxWidth;
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            // 只接横向拖动：纵向滚动仍归 ListView（手势竞技场按主轴分派，不用像小程序那样手写轴判定）
-            onHorizontalDragStart: (_) => _onSwipeStart(row),
-            onHorizontalDragUpdate: _onSwipeUpdate,
-            onHorizontalDragEnd: (details) => _onSwipeEnd(details, row),
-            onHorizontalDragCancel: _onSwipeCancel,
-            child: ClipRect(
-              child: SizedBox(
-                height: _kCardHeight,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween<double>(end: offset),
-                  // 跟手拖动期间不要过渡，否则位移会慢半拍；松手才吸附
-                  duration: dragging
-                      ? Duration.zero
-                      : const Duration(milliseconds: 260),
-                  curve: Curves.easeOut,
-                  builder: (context, value, child) =>
-                      Transform.translate(offset: Offset(value, 0), child: child),
-                  child: OverflowBox(
-                    alignment: Alignment.centerLeft,
-                    minWidth: 0,
-                    maxWidth: cardWidth + _kDeleteGap + _kDeleteWidth,
-                    child: Row(
-                      children: [
-                        SizedBox(width: cardWidth, child: _buildCard(row)),
-                        const SizedBox(width: _kDeleteGap),
-                        SizedBox(
-                          width: _kDeleteWidth,
-                          child: _buildDeleteButton(row),
+          return ClipRect(
+            child: SizedBox(
+              height: _kCardHeight,
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(end: offset),
+                // 跟手拖动期间不要过渡，否则位移会慢半拍；松手才吸附
+                duration: dragging
+                    ? Duration.zero
+                    : const Duration(milliseconds: 260),
+                curve: Curves.easeOut,
+                builder: (context, value, child) =>
+                    Transform.translate(offset: Offset(value, 0), child: child),
+                child: OverflowBox(
+                  alignment: Alignment.centerLeft,
+                  minWidth: 0,
+                  maxWidth: cardWidth + _kDeleteGap + _kDeleteWidth,
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: cardWidth,
+                        // 左滑手势挂在**卡片**上，不再罩住整条轨道（2026-08-10 需求 6）：
+                        // 罩住轨道时，手指落在已滑开的删除按钮上也会被当成新一轮滑动 ——
+                        // 点按时那一两像素的抖动就把卡片吸附回去，表现就是「删除按钮点不动」。
+                        // 只接横向拖动：纵向滚动仍归 ListView（手势竞技场按主轴分派）。
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onHorizontalDragStart: (_) => _onSwipeStart(row),
+                          onHorizontalDragUpdate: _onSwipeUpdate,
+                          onHorizontalDragEnd: (details) =>
+                              _onSwipeEnd(details, row),
+                          onHorizontalDragCancel: _onSwipeCancel,
+                          child: _buildCard(row),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: _kDeleteGap),
+                      SizedBox(
+                        width: _kDeleteWidth,
+                        child: _buildDeleteButton(row),
+                      ),
+                    ],
                   ),
                 ),
               ),

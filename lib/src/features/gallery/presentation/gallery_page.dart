@@ -193,8 +193,19 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     return disambiguateDeviceFilterLabels(options);
   }
 
-  /// 默认选中单台设备（对齐小程序：无「全部相框」，进入即定位到一台设备的图库）。
-  /// 优先当前已连接设备（删除需连接该设备）；否则有照片的首台；再否则设备列表首台。
+  /// 默认选中单台设备（对齐小程序 `album/list.js pickDefaultFilter`，2026-08-05 口径）：
+  ///
+  /// 1. **保留用户当前选中的那台**（仍在筛选项里）——本页 `didPopNext` 会重跑，不保留的话
+  ///    「点进照片再返回」会把用户手动切过的设备冲掉；
+  /// 2. 否则**第一台连接中的**设备（外面刚连上哪台，进来就看哪台）；
+  /// 3. 否则第一台「有照片」的设备（避免默认打开空设备）；
+  /// 4. 再否则设备列表首台。
+  ///
+  /// ⚠️ 连接态**现算**（[PhotoFrameState.isDeviceActuallyConnected] = 真实 BLE 会话 + 身份比对），
+  /// 不看 [DeviceItem.connected] 那个缓存标记——它可能是上一次刷新前的旧值，也可能只表示
+  /// 「App 连着某台设备」。与小程序 `activeDevice.findConnectedDeviceId` 同一判据。
+  /// 单连接下最多命中一台；真出现多台就取设备接口顺序里的第一台。
+  ///
   /// 筛选项只来自设备接口，所以设备列表为空即无筛选项，_deviceFilter 置空。
   void _ensureDeviceFilter() {
     final options = _filterOptions;
@@ -207,14 +218,24 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       _deviceFilter = null;
       return;
     }
-    final connected = devices.where((device) => device.connected);
+    // 取值口径与 _filterOptions 一致：只认成得了筛选项的设备，默认值不能落到下拉里没有的项上。
+    final selectable = options.map((option) => option.id).toSet();
+    final connected = devices.where(
+      (device) =>
+          selectable.contains(device.id) &&
+          state.isDeviceActuallyConnected(device.id),
+    );
     final hasPhotos = state.myAlbum.map((photo) => photo.deviceId).toSet();
     _deviceFilter =
         (connected.isNotEmpty ? connected.first : null)?.id ??
         devices
             .firstWhere(
-              (device) => hasPhotos.contains(device.id),
-              orElse: () => devices.first,
+              (device) =>
+                  selectable.contains(device.id) && hasPhotos.contains(device.id),
+              orElse: () => devices.firstWhere(
+                (device) => selectable.contains(device.id),
+                orElse: () => devices.first,
+              ),
             )
             .id;
   }

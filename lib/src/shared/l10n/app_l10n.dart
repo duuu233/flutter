@@ -207,9 +207,9 @@ class AppL10n {
   );
   String get aiServiceAgreementSummary => _pick(
     '为了使用 AI 服务（包括文本对话、根据文字生成图片、以及上传图片进行美化），'
-        '我们需要将你当前发送的内容（文字或图片）传输至“阿里云百炼”AI 服务进行处理，'
+        '我们需要将您当前发送的内容（文字或图片）传输至“阿里云百炼”AI 服务进行处理，'
         '该服务由阿里云计算有限公司提供。\n\n'
-        '你发送的内容仅用于本次操作，不会被存储或用于模型训练。',
+        '您发送的内容仅用于本次操作，不会被存储或用于模型训练。',
     'To use AI services—including text chat, generating images from text, '
         'and enhancing uploaded images—we need to transmit the text or images '
         'you send to Alibaba Cloud Model Studio for processing. This service '
@@ -277,16 +277,16 @@ class AppL10n {
     'ログイン画面に戻ります。続行しますか？',
   );
   String get deleteAccountWarn1 => _pick(
-    '注销将永久删除您的所有账号数据，请确认设备照片已自行清空，否则注销后将无法删除设备照片。',
-    'Deleting your account permanently erases all account data. Please clear your device photos first, or they cannot be removed after deletion.',
-    'アカウントを削除するとすべてのデータが完全に削除されます。先に端末の写真を消去してください。削除後は端末の写真を消せなくなります。',
+    '注销将永久删除您的所有账号数据，请确认电子纸设备照片已自行清空，否则注销后将无法删除电子纸设备照片。',
+    'Deleting your account permanently erases all account data. Please clear the photos on your e-paper device first, or they cannot be removed after deletion.',
+    'アカウントを削除するとすべてのデータが完全に削除されます。先に電子ペーパーの写真を消去してください。削除後は電子ペーパーの写真を消せなくなります。',
   );
   String get deleteAccountConfirmTitle =>
       _pick('确认注销', 'Confirm Deletion', '削除の確認');
   String get deleteAccountWarn2 => _pick(
-    '我已了解设备照片需自行处理的说明，并确认继续注销。',
-    'I understand I must handle device photos myself and confirm the deletion.',
-    '端末の写真は自分で処理する必要があることを理解し、削除を続行します。',
+    '我已了解电子纸设备照片需自行处理的说明，并确认继续注销。',
+    'I understand I must handle the e-paper device photos myself and confirm the deletion.',
+    '電子ペーパーの写真は自分で処理する必要があることを理解し、削除を続行します。',
   );
 
   // ── 语种设置页 ──────────────────────────────────────────────────────────
@@ -487,23 +487,27 @@ class AppL10n {
   String get castStageTransferring =>
       _pick('图片传输中', 'Transferring Image', '画像を転送中');
   String get castReadingDeviceInfo =>
-      _pick('正在读取设备信息…', 'Reading device information…', 'デバイス情報を読み込んでいます…');
+      _pick(
+        '正在读取电子纸设备信息…',
+        'Reading e-paper device information…',
+        '電子ペーパーの情報を読み込んでいます…',
+      );
 
   /// 刚投完屏、设备正在刷新（0x24）时对任何指令都回忙(0x0B)。这几秒是可等的短暂
   /// 状态，投屏入口会自动等它刷完再继续，期间给用户这条提示。
   String get castDeviceRefreshing => _pick(
-    '设备正在刷新，请稍候…',
-    'The frame is refreshing, please wait…',
-    'デバイスを更新中です。しばらくお待ちください…',
+    '电子纸设备正在刷新，请稍候…',
+    'The e-paper device is refreshing, please wait…',
+    '電子ペーパーを更新中です。しばらくお待ちください…',
   );
 
   /// 设备一直忙到超时才放弃时的系统提示框文案。
   String get castDeviceBusyTitle =>
       _pick('设备繁忙中', 'Device Busy', 'デバイスがビジー状態です');
   String get castDeviceBusyMessage => _pick(
-    '设备繁忙中，请稍后再试。',
-    'The frame is busy right now. Please try again shortly.',
-    'デバイスがビジー状態です。しばらくしてからもう一度お試しください。',
+    '电子纸设备繁忙中，请稍后再试。',
+    'The e-paper device is busy right now. Please try again shortly.',
+    '電子ペーパーがビジー状態です。しばらくしてからもう一度お試しください。',
   );
 
   String castPreparingImage(int current, int total) => _pick(
@@ -528,14 +532,14 @@ class AppL10n {
       _pick('投屏成功', 'Cast successful', 'キャストに成功しました');
   String get castResultSuccessTitle => _pick('投屏完成', 'Cast Complete', 'キャスト完了');
   String get castResultSuccessDesc => _pick(
-    '照片已成功投屏到设备，可前往相册查看',
-    'Photos were cast to the device. You can view them in the album.',
-    '写真をデバイスにキャストしました。アルバムでご確認いただけます。',
+    '照片已成功投屏到电子纸设备，可前往相册查看',
+    'Photos were cast to the e-paper device. You can view them in the album.',
+    '写真を電子ペーパーにキャストしました。アルバムでご確認いただけます。',
   );
   String get castResultFailDefaultDesc => _pick(
-    '设备连接中断，请检查设备状态后重试',
-    'Device connection lost. Check the device and try again.',
-    'デバイスの接続が切れました。デバイスの状態を確認して再試行してください。',
+    '电子纸设备连接中断，请检查电子纸设备状态后重试',
+    'E-paper device connection lost. Check the e-paper device and try again.',
+    '電子ペーパーの接続が切れました。電子ペーパーの状態を確認して再試行してください。',
   );
   String get castProgressDefaultDesc => _pick(
     '投屏过程中请不要关闭手机',
@@ -543,24 +547,24 @@ class AppL10n {
     'キャスト中はアプリを閉じないでください。',
   );
   String get castFailureBusy => _pick(
-    '当前设备繁忙，请稍后重试',
-    'The device is busy. Please try again later.',
-    'デバイスが混雑しています。しばらくしてから再試行してください。',
+    '当前电子纸设备繁忙，请稍后重试',
+    'The e-paper device is busy. Please try again later.',
+    '電子ペーパーが混雑しています。しばらくしてから再試行してください。',
   );
   String get castFailureStorageFull => _pick(
-    '设备内存已满，请清理后继续。',
-    'Device storage is full. Free up space and continue.',
-    'デバイスの容量がいっぱいです。空き容量を確保してから続行してください。',
+    '电子纸设备内存已满，请清理后继续。',
+    'E-paper device storage is full. Free up space and continue.',
+    '電子ペーパーの容量がいっぱいです。空き容量を確保してから続行してください。',
   );
   String get castFailureDisconnected => _pick(
-    '设备未连接，请检查手机或设备连接后继续',
-    'Device not connected. Check the phone or device connection and continue.',
-    'デバイスが接続されていません。スマートフォンまたはデバイスの接続を確認して続行してください。',
+    '电子纸设备未连接，请检查手机或电子纸设备连接后继续',
+    'E-paper device not connected. Check the phone or e-paper device connection and continue.',
+    '電子ペーパーが接続されていません。スマートフォンまたは電子ペーパーの接続を確認して続行してください。',
   );
   String get castFailureTimeout => _pick(
-    '传输超时，请将手机靠近设备后重试',
-    'Transfer timed out. Move the phone closer to the device and try again.',
-    '転送がタイムアウトしました。スマートフォンをデバイスに近づけて再試行してください。',
+    '传输超时，请将手机靠近电子纸设备后重试',
+    'Transfer timed out. Move the phone closer to the e-paper device and try again.',
+    '転送がタイムアウトしました。スマートフォンを電子ペーパーに近づけて再試行してください。',
   );
   String get castFailureCanceled =>
       _pick('投屏已取消', 'Casting canceled.', 'キャストをキャンセルしました。');
@@ -570,9 +574,9 @@ class AppL10n {
     '写真を読み込めません。カメラ/アルバムの権限を確認して再試行してください。',
   );
   String get castProgressTip1 => _pick(
-    '投屏过程请保持手机亮屏，不要远离设备',
-    'Keep the screen on and stay near the device while casting.',
-    'キャスト中は画面を点灯したまま、デバイスから離れないでください。',
+    '投屏过程请保持手机亮屏，不要远离电子纸设备',
+    'Keep the screen on and stay near the e-paper device while casting.',
+    'キャスト中は画面を点灯したまま、電子ペーパーから離れないでください。',
   );
   String get castProgressTip2 => _pick(
     '批量投屏如果意外中断，请前往图库主动刷新屏幕',
@@ -585,14 +589,14 @@ class AppL10n {
     'キャスト履歴で写真の操作を続けられます。',
   );
   String get castProgressTip4 => _pick(
-    '投屏完成后设备会自动刷新，刷新期间设备繁忙无法投屏，请等待刷新结束',
-    'After casting, the device refreshes automatically. It stays busy and cannot cast during the refresh, so please wait until it finishes.',
-    'キャスト完了後、デバイスは自動的に更新されます。更新中はビジー状態でキャストできませんので、完了までお待ちください。',
+    '投屏完成后电子纸设备会自动刷新，刷新期间电子纸设备繁忙无法投屏，请等待刷新结束',
+    'After casting, the e-paper device refreshes automatically. It stays busy and cannot cast during the refresh, so please wait until it finishes.',
+    'キャスト完了後、電子ペーパーは自動的に更新されます。更新中はビジー状態でキャストできませんので、完了までお待ちください。',
   );
   String get castFailTip1 => _pick(
-    '请确认设备蓝牙正常连接中，手机蓝牙正常使用',
-    'Make sure the device Bluetooth is connected and the phone Bluetooth is working.',
-    'デバイスのBluetoothが接続され、スマートフォンのBluetoothが正常に動作していることを確認してください。',
+    '请确认电子纸设备蓝牙正常连接中，手机蓝牙正常使用',
+    'Make sure the e-paper device Bluetooth is connected and the phone Bluetooth is working.',
+    '電子ペーパーのBluetoothが接続され、スマートフォンのBluetoothが正常に動作していることを確認してください。',
   );
   String get castFailTip2 => _pick(
     '如屏幕正在刷新中，请稍后再试',
@@ -712,9 +716,9 @@ class AppL10n {
 
   // 2026-07-31 视觉稿的欢迎页：大标题 + 一句副文案 + 三条灵感词（点了只填草稿，不自动发送）。
   String get aiWelcomeGreeting =>
-      _pick('你好！我是星宝', 'Hi! I am BoltStar', 'こんにちは！星宝です');
+      _pick('您好！我是星宝', 'Hi! I am BoltStar', 'こんにちは！星宝です');
   String get aiWelcomeText => _pick(
-    '你的 AI 创作伙伴，有什么我可以帮你的吗？',
+    '您的 AI 创作伙伴，有什么我可以帮您的吗？',
     'Your AI creative partner. How can I help?',
     'AI創作パートナーです。何をお手伝いしましょう？',
   );
@@ -730,10 +734,15 @@ class AppL10n {
     _pick('帮我写一句早安文案', 'Write me a good-morning line', 'おはようの一言を書いて'),
     _pick('把照片变成漫画风', 'Turn my photo into a comic', '写真を漫画風にして'),
   ];
-  String get aiInputHint =>
-      _pick('和星宝说点什么…', 'Say something to BoltStar…', '星宝に話しかけてみよう…');
+  /// 2026-08-10 需求 8：输入框默认文案改为「按住说话或输入您的想法...」
+  /// —— 右侧那颗麦克风按钮是语音入口，提示语要把两条路都说出来。
+  String get aiInputHint => _pick(
+    '按住说话或输入您的想法...',
+    'Hold to talk, or type your idea…',
+    '長押しで話す、または入力…',
+  );
   String get aiInputWithImagesHint => _pick(
-    '描述你想对图片做什么…',
+    '描述您想对图片做什么…',
     'Describe what to do with the images…',
     '画像に対して何をしたいか入力…',
   );
@@ -752,6 +761,10 @@ class AppL10n {
   String get aiGenerateImageDesc =>
       _pick('选择后立即发送', 'Sends as soon as you pick', '選択するとすぐ送信');
   String get aiImageRatio => _pick('图片比例', 'Ratio', '画像比率');
+
+  /// 比例浮层顶部的标题（2026-08-10 需求 3）：光是三行「竖向/横向/方形」看不出在设置什么。
+  String get aiImageRatioPickerTitle =>
+      _pick('设置文生图比例', 'Set image ratio', '生成画像の比率を設定');
   String get aiPickStyle => _pick('选择生图模式', 'Choose a style', '生成スタイルを選択');
 
   // 30xxx / 未知上游失败：不再只弹一次性 toast，气泡原地变成可重试的失败卡（对齐小程序 2026-07-30）。
@@ -762,7 +775,29 @@ class AppL10n {
     'ネットワークまたはサービスが混雑しています。後でお試しください',
   );
   String get aiRetryGenerate => _pick('重新生成', 'Try again', '再生成');
-  String get aiMessageActions => _pick('消息操作', 'Message actions', 'メッセージ操作');
+
+  // aiMessageActions（「消息操作」底部面板标题）2026-08-10 随面板一起删除，见下方确认框文案。
+
+  // ── 删除消息 / 删除图片（2026-08-10 需求 2 & 7）──
+  // 长按气泡空白处、以及图下方常驻操作条的「删除」都走这一套确认框（与全站弹框同版式），
+  // 取代原来的底部操作面板（小程序侧同步撤掉了 wx.showActionSheet）。
+  String get aiDeleteMessageTitle => _pick('删除消息', 'Delete message', 'メッセージを削除');
+  String get aiDeleteMessageDesc => _pick(
+    '删除后这条消息会从对话中移除，且无法恢复',
+    'This message will be removed from the chat and cannot be recovered.',
+    'このメッセージはチャットから削除され、復元できません。',
+  );
+  String get aiDeleteMessageWithImagesDesc => _pick(
+    '删除后这条消息和其中的图片都会从对话中移除，且无法恢复',
+    'This message and its images will be removed from the chat and cannot be recovered.',
+    'このメッセージと画像はチャットから削除され、復元できません。',
+  );
+  String get aiDeleteImageTitle => _pick('删除图片', 'Delete image', '画像を削除');
+  String get aiDeleteImageDesc => _pick(
+    '删除后这张图片会从对话中移除，且无法恢复',
+    'This image will be removed from the chat and cannot be recovered.',
+    'この画像はチャットから削除され、復元できません。',
+  );
   String get aiDownload => _pick('下载', 'Download', 'ダウンロード');
   String get aiCast => _pick('投屏', 'Cast', 'キャスト');
   String get aiDelete => _pick('删除', 'Delete', '削除');
@@ -783,9 +818,9 @@ class AppL10n {
   String get aiPreparingCast => _pick('准备投屏', 'Preparing cast…', 'キャストの準備中…');
   String get aiPickCastDevice => _pick('选择投屏设备', 'Choose a device', 'キャスト先を選択');
   String get aiPickCastDeviceDesc => _pick(
-    '选择设备后，将自动连接并开始投屏',
-    'The device will connect automatically and start casting.',
-    '選択したデバイスに自動接続してキャストします',
+    '选择电子纸设备后，将自动连接并开始投屏',
+    'The e-paper device will connect automatically and start casting.',
+    '選択した電子ペーパーに自動接続してキャストします',
   );
   String get aiDeviceConnected => _pick('已连接', 'Connected', '接続済み');
   String get aiDeviceWillConnect => _pick(
@@ -794,14 +829,14 @@ class AppL10n {
     '未接続（選択後に自動接続）',
   );
   String get aiNoBoundDevice => _pick(
-    '暂无已绑定设备，请先绑定设备',
-    'No bound device yet. Please bind one first.',
-    'バインド済みデバイスがありません。先に追加してください',
+    '暂无已绑定电子纸设备，请先绑定电子纸设备',
+    'No e-paper device bound yet. Please bind one first.',
+    'バインド済みの電子ペーパーがありません。先に追加してください',
   );
   String get aiBindDeviceFirst => _pick(
-    '使用 AI 创作前请先绑定设备',
-    'Please bind a device before using AI.',
-    'AIを使う前にデバイスを追加してください',
+    '使用 AI 创作前请先绑定电子纸设备',
+    'Please bind an e-paper device before using AI.',
+    'AIを使う前に電子ペーパーを追加してください',
   );
   String get aiGoBind => _pick('去绑定', 'Bind now', '追加する');
   String get aiBack => _pick('返回', 'Back', '戻る');
@@ -918,17 +953,17 @@ class AppL10n {
       _pick('从手机相册选择照片', 'Choose a photo from your album', 'アルバムから写真を選択');
   String get cresFailedTitle => _pick('投屏失败', 'Casting Failed', 'キャスト失敗');
   String get cresFailedDesc => _pick(
-    '设备连接中断，请检查设备状态后重试',
-    'The device connection was lost. Check the device and try again.',
-    'デバイスとの接続が切れました。状態を確認して再試行してください。',
+    '电子纸设备连接中断，请检查电子纸设备状态后重试',
+    'The e-paper device connection was lost. Check the e-paper device and try again.',
+    '電子ペーパーとの接続が切れました。状態を確認して再試行してください。',
   );
   String get cresRecast => _pick('重新投屏', 'Cast Again', '再キャスト');
   String get cresBackHome => _pick('返回首页', 'Back to Home', 'ホームに戻る');
   String get cresSuccessTitle => _pick('投屏成功', 'Casting Succeeded', 'キャスト成功');
   String get cresSuccessDesc => _pick(
-    '照片已成功投屏到设备，可前往相册查看',
-    'The photo was cast to the device. You can view it in the album.',
-    '写真をデバイスにキャストしました。アルバムで確認できます。',
+    '照片已成功投屏到电子纸设备，可前往相册查看',
+    'The photo was cast to the e-paper device. You can view it in the album.',
+    '写真を電子ペーパーにキャストしました。アルバムで確認できます。',
   );
   String get cresContinueCast => _pick('继续投屏', 'Continue Casting', 'キャストを続ける');
   String get cresDeviceLabel => _pick('投屏设备', 'Casting Device', 'キャスト先デバイス');
@@ -955,37 +990,45 @@ class AppL10n {
   String get bindEndSearchInline => _pick('，结束搜索', ', End Search', '、検索を終了');
   String get bindBindNow => _pick('立即绑定', 'Bind Now', '今すぐ追加');
   String get bindNotFoundTitle =>
-      _pick('未发现设备', 'No Device Found', 'デバイスが見つかりません');
+      _pick(
+        '未发现电子纸设备',
+        'No E-paper Device Found',
+        '電子ペーパーが見つかりません',
+      );
   String get bindNotFoundHint => _pick(
-    '设备连接中断，请检查设备状态后重试',
-    'Connection interrupted. Please check the device and try again.',
-    'デバイスの接続が切断されました。デバイスの状態を確認して再試行してください。',
+    '电子纸设备连接中断，请检查电子纸设备状态后重试',
+    'Connection interrupted. Please check the e-paper device and try again.',
+    '電子ペーパーの接続が切断されました。電子ペーパーの状態を確認して再試行してください。',
   );
   String get bindRescan => _pick('重新扫描', 'Rescan', '再スキャン');
   String get bindScanHelpLink =>
       _pick('扫描不到怎么办？', "Can't find your device?", 'スキャンできない場合は？');
   String get bindSearchingTitle =>
-      _pick('正在搜索附近设备', 'Searching for nearby devices', '近くのデバイスを検索中');
+      _pick(
+        '正在搜索附近电子纸设备',
+        'Searching for nearby e-paper devices',
+        '近くの電子ペーパーを検索中',
+      );
   String get bindSearchingHint => _pick(
-    '请尽量将手机靠近需要添加的设备...',
-    'Please keep your phone close to the device you want to add...',
-    '追加したいデバイスにできるだけスマートフォンを近づけてください...',
+    '请尽量将手机靠近需要添加的电子纸设备...',
+    'Please keep your phone close to the e-paper device you want to add...',
+    '追加したい電子ペーパーにできるだけスマートフォンを近づけてください...',
   );
   String get bindCancelScan => _pick('取消扫描', 'Cancel Scan', 'スキャンを中止');
   String get bindPleaseCheck => _pick('请检查：', 'Please check:', '確認してください：');
   String get bindCheckList => _pick(
-    '1.设备是否有电?\n'
-        '2.当前设备是否被占用?\n'
-        '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
-        '4.设备是否与手机距离过远，隔离或有其他遮挡物',
-    '1. Is the device powered on?\n'
-        '2. Is the device already in use?\n'
-        "3. Is the device's Bluetooth working and your phone's Bluetooth on?\n"
-        '4. Is the device too far away or blocked by obstacles?',
-    '1. デバイスの電源は入っていますか？\n'
-        '2. デバイスが他で使用されていませんか？\n'
-        '3. デバイスのBluetoothは正常に動作し、スマートフォンのBluetoothはオンですか？\n'
-        '4. デバイスが遠すぎたり、遮蔽物がありませんか？',
+    '1.电子纸设备是否有电?\n'
+        '2.当前电子纸设备是否被占用?\n'
+        '3.电子纸设备蓝牙是否工作正常，手机蓝牙是否打开\n'
+        '4.电子纸设备是否与手机距离过远，隔离或有其他遮挡物',
+    '1. Is the e-paper device powered on?\n'
+        '2. Is the e-paper device already in use?\n'
+        "3. Is the e-paper device's Bluetooth working and your phone's Bluetooth on?\n"
+        '4. Is the e-paper device too far away or blocked by obstacles?',
+    '1. 電子ペーパーの電源は入っていますか？\n'
+        '2. 電子ペーパーが他で使用されていませんか？\n'
+        '3. 電子ペーパーのBluetoothは正常に動作し、スマートフォンのBluetoothはオンですか？\n'
+        '4. 電子ペーパーが遠すぎたり、遮蔽物がありませんか？',
   );
   String get bindBtPermissionTitle =>
       _pick('需要蓝牙权限', 'Bluetooth Permission Required', 'Bluetoothの権限が必要です');
@@ -1040,9 +1083,9 @@ class AppL10n {
       _pick('连接设备中', 'Connecting to device', 'デバイスに接続中');
   String get bindConnectSuccess => _pick('连接成功', 'Connected', '接続しました');
   String get bindAlreadyBoundConnected => _pick(
-    '该设备已绑定，已为你连接',
-    'This device is already bound. Connected for you.',
-    'このデバイスは既に追加済みです。接続しました。',
+    '该电子纸设备已绑定，已为您连接',
+    'This e-paper device is already bound. Connected for you.',
+    'この電子ペーパーは既に追加済みです。接続しました。',
   );
   String get bindSuccess => _pick('绑定成功', 'Bound successfully', '追加しました');
   // 注意：这三条 toast **不要**把原始异常对象插值进用户文案——
@@ -1055,26 +1098,26 @@ class AppL10n {
     'Bluetoothを利用できません：Bluetoothをオンにし、「付近のデバイス」権限を許可してください。',
   );
   String get bleDeviceNotFound => _pick(
-    '未搜索到该设备，请确认设备已开机并在附近',
-    'Device not found. Make sure it is powered on and nearby.',
-    'デバイスが見つかりません。電源が入っていて近くにあることを確認してください。',
+    '未搜索到该电子纸设备，请确认电子纸设备已开机并在附近',
+    'E-paper device not found. Make sure it is powered on and nearby.',
+    '電子ペーパーが見つかりません。電源が入っていて近くにあることを確認してください。',
   );
   String get bleIncompleteDeviceIdentity => _pick(
-    '未读取到完整的6字节设备ID，请重新连接后再试',
-    'The complete 6-byte device ID was not read. Reconnect and try again.',
-    '完全な6バイトのデバイスIDを取得できませんでした。再接続してお試しください。',
+    '未读取到完整的6字节电子纸设备ID，请重新连接后再试',
+    'The complete 6-byte e-paper device ID was not read. Reconnect and try again.',
+    '完全な6バイトの電子ペーパーIDを取得できませんでした。再接続してお試しください。',
   );
   // 连接重入护栏：并发触发连接时第二路的提示（见 BleController.connect）。
   String get bleBusyConnecting => _pick(
-    '正在连接设备，请稍候',
-    'Connecting to the device, please wait.',
-    'デバイスに接続中です。しばらくお待ちください。',
+    '正在连接电子纸设备，请稍候',
+    'Connecting to the e-paper device, please wait.',
+    '電子ペーパーに接続中です。しばらくお待ちください。',
   );
   // 物理连接失败的用户可见文案（含安卓 android-code:133 等）：只给可操作建议，不暴露原始异常。
   String get bleConnectFailed => _pick(
-    '连接失败，请靠近设备后重试',
-    'Connection failed. Move closer to the device and try again.',
-    '接続に失敗しました。デバイスに近づいてもう一度お試しください。',
+    '连接失败，请靠近电子纸设备后重试',
+    'Connection failed. Move closer to the e-paper device and try again.',
+    '接続に失敗しました。電子ペーパーに近づいてもう一度お試しください。',
   );
   // 连接/搜索超时（2026-08-01）：与上面的「连接失败」分开——超时多为设备没在广播或信号弱，
   // 用户该做的是等一会儿再试，而不是「靠近设备」。这一句必须跟随语种：此前底层抛的
@@ -1099,8 +1142,8 @@ class AppL10n {
   String get signalVeryWeak => _pick('弱', 'Very weak', '弱い');
 
   String get bindBtUnsupported => _pick(
-    '当前设备暂不支持蓝牙或未授权，请检查系统蓝牙权限',
-    'This device does not support Bluetooth or is not authorized. Check system Bluetooth permissions.',
+    '当前手机暂不支持蓝牙或未授权，请检查系统蓝牙权限',
+    'This phone does not support Bluetooth or is not authorized. Check system Bluetooth permissions.',
     'この端末はBluetoothに対応していないか、許可されていません。システムのBluetooth権限を確認してください。',
   );
   String get bindScanFailed => _pick(
@@ -1109,9 +1152,9 @@ class AppL10n {
     'スキャンに失敗しました。再試行してください。',
   );
   String bindConnectFailed(Object error) => _pick(
-    '设备连接失败：$error',
-    'Device connection failed: $error',
-    'デバイスの接続に失敗しました：$error',
+    '电子纸设备连接失败：$error',
+    'E-paper device connection failed: $error',
+    '電子ペーパーの接続に失敗しました：$error',
   );
   String bindBatteryLabel(int battery) =>
       _pick('电量$battery%', 'Battery $battery%', 'バッテリー$battery%');
@@ -1145,9 +1188,9 @@ class AppL10n {
 
   /// 设备名称弹窗副标题（小程序 `.name-dialog__tip`）。
   String get devNameDialogTip => _pick(
-    '为设备设置一个容易识别的名称',
-    'Give this device a name you can recognise',
-    'すぐ分かる名前をデバイスに付けてください',
+    '为电子纸设备设置一个容易识别的名称',
+    'Give this e-paper device a name you can recognise',
+    'すぐ分かる名前を電子ペーパーに付けてください',
   );
 
   /// 绑定成功后的命名引导标题：弱性强制，可以点「稍后」跳过。
@@ -1164,7 +1207,11 @@ class AppL10n {
   String get devConnecting =>
       _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
   String get devConnectFirst =>
-      _pick('请先连接设备', 'Please connect the device first', '先にデバイスを接続してください');
+      _pick(
+        '请先连接电子纸设备',
+        'Please connect the e-paper device first',
+        '先に電子ペーパーを接続してください',
+      );
   String get devDisconnecting => _pick('断开中', 'Disconnecting…', '切断中…');
   String get devPhotoReadFailed => _pick(
     '无法读取照片，请检查相机/相册权限后重试。',
@@ -1206,9 +1253,9 @@ class AppL10n {
   String get devClearing => _pick('清空中…', 'Clearing…', '消去中…');
   String get devCleared => _pick('已清空', 'Cleared', '消去しました');
   String get devClearAllValue => _pick(
-    '清空设备及设备照片记录',
-    'Erase device photos and their records',
-    'デバイスと写真記録を消去',
+    '清空电子纸设备及小程序/APP内的照片',
+    'Erase the photos on the e-paper device and in the Mini Program / App',
+    '電子ペーパーとミニプログラム／アプリ内の写真を消去',
   );
 
   /// 一键清空第一步的取消键（对齐小程序「再想想」）。
@@ -1219,19 +1266,23 @@ class AppL10n {
   //   · 删除设备 = 一键清空 + 断开连接 + 解除绑定（需已连接）。
   String get devUnbindDevice => _pick('解除绑定', 'Unbind Device', 'ペアリング解除');
   String get devUnbindDeviceValue => _pick(
-    '保留设备上的照片',
-    'Photos on the device are kept',
-    'デバイス内の写真は保持されます',
+    '解除绑定电子纸设备，保留照片',
+    'Unbind the e-paper device and keep its photos',
+    '電子ペーパーのペアリングを解除し、写真は保持',
   );
   String get devUnbindDeviceMessage => _pick(
-    '解除绑定后，设备上的照片将保留，您可以稍后重新绑定设备。',
-    'After unbinding, photos on the device are kept and you can pair it again later.',
-    'ペアリングを解除しても、デバイス内の写真は残り、後で再度ペアリングできます。',
+    '解除绑定后，电子纸设备上的照片将保留，您可以稍后重新绑定电子纸设备。',
+    'After unbinding, photos on the e-paper device are kept and you can pair it again later.',
+    'ペアリングを解除しても、電子ペーパー内の写真は残り、後で再度ペアリングできます。',
   );
   String get devUnbinding => _pick('解除绑定中', 'Unbinding…', 'ペアリング解除中…');
   String get devDeleteDevice => _pick('删除设备', 'Delete Device', 'デバイスを削除');
   String get devDeleting => _pick('删除设备中', 'Deleting device…', 'デバイスを削除中…');
-  String get devDeviceDeleted => _pick('设备已删除', 'Device deleted', 'デバイスを削除しました');
+  String get devDeviceDeleted => _pick(
+    '电子纸设备已删除',
+    'E-paper device deleted',
+    '電子ペーパーを削除しました',
+  );
   String get devDeleteDeviceValue => _pick(
     '清空照片并解除绑定',
     'Erase photos and unbind',
@@ -1242,32 +1293,32 @@ class AppL10n {
   String get devDeleteDeviceConfirmTitle =>
       _pick('确认删除设备', 'Confirm Device Deletion', 'デバイス削除の確認');
   String get devDeleteDeviceConfirmMessage => _pick(
-    '我已知晓删除设备相关内容，确认删除',
-    'I understand what deleting this device means and confirm the deletion.',
-    'デバイス削除の内容を理解した上で、削除を確認します。',
+    '我已知晓删除电子纸设备相关内容，确认删除',
+    'I understand what deleting this e-paper device means and confirm the deletion.',
+    '電子ペーパー削除の内容を理解した上で、削除を確認します。',
   );
   String get devEmptyTitle => _pick('暂无设备', 'No Devices', 'デバイスがありません');
   String get devEmptySubtitle => _pick(
-    '请先搜索并绑定附近的智能相框。',
-    'Search for and pair a nearby smart photo frame first.',
-    'まず近くのスマートフォトフレームを検索してペアリングしてください。',
+    '请先搜索并绑定附近的电子纸设备。',
+    'Search for and pair a nearby e-paper device first.',
+    'まず近くの電子ペーパーを検索してペアリングしてください。',
   );
   String get devAddDevice => _pick('添加设备', 'Add Device', 'デバイスを追加');
   String get devClearStep1Message => _pick(
-    '将清空彩色墨水屏设备内所有照片，同时清空小程序/APP的图库，请谨慎选择是否继续。',
-    'This will erase all photos on the colour e-ink device and also clear the gallery in the Mini Program / App. Please continue with care.',
-    'カラー電子ペーパー本体内のすべての写真と、ミニプログラム／アプリのギャラリーを消去します。続行するかどうか慎重にご判断ください。',
+    '将清空电子纸设备内所有照片，同时清空小程序/APP的图库，请谨慎选择是否继续。',
+    'This will erase all photos on the e-paper device and also clear the gallery in the Mini Program / App. Please continue with care.',
+    '電子ペーパー内のすべての写真と、ミニプログラム／アプリのギャラリーを消去します。続行するかどうか慎重にご判断ください。',
   );
   String get devClearStep2Message => _pick(
-    '我已阅读并了解此操作的结果，确认清空设备与图库内的全部照片。',
-    'I have read and understood the consequences and confirm erasing all photos on the device and in the gallery.',
-    'この操作の結果を理解した上で、デバイスとギャラリー内のすべての写真を消去することを確認します。',
+    '我已阅读并了解此操作的结果，确认清空电子纸设备与图库内的全部照片。',
+    'I have read and understood the consequences and confirm erasing all photos on the e-paper device and in the gallery.',
+    'この操作の結果を理解した上で、電子ペーパーとギャラリー内のすべての写真を消去することを確認します。',
   );
   /// 删除设备第一次确认：先劝一句「建议清空照片防隐私泄露」（对齐小程序 detail.wxml）。
   String get devDeleteDeviceMessage => _pick(
-    '如果您不再使用设备，建议执行一键清空设备照片，防止隐私泄露',
-    'If you no longer use this device, we recommend clearing its photos first to avoid leaking your privacy.',
-    'この端末を今後使わない場合は、プライバシー漏えいを防ぐため、先に写真を一括消去することをおすすめします。',
+    '删除设备将执行一键清空电子纸设备及小程序/APP内的照片，防止隐私泄露。是否确认删除设备？',
+    'Deleting the device also clears every photo on the e-paper device and in the Mini Program / App to protect your privacy. Delete this device?',
+    'デバイスを削除すると、プライバシー保護のため電子ペーパーとミニプログラム／アプリ内の写真を一括消去します。削除しますか？',
   );
 
   // ── OTA 升级 ──
@@ -1289,9 +1340,9 @@ class AppL10n {
   String get otaDeviceNotFound =>
       _pick('设备不存在', 'Device not found', 'デバイスが見つかりません');
   String get otaMissingDeviceInfo => _pick(
-    '缺少设备信息，无法检查固件版本。',
-    'Device info is missing; cannot check the firmware version.',
-    'デバイス情報がなく、ファームウェアバージョンを確認できません。',
+    '缺少电子纸设备信息，无法检查固件版本。',
+    'E-paper device info is missing; cannot check the firmware version.',
+    '電子ペーパーの情報がなく、ファームウェアバージョンを確認できません。',
   );
   String get otaInvalidMissingInfo => _pick(
     '检测到可更新状态，但缺少新版本号或固件下载地址，请稍后重试。',
@@ -1314,15 +1365,15 @@ class AppL10n {
   String get otaDeviceNotConnected =>
       _pick('设备未连接', 'Device not connected', 'デバイス未接続');
   String get otaConnectFirstHint => _pick(
-    '请先在详情页连接设备，并在升级过程中保持设备在线。',
-    'Please connect the device on the details page first, and keep it online during the upgrade.',
-    '先に詳細ページでデバイスを接続し、アップグレード中はオンラインを保ってください。',
+    '请先在详情页连接电子纸设备，并在升级过程中保持电子纸设备在线。',
+    'Please connect the e-paper device on the details page first, and keep it online during the upgrade.',
+    '先に詳細ページで電子ペーパーを接続し、アップグレード中はオンラインを保ってください。',
   );
   String get otaUpToDate => _pick('已是最新', 'Up to date', '最新です');
   String get otaNoBleConnection => _pick(
-    '未获取到设备蓝牙连接，请先在详情页连接设备后再升级。',
-    'No Bluetooth connection to the device. Please connect it on the details page before upgrading.',
-    'デバイスのBluetooth接続がありません。詳細ページで接続してからアップグレードしてください。',
+    '未获取到电子纸设备蓝牙连接，请先在详情页连接电子纸设备后再升级。',
+    'No Bluetooth connection to the e-paper device. Please connect it on the details page before upgrading.',
+    '電子ペーパーのBluetooth接続がありません。詳細ページで接続してからアップグレードしてください。',
   );
   String get otaDryRunning => _pick('干跑中', 'Dry run…', 'ドライラン中…');
   String get otaUpgrading => _pick('升级中', 'Upgrading…', 'アップグレード中…');
@@ -1360,9 +1411,9 @@ class AppL10n {
   String get otaDone => _pick('已完成', 'Done', '完了');
   String get otaChecking => _pick('检查中', 'Checking…', '確認中…');
   String get otaMissingDeviceId => _pick(
-    '缺少设备ID，无法检查固件版本。',
-    'Missing device ID; cannot check the firmware version.',
-    'デバイスIDがないため、ファームウェアバージョンを確認できません。',
+    '缺少电子纸设备ID，无法检查固件版本。',
+    'Missing e-paper device ID; cannot check the firmware version.',
+    '電子ペーパーIDがないため、ファームウェアバージョンを確認できません。',
   );
   String get otaGenericFailure => _pick(
     '升级失败，请重试',
@@ -1372,9 +1423,9 @@ class AppL10n {
   String get otaCheckingFirmware =>
       _pick('正在检查固件版本...', 'Checking firmware version…', 'ファームウェアバージョンを確認中…');
   String get otaKeepPoweredHint => _pick(
-    '升级过程中请保持设备供电、手机屏幕常亮，并避免切换到后台。',
-    'During the upgrade, keep the device powered, keep your phone screen on, and avoid switching to the background.',
-    'アップグレード中はデバイスの電源を入れたまま、スマホの画面を常時点灯にし、バックグラウンドへの切り替えを避けてください。',
+    '升级过程中请保持电子纸设备供电、手机屏幕常亮，并避免切换到后台。',
+    'During the upgrade, keep the e-paper device powered, keep your phone screen on, and avoid switching to the background.',
+    'アップグレード中は電子ペーパーの電源を入れたまま、スマホの画面を常時点灯にし、バックグラウンドへの切り替えを避けてください。',
   );
   String get otaDryRunTest => _pick(
     '干跑测试（mock 固件）',
@@ -1438,9 +1489,9 @@ class AppL10n {
   String get homeNoDeviceTitle =>
       _pick('暂未绑定设备', 'No Device Bound', '端末が未登録です');
   String get homeNoDeviceMessage => _pick(
-    '当前暂无可投屏设备，请先绑定相框设备',
-    'No device to cast to. Please bind a photo frame first.',
-    '投影できる端末がありません。先にフォトフレームを登録してください。',
+    '当前暂无可投屏电子纸设备，请先绑定电子纸设备',
+    'No e-paper device to cast to. Please bind one first.',
+    '投影できる電子ペーパーがありません。先に電子ペーパーを登録してください。',
   );
   String get homeBindNow => _pick('立即绑定', 'Bind Now', '今すぐ登録');
   String get homeReadPhotoFailed => _pick(
@@ -1456,9 +1507,9 @@ class AppL10n {
     'ネットワークエラーです。アプリはオフラインになり、投影履歴とギャラリーを同期できません。',
   );
   String get homeUnboundHint => _pick(
-    '请先绑定相框设备后再投屏照片',
-    'Bind a photo frame before casting photos.',
-    '写真を投影する前にフォトフレームを登録してください。',
+    '请先绑定电子纸设备后再投屏照片',
+    'Bind an e-paper device before casting photos.',
+    '写真を投影する前に電子ペーパーを登録してください。',
   );
   String get homeBindDevice => _pick('绑定设备', 'Bind Device', '端末を登録');
   String get homeCastSheetTitle =>
@@ -1470,19 +1521,27 @@ class AppL10n {
   String get homeCastAlbumCardSubtitle =>
       _pick('选择照片并投屏', 'Pick a photo and cast it', '写真を選んで投影');
   String get homeBindSearchingTitle =>
-      _pick('正在搜索附近设备', 'Searching for nearby devices', '近くの端末を検索中');
+      _pick(
+        '正在搜索附近电子纸设备',
+        'Searching for nearby e-paper devices',
+        '近くの電子ペーパーを検索中',
+      );
   String get homeBindSearchingSubtitle => _pick(
-    '请尽量将手机靠近需要添加的设备...',
-    'Keep your phone close to the device you want to add...',
-    '追加したい端末にスマホをできるだけ近づけてください...',
+    '请尽量将手机靠近需要添加的电子纸设备...',
+    'Keep your phone close to the e-paper device you want to add...',
+    '追加したい電子ペーパーにスマホをできるだけ近づけてください...',
   );
   String get homeBindCancelScan => _pick('取消扫描', 'Cancel Scan', 'スキャンを中止');
   String get homeBindNotFoundTitle =>
-      _pick('未发现设备', 'No Device Found', '端末が見つかりません');
+      _pick(
+        '未发现电子纸设备',
+        'No E-paper Device Found',
+        '電子ペーパーが見つかりません',
+      );
   String get homeBindNotFoundSubtitle => _pick(
-    '设备连接中断，请检查设备状态后重试',
-    'The connection was interrupted. Check the device and try again.',
-    '接続が中断されました。端末の状態を確認して再試行してください。',
+    '电子纸设备连接中断，请检查电子纸设备状态后重试',
+    'The connection was interrupted. Check the e-paper device and try again.',
+    '接続が中断されました。電子ペーパーの状態を確認して再試行してください。',
   );
   String get homeRescan => _pick('重新扫描', 'Scan Again', '再スキャン');
   String get homeScanHelpTitle =>
@@ -1491,18 +1550,18 @@ class AppL10n {
   String get homeScanHelpChecklistTitle =>
       _pick('请检查：', 'Please check:', '確認してください：');
   String get homeScanHelpBody => _pick(
-    '1.设备是否有电?\n'
-        '2.当前设备是否被占用?\n'
-        '3.设备蓝牙是否工作正常，手机蓝牙是否打开\n'
-        '4.设备是否与手机距离过远，隔离或有其他遮挡物',
-    '1. Is the device powered on?\n'
-        '2. Is the device already in use?\n'
-        "3. Is the device's Bluetooth working, and is your phone's Bluetooth on?\n"
-        '4. Is the device too far, isolated, or otherwise obstructed?',
-    '1. 端末の電源は入っていますか？\n'
-        '2. 端末が他で使用中ではありませんか？\n'
-        '3. 端末のBluetoothは正常で、スマホのBluetoothはオンですか？\n'
-        '4. 端末がスマホから離れすぎたり、遮蔽物はありませんか？',
+    '1.电子纸设备是否有电?\n'
+        '2.当前电子纸设备是否被占用?\n'
+        '3.电子纸设备蓝牙是否工作正常，手机蓝牙是否打开\n'
+        '4.电子纸设备是否与手机距离过远，隔离或有其他遮挡物',
+    '1. Is the e-paper device powered on?\n'
+        '2. Is the e-paper device already in use?\n'
+        "3. Is the e-paper device's Bluetooth working, and is your phone's Bluetooth on?\n"
+        '4. Is the e-paper device too far, isolated, or otherwise obstructed?',
+    '1. 電子ペーパーの電源は入っていますか？\n'
+        '2. 電子ペーパーが他で使用中ではありませんか？\n'
+        '3. 電子ペーパーのBluetoothは正常で、スマホのBluetoothはオンですか？\n'
+        '4. 電子ペーパーがスマホから離れすぎたり、遮蔽物はありませんか？',
   );
   String get homeCastCameraSheetSubtitle =>
       _pick('调用手机相机拍照', 'Use your phone camera to take a photo', 'スマホのカメラで撮影');
@@ -1533,9 +1592,9 @@ class AppL10n {
   String get galFrame => _pick('相框', 'Photo Frame', 'フォトフレーム');
   String get galTip => _pick('提示', 'Notice', 'お知らせ');
   String get galDeviceClearedNotice => _pick(
-    '当前设备已被执行清空操作，请重新上传图片',
-    'This device has been cleared. Please upload photos again.',
-    'このデバイスはクリアされました。写真を再度アップロードしてください。',
+    '当前电子纸设备已被执行清空操作，请重新上传图片',
+    'This e-paper device has been cleared. Please upload photos again.',
+    'この電子ペーパーはクリアされました。写真を再度アップロードしてください。',
   );
   String get galConfirm => _pick('确认', 'Confirm', '確認');
   String get galDeleting => _pick('删除中', 'Deleting…', '削除中…');
@@ -1565,9 +1624,9 @@ class AppL10n {
 
   /// 记录与设备下拉都定位不到目标设备（后端两处都没回 userProductId 时的兜底）。
   String get galRecastNoDevice => _pick(
-    '未找到这些照片所属的设备，请刷新后重试',
-    'Could not find the device these photos belong to. Please refresh and retry.',
-    'これらの写真が属するデバイスが見つかりません。更新して再試行してください。',
+    '未找到这些照片所属的电子纸设备，请刷新后重试',
+    'Could not find the e-paper device these photos belong to. Please refresh and retry.',
+    'これらの写真が属する電子ペーパーが見つかりません。更新して再試行してください。',
   );
   String get galSelectAll => _pick('全选', 'Select All', 'すべて選択');
   String galTotalCount(int count) =>
@@ -1576,9 +1635,9 @@ class AppL10n {
 
   /// 2026-08-04：删除同时清掉设备槽位、相册记录与来源投屏记录，文案同步说明。
   String galDeleteConfirm(int count) => _pick(
-    '确认删除已选的$count张照片吗？删除后将同时从设备与我的相册中移除，且无法恢复',
-    'Delete the $count selected photo(s)? They will be removed from both the device and My Album, and cannot be recovered.',
-    '選択した$count枚の写真を削除しますか？デバイスとマイアルバムの両方から削除され、復元できません。',
+    '确认删除已选的$count张照片吗？删除后将同时从电子纸设备与我的相册中移除，且无法恢复',
+    'Delete the $count selected photo(s)? They will be removed from both the e-paper device and My Album, and cannot be recovered.',
+    '選択した$count枚の写真を削除しますか？電子ペーパーとマイアルバムの両方から削除され、復元できません。',
   );
 
   /// 只删掉了投屏记录（这条记录没有对应的相册照片，设备侧本就无从删起）。
@@ -1598,9 +1657,9 @@ class AppL10n {
     '写真は削除しましたが、一部の投映履歴を削除できませんでした。後で再試行してください。',
   );
   String get galEmptyTitle => _pick(
-    '当前设备还没有投屏成功的照片',
-    'No successfully cast photos on this device yet',
-    'この端末にキャスト成功した写真はまだありません',
+    '当前电子纸设备还没有投屏成功的照片',
+    'No successfully cast photos on this e-paper device yet',
+    'この電子ペーパーにキャスト成功した写真はまだありません',
   );
   String get galEmptySubtitle => _pick(
     '投屏成功的照片会自动出现在这里',
@@ -1657,9 +1716,9 @@ class AppL10n {
     'ダウンロードページを開けませんでした。しばらくしてから再試行してください。',
   );
   String get setAppIntro => _pick(
-    'BoltStar是一款帮助你轻松管理和分享照片的应用，连接设备，珍藏生活每一刻。',
-    'BoltStar helps you easily manage and share photos, connect your devices, and treasure every moment of life.',
-    'BoltStarは写真を簡単に管理・共有し、デバイスに接続して、生活の一瞬一瞬を大切に残せるアプリです。',
+    'BoltStar是一款帮助您轻松管理和分享照片的应用，连接电子纸设备，珍藏生活每一刻。',
+    'BoltStar helps you easily manage and share photos, connect your e-paper device, and treasure every moment of life.',
+    'BoltStarは写真を簡単に管理・共有し、電子ペーパーに接続して、生活の一瞬一瞬を大切に残せるアプリです。',
   );
   String setVersionLabel(String version) =>
       _pick('版本$version', 'Version $version', 'バージョン$version');

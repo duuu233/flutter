@@ -1,0 +1,14 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "S2HZK3227W.com.boltfox.boltstar",
+        "paths": [
+          "/app/",
+          "/app/*"
+        ]
+      }
+    ]
+  }
+}

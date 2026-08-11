@@ -2,7 +2,7 @@
 
 > 文档类型：Release Runbook
 > 状态：Active
-> 最后核验：2026-08-05
+> 最后核验：2026-08-11
 > 微信登录的完整平台配置见 `../integration/WECHAT_LOGIN_SETUP.md`。
 > 2026-07-16 全面审查后整理。本次审查已修复的构建阻断项：
 > ① 主 Manifest 缺 `INTERNET` 权限（release 包全部网络请求失败）；
@@ -15,16 +15,21 @@
 | 位置 | 当前值 | 要求 |
 | --- | --- | --- |
 | `ios/Runner/Info.plist` → `CFBundleURLSchemes` | `wx4cf0c5f38a70d0bc` | 必须与微信开放平台移动应用 AppID 一致 |
-| `ios/Runner/Runner.entitlements` → `associated-domains` | `applinks:example.boltfox.cn` | 真实 Universal Link 域名 |
-| 构建命令 `--dart-define` | `WECHAT_APP_ID=wx4cf0c5f38a70d0bc` / `WECHAT_UNIVERSAL_LINK` | 与上述配置一致 |
+| `ios/Runner/Runner.entitlements` → `associated-domains` | `applinks:badmin.boltfox.cn` | 与 Universal Link 同域名 |
+| `WECHAT_UNIVERSAL_LINK`（Dart 默认值 / `--dart-define`） | `https://badmin.boltfox.cn/app/` | 与 entitlements、微信后台、AASA 四处逐字符一致 |
+| 构建命令 `--dart-define` | `WECHAT_APP_ID=wx4cf0c5f38a70d0bc` / `WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/` | 与上述配置一致 |
 
 AppID 于 2026-08-05 由作废的 `wx5bc2000b3207f370` 更正为 `wx4cf0c5f38a70d0bc`：Android 与 iOS、
 debug 与 release 必须是同一个值（Dart 默认值已同步，不传 `--dart-define` 也一致）。旧 AppID 打出的
-安装包一律作废重打。
+安装包一律作废重打。Universal Link 于 2026-08-11 由占位改为 `https://badmin.boltfox.cn/app/`，
+Dart 默认值同样已同步。
 
 微信侧配套（不做则微信登录不可用）：
-- 域名根目录部署 `/.well-known/apple-app-site-association`（含 TeamID `S2HZK3227W` + bundle id `com.boltfox.boltstar`）；
-- 微信开放平台后台填写同一 Universal Link；
+- ⚠️ **`badmin.boltfox.cn` 部署 `/.well-known/apple-app-site-association`** —— 2026-08-11 实测
+  该地址返回的是管理后台 SPA 的 HTML，**尚未部署**；文件原文与 nginx 配置见
+  `../integration/WECHAT_LOGIN_SETUP.md` 9.2（appID `S2HZK3227W.com.boltfox.boltstar`）。
+  没有它，iOS 打包再正确，微信授权后也回不到 App。
+- 微信开放平台后台填写同一 Universal Link（后台保存时会自己抓 AASA 校验，必须先做上一条）；
 - **Android**：开放平台登记 `boltstar-release.jks` 的 MD5；debug/profile/release 已统一使用这把证书。
 
 ## 〇.5、国内网络前置：pub.dev 镜像（不配则 pub get 报 socket error）
@@ -49,14 +54,14 @@ flutter pub get
 flutter build appbundle --release ^
   --obfuscate --split-debug-info=build/symbols ^
   --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc ^
-  --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
+  --dart-define=WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/
 # 产物: build/app/outputs/bundle/release/app-release.aab
 
 # 直接分发 APK（可选）：
 flutter build apk --release --split-per-abi ^
   --obfuscate --split-debug-info=build/symbols ^
   --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc ^
-  --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
+  --dart-define=WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/
 # 产物: build/app/outputs/flutter-apk/app-arm64-v8a-release.apk 等
 ```
 
@@ -65,7 +70,7 @@ flutter build apk --release --split-per-abi ^
 ```bash
 flutter build apk --debug ^
   --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc ^
-  --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
+  --dart-define=WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/
 # 产物: build/app/outputs/flutter-apk/app-debug.apk（含全部 ABI，直接安装）
 ```
 
@@ -91,7 +96,7 @@ cd ios && pod install --repo-update && cd ..   # Podfile.lock 严重过期，必
 flutter build ipa --release --export-method app-store \
   --obfuscate --split-debug-info=build/symbols \
   --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc \
-  --dart-define=WECHAT_UNIVERSAL_LINK=https://你的域名/app/
+  --dart-define=WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/
 # 产物: build/ios/ipa/BoltStar.ipa → Transporter / Xcode Organizer 上传
 ```
 
@@ -116,9 +121,12 @@ flutter build ipa --release --export-method app-store \
    - 投屏预览常驻编辑层：平移、缩放、旋转、横竖取景与最终设备分辨率导出；
    - BLE 扫描 → 连接 → 投屏 → OTA（重点回归本次的 OTA 提速与 ACK 事件驱动改动）。
    - 如有 Android 10/11 旧设备，验证首次扫描会弹**定位授权**且能搜到设备（本次修复项）。
-4. iOS 真机确认微信回调经 Scene 生命周期可达（fluwx 5.7.7 早于 scene 适配期，
-   若回调丢失：升级 fluwx，或删除 Info.plist 的 `UIApplicationSceneManifest` 段
-   + `SceneDelegate.swift` 回退经典生命周期）。
+4. iOS 真机确认微信回调经 Scene 生命周期可达。当前 `fluwx 6.0.0`（pod `fluwx 2.0.5`）的
+   `FluwxPlugin` 已同时实现 `application:continueUserActivity:restorationHandler:` 与
+   `scene:continueUserActivity:`，`FlutterSceneDelegate` 会转发，正常不需要动原生代码。
+   若回调仍丢失，先按 `../integration/WECHAT_LOGIN_SETUP.md` 9.4 排 AASA（**改完 AASA 必须
+   删 App 重装**，系统只在安装时抓一次），再考虑回退经典生命周期（删 Info.plist 的
+   `UIApplicationSceneManifest` 段 + `SceneDelegate.swift`）。
 5. 商店素材：Android 自适应图标为**白底**（`ic_launcher_background.xml` = `#FFFFFF`）+ inset
    前景，对齐 iOS「白底橙标」。⚠️ 不要改回品牌橙底——前景 PNG 的白色星形/十字缝是透明的，
    橙底会把它吃掉、桌面呈现一整块橙色 LOGO 消失（2026-07 已修，见

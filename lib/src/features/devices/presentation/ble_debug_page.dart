@@ -261,7 +261,7 @@ class _BleDebugPageState extends State<BleDebugPage> {
 
   bool _requireDevice() {
     if (!_connected) {
-      _toast('请先连接设备');
+      _toast('请先连接电子纸设备');
       return false;
     }
     return true;

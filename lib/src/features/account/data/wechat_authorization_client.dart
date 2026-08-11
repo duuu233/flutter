@@ -84,13 +84,20 @@ class WeChatAuthorizationConfig {
         'WECHAT_APP_ID',
         defaultValue: 'wx4cf0c5f38a70d0bc',
       ),
-      universalLink: String.fromEnvironment('WECHAT_UNIVERSAL_LINK'),
+      universalLink: String.fromEnvironment(
+        'WECHAT_UNIVERSAL_LINK',
+        defaultValue: 'https://badmin.boltfox.cn/app/',
+      ),
     );
   }
 
   final String appId;
 
-  /// 仅 iOS 需要，且必须与微信开放平台及 Associated Domains 配置一致。
+  /// 仅 iOS 需要，且必须与微信开放平台后台、`ios/Runner/Runner.entitlements` 的
+  /// `applinks:` 域名、以及该域名下 `/.well-known/apple-app-site-association` 四处一致。
+  ///
+  /// 默认值与 [appId] 同理：不传 `--dart-define` 时也是正式值，避免 debug 包因为漏传
+  /// 参数而在 iOS 上直接被 [WeChatAuthErrorCode.config] 拦下。
   final String universalLink;
 }
 

@@ -146,7 +146,7 @@ class ServerImageProjectionService {
         success: false,
         uploaded: 0,
         total: 0,
-        message: '设备未连接，请先连接设备后再投屏',
+        message: '电子纸设备未连接，请先连接电子纸设备后再投屏',
         failureKind: FrameBleErrorKind.disconnected,
       );
     }
@@ -195,6 +195,10 @@ class ServerImageProjectionService {
     // 最后一张的异步刷屏(0x24)Future：收尾把连接间隔回落到空闲档(100ms)时要等它跑完再发——
     // 刷屏期间设备对新指令回忙(0x0B)，两者挤在一起会让回落白白失败。失败/中断路径无刷屏则保持 null。
     Future<int>? lastRefresh;
+    // 多图全部写入后仍**只刷一次**，但最终展示的是本批**第一张**成功写入的照片
+    // （2026-08-04 产品口径，对齐小程序 result.js `firstSuccessfulIndex`）。
+    // ⚠️ 用 null 表示「还没有成功过」：槽位 0 是相框第一个位置，是合法值，不能用 -1/0 当哨兵判假。
+    int? firstSuccessfulIndex;
     try {
       // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。B2：走精简读取，不带 0x03 固件版本。
       emit(0, _l10n?.castReadingDeviceInfo ?? '正在读取设备信息…');
@@ -212,7 +216,7 @@ class ServerImageProjectionService {
         throw FrameBleException('该型号暂不支持图传', kind: FrameBleErrorKind.unsupported);
       }
       if (info.width == 0 || info.height == 0) {
-        throw FrameBleException('设备未连接或信息读取异常，请重新连接设备后再投屏', kind: FrameBleErrorKind.disconnected);
+        throw FrameBleException('电子纸设备未连接或信息读取异常，请重新连接电子纸设备后再投屏', kind: FrameBleErrorKind.disconnected);
       }
       final expected4bpp =
           (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2（向上取整）
@@ -290,7 +294,7 @@ class ServerImageProjectionService {
           FrameProtocol.indexesToMask(usedIndexes),
           info.capacity,
         );
-        if (index < 0) throw FrameBleException('设备已存满', kind: FrameBleErrorKind.storageFull);
+        if (index < 0) throw FrameBleException('电子纸设备已存满', kind: FrameBleErrorKind.storageFull);
 
         // 开始图传本张：标题切「图片传输中」，百分比从 0 起（对齐小程序 result.js:483）。
         emit(
@@ -379,6 +383,7 @@ class ServerImageProjectionService {
         );
 
         // 把该槽位记为已用，供下一张选槽位。
+        firstSuccessfulIndex ??= index; // 本批第一张成功写入的真实槽位，收尾刷屏用它
         usedIndexes = [...usedIndexes, index];
         uploaded++;
         // 本张完成：百分比打满、张数计到已投成功数（对齐小程序 result.js:583）。
@@ -390,12 +395,16 @@ class ServerImageProjectionService {
         );
 
         // 只有最后一张传完后才刷新屏幕(0x24)：部分固件收到 0x24 会断开蓝牙，批量传输中途刷屏会导致
-        // 后续图片传输失败。故中间张一律不刷屏，等全部传完只对最后一张执行一次 0x24。
+        // 后续图片传输失败。故中间张一律不刷屏，等全部传完只执行一次 0x24。
+        // ⚠️ 刷的是**第一张**成功写入的槽位（2026-08-04 产品口径），不是刚传完的这一张：
+        //    多图投屏结束后相框应停在本批的首图上。张数与刷屏次数一字未改，只换了索引。
         // 追加3：0x24 改 fire-and-forget，不 await——图片已全部写入设备，立即返回成功页，刷屏在后台继续
         //（真机墨水屏刷完要 ~4s，成功页因此提前）。刷屏成败本就不影响投屏结果。
         if (i == total - 1) {
           // 存下刷屏 Future：finally 里把连接间隔回落到空闲档要等它跑完再发（避免撞 0x0B）。
-          lastRefresh = client.refreshScreen(index).catchError((_) => 0xFF);
+          lastRefresh = client
+              .refreshScreen(firstSuccessfulIndex ?? index)
+              .catchError((_) => 0xFF);
         }
       }
 

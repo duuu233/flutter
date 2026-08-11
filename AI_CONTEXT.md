@@ -356,6 +356,18 @@ message substrings.
   prefer a valid real `imgIndex` that is occupied in the device mask; only legacy records without an
   index may use constrained inference.
 - Slot `0` is valid. Missing/invalid slot is represented by `-1`, never by truthiness.
+- 2026-08-11 (mirrors the mini-program's 2026-08-10 product rule): deletion means "gone from **my
+  album**", device side is best-effort. Slots that the mask says are already empty (another phone
+  deleted them) are **skipped** rather than pushed into the `0x12` mask — one empty slot used to make
+  the firmware reject the **whole batch** with `0x07`. Only result codes `0x05`/`0x07` are waved
+  through (`FrameProtocol.skippableDeleteResults`); busy `0x0B`, flash-write `0x04`, aborted transfer
+  `0x09`, disconnects and timeouts still abort with the backend record untouched.
+- If the `0x01` mask read fails, **nothing** may be classified as "already gone" (that would delete
+  records while images stay on the frame) — the selected slots are sent as-is and the benign result
+  codes are the safety net. An all-zero mask is a *valid* mask and does mean "device has no images".
+- `FrameBleClient.deleteImage` now throws on a non-zero `RESULT` with `FrameBleException.resultCode`
+  attached. It previously parsed only the mask, so a firmware rejection read as success and the
+  backend record was deleted anyway.
 
 ### 8. BLE/application lifecycle
 
@@ -476,6 +488,13 @@ Logout / successful account deletion / session expiry
 10. Keep page battery reads on command `0x04` through `DeviceBatteryCache`. Preserve the 15-second
     TTL, in-flight deduplication, valid `0%`, old-value fallback, and `--` unknown state.
 11. User-visible text belongs in `AppL10n`. Engineering-only debug pages may be explicitly exempt.
+    Product-name wording (2026-08-04 rule, shared with the mini-program): **short UI labels** — page
+    titles, buttons, menu rows, dialog titles, field names, placeholders, default device names — stay
+    「设备」/ `device` / `デバイス`; **full sentences** — toasts, dialog bodies, empty states,
+    loading/error feedback, help text — that refer to the product hardware use 「电子纸设备」/
+    `e-paper device` / `電子ペーパー`. Address the user as 「您」, never 「你」. Deliberate exceptions:
+    OS permission names (「附近设备」), text that actually means the user's phone (say 「手机」), and
+    the privacy policy's running-terminal wording (「终端信息」, not 「设备信息」).
 12. New cast/recast temporary-file prefixes must be registered in `TempCacheSweeper` and documented
     in `docs/architecture/RESOURCE_LIFECYCLE.md`.
 13. Do not change BLE pacing, window, MTU/chunk, ACK, connection-interval, or timeout values as a

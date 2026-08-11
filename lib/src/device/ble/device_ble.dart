@@ -71,11 +71,31 @@ enum FrameBleErrorKind {
 }
 
 class FrameBleException implements Exception {
-  FrameBleException(this.message, {this.kind = FrameBleErrorKind.unknown});
+  FrameBleException(
+    this.message, {
+    this.kind = FrameBleErrorKind.unknown,
+    this.resultCode,
+  });
   final String message;
   final FrameBleErrorKind kind;
+
+  /// 固件应答里的原始结果码（6.6.1 的 RESULT），非应答类错误为 null。
+  ///
+  /// 上层按**码**判定（如删除的良性码放行），不再匹配中文文案：文案会被前缀、翻译层改写，
+  /// 一改就全部失灵（同 [kind] 的动机，对齐小程序 device-ble.js 挂在错误上的 `resultCode`）。
+  final int? resultCode;
+
   @override
   String toString() => message;
+
+  /// 删除图片(0x12)时可以「按已删继续」的良性失败：图片不存在(0x05) / 掩码不一致(0x07)。
+  /// 判据见 [FrameProtocol.skippableDeleteResults]；没有结果码时退回文案匹配。
+  static bool isSkippableDelete(Object? error) {
+    if (error is FrameBleException && error.resultCode != null) {
+      return FrameProtocol.isSkippableDeleteResult(error.resultCode!);
+    }
+    return FrameProtocol.isSkippableDeleteMessage(error?.toString());
+  }
 }
 
 /// 图传预处理结果（性能优化 D1/D2）：整图 CRC32 + 按分包大小预组好的全部 0x21 帧。
@@ -1601,6 +1621,7 @@ class FrameBleClient {
             FrameBleException(
               FrameProtocol.busyMessage,
               kind: FrameBleErrorKind.busy,
+              resultCode: ack.result,
             ),
           );
         } else {
@@ -1780,6 +1801,16 @@ class FrameBleClient {
       payload: FrameProtocol.buildDeleteImagePayload(indexes),
       timeout: timeout ?? Duration(milliseconds: waitMs),
     );
+    // 2026-08-10：以前这里**只解析掩码、不看 RESULT**——设备回「Flash 写入失败(0x04)/
+    // 传输中断(0x09)/掩码不一致(0x07)」都会被当成删除成功，后端记录照删，图还留在相框上
+    //（0x0B 设备忙在 request 里已单独拦截）。现在如实抛出并带上结果码，由调用方按
+    // [FrameBleException.isSkippableDelete] 决定放行(0x05/0x07)还是中止。
+    if (!ack.ok) {
+      throw FrameBleException(
+        FrameProtocol.resultText(ack.result),
+        resultCode: ack.result,
+      );
+    }
     return FrameProtocol.parseMaskResult(ack.data);
   }
 

@@ -2,7 +2,7 @@
 
 > 文档类型：Integration Runbook / Troubleshooting
 > 状态：Active（客户端已就绪；**卡在后端**：接口未放行未登录调用，见第五节 5.1）
-> 最后核验：2026-08-05
+> 最后核验：2026-08-11
 > 适用范围：Flutter Android / iOS App 的微信开放平台移动应用 OAuth 登录
 > 不适用范围：微信小程序手机号快捷登录
 > 本文件是 App 微信快捷登录的当前权威记录；其他文档中的旧接口描述待后续同步。
@@ -30,6 +30,13 @@ App 不需要手工下载并导入微信 SDK。项目已经通过 `fluwx 6.0.0` 
 三处同步为同一值，Android 与 iOS、debug 与 release 一致。Android 的 debug/profile/release
 三种构建统一使用 `boltstar-release.jks`，包名与签名不再因构建类型变化。
 
+2026-08-11 更新：iOS Universal Link 定为 `https://badmin.boltfox.cn/app/`。客户端三处已落地
+（`Runner.entitlements` 的 `applinks:badmin.boltfox.cn`、`WECHAT_UNIVERSAL_LINK` 默认值、
+Info.plist URL Scheme 保持 AppID）。**但服务端 AASA 尚未部署**：实测
+`https://badmin.boltfox.cn/.well-known/apple-app-site-association` 返回 200 但内容是
+管理后台 SPA 的 `index.html`（`content-type: text/html`），该域名对任意路径都做 SPA 兜底。
+AASA 落地前 iOS 微信登录仍不可用，详见第九节。
+
 剩余阻塞项：
 
 1. **（当前唯一实锤阻塞）** 后端把 `/Client/User/setWechatAuthorizLogin` 加入免登录白名单，
@@ -39,7 +46,8 @@ App 不需要手工下载并导入微信 SDK。项目已经通过 `fluwx 6.0.0` 
    也不是旧的 `wx5bc2000b3207f370`）。
 3. 微信开放平台移动应用是否已过审并开通「微信登录」、正式签名是否已登记。
 4. iOS Bundle ID 当前为 `com.boltfox.boltstar`，仍需确认已在微信开放平台登记；Universal Link
-   仍是占位（见第三、九节），iOS 侧尚不能验收。
+   已定为 `https://badmin.boltfox.cn/app/`，但**域名侧 AASA 未部署**（见第三、九节），
+   iOS 侧尚不能验收。
 
 ## 二、必须区分的两条登录链路
 
@@ -126,13 +134,27 @@ com.boltfox.boltstar
 
 ### 3.3 iOS
 
-- `Info.plist` URL Scheme：已填真实 AppID `wx4cf0c5f38a70d0bc`（2026-08-05 更正，与 Android 同值）。
-- `Info.plist` `LSApplicationQueriesSchemes`：已含 `weixin` / `weixinULAPI` 等。
-- `Runner.entitlements` Associated Domain：仍是占位 `applinks:example.boltfox.cn`。
-- `WECHAT_UNIVERSAL_LINK`：仍需在构建时传入真实值。
+| 项 | 值 | 状态 |
+| --- | --- | --- |
+| Bundle ID | `com.boltfox.boltstar` | Xcode 三套构建配置一致 |
+| Apple Team ID | `S2HZK3227W` | `project.pbxproj` 的 `DEVELOPMENT_TEAM` |
+| `Info.plist` URL Scheme | `wx4cf0c5f38a70d0bc` | 已填真实 AppID（2026-08-05 更正，与 Android 同值） |
+| `Info.plist` `LSApplicationQueriesSchemes` | `weixin` / `wechat` / `weixinULAPI` / `weixinURLParamsAPI` | 已配 |
+| Universal Link | `https://badmin.boltfox.cn/app/` | 已定（2026-08-11） |
+| `Runner.entitlements` Associated Domain | `applinks:badmin.boltfox.cn` | 已配 |
+| `WECHAT_UNIVERSAL_LINK` 默认值 | `https://badmin.boltfox.cn/app/` | 已配，不传 `--dart-define` 也一致 |
+| `https://badmin.boltfox.cn/.well-known/apple-app-site-association` | — | ❌ **未部署**（返回后台 SPA 的 HTML） |
+| 微信开放平台 Universal Link 登记 | — | ⬜ 待确认 |
 
-Universal Link 未落地前，iOS 微信登录仍不能视为配置完成（`FluwxWeChatAuthorizationClient`
-在 iOS 上会因为 Universal Link 为空直接以 `config` 错误拒绝拉起，不会发出无效请求）。
+AASA 未部署前，iOS 微信登录仍不能视为配置完成：系统不会把该域名与 App 关联，微信按
+Universal Link 回跳时落回 Safari，App 收不到授权回调。客户端侧的空值拦截（Universal Link
+为空即以 `config` 错误拒绝拉起，不发无效请求）现在因为有了默认值不会再触发——**这意味着
+iOS 上会真的拉起微信，失败点后移到回跳**，排查时看的是「授权完能不能回到 App」。
+
+Universal Link 回调不需要额外 Swift 代码：本工程用了 `UIApplicationSceneManifest` +
+`SceneDelegate`，而 fluwx 的 `FluwxPlugin` 同时实现了
+`application:continueUserActivity:restorationHandler:` 与 `scene:continueUserActivity:`，
+`FlutterSceneDelegate` 会把 scene 生命周期转发给插件。
 
 ### 3.4 Android 包可见性
 
@@ -325,21 +347,102 @@ flutter build apk --debug `
   --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc
 ```
 
-## 九、iOS 后续配置
+## 九、iOS Universal Link（`https://badmin.boltfox.cn/app/`）
 
-确认最终 Bundle ID 并取得真实 Universal Link 后：
+### 9.1 客户端（2026-08-11 已完成）
 
-1. 确认 `Info.plist` 的 URL Scheme 保持为 `wx4cf0c5f38a70d0bc`。
-2. 在 Xcode 启用 Associated Domains。
-3. 将 `Runner.entitlements` 改为真实 `applinks:<域名>`。
-4. 在域名部署正确的 `/.well-known/apple-app-site-association`。
-5. 微信开放平台登记相同 Bundle ID 和 Universal Link。
-6. 构建时传入：
+1. `ios/Runner/Info.plist` URL Scheme 保持 `wx4cf0c5f38a70d0bc`。
+2. `ios/Runner/Runner.entitlements` → `applinks:badmin.boltfox.cn`。
+   （Xcode 三套构建配置的 `CODE_SIGN_ENTITLEMENTS` 早已接线到这个文件，无需再手工加 Capability；
+   在 Xcode 里打开时 Signing & Capabilities 会显示 Associated Domains。）
+3. `WeChatAuthorizationConfig.fromEnvironment()` 的 `WECHAT_UNIVERSAL_LINK` 默认值
+   = `https://badmin.boltfox.cn/app/`，与上面两处同值。
+4. 构建时可显式重申（默认值已一致，正式包仍建议写全）：
 
 ```shell
 --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc
---dart-define=WECHAT_UNIVERSAL_LINK=https://真实域名/真实路径/
+--dart-define=WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/
 ```
+
+### 9.2 服务端 AASA（⚠️ 未完成，当前 iOS 侧阻塞点）
+
+在 `badmin.boltfox.cn` 部署 `/.well-known/apple-app-site-association`，内容见仓库中的
+`docs/integration/apple-app-site-association.json`：
+
+```json
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "S2HZK3227W.com.boltfox.boltstar",
+        "paths": ["/app/", "/app/*"]
+      }
+    ]
+  }
+}
+```
+
+`appID` = Apple Team ID + `.` + Bundle ID。Team ID `S2HZK3227W` 取自
+`ios/Runner.xcodeproj/project.pbxproj` 的 `DEVELOPMENT_TEAM`。
+
+硬性要求（任一不满足，iOS 直接不建立域名关联）：
+
+- 走 HTTPS，证书有效，**不能有任何 301/302 跳转**；
+- 文件名就是 `apple-app-site-association`，**没有 `.json` 后缀**；
+- 响应体是纯 JSON，`Content-Type: application/json`；
+- 不要求签名（iOS 9 以后即可用未签名 JSON）。
+
+**当前实测结果（2026-08-11）**：
+
+```bash
+curl -sSI https://badmin.boltfox.cn/.well-known/apple-app-site-association
+# HTTP/2 200, content-type: text/html   ← 返回的是管理后台 SPA 的 index.html
+```
+
+该域名是 Vue 管理后台（`曝石相框管理中心`），对任意路径都兜底返回 `index.html`，
+`/notexist-xyz` 也是 200。所以必须在 SPA 的 `try_files` 兜底**之前**加精确匹配，nginx 示例：
+
+```nginx
+location = /.well-known/apple-app-site-association {
+    default_type application/json;
+    alias /usr/share/nginx/html/.well-known/apple-app-site-association;
+    add_header Cache-Control "public, max-age=3600";
+}
+
+# 已有的 SPA 兜底放在后面，location = 精确匹配优先级更高，不会被它吃掉
+location / {
+    try_files $uri $uri/ /index.html;
+}
+```
+
+`https://badmin.boltfox.cn/app/` 本身目前返回后台 SPA 的 HTML（同样是兜底）。微信要求该
+链接可访问即可，不强制是专门页面；但既然 `/app/*` 已划给 App，建议后端在该路径放一个简单的
+「打开 BoltStar App / 下载引导」静态页，避免用户在浏览器里点开落到管理后台登录界面。
+
+### 9.3 微信开放平台
+
+在移动应用 `wx4cf0c5f38a70d0bc` 的 iOS 配置中填写：
+
+- Bundle ID：`com.boltfox.boltstar`
+- Universal Links：`https://badmin.boltfox.cn/app/`（结尾斜杠要带上，与客户端逐字符一致）
+
+微信后台保存时会自己去抓该域名的 AASA 校验，**AASA 没部署好这一步就过不了**，
+所以顺序必须是 9.2 → 9.3。
+
+### 9.4 自查
+
+```bash
+# 1. AASA 是 JSON 且无跳转
+curl -sSL -D- https://badmin.boltfox.cn/.well-known/apple-app-site-association
+
+# 2. Apple CDN 侧（真机首次安装取的是这条链路，可能有缓存延迟）
+curl -sS "https://app-site-association.cdn-apple.com/a/v1/badmin.boltfox.cn"
+```
+
+真机侧：**Universal Link 只在安装（或重装）App 时由系统抓取一次 AASA**。改完 AASA 必须
+删除 App 重装，仅覆盖安装或重启不会重新拉取。设置 → 开发者 → Universal Links →
+Diagnostics 可以逐条验证域名关联状态。
 
 ## 十、验收步骤
 
@@ -380,7 +483,9 @@ flutter build apk --debug `
 - [ ] 后端是否持有 AppID `wx4cf0c5f38a70d0bc` 对应的移动应用 AppSecret（2026-08-05 换过 AppID，
       后端旧配置必须一并替换）。
 - [ ] 后端是否使用 `/sns/oauth2/access_token`（而不是小程序的 `/sns/jscode2session`）。
-- [ ] iOS Bundle ID 在微信开放平台的登记状态，以及 Universal Link、AASA 配置。
+- [x] iOS Universal Link 取值 —— `https://badmin.boltfox.cn/app/`，客户端三处已同步（2026-08-11）。
+- [ ] **`badmin.boltfox.cn` 部署 `/.well-known/apple-app-site-association`**（iOS 侧当前阻塞点，见 9.2）。
+- [ ] iOS Bundle ID `com.boltfox.boltstar` 与 Universal Link 在微信开放平台的登记状态（见 9.3）。
 - [ ] 真机微信完整往返验收（2026-08-05 已编译 debug/release 并验证包名与签名；尚未真机授权）。
 - [ ] 用新 AppID `wx4cf0c5f38a70d0bc` 重打 Android/iOS 包（旧产物内嵌的是作废 AppID）。
 
@@ -399,7 +504,10 @@ flutter build apk --debug `
 - Android 合并后的 Manifest：
   `build/app/intermediates/merged_manifests/`
 - iOS 配置：
-  `ios/Runner/Info.plist`、`ios/Runner/Runner.entitlements`
+  `ios/Runner/Info.plist`、`ios/Runner/Runner.entitlements`、
+  `ios/Runner.xcodeproj/project.pbxproj`（`DEVELOPMENT_TEAM` / `PRODUCT_BUNDLE_IDENTIFIER`）
+- 待部署的 AASA 原文：
+  `docs/integration/apple-app-site-association.json`
 - BoltFox Swagger：
   `https://api.boltfox.cn/v2/api-docs`
 - Android 签名：

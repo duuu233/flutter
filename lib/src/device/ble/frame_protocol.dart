@@ -251,13 +251,42 @@ class FrameProtocol {
   // busyMessage 是面向用户的统一提示；device_ble 收到任意指令的 0x0B 应答即以它抛出 FrameBleException，
   // 各处「设备交互的判断」据此提示，避免各写一套文案。
   static const int busyResult = 0x0b;
-  static const String busyMessage = '当前设备繁忙，请稍后重试';
+  static const String busyMessage = '当前电子纸设备繁忙，请稍后重试';
 
   static bool isBusyResult(int code) => (code & 0xFF) == busyResult;
 
   // 判断一条错误文案是否为「设备忙」：供 UI 层归类时先短路，避免被更泛的「未连接」文案覆盖。
   static bool isBusyMessage(String? message) =>
       message != null && message.contains(busyMessage);
+
+  // ── 删除图片(0x12)的「良性」结果码（2026-08-10 产品口径）────
+  //
+  // 同一台设备被两部手机连过：另一部手机删掉的那张，在本机「我的相册」里记录还在
+  //（列表按后端投屏成功记录铺），它的 imgIndex 在设备上已经是空槽位。空槽位一起进 0x12 的
+  // IMG_INDEX_MASK，固件回 0x07，**整批**删除被打回——同批没问题的照片也跟着删不掉。
+  // 这两类结果码代表「要删的图设备上本来就没有」，按已删放行，只删后端记录即可。
+  //
+  //   0x05 图片不存在 / 0x07 掩码不一致(该位置已有图/索引越界)
+  //
+  // ⚠️ 只放行这两类：Flash 写入失败(0x04)、传输中断(0x09)、设备忙(0x0B)、断连/应答超时都必须
+  //    如实中止——它们代表「设备可能真的没删掉」，放行会变成记录删了、图还挂在相框上，
+  //    留下谁也找不到的孤儿槽位。
+  //
+  // 对齐小程序 `utils/frame-protocol.js` 的 `SKIPPABLE_DELETE_RESULTS`。
+  static const List<int> skippableDeleteResults = [0x05, 0x07];
+
+  static bool isSkippableDeleteResult(int code) =>
+      skippableDeleteResults.contains(code & 0xFF);
+
+  // 只剩文案时的兜底（错误被外层包装过、或来自没有结果码的老链路）：
+  // 匹配 RESULT_TEXT 原文与常见英文写法。优先走结果码，见 FrameBleException.isSkippableDelete。
+  static bool isSkippableDeleteMessage(String? message) =>
+      message != null &&
+      RegExp(
+        r'图片不存在|无此图片|照片.*(不存在|异常)|掩码不一致|越界|索引.*(无效|不存在)'
+        r'|not[\s_-]*(found|exist)|out[\s_-]*of[\s_-]*(range|bounds|index)',
+        caseSensitive: false,
+      ).hasMatch(message);
 
   // ── 基础工具 ──────────────────────────────────────────────
 

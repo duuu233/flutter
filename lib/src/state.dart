@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 
 import 'device/ble_controller.dart';
 import 'device/ble/ble_direct_connect_cache.dart';
+// FrameBleException：删除链路要按**结果码**判断良性失败（0x05/0x07），不再匹配中文文案。
+import 'device/ble/device_ble.dart' show FrameBleException;
 import 'device/ble/frame_protocol.dart';
 import 'device/battery_cache.dart';
 import 'device/device_identity_registry.dart';
@@ -370,6 +372,17 @@ class FaqArticle {
   String answer;
 }
 
+/// 待删槽位按设备真实 IMG_MASK 分拨后的结果，见 [PhotoFrameState.splitSlotsByDeviceMask]。
+class DeleteSlotSplit {
+  const DeleteSlotSplit({required this.onDevice, required this.gone});
+
+  /// 设备上确实还有图 → 进 `0x12` 的 IMG_INDEX_MASK。
+  final List<int> onDevice;
+
+  /// 设备上已经没有（另一端删过）→ 设备侧跳过，只删后端记录。
+  final List<int> gone;
+}
+
 /// 应用级演示状态容器。
 ///
 /// 页面只通过这个对象读取和触发业务动作；设备、相册、投屏记录、权限和登录态都在这里统一维护。
@@ -639,16 +652,20 @@ class PhotoFrameState extends ChangeNotifier {
     if (device == null) {
       return ActionFeedback(
         success: false,
-        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+        message: tr(
+          zh: '电子纸设备不存在。',
+          en: 'E-paper device not found.',
+          ja: '電子ペーパーが見つかりません。',
+        ),
       );
     }
     if (!isCompleteDeviceSerial(device.serialNumber)) {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '当前设备记录缺少完整的6字节设备ID，请删除后重新绑定。',
-          en: 'This device record has no complete 6-byte device ID. Remove it and bind the device again.',
-          ja: 'このデバイス記録には完全な6バイトIDがありません。削除して再度追加してください。',
+          zh: '当前电子纸设备记录缺少完整的6字节电子纸设备ID，请删除后重新绑定。',
+          en: 'This e-paper device record has no complete 6-byte device ID. Remove it and bind it again.',
+          ja: 'この電子ペーパーの記録には完全な6バイトIDがありません。削除して再度追加してください。',
         ),
       );
     }
@@ -679,9 +696,9 @@ class PhotoFrameState extends ChangeNotifier {
           : ActionFeedback(
               success: true,
               message: tr(
-                zh: '已连接设备。',
-                en: 'Device connected.',
-                ja: '端末に接続しました。',
+                zh: '已连接电子纸设备。',
+                en: 'E-paper device connected.',
+                ja: '電子ペーパーに接続しました。',
               ),
             );
     }
@@ -701,7 +718,11 @@ class PhotoFrameState extends ChangeNotifier {
     unawaited(_refreshDeviceBattery(deviceId));
     return ActionFeedback(
       success: true,
-      message: tr(zh: '已连接设备。', en: 'Device connected.', ja: '端末に接続しました。'),
+      message: tr(
+        zh: '已连接电子纸设备。',
+        en: 'E-paper device connected.',
+        ja: '電子ペーパーに接続しました。',
+      ),
     );
   }
 
@@ -735,16 +756,20 @@ class PhotoFrameState extends ChangeNotifier {
       trace.finish(success: false, stage: 'device-not-found');
       return ActionFeedback(
         success: false,
-        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+        message: tr(
+          zh: '电子纸设备不存在。',
+          en: 'E-paper device not found.',
+          ja: '電子ペーパーが見つかりません。',
+        ),
       );
     } catch (error) {
       trace.finish(success: false, stage: 'ble-disconnect-failed');
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '断开设备失败，请稍后重试。',
-          en: 'Failed to disconnect the device. Please try again.',
-          ja: '端末を切断できませんでした。もう一度お試しください。',
+          zh: '断开电子纸设备失败，请稍后重试。',
+          en: 'Failed to disconnect the e-paper device. Please try again.',
+          ja: '電子ペーパーを切断できませんでした。もう一度お試しください。',
         ),
       );
     }
@@ -1783,9 +1808,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '没有可删除的设备照片。',
-          en: 'No device photos can be deleted.',
-          ja: '削除できる端末写真がありません。',
+          zh: '没有可删除的电子纸设备照片。',
+          en: 'No e-paper device photos can be deleted.',
+          ja: '削除できる電子ペーパーの写真がありません。',
         ),
       );
     }
@@ -1798,9 +1823,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '只能删除同一台设备的照片。',
-          en: 'You can only delete photos from a single device.',
-          ja: '同じ端末の写真のみ削除できます。',
+          zh: '只能删除同一台电子纸设备的照片。',
+          en: 'You can only delete photos from a single e-paper device.',
+          ja: '同じ電子ペーパーの写真のみ削除できます。',
         ),
       );
     }
@@ -1810,7 +1835,11 @@ class PhotoFrameState extends ChangeNotifier {
     if (targetMatches.isEmpty) {
       return ActionFeedback(
         success: false,
-        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+        message: tr(
+          zh: '电子纸设备不存在。',
+          en: 'E-paper device not found.',
+          ja: '電子ペーパーが見つかりません。',
+        ),
       );
     }
     // 未连接到「照片所属设备」则自动扫连（对齐小程序 ensureConnectedForAction），连不上中止、不动后端。
@@ -1822,40 +1851,75 @@ class PhotoFrameState extends ChangeNotifier {
     }
     final client = BleController.instance.client;
     String refreshWarn = '';
-    // 设备上已经没有这张照片时的标记：后端记录仍然要删掉，否则这条异常记录会**永久卡在图库**
+    // 设备上**定位不到**这张照片时的标记：后端记录仍然要删掉，否则这条异常记录会**永久卡在图库**
     //（用户反馈第 8 项：照片在设备上被删掉后，图库里那条记录再也删不掉）。
+    //
+    // ⚠️ 2026-08-10 起「槽位在设备上已空（另一端删过）」不再算这一类：那是本次新口径下的正常跳过，
+    //    照删记录、静默成功，不该再弹「照片在此设备异常，请删除重新上传」——话说反了，它刚被删掉。
+    //    这里只剩「记录没给 imgIndex、又推算不出位置」，那才是真的对不上、需要提示用户重传。
     var devicePhotoAbnormal = false;
     if (client.connected) {
+      // 1a) 先读一次设备当前 IMG_MASK(0x01)，把待删槽位分成「设备上还在的」和「已经不在的」两拨。
+      //
+      //    为什么要读：同一台设备可能被两部手机连过。另一部手机删掉了 A，设备上只剩 B、C，
+      //    而本机列表是按后端记录铺的，A 那条还在 → 相册里仍是 A/B/C 三张。这时把 A 的空槽位
+      //    一起塞进 0x12 的掩码，固件回 0x07，**整批**删除被打回，B、C 也跟着删不掉。
+      //
+      //    口径（2026-08-10 产品确认）：删除以「从我的相册里消失」为准，设备侧尽力而为——
+      //      · 槽位在设备上已空 → 跳过设备侧，后端记录照删，不影响同批其它张；
+      //      · 槽位上现在躺着另一端后传的别的图 → 仍按索引删掉，不做内容比对（产品明确接受：
+      //        索引是我们唯一的定位手段，根治要靠后端的 imgIndex 唯一性规则）；
+      //      · 设备忙 / Flash 写失败 / 传输中断 / 断连超时 → 如实中止，后端记录不动。
+      FrameDeviceInfo? info;
       try {
-        final info = await client.readTransferInfo();
-        final occupied = FrameProtocol.maskToIndexes(info.imgMask);
-        final slotIndexes = <int>[];
-        var resolvedCount = 0;
-        for (final photo in photos) {
-          final slot = _resolveDeviceImageIndex(photo, occupied);
-          if (slot < 0) {
-            continue;
-          }
-          resolvedCount += 1;
-          if (!slotIndexes.contains(slot)) {
-            slotIndexes.add(slot);
-          }
+        info = await client.readTransferInfo();
+      } catch (e) {
+        // 设备忙(0x0B)：设备答得上话、只是暂时在忙，原样提示稍后重试。
+        if (FrameProtocol.isBusyMessage(e.toString())) {
+          return ActionFeedback(
+            success: false,
+            message: tr(
+              zh: '当前电子纸设备繁忙，请稍后重试',
+              en: 'The e-paper device is busy, please try again later.',
+              ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
+            ),
+          );
         }
-        // 有照片解析不出槽位 = 它在设备上已经不存在（在另一端删过 / 被一键清空 / 删除半成功）。
-        // 这不是失败，继续往下删后端记录，只是最后给一句「照片在此设备异常」的提示。
-        // 2026-08-03 触发条件由「一条都解析不出来」放宽到「有一条解析不出来」，与小程序
-        // album/list.js 的 `slotIndexes.length < ids.length` 对齐——批量删除时部分照片对不上
-        // 设备（两端交替上传/删除后很常见），此前 App 会静默按「全部删除成功」提示。
-        // 用 resolvedCount 而不是 slotIndexes.length 判定：后者去过重，两张照片指向同一槽位时
-        // 会误报（小程序侧不去重，计数天然等价）。
-        if (resolvedCount < photos.length) {
+        // 其余回读失败（刚断连 / 应答超时）**不拦删除**：按记录里的真实 imgIndex 原样下发，
+        // 交给 0x12 的良性结果码兜底（此前这里直接判「设备删除失败」中止，掩码读不到就谁也删不掉）。
+        info = null;
+      }
+      // 掩码读不到时 occupied 为 null——**一张都不能判「已不在」**，否则弱网/刚断连时会退化成
+      // 「记录全删了、图还留在设备上」。注意与「设备真的一张图都没有」区分：后者是 12 个 0 的
+      // 合法掩码，全判 gone 正是对的。
+      final occupied = info == null
+          ? null
+          : FrameProtocol.maskToIndexes(info.imgMask);
+
+      final slotIndexes = <int>[];
+      for (final photo in photos) {
+        // 有真实索引就直接用（哪怕那一位现在躺着另一端后传的别的图，也按索引删，见上方口径）；
+        // 没有索引才回退推算，而推算依赖固件掩码——掩码读不到时这张只能算「定位不到」。
+        final slot = photo.imageIndex >= 0
+            ? photo.imageIndex
+            : (occupied == null ? -1 : _inferDeviceImageIndex(photo, occupied));
+        if (slot < 0) {
           devicePhotoAbnormal = true;
+          continue;
         }
-        if (slotIndexes.isNotEmpty) {
-          final newMask = await client.deleteImage(slotIndexes);
+        if (!slotIndexes.contains(slot)) {
+          slotIndexes.add(slot);
+        }
+      }
+      final split = splitSlotsByDeviceMask(slotIndexes, occupied);
+
+      // 1b) 设备上还在的那些槽位交给 0x12；一张都不剩就整条指令都不发，直接去删后端记录。
+      if (split.onDevice.isNotEmpty) {
+        try {
+          final newMask = await client.deleteImage(split.onDevice);
           // 只在删到「屏幕当前显示的图片」时才刷屏：切到删除后最近的有图槽位；
           // 设备已无图片则不主动刷屏——固件在清空后会自动刷成空屏（无单独清屏指令）。
-          if (slotIndexes.contains(info.curImgIndex)) {
+          if (info != null && split.onDevice.contains(info.curImgIndex)) {
             final remaining = FrameProtocol.maskToIndexes(newMask);
             if (remaining.isNotEmpty) {
               try {
@@ -1870,34 +1934,32 @@ class PhotoFrameState extends ChangeNotifier {
               }
             }
           }
-        }
-      } catch (e) {
-        // 设备忙(0x0B)：设备只是暂时在忙，别归成通用「设备删除失败」，原样提示稍后重试。
-        if (FrameProtocol.isBusyMessage(e.toString())) {
-          return ActionFeedback(
-            success: false,
-            message: tr(
-              zh: '当前设备繁忙，请稍后重试',
-              en: 'Device is busy, please try again later.',
-              ja: '端末が処理中です。しばらくしてから再試行してください。',
-            ),
-          );
-        }
-        // 设备明确回「这张图不存在」：记录仍必须允许删除，否则异常记录永久卡在图库
-        //（对齐小程序 isMissingDevicePhotoError 的放行口径）。
-        // 只放行这一类，连接中断/设备繁忙等真实链路错误仍按原规则中止。
-        if (_isMissingDevicePhotoError(e)) {
-          devicePhotoAbnormal = true;
-        } else {
-          // 设备没删成功就不动后端/本地，避免三处不一致。
-          return ActionFeedback(
-            success: false,
-            message: tr(
-              zh: '设备删除失败，请检查设备连接后重试。',
-              en: 'Failed to delete from device. Check the connection and retry.',
-              ja: '端末からの削除に失敗しました。接続を確認して再試行してください。',
-            ),
-          );
+        } catch (e) {
+          // 设备忙(0x0B)：设备只是暂时在忙，别归成通用「设备删除失败」，原样提示稍后重试。
+          if (FrameProtocol.isBusyMessage(e.toString())) {
+            return ActionFeedback(
+              success: false,
+              message: tr(
+                zh: '当前电子纸设备繁忙，请稍后重试',
+                en: 'The e-paper device is busy, please try again later.',
+                ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
+              ),
+            );
+          }
+          // 「图片不存在(0x05) / 掩码不一致(0x07)」：要删的图设备上本来就没有——上一步的掩码回读
+          // 与真正下发之间，另一端仍可能再删一张，所以这里还要兜一次。这类结果码按已删继续删记录。
+          // 其余（Flash 写失败 0x04、传输中断 0x09、断连/超时）仍如实中止，不动后端/本地，
+          // 避免「记录删了、图还挂在相框上」的三处不一致。
+          if (!FrameBleException.isSkippableDelete(e)) {
+            return ActionFeedback(
+              success: false,
+              message: tr(
+                zh: '电子纸设备删除失败，请检查电子纸设备连接后重试。',
+                en: 'Failed to delete from the e-paper device. Check the connection and retry.',
+                ja: '電子ペーパーからの削除に失敗しました。接続を確認して再試行してください。',
+              ),
+            );
+          }
         }
       }
     }
@@ -1939,31 +2001,36 @@ class PhotoFrameState extends ChangeNotifier {
     );
   }
 
-  /// 「照片在此设备异常，请删除重新上传」——设备上已经没有这张图时的提示（需求第 8 项）。
+  /// 把待删槽位按设备真实 IMG_MASK 分成两拨（2026-08-10，对齐小程序 album/list.js
+  /// `splitSlotsByDeviceMask`）：
+  ///
+  /// - [DeleteSlotSplit.onDevice]：掩码里有这一位 → 设备上确实还有图，照常发 `0x12`
+  ///   （哪怕现在躺在这个位置的是另一端后传的另一张图，也按索引删，产品口径）；
+  /// - [DeleteSlotSplit.gone]：掩码里没有这一位 → 另一端已经删过，设备侧跳过，只删后端记录。
+  ///
+  /// ⚠️ [occupied] 为 null（掩码读不到）时**一张都不能判 gone**，整体按 onDevice 返回，
+  /// 交给 `0x12` 的良性结果码兜底；否则会变成「记录全删了、图还留在设备上」。
+  /// 空列表是**合法掩码**（设备真的一张图都没有），此时全判 gone 才是对的——两者不可混同。
+  static DeleteSlotSplit splitSlotsByDeviceMask(
+    List<int> slots,
+    List<int>? occupied,
+  ) {
+    if (occupied == null) {
+      return DeleteSlotSplit(onDevice: List<int>.of(slots), gone: const []);
+    }
+    return DeleteSlotSplit(
+      onDevice: slots.where(occupied.contains).toList(),
+      gone: slots.where((slot) => !occupied.contains(slot)).toList(),
+    );
+  }
+
+  /// 「照片在此设备异常，请删除重新上传」——设备上定位不到这张图时的提示（需求第 8 项）。
   /// 记录照删不误，只是告诉用户这张图在设备侧已经对不上了，需要重新投屏。
   String get devicePhotoAbnormalMessage => tr(
-    zh: '照片在此设备异常，请删除重新上传',
-    en: 'This photo is out of sync with the device. Delete it and upload again.',
-    ja: 'この写真はデバイス側と一致していません。削除して再アップロードしてください。',
+    zh: '照片在此电子纸设备异常，请删除重新上传',
+    en: 'This photo is out of sync with the e-paper device. Delete it and upload again.',
+    ja: 'この写真は電子ペーパー側と一致していません。削除して再アップロードしてください。',
   );
-
-  /// 设备侧错误是否属于「这张照片/槽位在设备上不存在」——这一类不该中断删除。
-  ///
-  /// 与小程序 `list.js isMissingDevicePhotoError` / `detail.js isBenignDeleteError` 同口径。
-  /// 2026-08-01 扩充：固件结果码 0x07「掩码不一致(该位置已有图/索引越界)」以及各类
-  /// 「索引越界 / out of range」也归到这里——产品明确要求，凡是不影响真正删掉设备与图片的
-  /// 异常都不要抛出来中断流程。
-  ///
-  /// ⚠️ 只认这一类，**不**把断联、超时、设备繁忙(0x0B)、Flash 写失败这类真实链路/硬件故障
-  /// 误放行——那样会在设备其实没删掉的情况下删掉后端记录，两边从此对不上。
-  static bool _isMissingDevicePhotoError(Object error) {
-    final message = error.toString();
-    return RegExp(
-      r'(照片|图片).*(不存在|异常)|not[\s_-]*(found|exist)|无此图片|索引.*(无效|不存在|越界)'
-      r'|越界|掩码不一致|out[\s_-]*of[\s_-]*(range|bounds|index)',
-      caseSensitive: false,
-    ).hasMatch(message);
-  }
 
   /// 「刷新屏幕」：把选中的这张照片切到相框当前显示。需已连接设备；
   /// 读设备信息 → 解析该照片槽位 → 0x24 切图。
@@ -1984,9 +2051,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '该照片不在设备上，无法刷新到屏幕。',
-          en: 'This photo is not on the device.',
-          ja: 'この写真は端末にありません。',
+          zh: '该照片不在电子纸设备上，无法刷新到屏幕。',
+          en: 'This photo is not on the e-paper device.',
+          ja: 'この写真は電子ペーパーにありません。',
         ),
       );
     }
@@ -1998,7 +2065,11 @@ class PhotoFrameState extends ChangeNotifier {
     if (targetMatches.isEmpty) {
       return ActionFeedback(
         success: false,
-        message: tr(zh: '设备不存在。', en: 'Device not found.', ja: '端末が見つかりません。'),
+        message: tr(
+          zh: '电子纸设备不存在。',
+          en: 'E-paper device not found.',
+          ja: '電子ペーパーが見つかりません。',
+        ),
       );
     }
     if (!_sessionMatches(targetMatches.first)) {
@@ -2016,9 +2087,9 @@ class PhotoFrameState extends ChangeNotifier {
         return ActionFeedback(
           success: false,
           message: tr(
-            zh: '未能定位该照片在设备上的位置，请刷新图库后重试。',
-            en: 'Could not locate this photo on the device.',
-            ja: '端末上でこの写真の位置を特定できませんでした。',
+            zh: '未能定位该照片在电子纸设备上的位置，请刷新图库后重试。',
+            en: 'Could not locate this photo on the e-paper device.',
+            ja: '電子ペーパー上でこの写真の位置を特定できませんでした。',
           ),
         );
       }
@@ -2036,16 +2107,16 @@ class PhotoFrameState extends ChangeNotifier {
         return ActionFeedback(
           success: false,
           message: tr(
-            zh: '当前设备繁忙，请稍后重试',
-            en: 'Device is busy, please try again later.',
-            ja: '端末が処理中です。しばらくしてから再試行してください。',
+            zh: '当前电子纸设备繁忙，请稍后重试',
+            en: 'The e-paper device is busy, please try again later.',
+            ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
           ),
         );
       }
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '刷新屏幕失败，请检查设备连接后重试。',
+          zh: '刷新屏幕失败，请检查电子纸设备连接后重试。',
           en: 'Failed to refresh the screen. Check the connection and retry.',
           ja: '画面の更新に失敗しました。接続を確認して再試行してください。',
         ),
@@ -2066,14 +2137,21 @@ class PhotoFrameState extends ChangeNotifier {
   ///    ⚠️ 推算前必须剔除「已被其它照片的真实索引钉住」的槽位，否则推算结果会撞上别人的位置。
   ///
   /// 照片不在本设备上、或定位不到返回 -1（调用方跳过，不会误删别人的图）。
+  ///
+  /// ⚠️ 删除链路（2026-08-10 起）**不走这里的 ①**：它要区分「槽位已空」与「定位不到」两种
+  /// -1，前者是正常跳过、后者才提示异常，所以自己判 [AlbumPhoto.imageIndex] 后调
+  /// [_inferDeviceImageIndex]。本方法保持原样供刷屏(0x24)使用。
   int _resolveDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
     // ① 有真实索引直接用，但要求该槽位在固件掩码里确实有图：记录指向空位说明设备侧早被删掉
     //    （删除半成功等），此时跳过而不是回退推算——推算只会撞上别人的图。
-    //    顺带避免把空槽位塞进 0x12，被固件按「图片不存在」整批拒掉。
     if (photo.imageIndex >= 0) {
       return occupied.contains(photo.imageIndex) ? photo.imageIndex : -1;
     }
+    return _inferDeviceImageIndex(photo, occupied);
+  }
 
+  /// 上面的 ② 回退推算，单独抽出来给删除链路复用（那边的 ① 判定不同，见 [_resolveDeviceImageIndex]）。
+  int _inferDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
     final devicePhotos = _albumPhotos
         .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
         .toList();
@@ -2483,9 +2561,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '绑定失败：未读取到完整的6字节设备ID，请重新连接后再试。',
-          en: 'Binding failed because the complete 6-byte device ID was not read. Reconnect and try again.',
-          ja: '完全な6バイトのデバイスIDを取得できなかったため追加できません。再接続してお試しください。',
+          zh: '绑定失败：未读取到完整的6字节电子纸设备ID，请重新连接后再试。',
+          en: 'Binding failed because the complete 6-byte e-paper device ID was not read. Reconnect and try again.',
+          ja: '完全な6バイトの電子ペーパーIDを取得できなかったため追加できません。再接続してお試しください。',
         ),
       );
     }
@@ -2506,7 +2584,11 @@ class PhotoFrameState extends ChangeNotifier {
       await refreshDevices();
       return ActionFeedback(
         success: true,
-        message: tr(zh: '设备已绑定。', en: 'Device bound.', ja: '端末をバインドしました。'),
+        message: tr(
+          zh: '电子纸设备已绑定。',
+          en: 'E-paper device bound.',
+          ja: '電子ペーパーをバインドしました。',
+        ),
       );
     } catch (error) {
       return _apiFailure(error);
@@ -2574,8 +2656,8 @@ class PhotoFrameState extends ChangeNotifier {
       return (
         productId: null,
         error: tr(
-          zh: '未匹配到对应产品，请确认该设备在产品列表中存在。',
-          en: 'No matching product found. Please confirm the device exists in the product list.',
+          zh: '未匹配到对应产品，请确认该电子纸设备在产品列表中存在。',
+          en: 'No matching product found. Please confirm the e-paper device exists in the product list.',
           ja: '対応する製品が見つかりません。製品リストに存在するか確認してください。',
         ),
       );
@@ -2644,7 +2726,11 @@ class PhotoFrameState extends ChangeNotifier {
       trace.finish(success: true);
       return ActionFeedback(
         success: true,
-        message: tr(zh: '设备已删除。', en: 'Device deleted.', ja: '端末を削除しました。'),
+        message: tr(
+          zh: '电子纸设备已删除。',
+          en: 'E-paper device deleted.',
+          ja: '電子ペーパーを削除しました。',
+        ),
       );
     } catch (error) {
       trace.finish(success: false);
@@ -2725,9 +2811,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '设备暂时无法连接',
-          en: 'The device is temporarily unavailable.',
-          ja: '端末に一時的に接続できません。',
+          zh: '电子纸设备暂时无法连接',
+          en: 'The e-paper device is temporarily unavailable.',
+          ja: '電子ペーパーに一時的に接続できません。',
         ),
       );
     }
@@ -2754,9 +2840,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '请先连接设备',
-          en: 'Please connect the device first.',
-          ja: '先に端末を接続してください。',
+          zh: '请先连接电子纸设备',
+          en: 'Please connect the e-paper device first.',
+          ja: '先に電子ペーパーを接続してください。',
         ),
       );
     }
@@ -2789,9 +2875,11 @@ class PhotoFrameState extends ChangeNotifier {
           // 0x12 应答超时/断连——但不少固件其实已把图删干净了，只是应答异常/迟到
           //（设备逐张擦 flash 全删完才回一次应答，慢一点就顶到超时）。设备忙(0x0B)先短路交给下方 busy 分支。
           clearError = deleteError;
-          if (_isMissingDevicePhotoError(deleteError)) {
-            // 「槽位越界 / 图片不存在」这类结果码：要删的图设备上本来就没有，对「清空」而言
-            // 已经达成，不该中断流程（2026-08-01 产品要求，对齐小程序 detail.js isBenignDeleteError）。
+          if (FrameBleException.isSkippableDelete(deleteError)) {
+            // 「图片不存在(0x05) / 掩码不一致(0x07)」这类结果码：要删的图设备上本来就没有，
+            // 对「清空」而言已经达成，不该中断流程（2026-08-01 产品要求）。
+            // 2026-08-10 起判据与「我的相册」删除**同一份实现**（协议层按结果码放行，
+            // 不再各写一套中文文案匹配），对齐小程序 detail.js isBenignDeleteError 委托协议层。
             // 连回读核对都免了，直接按成功继续。
             deviceCleared = true;
             trace.mark('delete-images-0x12-benign-error');
@@ -2830,9 +2918,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '当前设备繁忙，请稍后重试',
-          en: 'Device is busy, please try again later.',
-          ja: '端末が処理中です。しばらくしてから再試行してください。',
+          zh: '当前电子纸设备繁忙，请稍后重试',
+          en: 'The e-paper device is busy, please try again later.',
+          ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
         ),
       );
     }
@@ -2842,9 +2930,9 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(
         success: false,
         message: tr(
-          zh: '设备暂时无法连接',
-          en: 'Device temporarily unavailable, please try again.',
-          ja: '端末に一時的に接続できません。',
+          zh: '电子纸设备暂时无法连接',
+          en: 'The e-paper device is temporarily unavailable, please try again.',
+          ja: '電子ペーパーに一時的に接続できません。',
         ),
       );
     }
@@ -2880,9 +2968,9 @@ class PhotoFrameState extends ChangeNotifier {
     return ActionFeedback(
       success: true,
       message: tr(
-        zh: '已清空设备照片，共移除 $clearedCount 张。',
-        en: 'Device photos cleared. Removed $clearedCount photos.',
-        ja: '端末の写真をクリアし、$clearedCount 枚を削除しました。',
+        zh: '已清空电子纸设备照片，共移除 $clearedCount 张。',
+        en: 'E-paper device photos cleared. Removed $clearedCount photos.',
+        ja: '電子ペーパーの写真をクリアし、$clearedCount 枚を削除しました。',
       ),
     );
   }
@@ -3041,16 +3129,16 @@ class PhotoFrameState extends ChangeNotifier {
       id: 'faq-bind',
       question: '如何绑定设备?',
       answer:
-          '1.确保相册设备已开机，并打开手机蓝牙。\n'
+          '1.确保电子纸设备已开机，并打开手机蓝牙。\n'
           '2.进入首页点击绑定设备，或「我的设备」。\n'
-          '3.在设备列表中选择要连接的相册设备。\n'
+          '3.在设备列表中选择要连接的电子纸设备。\n'
           '4.点击「立即绑定」完成连接。\n'
-          '若未搜索到设备，请确认设备在附近并重新搜索。',
+          '若未搜索到电子纸设备，请确认电子纸设备在附近并重新搜索。',
     ),
     FaqArticle(
       id: 'faq-cast',
       question: '如何进行照片投屏?',
-      answer: '进入首页，选择拍照或相册，确认照片后发送到已连接设备。',
+      answer: '进入首页，选择拍照或相册，确认照片后发送到已连接的电子纸设备。',
     ),
     FaqArticle(
       id: 'faq-album',
@@ -3060,13 +3148,13 @@ class PhotoFrameState extends ChangeNotifier {
     FaqArticle(
       id: 'faq-cleared',
       question: '设备照片被清空怎么办?',
-      answer: '请在我的图库中重新选择照片投屏，或检查设备存储状态。',
+      answer: '请在我的图库中重新选择照片投屏，或检查电子纸设备存储状态。',
     ),
     FaqArticle(
       id: 'faq-full',
       question: '相框空间已满怎么办?',
       answer:
-          '设备空间已满时，新的照片将无法继续投屏。你可以前往「我的相册」删除部分照片，'
+          '电子纸设备空间已满时，新的照片将无法继续投屏。您可以前往「我的相册」删除部分照片，'
           '或执行一键清空。清理完成后，再重新选择照片进行投屏即可。',
     ),
   ];
