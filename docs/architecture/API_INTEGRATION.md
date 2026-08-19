@@ -129,7 +129,9 @@ BoltStar 当前使用三套不同的远端服务：
 - 阿里云网关返回固定大写字段错误 `Code=JWTTokenIsMissing`、
   `Message=the jwt token is missing` 时，AI 网络层生成受信用户文案，toast 展示错误码、
   Message 与动态 `RequestId`。其它 `detail` 仍只允许写日志，不得展示。
-- 正式用户入口当前由 `kAiEntryEnabled=false` 屏蔽；调试暗门保留。
+- 正式用户入口 2026-08-19 起开放（`kAiEntryEnabled=true`，与小程序 `aiEntryEnabled` 同口径）：
+  首页/我的底部 tab 栏中间新增「AI助手」一格。开关仅留作灰度/应急下线；调试暗门保留，
+  但调试台只在 debug 构建可达，关掉开关的正式包等于整块功能不可见。
 - 语音输入仍是占位；下载只写应用缓存目录。
 
 ### 星币（Order）

@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
+import '../../ai/ai_entry.dart';
+import '../../gallery/official/official_gallery_entry.dart';
+import '../../star/star_coin_api.dart';
 
 /// 「我的」页：对照微信小程序 `photo-album/pages/mine` 精准还原。
 ///
@@ -60,13 +63,43 @@ class _MinePageState extends State<MinePage> with RouteAware {
 
   void _reload() {
     // 三个接口并发：
-    // · refreshCurrentUser —— 头像/昵称/ID 与设备数（账号级 productCount）；
+    // · refreshCurrentUser —— 头像/昵称/ID、设备数（账号级 productCount）与星币余额；
     // · refreshDevices     —— productCount 缺失时的设备数兜底（state.mineDeviceCount）；
     // · refreshMineCastSuccessCount —— 「我的相册」张数 = 全部设备的投屏成功记录条数
     //   （2026-08-05 起不再用账号级 imgCount，所以这里也不必再拉相册列表）。
-    widget.state.refreshCurrentUser();
+    widget.state.refreshCurrentUser().then((_) => _ensureStarBalance());
     widget.state.refreshDevices();
     widget.state.refreshMineCastSuccessCount();
+  }
+
+  /// 「星币管理」行右侧的余额（对齐小程序 `mine.js` 的 `tokenBalance`）。
+  ///
+  /// 2026-08-11 接口对账起 `getUserInfo` 的出参已带 `availableToken`，本页**不再固定**
+  /// 多打一次 `/Client/Order/getUserAccount`；只有该字段缺失（老后端灰度期不下发，
+  /// 注意 0 是合法余额、不算缺失）才回退查一次账户。
+  int? get _starBalance =>
+      widget.state.currentUser.availableToken ?? _starBalanceFallback;
+
+  /// 回退查到的余额。查失败就一直是 null，行里显示 `--`：
+  /// 余额是次要信息，取不到不该弹错、更不该把整页打成加载失败。
+  int? _starBalanceFallback;
+
+  Future<void> _ensureStarBalance() async {
+    // 每次进/回本页都重查一次（同小程序 onShow 口径）：余额会被 AI 生图消耗掉，
+    // 缓存住第一次的数字会让用户以为星币没扣。只在 availableToken 缺失时才走到这里，
+    // 所以正常后端下这条请求根本不会发出。
+    if (!mounted || widget.state.currentUser.availableToken != null) {
+      return;
+    }
+    try {
+      final account = await StarCoinApi.fetchAccount();
+      if (!mounted) {
+        return;
+      }
+      setState(() => _starBalanceFallback = account.balance);
+    } catch (_) {
+      // 静默：见上。
+    }
   }
 
   @override
@@ -78,189 +111,190 @@ class _MinePageState extends State<MinePage> with RouteAware {
       children: [
         const _MineBackground(),
         SafeArea(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return SingleChildScrollView(
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                  child: IntrinsicHeight(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        // 顶部居中标题（page-nav title="我的"）。
-                        const SizedBox(height: 12),
-                        Text(
-                          AppL10n.of(context).tabMine,
-                          key: const Key('mine-page-title'),
-                          textAlign: TextAlign.center,
-                          style: _MineTextStyles.navTitle,
+          // 竖向结构与首页 [_HomeMainView] 一致：
+          //   Expanded(滚动区) + 底部 Tab 栏（固定，永远在视口内）。
+          // 2026-08-19 修：原来整页（含底栏）都塞在同一个 SingleChildScrollView 里，
+          // 底栏只是被 `Spacer()` 顶到列末尾——屏幕够高时看着像固定在底部，一旦内容
+          // 高过视口（iOS 刘海/灵动岛机型安全区吃掉一截、或系统字号放大），底栏就跟着
+          // 内容一起滚，正是反馈的「底部 tabber 栏和页面滚动融合到一起」。
+          child: Column(
+            // 必须 stretch：底栏胶囊（`_MineTabBar`）自己不写宽度，靠父级给的紧约束铺满；
+            // 默认的 center 会让它按内容缩成一小坨，滚动区也会跟着缩宽。
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    return SingleChildScrollView(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          minHeight: constraints.maxHeight,
                         ),
-                        // 个人资料卡：margin-top 72rpx(=36)。
-                        const SizedBox(height: 24),
-                        Padding(
-                          padding: _inset,
-                          child: _ProfileCard(
-                            // 强制登录下不存在游客态，昵称为空只意味着 getUserInfo 还没回来，
-                            // 用 `--` 占位（同下面的统计数字），不要写「未登录」。
-                            nickName: state.currentUser.nickname.isNotEmpty
-                                ? state.currentUser.nickname
-                                : '--',
-                            userId: state.currentUser.id,
-                            avatarUrl: state.currentUser.avatarUrl,
-                            // 点资料卡进个人资料页（原来还有个「未登录则进登录页」的分支，
-                            // 强制登录后已不可达）。
-                            onTap: () => Navigator.of(
-                              context,
-                            ).pushNamed<void>(AppRoutes.profile),
-                          ),
-                        ),
-                        // 常用功能：margin-top 92rpx(=46)，标题底 24rpx(=12)。
-                        const SizedBox(height: 46),
-                        Padding(
-                          padding: _inset,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              AppL10n.of(context).mineCommonFeatures,
-                              style: _MineTextStyles.sectionTitle,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            // 顶部居中标题（page-nav title="我的"）。
+                            const SizedBox(height: 12),
+                            Text(
+                              AppL10n.of(context).tabMine,
+                              key: const Key('mine-page-title'),
+                              textAlign: TextAlign.center,
+                              style: _MineTextStyles.navTitle,
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        // 2026-08-04：原「设备照片」「投屏管理」两张卡合并为「我的相册」，
-                        // 宫格由三卡变两卡。卡片改为**等分剩余宽度**（原来是 102 定宽 +
-                        // space-evenly，两卡时中间会空出一大块），中缝 21rpx≈10.5，
-                        // 与小程序 `.quick-grid { gap: 21rpx } .quick-card { flex: 1 1 0 }` 同口径。
-                        Padding(
-                          padding: _inset,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: _FeatureCard(
-                                  iconAsset: 'assets/images/mine-icon07.png',
-                                  iconBackground: const Color(0xFFE7F2FF),
-                                  fallbackIcon: Icons.devices_other_outlined,
-                                  fallbackColor: const Color(0xFF4A98FF),
-                                  title: AppL10n.of(context).mineMyDevices,
-                                  subtitle: AppL10n.of(context)
-                                      .mineDeviceCountText(
-                                        state.userLoaded || state.devicesLoaded,
-                                        state.mineDeviceCount,
-                                      ),
-                                  onTap: () {
-                                    Navigator.of(
-                                      context,
-                                    ).pushNamed<void>(AppRoutes.figmaMyDevices);
-                                  },
+                            // 个人资料卡：margin-top 72rpx(=36)。
+                            const SizedBox(height: 24),
+                            Padding(
+                              padding: _inset,
+                              child: _ProfileCard(
+                                // 强制登录下不存在游客态，昵称为空只意味着 getUserInfo 还没回来，
+                                // 用 `--` 占位（同下面的统计数字），不要写「未登录」。
+                                nickName: state.currentUser.nickname.isNotEmpty
+                                    ? state.currentUser.nickname
+                                    : '--',
+                                userId: state.currentUser.id,
+                                avatarUrl: state.currentUser.avatarUrl,
+                                // 点资料卡进个人资料页（原来还有个「未登录则进登录页」的分支，
+                                // 强制登录后已不可达）。
+                                onTap: () => Navigator.of(
+                                  context,
+                                ).pushNamed<void>(AppRoutes.profile),
+                              ),
+                            ),
+                            // 2026-08-19（同步小程序 08-11）：「常用功能」标题按产品要求
+                            // 去掉，原先由标题承担的间距整块挪到宫格自己的 margin-top
+                            // （小程序 `.quick-grid { margin: 92rpx 0 0 }` = 46）。
+                            const SizedBox(height: 46),
+                            // 2026-08-04：原「设备照片」「投屏管理」两张卡合并为「我的相册」，
+                            // 宫格由三卡变两卡。卡片改为**等分剩余宽度**（原来是 102 定宽 +
+                            // space-evenly，两卡时中间会空出一大块），中缝 21rpx≈10.5，
+                            // 与小程序 `.quick-grid { gap: 21rpx } .quick-card { flex: 1 1 0 }` 同口径。
+                            Padding(
+                              padding: _inset,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: _FeatureCard(
+                                      iconAsset: 'assets/images/mine-icon07.png',
+                                      iconBackground: const Color(0xFFE7F2FF),
+                                      fallbackIcon: Icons.devices_other_outlined,
+                                      fallbackColor: const Color(0xFF4A98FF),
+                                      title: AppL10n.of(context).mineMyDevices,
+                                      subtitle: AppL10n.of(context)
+                                          .mineDeviceCountText(
+                                            state.userLoaded || state.devicesLoaded,
+                                            state.mineDeviceCount,
+                                          ),
+                                      onTap: () {
+                                        Navigator.of(
+                                          context,
+                                        ).pushNamed<void>(AppRoutes.figmaMyDevices);
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 10.5),
+                                  Expanded(
+                                    child: _FeatureCard(
+                                      iconAsset: 'assets/images/mine-icon06.png',
+                                      iconBackground: const Color(0x1AFFAF8B),
+                                      fallbackIcon:
+                                          Icons.photo_size_select_actual_outlined,
+                                      fallbackColor: const Color(0xFFFF6A24),
+                                      title: AppL10n.of(context).mineMyGallery,
+                                      subtitle: AppL10n.of(context)
+                                          .minePhotoCountText(
+                                            state.mineCastSuccessLoaded,
+                                            state.minePhotoCount,
+                                          ),
+                                      onTap: () {
+                                        Navigator.of(
+                                          context,
+                                        ).pushNamed<void>(AppRoutes.figmaGallery);
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            // 服务与帮助：margin-top 86rpx(=43)。
+                            const SizedBox(height: 43),
+                            Padding(
+                              padding: _inset,
+                              child: Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  AppL10n.of(context).mineServiceHelp,
+                                  style: _MineTextStyles.sectionTitle,
                                 ),
                               ),
-                              const SizedBox(width: 10.5),
-                              Expanded(
-                                child: _FeatureCard(
-                                  iconAsset: 'assets/images/mine-icon06.png',
-                                  iconBackground: const Color(0x1AFFAF8B),
-                                  fallbackIcon:
-                                      Icons.photo_size_select_actual_outlined,
-                                  fallbackColor: const Color(0xFFFF6A24),
-                                  title: AppL10n.of(context).mineMyGallery,
-                                  subtitle: AppL10n.of(context)
-                                      .minePhotoCountText(
-                                        state.mineCastSuccessLoaded,
-                                        state.minePhotoCount,
-                                      ),
-                                  onTap: () {
-                                    Navigator.of(
-                                      context,
-                                    ).pushNamed<void>(AppRoutes.figmaGallery);
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        // 服务与帮助：margin-top 86rpx(=43)。
-                        const SizedBox(height: 43),
-                        Padding(
-                          padding: _inset,
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              AppL10n.of(context).mineServiceHelp,
-                              style: _MineTextStyles.sectionTitle,
                             ),
-                          ),
+                            const SizedBox(height: 9),
+                            // 与小程序 `pages/mine/mine.wxml` 的 `.service-list` 逐行对齐：
+                            // **星币管理 → 操作指南 → 设置**，三行不多不少。
+                            // ⚠️ 「官方图库」2026-08-19 已挪到底栏第三格、「我的收藏」小程序
+                            // 2026-08-12 起常驻在图库页分类条右端 —— 这两行都**不要**在这里
+                            // 加回来：两个入口指同一个页面只会让人犹豫点哪个。
+                            Padding(
+                              padding: _inset,
+                              child: _ServiceRow(
+                                iconAsset: 'assets/images/mine-icon-token.png',
+                                fallbackIcon: Icons.toll_outlined,
+                                title: AppL10n.of(context).starCoinTitle,
+                                // 右侧余额（小程序 `.service-value`「剩余 N 星币」）。
+                                value: AppL10n.of(
+                                  context,
+                                ).mineStarBalanceText(_starBalance),
+                                onTap: () {
+                                  Navigator.of(
+                                    context,
+                                  ).pushNamed<void>(AppRoutes.starCoin);
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 13),
+                            Padding(
+                              padding: _inset,
+                              child: _ServiceRow(
+                                iconAsset: 'assets/images/mine-icon05.png',
+                                fallbackIcon: Icons.menu_book_outlined,
+                                title: AppL10n.of(context).mineGuide,
+                                onTap: () {
+                                  Navigator.of(
+                                    context,
+                                  ).pushNamed<void>(AppRoutes.guide);
+                                },
+                              ),
+                            ),
+                            const SizedBox(height: 13),
+                            Padding(
+                              padding: _inset,
+                              child: _ServiceRow(
+                                iconAsset: 'assets/images/mine-icon04.png',
+                                fallbackIcon: Icons.settings_outlined,
+                                title: AppL10n.of(context).mineSettings,
+                                onTap: () {
+                                  Navigator.of(
+                                    context,
+                                  ).pushNamed<void>(AppRoutes.settings);
+                                },
+                              ),
+                            ),
+                            // 滚动区末尾留一段：内容顶到底时不会贴着下面的固定底栏。
+                            const SizedBox(height: 13),
+                          ],
                         ),
-                        const SizedBox(height: 9),
-                        // 2026-08-12 App 侧补齐两个模块（对齐小程序）：
-                        // 星币管理（小程序在「我的」同样这一栏）、官方图库（小程序是底部 tab，
-                        // App 底栏只有首页/我的两格，所以挂在这里）。
-                        Padding(
-                          padding: _inset,
-                          child: _ServiceRow(
-                            iconAsset: 'assets/images/mine-icon-token.png',
-                            fallbackIcon: Icons.toll_outlined,
-                            title: AppL10n.of(context).starCoinTitle,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).pushNamed<void>(AppRoutes.starCoin);
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 13),
-                        Padding(
-                          padding: _inset,
-                          child: _ServiceRow(
-                            iconAsset: 'assets/images/tab-gallery.png',
-                            fallbackIcon: Icons.collections_outlined,
-                            title: AppL10n.of(context).galleryOfficialTitle,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).pushNamed<void>(AppRoutes.officialGallery);
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 13),
-                        Padding(
-                          padding: _inset,
-                          child: _ServiceRow(
-                            iconAsset: 'assets/images/mine-icon05.png',
-                            fallbackIcon: Icons.menu_book_outlined,
-                            title: AppL10n.of(context).mineGuide,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).pushNamed<void>(AppRoutes.guide);
-                            },
-                          ),
-                        ),
-                        const SizedBox(height: 13),
-                        Padding(
-                          padding: _inset,
-                          child: _ServiceRow(
-                            iconAsset: 'assets/images/mine-icon04.png',
-                            fallbackIcon: Icons.settings_outlined,
-                            title: AppL10n.of(context).mineSettings,
-                            onTap: () {
-                              Navigator.of(
-                                context,
-                              ).pushNamed<void>(AppRoutes.settings);
-                            },
-                          ),
-                        ),
-                        const Spacer(),
-                        Padding(
-                          padding: _inset,
-                          child: _MineTabBar(onOpenHome: onOpenHome),
-                        ),
-                        const SizedBox(height: 13),
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  },
                 ),
-              );
-            },
+              ),
+              // 底部 Tab 栏固定在滚动区外（同小程序 `position: fixed` 的 custom-tabbar），
+              // 与首页 [_HomeMainView] 同一口径：内容再高，底栏也始终停在视口底部。
+              Padding(
+                padding: _inset,
+                child: _MineTabBar(state: state, onOpenHome: onOpenHome),
+              ),
+              const SizedBox(height: 13),
+            ],
           ),
         ),
       ],
@@ -524,11 +558,15 @@ class _ServiceRow extends StatelessWidget {
     required this.fallbackIcon,
     required this.title,
     required this.onTap,
+    this.value,
   });
 
   final String iconAsset;
   final IconData fallbackIcon;
   final String title;
+
+  /// 右侧数值（小程序 `.service-value`，目前只有「星币管理」用）。null＝不画。
+  final String? value;
   final VoidCallback onTap;
 
   @override
@@ -568,6 +606,21 @@ class _ServiceRow extends StatelessWidget {
             ),
             const SizedBox(width: 14),
             Expanded(child: Text(title, style: _MineTextStyles.rowTitle)),
+            if (value != null)
+              // 与小程序同款取舍：数值**过长时省略**（余额位数多、英文「stars left」更长），
+              // 而不是把标题或右侧箭头顶出行外。左右留白 24rpx/16rpx(=12/8)。
+              Flexible(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12, right: 8),
+                  child: Text(
+                    value!,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: _MineTextStyles.rowValue,
+                  ),
+                ),
+              ),
             const Text(
               '›',
               style: TextStyle(
@@ -584,10 +637,16 @@ class _ServiceRow extends StatelessWidget {
   }
 }
 
-/// 底部导航栏（与首页一致的胶囊样式；「我的」高亮）。
+/// 底部导航栏（与首页一致的胶囊样式，四格；「我的」高亮）。
+///
+/// 中间两格由 [kAiEntryEnabled] / [kGalleryEntryEnabled] 各自决定是否出现，与首页
+/// `_HomeTabBar` 同一组开关、同一批目标页——两个 tab 各画各的栏，
+/// 所以底栏的改动**两处都要同步**。
 class _MineTabBar extends StatelessWidget {
-  const _MineTabBar({required this.onOpenHome});
+  const _MineTabBar({required this.state, required this.onOpenHome});
 
+  /// AI 页需要全局业务状态（登录态/用户 id），点中间那格时透传过去。
+  final PhotoFrameState state;
   final VoidCallback onOpenHome;
 
   @override
@@ -619,6 +678,34 @@ class _MineTabBar extends StatelessWidget {
               ),
             ),
           ),
+          if (kAiEntryEnabled)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // 同小程序 goAi：AI 页不是 tab，push 进去，返回即回本 tab。
+                onTap: () => openAiChat(context, state),
+                child: _MineTabItem(
+                  iconAsset: 'assets/images/ai-tab.png',
+                  fallbackIcon: Icons.auto_awesome_outlined,
+                  label: AppL10n.of(context).tabAi,
+                  color: const Color(0xFF777D86),
+                ),
+              ),
+            ),
+          if (kGalleryEntryEnabled)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // 同小程序 goGallery：图库页同样是 push 出去的普通页。
+                onTap: () => openOfficialGallery(context),
+                child: _MineTabItem(
+                  iconAsset: 'assets/images/tab-gallery.png',
+                  fallbackIcon: Icons.collections_outlined,
+                  label: AppL10n.of(context).tabGallery,
+                  color: const Color(0xFF777D86),
+                ),
+              ),
+            ),
           Expanded(
             child: _MineTabItem(
               iconAsset: 'assets/images/tabbar-mine02.png',
@@ -661,13 +748,25 @@ class _MineTabItem extends StatelessWidget {
               Icon(fallbackIcon, color: color, size: 24),
         ),
         const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w400,
-            height: 1.2,
+        // 2026-08-19 底栏由两格扩到四格后，每格只剩屏宽的四分之一：中文放得下，
+        // 英/日的「Gallery / AIアシスタント」在窄屏上会顶出格子（Flutter 的表现是
+        // 黄黑条纹的 overflow 警示）。FittedBox 只在真放不下时按比例缩，中文一律原样，
+        // 比切成省略号（「AIアシス…」）好读。
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                height: 1.2,
+              ),
+            ),
           ),
         ),
       ],
@@ -760,6 +859,14 @@ class _MineTextStyles {
     color: Color(0xFF2A2D32),
     fontSize: 15,
     fontWeight: FontWeight.w600,
+    height: 1.2,
+  );
+
+  // .service-row .service-value → 26rpx(=13) / weight 400 / #777e88
+  static const rowValue = TextStyle(
+    color: Color(0xFF777E88),
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
     height: 1.2,
   );
 }

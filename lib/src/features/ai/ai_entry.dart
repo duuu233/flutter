@@ -5,15 +5,17 @@ import '../../state.dart';
 import 'ai_last_session.dart';
 import 'presentation/ai_chat_page.dart';
 
-/// AI生图入口开关（对齐小程序 `components/custom-tabbar` 的 `aiEntryEnabled`）。
+/// AI助手入口开关（对齐小程序 `components/custom-tabbar` 的 `aiEntryEnabled`）。
 ///
-/// 当前需求：**入口整体屏蔽，后续再开放**。小程序侧是 tabbar 中间那颗「AI生图」按钮隐藏
-/// （用空占位保住三栏布局）；App 侧首页/我的的底部 tab 栏同样先不放这颗按钮。
-/// 屏蔽期间可走「硬件联调调试台」底部暗门（口令 [kAiEntryGateCode]）临时进入验收。
+/// 2026-08-19 起**正式开放**（小程序侧 `aiEntryEnabled: true` 已开放在先）：首页/我的的
+/// 自绘底部 tab 栏中间多出「AI助手」一格，点它调 [openAiChat]。两个 tab 各画各的栏，
+/// 所以入口在 `home_widgets._HomeTabBar` 与 `mine_page._MineTabBar` **两处**。
 ///
-/// 开放时：把这里改 `true`，并在 `home_page` / `mine_page` 的自绘 tab 栏中间调 [openAiChat]
-/// （两处都要，两个 tab 各画各的栏）。
-const bool kAiEntryEnabled = false;
+/// 保留这个开关只为后续灰度/应急下线（同小程序注释口径）。改回 `false` 时底栏自动缩回
+/// 「首页 / 我的」两格，此时仍可走「硬件联调调试台」底部暗门（口令 [kAiEntryGateCode]）
+/// 进入验收——但调试台只在 debug 构建可达（见 `routes/app_routes.dart`），
+/// **正式包关掉开关就等于整块功能不可见**。
+const bool kAiEntryEnabled = true;
 
 /// 屏蔽期的暗门口令（与小程序调试台 `AI_ENTRY_GATE_CODE` 保持一致）。
 const String kAiEntryGateCode = '8866';

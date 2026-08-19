@@ -25,8 +25,12 @@ The product currently covers:
 - BLE engineering diagnostics, an in-app iOS transfer performance self-test, and Android crash
   evidence capture;
 - an implemented AI chat/image-enhancement subsystem with per-user AI-service consent and a
-  multilingual legal page; its normal production entry is currently disabled by
-  `kAiEntryEnabled=false`, while a debug entry remains.
+  multilingual legal page; since 2026-08-19 its production entry is open (`kAiEntryEnabled=true`,
+  matching the mini program), with the flag kept only for staged rollback and the debug entry kept
+  for debug builds;
+- an official-gallery module (categories, waterfall list, detail, favorites) whose entry also moved
+  into the bottom tab bar on 2026-08-19 (`kGalleryEntryEnabled=true`), replacing the former row
+  under "Mine -> Services and help".
 
 The declared product release targets are Android and iOS. The Web, Windows, macOS, and Linux
 directories are Flutter-generated shells and are not current product release targets.
@@ -201,7 +205,7 @@ Inside `lib/src/features/`, the current domains are `account`, `ai`, `cast`, `de
 | --- | --- | --- |
 | Bootstrap and app root | Early initialization, splash/root transition, session restoration, lifecycle observation, shared state/controller ownership, theme, force-update and crash prompts | `lib/main.dart`, `lib/src/app/bolt_star_app.dart`, `lib/src/app/app_theme.dart` |
 | Shared business state | Session/profile, devices, selected target, gallery, casting records, FAQ, user actions, API error mapping, session-expiry reset | `lib/src/state.dart` |
-| Routing and shell | Named route dispatch and two-tab Home/Mine shell | `lib/src/routes/app_routes.dart`, `lib/src/features/shell/presentation/` |
+| Routing and shell | Named route dispatch and two-tab Home/Mine shell. Since 2026-08-19 each tab draws a four-slot bottom bar (Home / AI / Official Gallery / Mine); only Home and Mine are tabs, the middle two push routes | `lib/src/routes/app_routes.dart`, `lib/src/features/shell/presentation/` |
 | Network core | Common BoltFox parameters, token/session state, response parsing, uploads, exceptions, API row parsing | `lib/src/network/api_client.dart`, `api_session.dart`, `api_rows.dart`, `api_exception.dart` |
 | BoltFox API | Account, product, user-device, gallery, casting-record, version, upload, and seekink-token endpoints | `lib/src/network/boltfox_api.dart` |
 | External services | seekink binary conversion/token refresh and independent BoltStar AI calls | `lib/src/network/dithering_api.dart`, `lib/src/network/boltstar_ai_api.dart` |

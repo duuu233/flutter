@@ -15,8 +15,10 @@ import '../../../shared/permission_gate.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../state.dart';
+import '../../ai/ai_entry.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
+import '../../gallery/official/official_gallery_entry.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
 part 'home_main_view.dart'; // 首页主视图（已绑定 / 未绑定）

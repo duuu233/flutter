@@ -189,13 +189,22 @@ class _CircleIconButton extends StatelessWidget {
   }
 }
 
-/// 底部导航栏（首页主视图底部，「首页 / 我的」两个 Tab）。
+/// 底部导航栏（首页主视图底部，「首页 / AI助手 / 官方图库 / 我的」四格）。
 ///
 /// 对齐小程序 `custom-tabbar`：白色半透明胶囊（圆角全圆 + 柔和投影），
 /// 图标用 `tabbar-*.png`，首页态高亮 #ff6421、未选态 #777d86。
+///
+/// 中间两格由 [kAiEntryEnabled] / [kGalleryEntryEnabled] 各自决定是否出现（小程序同名开关），
+/// 关掉时整格不占位、底栏自动缩格——小程序那边关掉是留个空占位保住四栏 grid，
+/// App 这边胶囊是 Row 等分，删掉一格自然还是均分，不需要占位。
+///
+/// ⚠️ AI 与官方图库**都不是 tab**（各自 push 一个页面，返回即回本 tab），所以这两格
+/// 永远是未选态，不需要 `*-active` 图标。
 class _HomeTabBar extends StatelessWidget {
-  const _HomeTabBar({required this.onOpenMine});
+  const _HomeTabBar({required this.state, required this.onOpenMine});
 
+  /// AI 页需要全局业务状态（登录态/用户 id），点中间那格时透传过去。
+  final PhotoFrameState state;
   final VoidCallback onOpenMine;
 
   @override
@@ -224,6 +233,34 @@ class _HomeTabBar extends StatelessWidget {
               color: const Color(0xFFFF6421),
             ),
           ),
+          if (kAiEntryEnabled)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // 同小程序 goAi：AI 页不是 tab，push 进去，返回即回本 tab。
+                onTap: () => openAiChat(context, state),
+                child: _HomeTabItem(
+                  iconAsset: 'assets/images/ai-tab.png',
+                  fallbackIcon: Icons.auto_awesome_outlined,
+                  label: AppL10n.of(context).tabAi,
+                  color: const Color(0xFF777D86),
+                ),
+              ),
+            ),
+          if (kGalleryEntryEnabled)
+            Expanded(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                // 同小程序 goGallery：图库页同样是 push 出去的普通页。
+                onTap: () => openOfficialGallery(context),
+                child: _HomeTabItem(
+                  iconAsset: 'assets/images/tab-gallery.png',
+                  fallbackIcon: Icons.collections_outlined,
+                  label: AppL10n.of(context).tabGallery,
+                  color: const Color(0xFF777D86),
+                ),
+              ),
+            ),
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -270,13 +307,25 @@ class _HomeTabItem extends StatelessWidget {
               Icon(fallbackIcon, color: color, size: 24),
         ),
         const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w400,
-            height: 1.2,
+        // 2026-08-19 底栏由两格扩到四格后，每格只剩屏宽的四分之一：中文放得下，
+        // 英/日的「Gallery / AIアシスタント」在窄屏上会顶出格子（Flutter 的表现是
+        // 黄黑条纹的 overflow 警示）。FittedBox 只在真放不下时按比例缩，中文一律原样，
+        // 比切成省略号（「AIアシス…」）好读。
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                height: 1.2,
+              ),
+            ),
           ),
         ),
       ],

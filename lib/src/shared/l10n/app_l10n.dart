@@ -185,6 +185,15 @@ class AppL10n {
 
   // ── 底部导航 ────────────────────────────────────────────────────────────
   String get tabHome => _pick('首页', 'Home', 'ホーム');
+  // 底栏中间两格的标题（2026-08-19 起底栏四格，与小程序 `custom-tabbar` 同位同名）。
+  //
+  // ⚠️ 这两条是**tab 专用短标题**，与页内标题不是同一个 key：
+  // · [tabAi]      ↔ [aiTitle]（AI 页内标题「AI生图」）
+  // · [tabGallery] ↔ [galleryOfficialTitle]（图库页导航标题「官方图库」）
+  // 四格之后每格只有屏宽的四分之一，页内标题的完整译名（Official Gallery /
+  // 公式ギャラリー）在这里放不下。别互相替换。
+  String get tabAi => _pick('AI助手', 'AI Assistant', 'AIアシスタント');
+  String get tabGallery => _pick('官方图库', 'Gallery', 'ギャラリー');
   String get tabMine => _pick('我的', 'Mine', 'マイ');
 
   // ── 设置页 ──────────────────────────────────────────────────────────────
@@ -353,6 +362,14 @@ class AppL10n {
     '微信授权已超时，请重新登录。',
     'WeChat authorization timed out. Please try again.',
     'WeChat認証がタイムアウトしました。再度お試しください。',
+  );
+  /// 微信授权登录成功提示（2026-08-19 需求：Android/iOS 从微信跳回 App 都要有反馈）。
+  /// 邮箱登录**不弹**成功提示（界面切到主壳层本身就是反馈），微信这条是特例——
+  /// 中间去了一趟微信客户端再跳回来，用户需要一句确认「这趟走通了」。
+  String get accWechatLoginSuccess => _pick(
+    '授权登录成功',
+    'Signed in with WeChat',
+    'WeChatでログインしました',
   );
   String get accWechatAuthFailed => _pick(
     '微信授权失败，请稍后重试',
@@ -1784,6 +1801,8 @@ class AppL10n {
   String get guideEmpty => _pick('暂无常见问题', 'No FAQs yet', 'よくある質問はありません');
 
   // ── 我的 ──
+  // 「常用功能」标题 2026-08-19（同步小程序 08-11）按产品要求从「我的」页去掉，
+  // 目前无消费方。留着这一条只为万一要改回来时不用重译；不要拿它当新标题复用。
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
   String get mineServiceHelp => _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
   /// 2026-08-04：「设备照片」与「投屏管理」两张卡合并为「我的相册」（投屏成功的照片）。
@@ -1806,6 +1825,13 @@ class AppL10n {
     loaded ? '$value devices' : '-- devices',
     loaded ? '$value台' : '--台',
   );
+
+  /// 「我的 → 星币管理」行右侧的余额（对齐小程序 `.service-value` 的「剩余 N 星币」）。
+  /// 余额还没到手时给 `--` 而不是 0：显示 0 会被当成「我的星币被清空了」。
+  String mineStarBalanceText(int? value) {
+    final amount = value?.toString() ?? '--';
+    return _pick('剩余 $amount 星币', '$amount stars left', '残り $amount スターコイン');
+  }
 
   // ── 设置 ──
   String get setPrivacyTitle => _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');
