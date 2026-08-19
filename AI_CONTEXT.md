@@ -99,6 +99,13 @@ OpenHarmony/HAP is not integrated.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.
 - The WeChat URL Scheme and mobile AppID are fixed to `wx4cf0c5f38a70d0bc`; the Universal Link
   remains a build/external-platform input. See the setup and release runbooks.
+- `Runner/SceneDelegate.swift` overrides `scene:openURLContexts:` and forwards the URLs back to the
+  `UIApplicationDelegate` chain: fluwx declares `FlutterSceneLifeCycleDelegate` conformance but only
+  implements the Universal Link scene event, and the engine's app-delegate fallback deliberately
+  skips scene-conforming plugins — so the WeChat URL Scheme callback reaches neither chain.
+  `Info.plist` sets `FlutterDeepLinkingEnabled=false` for the same reason: this app routes only
+  named routes through `AppRoutes.onGenerateRoute` and must not receive external URLs as route
+  names. See `docs/integration/WECHAT_LOGIN_SETUP.md` §9.5.
 - Android-style persistent crash-file capture is not implemented on iOS. BLE performance diagnostics
   keep a bounded in-memory log for the hidden self-test page.
 

@@ -104,6 +104,42 @@ void main() {
     });
   });
 
+  group('broadcastCandidateMatch（2026-08-11：广播 4→6 字节后的候选筛选）', () {
+    const record = 'E9:48:C2:1E:D4:28'; // 后端记录里的完整 6 字节
+    const reversed = '28:D4:1E:C2:48:E9'; // 同一台，广播按相反字节序播
+    const otherSegment = 'C2:1E:D4:28:AA:BB'; // 同一台，广播取的是 MAC 的另一段
+    const stranger = '11:22:33:44:55:66';
+
+    test('精确相等 / 前后缀锚定仍是强匹配', () {
+      expect(broadcastCandidateMatch(record, record, strongOnly: true), isTrue);
+      expect(
+        broadcastCandidateMatch('C2:1E:D4:28', record, strongOnly: true),
+        isTrue,
+        reason: '老固件 4 字节是后端 6 字节的后缀',
+      );
+    });
+
+    test('整串字节序相反算强匹配（同一个 MAC，两端读法不同）', () {
+      expect(broadcastCandidateMatch(reversed, record, strongOnly: true), isTrue);
+    });
+
+    test('换了一段的 6 字节靠 4 字节锚段弱匹配筛得出，但不算强匹配', () {
+      expect(broadcastCandidateMatch(otherSegment, record, strongOnly: true), isFalse);
+      expect(broadcastCandidateMatch(otherSegment, record), isTrue);
+    });
+
+    test('毫无关系的 ID 仍然筛不出（放宽的是候选，不是身份）', () {
+      expect(broadcastCandidateMatch(stranger, record), isFalse);
+      expect(broadcastCandidateMatch('', record), isFalse);
+    });
+
+    test('serialsMatch 本身保持严格：等长不等一票否决', () {
+      // 会话认领用的还是它（那里没有 0x01 兜底），放宽只发生在候选筛选这一层
+      expect(serialsMatch(reversed, record), isFalse);
+      expect(serialsMatch(otherSegment, record), isFalse);
+    });
+  });
+
   group('sameScreenCode', () {
     test('两侧都已知且相同 → 同型号', () {
       expect(sameScreenCode(0x01, 0x01), isTrue);

@@ -49,6 +49,17 @@
 			</array>
 		</dict>
 	</array>
+	<!-- 关掉 Flutter 的深链接管。本工程是 Navigator + `AppRoutes.onGenerateRoute`，只认命名路由，
+	     从没打算吃外部 URL；而引擎在这个键缺省时按 YES 处理（FlutterSharedApplication
+	     .isFlutterDeepLinkingEnabled）。开着的后果：微信按 URL Scheme 回跳、或 Universal Link
+	     被 fluwx 漏接时，引擎把整条 URL 当路由名 push 给 Flutter → 命中 AppRoutes 的 default
+	     分支 → 弹出「Route not found」页；Universal Link 那条还会在 Flutter 回报未处理时把链接
+	     甩回系统（relayToSystemIfUnhandled:YES），表现为直接跳去 Safari。
+	     微信回跳全部由 fluwx 的原生回调消费（见 SceneDelegate.swift 的转发），不需要 Flutter 深链。
+	     ⚠️ 以后若真要做 App 内深链（比如分享落地页直达某页），改回 true 之前先给
+	     AppRoutes 加 URL→路由的解析，否则会退回同一个坑。 -->
+	<key>FlutterDeepLinkingEnabled</key>
+	<false/>
 	<!-- 仅使用 HTTPS 等豁免加密，免去 App Store Connect 每次上传的出口合规答题。 -->
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>

@@ -191,6 +191,37 @@ class _MinePageState extends State<MinePage> with RouteAware {
                           ),
                         ),
                         const SizedBox(height: 9),
+                        // 2026-08-12 App 侧补齐两个模块（对齐小程序）：
+                        // 星币管理（小程序在「我的」同样这一栏）、官方图库（小程序是底部 tab，
+                        // App 底栏只有首页/我的两格，所以挂在这里）。
+                        Padding(
+                          padding: _inset,
+                          child: _ServiceRow(
+                            iconAsset: 'assets/images/mine-icon-token.png',
+                            fallbackIcon: Icons.toll_outlined,
+                            title: AppL10n.of(context).starCoinTitle,
+                            onTap: () {
+                              Navigator.of(
+                                context,
+                              ).pushNamed<void>(AppRoutes.starCoin);
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 13),
+                        Padding(
+                          padding: _inset,
+                          child: _ServiceRow(
+                            iconAsset: 'assets/images/tab-gallery.png',
+                            fallbackIcon: Icons.collections_outlined,
+                            title: AppL10n.of(context).galleryOfficialTitle,
+                            onTap: () {
+                              Navigator.of(
+                                context,
+                              ).pushNamed<void>(AppRoutes.officialGallery);
+                            },
+                          ),
+                        ),
+                        const SizedBox(height: 13),
                         Padding(
                           padding: _inset,
                           child: _ServiceRow(

@@ -36,6 +36,32 @@ String _resolutionText(DeviceItem device, bool connected) {
   return '--';
 }
 
+/// 「固件升级」行右侧的版本比对结论文案（2026-08-12 同步小程序）。
+///
+/// 判定收敛在 [evaluateFirmwareUpdate] **一处**，与点击后的升级流程同源 ——
+/// 否则会出现「右边写着有版本可更新、点进去弹已是最新版本」这种自相矛盾。
+/// 设备当前版本只认 BLE `0x03 GET_SW_VER`（连接后回填），未连接时必然为空 → 显示 `--`。
+String _firmwareUpdateText(BuildContext context, DeviceItem device) {
+  final l10n = AppL10n.of(context);
+  // 已连接时优先用当前会话实读的那份：详情接口那份可能是上一次连接留下的
+  final live = BleController.instance.sessionMatchesSerial(
+        device.serialNumber,
+        screenCode: device.screenType.code,
+      )
+      ? (BleController.instance.info?.firmwareVersion ?? '')
+      : '';
+  switch (evaluateFirmwareUpdate(device, currentVersion: live)) {
+    case FirmwareUpdateVerdict.update:
+      return l10n.devFirmwareUpdateAvailable;
+    case FirmwareUpdateVerdict.latest:
+    case FirmwareUpdateVerdict.invalid:
+      // 包缺号/缺地址/不是 .bin 时对用户也说「已是最新版本」，点进去才如实说明原因
+      return l10n.devFirmwareUpToDate;
+    case FirmwareUpdateVerdict.unknown:
+      return '--';
+  }
+}
+
 /// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
 ///
 /// 对照微信小程序 `photo-album/subpackages/device/detail`：摘要卡 + 顶部操作栏（投屏 / 连接·断开）+
@@ -277,7 +303,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
         ),
       ),
     );
-    state.refreshAlbum();
+    // 2026-08-17：图库列表接口已下线，投屏后只需重拉投屏记录。
     state.refreshCastRecords();
   }
 }
@@ -584,13 +610,11 @@ class DeviceDetailsBody extends StatelessWidget {
                 iconAsset: 'assets/images/device-detail-icon04.png',
                 fallbackIcon: Icons.system_update_alt_rounded,
                 label: AppL10n.of(context).devOtaUpgrade,
-                value: device.hasFirmwareUpdate
-                    ? AppL10n.of(
-                        context,
-                      ).devFirmwareNewVersion(device.newVersionNo)
-                    : (device.firmwareVersion.isEmpty
-                          ? '-'
-                          : device.firmwareVersion),
+                // 2026-08-12（两端同改）：右侧不再显示版本号本身，而是**版本比对结论**。
+                // `newVersionNo`(云端最新) 与 `firmwareVersion`(设备当前) 一个数字摆在这儿，
+                // 用户无从判断该不该升级；读不到设备当前版本时给 `--`，与本页设备ID、
+                // 最大照片数量同一套占位约定，绝不拿「已是最新」骗他不去升级。
+                value: _firmwareUpdateText(context, device),
                 showChevron: true,
                 onTap: onOtaUpgrade,
               ),

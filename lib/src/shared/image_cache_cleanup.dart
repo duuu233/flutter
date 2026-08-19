@@ -7,7 +7,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 ///
 /// ## 为什么是隐私问题、而不只是省空间
 /// 退出登录 / 注销 / 登录态失效这三条路径原来只清了**内存里的业务列表**
-/// （`_devices` / `_albumPhotos` / `_castRecords`），但用户的照片本体留在两层缓存里：
+/// （`_devices` / `_castRecords`），但用户的照片本体留在两层缓存里：
 ///
 /// - **内存**：`PaintingBinding.imageCache` 里已解码的位图；
 /// - **磁盘**：`cached_network_image` 的缓存目录，默认 **30 天 / 200 个对象**。

@@ -18,6 +18,8 @@
 | `ios/Runner/Runner.entitlements` → `associated-domains` | `applinks:badmin.boltfox.cn` | 与 Universal Link 同域名 |
 | `WECHAT_UNIVERSAL_LINK`（Dart 默认值 / `--dart-define`） | `https://badmin.boltfox.cn/app/` | 与 entitlements、微信后台、AASA 四处逐字符一致 |
 | 构建命令 `--dart-define` | `WECHAT_APP_ID=wx4cf0c5f38a70d0bc` / `WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/` | 与上述配置一致 |
+| `ios/Runner/Info.plist` → `FlutterDeepLinkingEnabled` | `false` | 微信回跳由 fluwx 原生回调消费；开着会把回跳 URL 当路由名推给 Flutter（`Route not found`），见 `WECHAT_LOGIN_SETUP.md` 9.5 |
+| `ios/Runner/SceneDelegate.swift` → `scene:openURLContexts:` | 已覆写并转发到 app delegate 链 | fluwx 没实现该 scene 方法且被引擎的 app 兜底跳过；删掉它 = URL Scheme 回跳再次丢失 |
 
 AppID 于 2026-08-05 由作废的 `wx5bc2000b3207f370` 更正为 `wx4cf0c5f38a70d0bc`：Android 与 iOS、
 debug 与 release 必须是同一个值（Dart 默认值已同步，不传 `--dart-define` 也一致）。旧 AppID 打出的
@@ -121,12 +123,18 @@ flutter build ipa --release --export-method app-store \
    - 投屏预览常驻编辑层：平移、缩放、旋转、横竖取景与最终设备分辨率导出；
    - BLE 扫描 → 连接 → 投屏 → OTA（重点回归本次的 OTA 提速与 ACK 事件驱动改动）。
    - 如有 Android 10/11 旧设备，验证首次扫描会弹**定位授权**且能搜到设备（本次修复项）。
-4. iOS 真机确认微信回调经 Scene 生命周期可达。当前 `fluwx 6.0.0`（pod `fluwx 2.0.5`）的
-   `FluwxPlugin` 已同时实现 `application:continueUserActivity:restorationHandler:` 与
-   `scene:continueUserActivity:`，`FlutterSceneDelegate` 会转发，正常不需要动原生代码。
+4. iOS 真机确认微信回调经 Scene 生命周期可达。两条回跳路径的现状（2026-08-11 核对
+   `fluwx 6.0.0` / pod `fluwx 2.0.5` 与引擎源码）：
+   - **Universal Link**：`FluwxPlugin` 实现了 `scene:continueUserActivity:`，
+     `FlutterSceneDelegate` 会转发，不需要动原生代码；
+   - **URL Scheme**（UL 不可用时微信的降级路径）：fluwx **没有**实现
+     `scene:openURLContexts:`，且引擎的 app 兜底会跳过它 —— 已在
+     `ios/Runner/SceneDelegate.swift` 手工转发，配合 `FlutterDeepLinkingEnabled=false`，
+     详见 `../integration/WECHAT_LOGIN_SETUP.md` 9.5。**这两处不要删**。
    若回调仍丢失，先按 `../integration/WECHAT_LOGIN_SETUP.md` 9.4 排 AASA（**改完 AASA 必须
-   删 App 重装**，系统只在安装时抓一次），再考虑回退经典生命周期（删 Info.plist 的
-   `UIApplicationSceneManifest` 段 + `SceneDelegate.swift`）。
+   删 App 重装**，系统只在安装时抓一次）；最后才考虑回退经典生命周期（删 Info.plist 的
+   `UIApplicationSceneManifest` 段 + `SceneDelegate.swift`——注意那会连同上面的转发一起删掉，
+   回退后 URL Scheme 回跳改由 `AppDelegate` 的 `application:openURL:options:` 天然承接）。
 5. 商店素材：Android 自适应图标为**白底**（`ic_launcher_background.xml` = `#FFFFFF`）+ inset
    前景，对齐 iOS「白底橙标」。⚠️ 不要改回品牌橙底——前景 PNG 的白色星形/十字缝是透明的，
    橙底会把它吃掉、桌面呈现一整块橙色 LOGO 消失（2026-07 已修，见

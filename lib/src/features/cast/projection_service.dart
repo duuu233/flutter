@@ -27,6 +27,7 @@ import '../../device/device_interaction_trace.dart';
 import '../../network/boltfox_api.dart';
 import '../../network/dithering_api.dart';
 import '../../shared/l10n/app_l10n.dart';
+import 'smooth_progress.dart';
 
 /// 投屏进度回调载荷。语义完全对齐小程序 `result.js`（进度页三段式：转码→处理→传输）。
 class CastProgress {
@@ -304,13 +305,19 @@ class ServerImageProjectionService {
           title: _l10n?.castStageTransferring ?? CastStage.transferring,
         );
 
-        // 进度上报节流：BLE 每收到一个 ACK 就会回调一次，一张图上千个包 → 上千次 setState。
-        // 高频重建会反过来抢占主 isolate、拖慢图传本身。这里限制页面最多约 8 次/秒更新：
-        // 百分比没变、或距上次上报不足 120ms 就跳过；100% 必发（保证进度条能走到头）。
-        // 对齐小程序 result.js:517-533 的同款节流。UI 侧有 250ms 补间动画，跳帧也不会显得卡。
-        var lastPercent = -1;
-        var lastEmitMs = 0;
-        final stopwatch = Stopwatch()..start();
+        // 进度渲染（2026-08-14 与小程序同步改为连续平滑）：
+        // BLE 的真实进度天生跳变——固件每 10 包才回一次 0x23，窗口 50 包时一次应答推进几十包，
+        // 直接透传就是「冲一段→停 0.2s→再冲一段」。这里只把**真实目标**喂给 [SmoothProgress]，
+        // 由它按 33ms 节拍连续逼近，并只在取整值变化时 emit——整场 ≤101 次，
+        // 比原来「最多 8 次/秒」的节流还少，既不抢主 isolate 也不再有段间停顿。
+        // 详见 utils/smooth-progress 的四版演进注释（Dart 版同源）。
+        final smooth = SmoothProgress(
+          onRender: (value) => emit(
+            value / 100,
+            _l10n?.castTransferringImage(i + 1, total) ??
+                '正在投第 ${i + 1}/$total 张…',
+          ),
+        );
 
         // 本张设备事务：只有 BLE 图传失败才回滚删掉刚传到设备的图，再向外抛出让整单判失败。
         try {
@@ -329,25 +336,19 @@ class ServerImageProjectionService {
               manageConnection: false,
               shouldAbort: shouldAbort,
               onProgress: (done, totalPackets, phase, {stuckAt, retries}) {
-                // 百分比 = 本张的分包进度（不是整单进度），对齐小程序 result.js:517。
+                // 百分比 = 本张的分包进度（不是整单进度），对齐小程序 result.js。
+                // done 来自累计 ACK **已确认**的包数，不是发出去的包数——所以平滑器
+                // 拿到的永远是真实发生过的进度，不存在「失败当成功」。
                 final frac = totalPackets == 0 ? 0.0 : done / totalPackets;
-                final percent = (frac * 100).floor().clamp(0, 100);
-                final nowMs = stopwatch.elapsedMilliseconds;
-                if (percent != 100 &&
-                    (percent == lastPercent || nowMs - lastEmitMs < 120)) {
-                  return;
-                }
-                lastPercent = percent;
-                lastEmitMs = nowMs;
-                emit(
-                  frac,
-                  _l10n?.castTransferringImage(i + 1, total) ??
-                      '正在投第 ${i + 1}/$total 张…',
-                );
+                smooth.setTarget((frac * 100).floor());
               },
             ),
           );
         } catch (error) {
+          // 进度条就地冻结：失败时最后一段增量往往还没铺完，不冻结会在报错后继续往前爬，
+          // 看着像「还在传/已传成功」。freeze 连前瞻领先的部分一起钳回真实目标。
+          smooth.freeze();
+          smooth.dispose();
           await _rollbackDeviceImage(client, index);
           rethrow;
         }
@@ -386,7 +387,10 @@ class ServerImageProjectionService {
         firstSuccessfulIndex ??= index; // 本批第一张成功写入的真实槽位，收尾刷屏用它
         usedIndexes = [...usedIndexes, index];
         uploaded++;
-        // 本张完成：百分比打满、张数计到已投成功数（对齐小程序 result.js:583）。
+        // 本张完成：停掉平滑器（100% 由下面的 emit 直接给——**只有真实完成才画得出 100%**，
+        // 平滑器自身的前瞻永远被 99 封顶，见 SmoothProgress._upperBound）。
+        smooth.dispose();
+        // 百分比打满、张数计到已投成功数（对齐小程序 result.js）。
         emit(
           1,
           _l10n?.castTransferredImages(uploaded, total) ??

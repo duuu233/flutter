@@ -336,6 +336,113 @@ class BoltFoxApi {
     return _http.postJson('/Client/User/userOff');
   }
 
+  // ==================== 星币（Order）====================
+  //
+  // 支付体系（购买套餐、订单、记录）目前**只有小程序端**有页面，APP 侧的 IAP 待接；
+  // 这里只补 AI 模块用得到的两个只读/校验接口（2026-08-12 与小程序对齐）。
+
+  /// 账户概览：`availableToken` / `totalToken` / `consumeToken`（后端**都是 String**）。
+  /// AI 侧只取可用余额展示，扣费一律在服务端发生（端上不得自减，见 [AiToken]）。
+  static Future<dynamic> getUserAccount() {
+    return _http.getJson('/Client/Order/getUserAccount');
+  }
+
+  /// 购买 / 消费记录（分页）。`inOutType` 1=购买 2=消费。
+  /// 判停优先出参的 `pageCount`（后端可能无视 pageSize 按自己的默认值分页）。
+  static Future<dynamic> getUserAccountTrade({
+    required int inOutType,
+    int pageIndex = 1,
+    int pageSize = 20,
+  }) {
+    return _http.getJson(
+      '/Client/Order/getUserAccountTrade',
+      query: {
+        'inOutType': inOutType,
+        'pageIndex': pageIndex,
+        'pageSize': pageSize,
+      },
+    );
+  }
+
+  /// 星币消耗规则表（服务类型 / 消耗 / 说明）。`retData` 是**裸数组**，不是分页壳。
+  /// 顺序按后端权重排好，端上原样渲染，见 `StarCoinApi.fetchRules`。
+  static Future<dynamic> getAiConfigList() {
+    return _http.getJson('/Client/Order/getAiConfigList');
+  }
+
+  /// 能否发起一次 AI 对话（星币够不够）。
+  ///
+  /// ⚠️ **两种答复的形状不对称**（2026-08-12 真机实测）：
+  /// - 可以发：`retCode=200`，`retData=true`；
+  /// - 不能发：`retCode=403` + `retMsg="token余额不足，需要最低余额：30.0 token"`、`retData=null`
+  ///   —— 也就是说否定答复是从 [ApiException] 那条**失败**路径出来的。
+  ///
+  /// 只认 `retData==true` 的写法会把 403 当成「接口挂了」而放行，余额为 0 的用户照样能发。
+  /// 判定与兜底收在 [AiToken.canDialogue]，页面不要直接调这个方法。
+  static Future<dynamic> chkAiDialogue() {
+    return _http.getJson('/Client/Order/chkAiDialogue');
+  }
+
+  // ==================== 官方图库（Product）====================
+  //
+  // 2026-08-12 与小程序对齐（小程序 `utils/gallery-api.js`）。归一与兜底收在
+  // `features/gallery/official/official_gallery_api.dart`，页面不直接调这里。
+
+  /// 公共图库分类列表 → `ClientImgCategoryApiOut[]`（`categoryId` / `categoryName`）。
+  /// ⚠️ 后端**没有「全部」**，端上自己补一项（图片列表接口的 `categoryId` 可选，不传即全部）。
+  static Future<dynamic> getImgCategory() {
+    return _http.getJson('/Client/Product/getImgCategory');
+  }
+
+  /// 公共图库列表（分页）。出参 `BasePageOutput<ClientProductImgApiOut>`：
+  /// `productImgId` / `title` / `img` / `imgThumb`。
+  /// ⚠️ **没有图片宽高，也没有收藏态**，两处兜底见 official_gallery_api.dart 文件头。
+  static Future<dynamic> getProductImgList({
+    int pageIndex = 1,
+    int pageSize = 20,
+    int? categoryId,
+    String? keyword,
+  }) {
+    return _http.getJson(
+      '/Client/Product/getProductImgList',
+      query: {
+        'pageIndex': pageIndex,
+        'pageSize': pageSize,
+        if (categoryId != null && categoryId > 0) 'categoryId': categoryId,
+        if (keyword != null && keyword.isNotEmpty) 'keyword': keyword,
+      },
+    );
+  }
+
+  /// 公共图库详情（`id` 传 productImgId）。出参含 `content`(简介，**不叫 desc**)、
+  /// `isAlreadyCollected`(**0/1，不是布尔**)、`productSizeList`。
+  static Future<dynamic> getProductImgDetail(int productImgId) {
+    return _http.getJson(
+      '/Client/Product/getProductImgDetail',
+      query: {'id': productImgId},
+    );
+  }
+
+  /// 图片收藏 / 取消收藏（同一个接口来回切，入参只有 `productImgId`）。
+  /// ⚠️ 出参布尔的语义未定（「操作成功」还是「切换后的态」），端上一律按取反推新状态。
+  static Future<dynamic> setImgCollected(int productImgId) {
+    return _http.postJson(
+      '/Client/Product/setImgCollected',
+      body: {'productImgId': productImgId},
+    );
+  }
+
+  /// 用户图库收藏列表（分页）。项与图库列表同结构，按定义都是已收藏。
+  static Future<dynamic> getProductImgCollectionList({
+    int pageIndex = 1,
+    int pageSize = 20,
+  }) {
+    return _http.getJson(
+      '/Client/Product/getProductImgCollectionList',
+      query: {'pageIndex': pageIndex, 'pageSize': pageSize},
+    );
+  }
+
   // ==================== 设备接口（UserProduct）====================
 
   /// 添加 / 绑定用户设备。
@@ -426,22 +533,12 @@ class BoltFoxApi {
     );
   }
 
-  /// 用户产品图片列表（我的图库）。[params] 支持分页与 userProductId 过滤。
-  static Future<dynamic> getUserProductImgList([Map<String, dynamic>? params]) {
-    return _http.getJson(
-      '/Client/UserProduct/getUserProductImgList',
-      query: params,
-    );
-  }
-
-  /// 删除产品图片，支持多选，id=uProductImgId。
-  /// 后端约定的字段名是 `idList`（不是 `ids`），与小程序 `api.js` 对齐。
-  static Future<dynamic> delUserProductImg(List<Object> ids) {
-    return _http.postJson(
-      '/Client/UserProduct/delUserProductImg',
-      body: {'idList': ids},
-    );
-  }
+  // 2026-08-17 删除：`getUserProductImgList` / `delUserProductImg`（「我的图库」列表与删除，
+  // 后端接口仍在）。端上已经没有任何页面渲染或读取图库列表——「我的相册」铺的是**投屏成功记录**，
+  // 删除只认记录自己的 `imgIndex`（2026-08-10 起），再次投屏直接用记录自己的 `img`
+  // （2026-07-22 起上传的就是原图）。端上删除 = 设备槽位(0x12) + `delUserProductImgRecord`，
+  // 图库照片的清理归后端。要恢复得先想清楚谁消费它，别只为「以前有」而接回来。
+  // 对齐小程序 2026-08-17 同名清理（`utils/api.js`）。
 
   /// 产品投屏记录列表（成功/失败投屏）。[params] 支持分页、keyword、userProductId。
   static Future<dynamic> getUserProductImgRecordList([

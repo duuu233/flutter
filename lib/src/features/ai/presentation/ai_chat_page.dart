@@ -13,12 +13,14 @@ import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/device_picker_sheet.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../ai_i18n.dart';
 import '../ai_image_compress.dart';
+import '../ai_last_session.dart';
 import '../ai_token.dart';
 import 'ai_sessions_page.dart';
 import 'ai_visuals.dart';
@@ -200,8 +202,10 @@ const Duration _kStickThrottle = Duration(milliseconds: 80);
 /// 距底多少逻辑像素以内算「还贴着底」。用户主动往上翻看历史时就别再把他拽回来了。
 const double _kStickPx = 60;
 
-/// 图文多模态一次最多带 4 张图（文档 v1.0.3；超出服务端回 20012）。
-const int _kMaxImages = 4;
+/// 图文多模态一次最多带几张图。2026-08-12 产品由 4 张放宽到 5 张
+///（BoltStar 文档 v1.0.3/v1.0.4 §二 image_urls 写的仍是 4 张，尚未同步；超限服务端回 20012）。
+/// ⚠️ 改这个数要连着改 [AppL10n.aiMaxImages] 与 `ai_i18n.dart` 的 error.20012 文案（都写着张数）。
+const int _kMaxImages = 5;
 
 /// 会话标题截断长度：v1.0.4 §二「首条用户消息前 20 字自动填充，默认『新对话』」。
 /// 本地同步标题时按同一规则截，避免列表页重拉后标题突然变短、两处对不上。
@@ -409,7 +413,7 @@ class _PendingImage {
   bool uploading = true;
 }
 
-class _AiChatPageState extends State<AiChatPage> {
+class _AiChatPageState extends State<AiChatPage> with RouteAware {
   late final BoltStarAiApi _api =
       widget.api ??
       BoltStarAiApi(userId: BoltStarAiApi.userIdOf(widget.state.currentUser.id));
@@ -422,7 +426,10 @@ class _AiChatPageState extends State<AiChatPage> {
 
   String _sessionId = '';
   String _sessionTitle = '';
-  int _tokenBalance = AiToken.defaultBalance;
+  /// 星币余额。null = 未知（接口挂了/未登录），页面显示 `--`，**绝不用 0 兜底**
+  /// （见 [AiToken]）。本页只展示与刷新，不扣数。
+  // 同会话列表页：先显示登录带回的值，再异步刷权威值（见 AiToken.cachedBalance）。
+  int? _tokenBalance = AiToken.cachedBalance();
 
   bool _historyLoading = false;
 
@@ -489,6 +496,7 @@ class _AiChatPageState extends State<AiChatPage> {
     _scroll.addListener(_onScroll);
     _sessionId = widget.sessionId ?? '';
     _sessionTitle = widget.sessionTitle ?? '';
+    _rememberAsLastAiPage();
     _loadTokenBalance();
     // 带 sessionId 进来（会话列表 / 深链）才载入那条会话；否则停在「新对话」空态，
     // **不建会话**（建会话的唯一时机见 _createSession 注释）。
@@ -506,8 +514,32 @@ class _AiChatPageState extends State<AiChatPage> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // 聊天页可能叠着好几个（每从会话列表点开一条就多一页）：谁变可见谁把「上次停在哪」
+    // 抢回来（[didPopNext]），所以必须订阅路由事件。
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  /// 上层页面（会话列表 / 投屏预览 …）pop 回来，本页重新可见。
+  @override
+  void didPopNext() {
+    _rememberAsLastAiPage();
+  }
+
+  @override
   void dispose() {
     _livePages.remove(this);
+    // 「用户离开了 AI」。⚠️ 只有**栈里没有别的聊天页**时才记：否则本页是被退回下层
+    // 聊天页的那一页，用户眼前的是下面那页（那页的 didPopNext 会把记忆抢回去，
+    // 但两者的触发顺序不该赌）。
+    if (_livePages.isEmpty) {
+      _rememberAsLastAiPage();
+    }
+    appRouteObserver.unsubscribe(this);
     _stopGenerate(silent: true);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
@@ -515,10 +547,16 @@ class _AiChatPageState extends State<AiChatPage> {
     super.dispose();
   }
 
+  /// 记下「离开 AI 时停在哪一页」：有会话就回会话、空态就回空态（见 [AiLastSession]）。
+  void _rememberAsLastAiPage() {
+    AiLastSession.remember(sessionId: _sessionId, title: _sessionTitle);
+  }
+
   // ── 会话 ─────────────────────────────────────────────────
 
+  /// 从后端取权威余额（扣费在服务端发生，端上只能重取）。静默失败：读不到就保持当前值。
   Future<void> _loadTokenBalance() async {
-    final value = await AiToken.readBalance();
+    final value = await AiToken.fetchBalance();
     if (mounted && value != _tokenBalance) {
       setState(() => _tokenBalance = value);
     }
@@ -557,6 +595,8 @@ class _AiChatPageState extends State<AiChatPage> {
           _sessionTitle = serverTitle;
         }
       });
+      // 会话是刚刚才建出来的：记忆要跟着走，否则「离开→再点 AI」会回到默认页
+      _rememberAsLastAiPage();
     } catch (error) {
       if (!mounted) {
         return;
@@ -579,6 +619,7 @@ class _AiChatPageState extends State<AiChatPage> {
       _historyLoading = true;
       _chatReady = false; // 载入期间消息列表保持隐形，等定位到底部再显形（需求 5.1）
     });
+    _rememberAsLastAiPage();
     try {
       final history = await _api.getHistory(sessionId, pageSize: 100);
       if (!mounted) {
@@ -691,6 +732,10 @@ class _AiChatPageState extends State<AiChatPage> {
       icon: Icons.devices_other_rounded,
       confirmLabel: l10n.aiGoBind,
       cancelLabel: l10n.aiBack,
+      // ⚠️ 这个遮罩**不做「点外面关闭」**（2026-08-12 同步小程序，与其它两个自绘弹窗不同）：
+      // 它是「去绑定 / 返回」的二选一，点空白处溜走只会把用户留在一个投不了屏的页面上，
+      // 还以为是自己点错了。
+      barrierDismissible: false,
     );
     if (!mounted) {
       return;
@@ -802,6 +847,8 @@ class _AiChatPageState extends State<AiChatPage> {
       // 漏了这一下招呼语就一直透明着，看着像白屏
       _chatReady = true;
     });
+    // 退回空态也要记：否则用户从会话退回默认页再离开，下次点 AI 又被带回那条旧会话
+    _rememberAsLastAiPage();
   }
 
   /// 本页打开着的会话在别处（会话列表页）被删了：退回空态，免得用户继续往已删会话发消息。
@@ -884,6 +931,13 @@ class _AiChatPageState extends State<AiChatPage> {
         for (final item in _pending)
           if (item.url.isNotEmpty) _AiImage(url: item.url, pad: item.pad),
       ];
+      // 星币校验排在**建会话之前**（2026-08-12 同步小程序需求）：确定发得出去，才值得去占一条会话。
+      // 反过来的话，余额见底的用户每点一次发送就在服务端多留一条空的「新对话」——
+      // 每个用户上限 20 条，几次就占满了，还得自己去列表里删。
+      // 拦下时草稿与待发图原样保留（这里还没清），下面 [_sendChat] 就不必再查一遍。
+      if (!await _guardAiDialogue() || !mounted) {
+        return;
+      }
       // 先把会话建出来，**再清输入框**。顺序不能反：建会话可能失败（网络异常 / 20013 会话已达上限），
       // 先清的话用户打的字和选的图就白没了 —— 而「首次发送才建会话」之后，每轮新对话的第一条都走这。
       if (_sessionId.isEmpty) {
@@ -897,7 +951,7 @@ class _AiChatPageState extends State<AiChatPage> {
         _pending.clear();
       });
       // await：让 _submitting 一直持有到请求真正发出（_sendChat 内 _sending 接棒），中间不留空窗
-      await _sendChat(text, images: images);
+      await _sendChat(text, images: images, dialogueChecked: true);
     });
   }
 
@@ -907,13 +961,21 @@ class _AiChatPageState extends State<AiChatPage> {
     String message, {
     String? styleKey,
     List<_AiImage> images = const [],
+    bool dialogueChecked = false,
   }) async {
     if (_sending || _banned) {
       return;
     }
-    if (!await _ensureAiServiceConsent(sendAttempt: true) ||
-        !mounted ||
-        !_guardToken()) {
+    if (!await _ensureAiServiceConsent(sendAttempt: true) || !mounted) {
+      return;
+    }
+    // 服务端裁决「星币够不够发这一轮」。放在任何 setState **之前**：不够时用户气泡一条都不该上屏，
+    // 否则界面上会闪出一句发不出去的话再被撤掉 —— 而余额见底的用户**每次**发送都会走到这一步。
+    // [dialogueChecked]：[_onSendTap] 已经在建会话之前查过了，别重复打一次接口。
+    if (!dialogueChecked && !await _guardAiDialogue()) {
+      return;
+    }
+    if (!mounted) {
       return;
     }
     final newChatTitle = AppL10n.of(context).aiNewChat;
@@ -1034,7 +1096,9 @@ class _AiChatPageState extends State<AiChatPage> {
       if (!mounted) {
         return;
       }
-      _spendToken();
+      // 一次 AI 调用完成后对齐余额。⚠️ **端上不扣数**：swagger 里没有「消费星币」的 Client
+      // 端点，扣费在服务端发生（消费记录见 getUserAccountTrade inOutType=2），端上自减就是双重记账。
+      unawaited(_loadTokenBalance());
       _finishStream(holder.id, reply);
       return;
     } catch (error) {
@@ -1118,6 +1182,11 @@ class _AiChatPageState extends State<AiChatPage> {
       return;
     }
     await _guardedSend(() async {
+      // 重试也是一次真实调用，同样要过服务端校验（上一轮失败到现在，余额可能已经不够了）。
+      // 失败卡片原样留着：这里什么都还没删，用户买完星币回来还能接着点重试。
+      if (!await _guardAiDialogue() || !mounted) {
+        return;
+      }
       _retryByMessage.remove(messageId);
       setState(() => _messages.removeWhere((item) => item.id == messageId));
       await _dispatchChat(retry.message, retry.styleKey, retry.urls);
@@ -1477,29 +1546,56 @@ class _AiChatPageState extends State<AiChatPage> {
     });
   }
 
-  /// Token 权限控制（文档 §5.5）：不足时弹窗引导购买并拦截 AI 调用。
-  /// [AiToken.limitEnabled] = false 时整条限制屏蔽、一律放行（见 [AiToken] 的说明）。
-  bool _guardToken() {
-    if (!AiToken.limitEnabled || _tokenBalance > 0) {
+  /// 星币权限控制（文档 §5.5）：发起对话前的**服务端**校验
+  /// （2026-08-12 `GET /Client/Order/chkAiDialogue`，见 [AiToken.canDialogue]）。
+  ///
+  /// 这是**唯一**的闸。此前那道 `_guardToken()`（端上按本地假余额比大小 + `limitEnabled=false`）
+  /// 已随 [AiToken] 一并删除：它既不知道一轮对话扣多少星币，开关又一直关着，余额为 0 也照发
+  /// —— 留着只会和服务端口径打架。
+  ///
+  /// 校验接口本身失败一律放行（见 [AiToken.canDialogue]），所以这里只处理「明确不允许」。
+  /// 顺带刷一次余额：会话列表页那颗胶囊的数字要与「不够了」这个结论对得上。
+  Future<bool> _guardAiDialogue() async {
+    final verdict = await AiToken.canDialogue();
+    if (verdict.allowed) {
       return true;
     }
+    if (!mounted) {
+      return false;
+    }
+    unawaited(_loadTokenBalance());
+    _showTokenShortDialog(verdict);
+    return false;
+  }
+
+  /// 星币不足弹窗。用全站统一的 [showAppConfirmDialog]（与删除确认等同款），不另造样式。
+  ///
+  /// 文案来源（2026-08-12 真机）：后端原话是「token余额不足，需要最低余额：30.0 token」
+  /// ——「token」是内部叫法（对外一律「星币」）、「30.0」是浮点、整句还带着接口味，
+  /// 直接甩给用户不合适。所以：**数字用后端的，话是我们自己说的**；抠不到数字才退回
+  /// 后端原话（把 token 换成星币）—— 403 也可能是余额之外的别的理由，
+  /// 那时硬套「星币不足」反而是错的。
+  ///
+  /// 🔶 与小程序的差异：小程序的确认键是「去购买」，直达星币管理页；**APP 侧还没有购买页**
+  /// （支付体系目前只有小程序端有），所以这里只有一颗「知道了」。IAP 接上后补跳转即可。
+  void _showTokenShortDialog(AiDialogueVerdict verdict) {
     final l10n = AppL10n.of(context);
+    final requiredText = verdict.requiredText;
+    final fallback = verdict.message.replaceAll(
+      RegExp('token', caseSensitive: false),
+      l10n.aiTokenUnit,
+    );
+    final message = requiredText.isNotEmpty
+        ? l10n.aiTokenShortMessage(requiredText)
+        : (fallback.isNotEmpty ? fallback : l10n.aiTokenEmptyMessage);
     showAppConfirmDialog(
       context,
       title: l10n.aiTokenEmptyTitle,
-      message: l10n.aiTokenEmptyMessage,
+      message: message,
       icon: Icons.toll_rounded,
       showCancel: false,
       confirmLabel: l10n.otaKnow,
     );
-    return false;
-  }
-
-  Future<void> _spendToken() async {
-    final balance = await AiToken.spend(_tokenBalance);
-    if (mounted && balance != _tokenBalance) {
-      setState(() => _tokenBalance = balance);
-    }
   }
 
   // ── 工具面板 ──────────────────────────────────────────────
@@ -1871,7 +1967,11 @@ class _AiChatPageState extends State<AiChatPage> {
     );
   }
 
-  /// 未连接时的设备选择弹层（对齐小程序 devicePicker）。
+  /// 未连接时的设备选择弹层（与官方图库详情页共用 [showDevicePickerSheet]）。
+  ///
+  /// 2026-08-13 起**不默认选中、点一行只选中**，按下弹层里的「连接并投屏」才返回设备——
+  /// 投屏是往设备写图且不可撤销，端上替用户选好、他顺手一点就投到了别的设备上。
+  /// 弹层与本页此前那份自绘列表已整块删除（留着既不生效、又会误导下一个人）。
   Future<DeviceItem?> _pickDevice() async {
     final l10n = AppL10n.of(context);
     if (widget.state.devices.isEmpty) {
@@ -1887,187 +1987,7 @@ class _AiChatPageState extends State<AiChatPage> {
       AppToast.show(context, l10n.aiNoBoundDevice);
       return null;
     }
-    final selectedId = widget.state.selectedDevice.id;
-    return showModalBottomSheet<DeviceItem>(
-      context: context,
-      backgroundColor: Colors.transparent,
-      barrierColor: const Color(0x6B1E1D1B),
-      builder: (sheetContext) => _buildDeviceSheet(
-        sheetContext,
-        devices: devices,
-        selectedId: selectedId,
-      ),
-    );
-  }
-
-  /// 投屏设备弹层（对齐小程序 `.device-sheet`）：点一项即选中并直接开投，没有二次确认，
-  /// 所以副标题要把「选完自动连接」讲清楚。单选圈只标当前活动设备。
-  Widget _buildDeviceSheet(
-    BuildContext sheetContext, {
-    required List<DeviceItem> devices,
-    required String selectedId,
-  }) {
-    final l10n = AppL10n.of(context);
-    final bottom = MediaQuery.of(sheetContext).padding.bottom;
-    return Container(
-      width: double.infinity,
-      padding: EdgeInsets.fromLTRB(24, 16, 24, 13 + bottom),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFAF8F4).withValues(alpha: 0.98),
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(21)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1F322B22),
-            blurRadius: 20,
-            offset: Offset(0, -7),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            l10n.aiPickCastDevice,
-            style: const TextStyle(
-              color: Color(0xFF252525),
-              fontSize: 19,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 5),
-          Text(
-            l10n.aiPickCastDeviceDesc,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF8D8984), fontSize: 12.5),
-          ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(0, 12.5, 0, 10),
-            child: Divider(height: 1, thickness: 1, color: Color(0xFFDFDBD5)),
-          ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 280),
-            child: ListView.builder(
-              shrinkWrap: true,
-              itemCount: devices.length,
-              itemBuilder: (context, index) => _buildDeviceItem(
-                sheetContext,
-                device: devices[index],
-                index: index,
-                selected: devices[index].id == selectedId,
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => Navigator.of(sheetContext).pop(),
-            child: Container(
-              height: 42,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFFEEEAE5),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                l10n.cancel,
-                style: const TextStyle(
-                  color: Color(0xFF272727),
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildDeviceItem(
-    BuildContext sheetContext, {
-    required DeviceItem device,
-    required int index,
-    required bool selected,
-  }) {
-    // 三档配色轮换（小程序 `.device-placeholder--0/1/2`）：列表里相邻两台不会撞色
-    const marks = <List<Color>>[
-      [Color(0xFFFF6E28), Color(0xFFFFF0E9)],
-      [Color(0xFF2DAD6F), Color(0xFFEAF8F0)],
-      [Color(0xFF5794EF), Color(0xFFEAF2FF)],
-    ];
-    final mark = marks[index % marks.length];
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () => Navigator.of(sheetContext).pop(device),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 60),
-          padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected
-                ? const Color(0xFFFFF8F4)
-                : Colors.white.withValues(alpha: 0.88),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected
-                  ? const Color(0xFFDF7654)
-                  : Colors.white.withValues(alpha: 0.92),
-            ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: mark[1],
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Text(
-                  // 视觉稿里就是一个「屏」字占位（设备缩略图后端未提供）
-                  '屏',
-                  style: TextStyle(color: mark[0], fontSize: 11.5),
-                ),
-              ),
-              const SizedBox(width: 11),
-              Expanded(
-                child: Text(
-                  device.name,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF2C2C2C),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 11),
-              Container(
-                width: 21,
-                height: 21,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: selected ? const Color(0xFFE87C5A) : Colors.transparent,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected
-                        ? const Color(0xFFE87C5A)
-                        : const Color(0xFFC5C2BE),
-                    width: 1.5,
-                  ),
-                ),
-                child: selected
-                    ? const Icon(Icons.check_rounded, size: 13, color: Colors.white)
-                    : null,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    return showDevicePickerSheet(context, devices: devices);
   }
 
   // ── 滚动 ─────────────────────────────────────────────────
@@ -2402,17 +2322,32 @@ class _AiChatPageState extends State<AiChatPage> {
     if (message.failed) {
       return _buildFailureCard(message);
     }
-    // 加载态：没有卡片底、就是一张会动的图（小程序 `.bubble--loading` 把底和投影都去掉了）。
-    // 图丢了就退回三个跳点 —— 加载态一旦变成一片空白，用户会以为界面卡死。
+    // 加载态：外层不套卡片底（小程序 `.bubble--loading` 把底和投影都去掉了），
+    // 胶囊与阴影由这里自己画。
+    //
+    // 2026-08-12（同步小程序需求 5）：原来整块是一张**静态图**
+    // `assets/images/ai-loading-bubble.png`（白胶囊 + 三个深浅不同的点），现在改成
+    // 「胶囊照原图还原 + 三个点跑动画」。几何取自原图：画布 213×151、可见胶囊 150×88（两端全圆）、
+    // 填充 #FBF9F4、暖褐色往下糊的阴影；按原来的 width:71 折算，胶囊约 50×29。
+    // 点复用页面里本来就有的 [_TypingDots]（此前只在图加载失败时兜底用），
+    // 颜色改成品牌橙以贴近原图。
     if (message.loading) {
-      return Image.asset(
-        'assets/images/ai-loading-bubble.png',
-        width: 71,
-        fit: BoxFit.contain,
-        errorBuilder: (context, error, stackTrace) => const Padding(
-          padding: EdgeInsets.symmetric(vertical: 14),
-          child: _TypingDots(),
+      return Container(
+        width: 50,
+        height: 29,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFBF9F4),
+          borderRadius: BorderRadius.circular(999),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF402A15).withValues(alpha: 0.10),
+              blurRadius: 11,
+              offset: const Offset(0, 5),
+            ),
+          ],
         ),
+        child: const _TypingDots(color: Color(0xFFFF7A3D)),
       );
     }
     return GestureDetector(
@@ -3838,8 +3773,13 @@ class _AiBubbleImageState extends State<_AiBubbleImage> {
 }
 
 /// AI 回复占位的三点 loading。
+/// 三个点依次亮起的等待动画。两处在用：AI 回复的等待气泡（[_buildAiBubble] 的加载态，
+/// 2026-08-12 起由静态图改成它）、以及其它需要「正在处理」的小位置。
+/// [color] 默认灰点；等待气泡传品牌橙，与原来那张图上的点同色。
 class _TypingDots extends StatefulWidget {
-  const _TypingDots();
+  const _TypingDots({this.color = const Color(0xFF9AA1AB)});
+
+  final Color color;
 
   @override
   State<_TypingDots> createState() => _TypingDotsState();
@@ -3875,8 +3815,8 @@ class _TypingDotsState extends State<_TypingDots>
                 child: Container(
                   width: 6,
                   height: 6,
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF9AA1AB),
+                  decoration: BoxDecoration(
+                    color: widget.color,
                     shape: BoxShape.circle,
                   ),
                 ),

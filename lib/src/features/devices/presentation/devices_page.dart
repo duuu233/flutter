@@ -292,7 +292,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
         ),
       ),
     );
-    state.refreshAlbum();
+    // 2026-08-17：图库列表接口已下线，投屏后只需重拉投屏记录。
     state.refreshCastRecords();
   }
 

@@ -72,9 +72,15 @@ BoltStar 当前使用三套不同的远端服务：
 | 设备列表/详情 | `GET getUserProductList/getUserProductDetail` | 同名方法 |
 | 修改/删除设备 | `POST editUserProduct/delUserProduct` | 同名方法 |
 | 清空设备记录 | `POST clearUserProductImg` | `clearUserProductImg` |
-| 图库列表/删除 | `GET getUserProductImgList` / `POST delUserProductImg` | 同名方法 |
+| ~~图库列表/删除~~ | ~~`GET getUserProductImgList` / `POST delUserProductImg`~~ | **2026-08-17 端上删除**（后端接口仍在）。「我的相册」铺的是投屏成功记录，删除只认记录自己的 `imgIndex`、再次投屏直接用记录自己的 `img`；端上删除 = 设备槽位 `0x12` + `delUserProductImgRecord`，图库照片的清理归后端。勿再接回 |
 | 投屏记录列表/删除 | `GET getUserProductImgRecordList` / `POST delUserProductImgRecord` | 同名方法 |
 | 投屏记录新增/更新 | UserProduct 图片记录接口 | `ProjectionService` 成功/失败回写 |
+| 星币余额 | `GET /Client/Order/getUserAccount` | `getUserAccount` → `AiToken.fetchBalance` / `StarCoinApi.fetchAccount` |
+| 星币购买/消费记录 | `GET /Client/Order/getUserAccountTrade` | `getUserAccountTrade` → `StarCoinApi.fetchRecords` |
+| 星币消耗规则 | `GET /Client/Order/getAiConfigList` | `getAiConfigList` → `StarCoinApi.fetchRules`（`retData` 是**裸数组**，顺序原样保留） |
+| 官方图库分类/列表/详情 | `GET /Client/Product/{getImgCategory,getProductImgList,getProductImgDetail}` | 同名方法 → `OfficialGalleryApi` |
+| 图片收藏/取消、收藏列表 | `POST /Client/Product/setImgCollected`、`GET /Client/Product/getProductImgCollectionList` | 同上。⚠️ 收藏切换返回的布尔语义未定，端上按**取反当前态**推新状态 |
+| 能否发起 AI 对话 | `GET /Client/Order/chkAiDialogue` | `chkAiDialogue` → `AiToken.canDialogue` |
 
 设备扫描、连接、电量、轮播、刷屏、清空物理存储和 OTA 的核心动作是 BLE 端能力，不应在接口
 清单中伪装成后端接口。
@@ -106,9 +112,13 @@ BoltStar 当前使用三套不同的远端服务：
 - 非流式 Base URL：`https://boltstaat-agent-fwdomalzks.ap-southeast-1.fcapp.run`
 - 普通请求超时 15 秒；对话/图片增强 120 秒。
 - `user_id` 由 BoltFox 用户 ID 派生；未登录使用受控 demo ID。
+- **2026-08-12 起 `/chat` 还带 `usertoken`**（全小写）：值是登录接口下发的 `userToken`
+  （BoltFox 公共参数那一枚，**不是** `Authentication` 头里的 `jwtToken`），AI 网关拿它回
+  BoltFox 侧核对用户与扣费。名字或取值错了不会报错，只会静默变成「服务端认不出这个用户」。
 - 会话：新建、列表、删除。
 - 历史：读取、逐条删除。
-- 对话：`POST /chat`，支持最多 4 张公网图片 URL。
+- 对话：`POST /chat`，支持最多 **5** 张公网图片 URL（2026-08-12 由 4 张放宽；
+  ⚠️ BoltStar 文档 §二写的仍是 4 张，若服务端未同步放宽，第 5 张会被回 20012）。
 - 图片增强：`POST /image/enhance`。
 - 图片先压缩并通过 BoltFox `setFileUpload` 获得公网 URL，再提交 AI。
 - 文本、生成提示词和用户图片提交给阿里云百炼前，客户端必须确认当前 BoltFox 用户已同意
@@ -122,11 +132,27 @@ BoltStar 当前使用三套不同的远端服务：
 - 正式用户入口当前由 `kAiEntryEnabled=false` 屏蔽；调试暗门保留。
 - 语音输入仍是占位；下载只写应用缓存目录。
 
+### 星币（Order）
+
+支付体系（套餐、下单、支付、购买/消费记录）目前**只有小程序端有页面**，App 侧 IAP 未接，
+所以这里只接了 AI 模块用得到的两个：
+
+- `GET /Client/Order/getUserAccount` —— 取 `availableToken`（**String**，端上转数字）作 AI 侧余额展示。
+  取不到显示 `--`，**不用 0 兜底**；端上**不得**自减（没有「消费星币」的 Client 端点，扣费在服务端）。
+- `GET /Client/Order/chkAiDialogue` —— 发送前的唯一闸。
+  ⚠️ **两种答复不对称**：可以发＝`retCode 200` + `retData true`；
+  **不能发＝`retCode 403`** + `retMsg"token余额不足，需要最低余额：30.0 token"` + `retData null`，
+  也就是否定答复走的是 `ApiException` 那条**失败**路径 —— 只认 `retData==true` 会把它当成
+  「接口挂了」而放行。判定与兜底收在 `AiToken.canDialogue`：除 403 外的失败一律**放行**
+  （读不到判据就锁死 AI 是更糟的失败模式，`/chat` 侧服务端会再拒一次）。
+
 ## 7. 已知待确认
 
 - `getXTYUserToken` 的所有返回字段仍应以真机联调和最新 Swagger 为准。
 - 后端需要保证同一设备同一 `imgIndex` 的记录唯一性，避免旧记录幽灵指向已复用槽位。
 - AI 接口版本变化必须同时核对会话创建时机、错误码和图片消息结构。
+- `setImgCollected`（图库收藏，小程序已接）与 `chkAiDialogue` 返回布尔的语义都要与后端确认；
+  后者端上按「403 = 不允许」判定，改码就会失效。
 - 发布前必须验证微信、版本检查、图片上传、抖动 token 刷新和注销清理。
 
 ## 8. 维护规则

@@ -38,8 +38,14 @@ class BleTuning {
   /// 体感正是「传一段停一下」。怀疑这条时把地板抬到 1.0~2.0ms 对照一次即可证伪。
   static const double defaultPaceFloorMs = 0.0;
 
-  /// 滑窗大小。固件收包缓冲就是 10 包，再大也无意义（会被 [FrameBleClient] 夹回）。
-  static const int defaultWindowPackets = 10;
+  /// 滑窗大小。2026-08-14 由 10 提到 50：固件那轮传输优化把收包缓冲扩到 50 包
+  /// （配套 0x21 数据 236→489 字节、MTU 500），与小程序 `DEFAULT_TRANSFER_WINDOW` 同步。
+  ///
+  /// ⚠️ 这里填的是**上限**不是定值：[FrameBleClient] 的 AIMD 卡顿时会把窗口减半、
+  /// 稳定后再涨回，并用「丢包记忆」钉住上限。窗口 50 与 AIMD 是**同一个决定的两半，
+  /// 回滚必须一起回**——老策略在大窗口下会退化成「灌满→缓冲溢出丢包→其后整窗按序作废→
+  /// 等满超时→整窗重发」的死循环，窗口越大每转一圈代价越大。
+  static const int defaultWindowPackets = 50;
 
   // ── 当前生效值 ───────────────────────────────────────────
   static int paceMs = defaultPaceMs;
@@ -84,11 +90,26 @@ class BleTuning {
   static const String _kAckedWrite = 'ble_tuning_acked_write';
   static const String _kConnectStrategy = 'ble_tuning_android_connect_strategy';
 
+  /// 旋钮口径版本戳。**默认值改动时同步升版**：版本不匹配的旧存储值一律作废、回落到当前
+  /// 出厂值，不必要求用户去自检页手动 [resetToDefaults]。
+  ///
+  /// 为什么必须有（2026-08-14 小程序侧真机踩过的坑）：小程序把默认窗口从 10 提到 50 后，
+  /// 早先在调试台存过「窗口 10」的手机升级后仍按 10 跑，新默认**等于从没生效过**，
+  /// 排查时还一度误判成「50 包把设备压垮了」。这边 [load] 同样会把旧的 window=10 读回来，
+  /// 同款问题，同款解法。
+  static const String _kEpoch = 'ble_tuning_epoch';
+  static const String _epoch = '2026-08-14-w50';
+
   /// 冷启动时读回上次调好的值。失败（prefs 不可用）静默保持默认值——
   /// 这只是调优旋钮，绝不能因为读不到偏好就影响正常投屏。
   static Future<void> load() async {
     try {
       final sp = await SharedPreferences.getInstance();
+      // 口径版本不匹配 = 上个默认值口径的遗留旋钮，整组作废并清掉，让当前出厂值真正生效。
+      if (sp.getString(_kEpoch) != _epoch) {
+        await _clearStaleTuning(sp);
+        return;
+      }
       paceMs = sp.getInt(_kPace) ?? defaultPaceMs;
       paceFloorMs = sp.getDouble(_kPaceFloor) ?? defaultPaceFloorMs;
       windowPackets = sp.getInt(_kWindow) ?? defaultWindowPackets;
@@ -106,9 +127,32 @@ class BleTuning {
     }
   }
 
+  /// 清掉上个口径遗留的旋钮值，并把内存值复位到出厂默认（不写回，等用户真正调过再落盘）。
+  static Future<void> _clearStaleTuning(SharedPreferences sp) async {
+    paceMs = defaultPaceMs;
+    paceFloorMs = defaultPaceFloorMs;
+    windowPackets = defaultWindowPackets;
+    connIntervalOverrideMs = null;
+    skipConnIntervalRequest = false;
+    forceAckedWrite = false;
+    androidConnectStrategy = AndroidConnectStrategy.directFirst;
+    for (final key in <String>[
+      _kPace,
+      _kPaceFloor,
+      _kWindow,
+      _kConnInterval,
+      _kSkipConn,
+      _kAckedWrite,
+      _kConnectStrategy,
+    ]) {
+      await sp.remove(key);
+    }
+  }
+
   static Future<void> save() async {
     try {
       final sp = await SharedPreferences.getInstance();
+      await sp.setString(_kEpoch, _epoch); // 本次显式保存盖上当前口径戳
       await sp.setInt(_kPace, paceMs);
       await sp.setDouble(_kPaceFloor, paceFloorMs);
       await sp.setInt(_kWindow, windowPackets);

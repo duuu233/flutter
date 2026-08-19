@@ -355,6 +355,13 @@ class BoltStarAiApi {
   }) {
     return {
       'user_id': userId,
+      // 2026-08-12 新增：小程序/APP 登录接口下发的 `userToken`（BoltFox 的公共参数那一枚，
+      // **不是** Authentication 头里的 jwtToken），AI 网关拿它回 BoltFox 侧核对用户与扣费。
+      // ⚠️ 参数名按 AI 侧要求是**全小写 `usertoken`**，别顺手改成驼峰——服务端按字面取，
+      // 名字或取值错了都不会报错，只会静默变成「服务端认不出这个用户」。
+      // 未登录时是空串，仍原样发出：让服务端自己判，比端上悄悄省掉字段好排查
+      //（何况未登录时 Authentication 头也缺，网关那关先就过不去）。
+      'usertoken': ApiSession.instance.userToken,
       'session_id': sessionId,
       'message': message,
       'img_orientation': imgOrientation,

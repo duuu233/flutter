@@ -433,8 +433,8 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) {
       return;
     }
-    // 投屏返回后刷新相册 / 投屏记录（真实数据同步）。
-    widget.state.refreshAlbum();
+    // 投屏返回后刷新投屏记录（真实数据同步）。
+    // 2026-08-17：图库列表接口已下线，「我的相册」铺的就是这份记录。
     widget.state.refreshCastRecords();
   }
 

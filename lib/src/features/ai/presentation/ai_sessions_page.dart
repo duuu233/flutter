@@ -9,6 +9,7 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../ai_i18n.dart';
+import '../ai_last_session.dart';
 import '../ai_token.dart';
 import 'ai_chat_page.dart';
 import 'ai_visuals.dart';
@@ -123,9 +124,12 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
   int _shown = _kPageSize;
   bool _loading = true;
 
-  /// 顶部 Token 余额（2026-08-10 需求 1.1）。与聊天页同源，见 [AiToken]；
-  /// 聊天页顶栏那颗胶囊已撤，**这里是余额唯一的展示位**。
-  int _tokenBalance = AiToken.defaultBalance;
+  /// 顶部星币余额（2026-08-10 需求 1.1；2026-08-12 起是**真实账户值**，见 [AiToken]）。
+  /// 与聊天页同源；聊天页顶栏那颗胶囊已撤，**这里是余额唯一的展示位**。
+  /// null = 未知（接口挂了/未登录），显示 `--`，不用 0 兜底。
+  // 先用登录带回的余额渲染第一帧（2026-08-11 同步小程序：登录/用户信息出参含 availableToken），
+  // 再由 _refreshTokenBalance 刷权威值。没有缓存值时仍是 null → 显示 `--`。
+  int? _tokenBalance = AiToken.cachedBalance();
 
   /// 在途删除，删除期间不接第二次点击（见 [_deleteSession]）。
   bool _deleting = false;
@@ -156,9 +160,9 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     _refreshTokenBalance();
   }
 
-  /// 余额可能在聊天页扣过（[AiToken.limitEnabled] 打开后），进页面和退回本页时都对齐一次。
+  /// 余额会在聊天页用掉（扣费在服务端发生），进页面和退回本页时都对齐一次。
   Future<void> _refreshTokenBalance() async {
-    final balance = await AiToken.readBalance();
+    final balance = await AiToken.fetchBalance();
     if (mounted && balance != _tokenBalance) {
       setState(() => _tokenBalance = balance);
     }
@@ -312,6 +316,8 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
         _lastOpened = '';
       }
       AppToast.show(context, AppL10n.of(context).aiDeleted);
+      // 清掉指向这条会话的「上次停在哪」记忆，否则下次点 AI 入口会打开一条已删会话
+      AiLastSession.forget(row.sessionId);
       // 删的是某个聊天页正打开的会话：只通知那一页退回空态，避免用户继续往已删会话发消息。
       // 点对点通知（不是广播一个「谁看到谁消费」的标记），理由见 AiChatPage.notifySessionDeleted。
       // 也**不替他建新会话** —— 这是「没得可显示了」，不是用户要新建。
@@ -505,12 +511,28 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     );
   }
 
-  /// Token 余额胶囊（本地模拟，支付未接，见 [AiToken]）。
+  /// 星币余额胶囊（真实账户值，见 [AiToken]）。
   /// 与聊天页原先右上角那颗同一套视觉，这里靠左排、不与任何原生元素对位。
+  ///
+  /// 2026-08-13 同步小程序：整颗可点，右端补一个 `>`，直接进星币管理页 ——
+  /// 余额看着不够时用户在这一页就能去看规则/记录，不用退回「我的」再找入口。
+  /// 回来时 [_refreshTokenBalance] 重取余额，数字自动对上。
+  /// 🔶 与小程序有意不同：小程序那颗指向「去购买」，App 的 IAP 未接，星币页是只读的。
   Widget _buildTokenPill() {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () async {
+        await Navigator.of(context).pushNamed(AppRoutes.starCoin);
+        await _refreshTokenBalance();
+      },
+      child: _buildTokenPillBody(),
+    );
+  }
+
+  Widget _buildTokenPillBody() {
     return Container(
       height: 29,
-      padding: const EdgeInsets.symmetric(horizontal: 11),
+      padding: const EdgeInsets.fromLTRB(11, 0, 7, 0),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(999),
@@ -529,7 +551,7 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
           const AiIcon('assets/images/ai-token-spark.png', size: 12.5),
           const SizedBox(width: 4),
           Text(
-            '$_tokenBalance',
+            AiToken.displayBalance(_tokenBalance),
             style: const TextStyle(
               color: Color(0xFFFF6F25),
               fontSize: 14,
@@ -538,9 +560,20 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
             ),
           ),
           const SizedBox(width: 4),
-          const Text(
-            'Token',
-            style: TextStyle(color: Color(0xFF777777), fontSize: 11, height: 1),
+          Text(
+            // 2026-08-12 全站文案 Token → 星币（后端字段名不动）
+            AppL10n.of(context).aiTokenUnit,
+            style: const TextStyle(
+              color: Color(0xFF777777),
+              fontSize: 11,
+              height: 1,
+            ),
+          ),
+          const SizedBox(width: 2),
+          const Icon(
+            Icons.chevron_right_rounded,
+            size: 15,
+            color: Color(0xFF9A948C),
           ),
         ],
       ),

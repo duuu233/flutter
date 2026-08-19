@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../routes/app_routes.dart';
 import '../../state.dart';
+import 'ai_last_session.dart';
 import 'presentation/ai_chat_page.dart';
 
 /// AI生图入口开关（对齐小程序 `components/custom-tabbar` 的 `aiEntryEnabled`）。
@@ -18,8 +19,18 @@ const bool kAiEntryEnabled = false;
 const String kAiEntryGateCode = '8866';
 
 /// 进入 AI 对话页（与小程序 `custom-tabbar goAi` 同一目标页）。
+///
+/// 2026-08-13 起**接着上次那一页**（见 [AiLastSession]）：上次停在某条会话就带着
+/// `sessionId` 进去（与从会话列表点进去同一条路），停在默认页则仍是默认空态。
 Future<void> openAiChat(BuildContext context, PhotoFrameState state) {
+  final lastSessionId = AiLastSession.sessionId;
   return Navigator.of(context).push<void>(
-    AppPageRoute<void>(builder: (_) => AiChatPage(state: state)),
+    AppPageRoute<void>(
+      builder: (_) => AiChatPage(
+        state: state,
+        sessionId: lastSessionId.isEmpty ? null : lastSessionId,
+        sessionTitle: lastSessionId.isEmpty ? null : AiLastSession.title,
+      ),
+    ),
   );
 }
