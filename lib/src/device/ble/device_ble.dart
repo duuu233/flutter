@@ -1849,12 +1849,24 @@ class FrameBleClient {
   }
 
   /// 切换/刷新当前显示，返回 CUR_IMG_INDEX。
+  ///
+  /// 2026-08-20（同步小程序 device-ble.js 的三条诊断日志）：在**发送处**打出请求的槽位，
+  /// 并把应答里设备自己回的 CUR_IMG_INDEX 一并打出、不一致再补一条告警。
+  /// 此前这个返回值在多数调用点被直接丢掉——屏幕没切过去时页面照样显示投屏成功，
+  /// 「投完屏设备显示的不是这张」就没有任何端上线索。
   Future<int> refreshScreen(int? index) async {
+    // 0x24 的参数只有一个：IMG_INDEX(1 字节) = 要显示的槽位，0xFF 表示保持当前显示不变。
+    final target = index == null ? '0xFF(保持不变)' : '$index';
+    debugPrint('[BLE] 0x24 刷新显示 → IMG_INDEX=$target');
     final ack = await request(
       FrameProtocol.cmdSetCurImg,
       payload: FrameProtocol.buildRefreshPayload(index),
     );
-    return FrameProtocol.parseRefreshResult(ack.data);
+    final current = FrameProtocol.parseRefreshResult(ack.data);
+    if (index != null && current != index) {
+      debugPrint('[BLE] ⚠️ 0x24 请求 index=$index，设备回的当前显示槽位是 $current');
+    }
+    return current;
   }
 
   // ── 图传 ──────────────────────────────────────────────────
@@ -1958,6 +1970,13 @@ class FrameBleClient {
       }
     }
     try {
+      // 2026-08-20（同步小程序 device-ble.js）：0x20 帧头在**发送处**逐字段打出，与写进 BLE 帧的
+      // 字节一一对应——「我们让固件把这张图存进哪个槽位」的最终证据。排查「投完屏设备显示的不是
+      // 这张」时与随后那条「0x24 刷新显示：index=…」对照，两个 index 相同即证明端上索引全程一致。
+      debugPrint(
+        '[BLE] 0x20 图传帧头：index=$index screenType=0x${screenType.toRadixString(16)} '
+        '${width}x$height dataSize=$dataSize crc32=0x${crc.toRadixString(16)}',
+      );
       final startAck = await request(
         FrameProtocol.cmdImgStart,
         payload: FrameProtocol.buildImgStartPayload(

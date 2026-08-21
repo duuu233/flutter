@@ -38,7 +38,7 @@ class _SplashPageState extends State<SplashPage>
         children: [
           // 全屏背景 bg01.png（与登录/首页等页面统一）。加载失败回退到品牌渐变。
           Image.asset(
-            'assets/images/bg01.png',
+            'assets/images/bg02.jpg',
             fit: BoxFit.cover,
             errorBuilder: (context, error, stackTrace) => const DecoratedBox(
               decoration: BoxDecoration(

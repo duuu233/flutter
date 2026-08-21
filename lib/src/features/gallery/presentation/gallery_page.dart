@@ -389,6 +389,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// 删除选中照片（对齐小程序 album/list.js confirmDeleteSelected）：
   /// 设备槽位(0x12，含删到屏显图时的补刷屏) → **来源投屏记录**，两处一起删。
   ///
+  /// 2026-08-20 口径：两半**互不阻断**——先发设备删除指令，无论它成功、失败还是设备根本没应答，
+  /// 都继续删投屏记录；反过来记录接口失败也不回滚设备。两半的结果最后合并成一条提示
+  ///（都成功=已删除 / 设备失败=「投屏记录已删除，<原因>」/ 记录失败 / 都失败）。
+  /// 唯一的例外是连接前置：连不上这台设备时两半都不执行（[DevicePhotoDeleteOutcome.blocked]）。
+  /// 代价（产品已确认接受）：设备真的没删掉时记录先没了，相框上那张图成了只能靠「一键清空」
+  /// 清理的幽灵图——删除以「从我的相册里消失」为准，设备侧尽力而为。
+  ///
   /// 必须连投屏记录一起删：本页列表就是按成功记录铺的，只删设备侧的话，下次进来这张还在列表里。
   /// 2026-08-17 起端上到此为止，**不再删图库照片**（`delUserProductImg` 已整体下线），
   /// 图库照片的清理归后端。
@@ -437,17 +444,18 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     // dismiss 不做 mounted 门控（hide 本就不依赖 context）：页面在 await 期间被
     // 卸载时也要收掉 root 栈上 canPop:false 的蒙层，否则整个 App 假死。
     // 与 _recastSelected 同一套写法：非空 final 在 try 里赋值，异常时后面的代码本就到不了。
-    final ActionFeedback deviceFeedback;
+    final DevicePhotoDeleteOutcome deviceOutcome;
     ({int total, int failed})? recordResult;
     try {
-      deviceFeedback = await state.deleteDevicePhotoSlots(
+      deviceOutcome = await state.deleteDevicePhotoSlots(
         deviceId: targetDeviceId,
         slots: slots,
       );
-      // 设备侧没删成功就**不动**投屏记录：留着记录用户才能重试，
-      // 也不会出现「列表里没了、设备上还挂着」。
-      if (deviceFeedback.success) {
-        // 允许部分失败：设备上的图已经删掉，不能因为记录没删干净就整体回滚。
+      // 2026-08-20 口径：设备侧删没删掉**都**照删投屏记录，两半互不阻断。
+      // 只有「前置条件不满足」（没选照片 / 设备不存在 / 连不上这台设备）才两半都不执行——
+      // 那时端上一条 0x12 都没发出去，照删记录等于用户完全没碰到设备就丢了记录。
+      // 允许部分失败：不能因为记录没删干净就回滚设备（设备上的图已经删掉了）。
+      if (!deviceOutcome.blocked) {
         recordResult = await state.deleteCastRecords(
           records.map((record) => record.id),
         );
@@ -458,8 +466,8 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (!mounted) {
       return;
     }
-    if (!deviceFeedback.success) {
-      AppToast.warn(context, deviceFeedback.message);
+    if (deviceOutcome.blocked) {
+      AppToast.warn(context, deviceOutcome.blockedMessage);
       return;
     }
     setState(_selectedIds.clear);
@@ -468,16 +476,28 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (!mounted) {
       return;
     }
-    final recordDeletion = recordResult;
-    if (recordDeletion != null && recordDeletion.failed > 0) {
+    // 两半的结果合并成一条提示：谁失败就说谁，都失败就都说，都成功才是「已删除」
+    //（对齐小程序 confirmDeleteSelected 第 6 步的四分支表）。设备侧的失败**必须**报出来，
+    // 否则用户只会看到「已删除」，而相框上那张图其实还在。
+    final recordFailed = (recordResult?.failed ?? 0) > 0;
+    final deviceError = deviceOutcome.deviceError;
+    if (deviceError.isNotEmpty && recordFailed) {
+      AppToast.warn(context, l10n.galDeleteBothFailed(deviceError));
+      return;
+    }
+    if (deviceError.isNotEmpty) {
+      AppToast.warn(context, l10n.galDeleteRecordOnly(deviceError));
+      return;
+    }
+    if (recordFailed) {
       AppToast.warn(context, l10n.galDeleteRecordPartialFail);
       return;
     }
     // 「刷屏失败」这类「删成功但结果不理想」走警告样式。
-    if (deviceFeedback.warn) {
-      AppToast.warn(context, deviceFeedback.message);
+    if (deviceOutcome.refreshWarn.isNotEmpty) {
+      AppToast.warn(context, deviceOutcome.refreshWarn);
     } else {
-      _showFeedback(deviceFeedback.message);
+      _showFeedback(l10n.galDeleteDone);
     }
   }
 
@@ -518,6 +538,14 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     // 请求。缩略图仅在 img 缺失时兜底。与小程序 doRetryProjection 同口径。
     final urls = <String>[];
     for (final record in records) {
+      // 2026-08-20 诊断日志（同步小程序 list.js doRetryProjection）：把「相册选中的记录」
+      // 打进「选中记录 → 写入设备的槽位(0x20) → 刷新设备的槽位(0x24)」这条可对账的链。
+      // ⚠️ 这里的 imageIndex 是这条记录**当年**写进设备的旧槽位——再次投屏走的是完整链路、
+      // 选**新的**空闲槽位、建**新**记录，旧值不参与本次，别拿它去对 0x20 那行的 index。
+      debugPrint(
+        '[相册再投] 选中记录 id=${record.id} deviceId=${record.deviceId} '
+        '旧槽位imgIndex=${record.imageIndex} img=${record.imageUrl ?? ''}',
+      );
       final url = record.imageUrl ?? record.thumbUrl ?? '';
       if (url.isNotEmpty) {
         urls.add(url);
@@ -624,7 +652,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
       // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
-      background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
+      background: Image.asset('assets/images/bg02.jpg', fit: BoxFit.cover),
       // 四分支互斥链（loading 优先）：接口没回来之前只显示 loading，绝不先渲染空态；
       // 刷新失败且本地无数据 → 「加载失败 + 重试」（断网时不能误显示「还没有照片」）。
       body: _loading || !state.devicesLoaded

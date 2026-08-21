@@ -4,8 +4,6 @@ import 'package:flutter/material.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
-import '../../ai/ai_entry.dart';
-import '../../gallery/official/official_gallery_entry.dart';
 import '../../star/star_coin_api.dart';
 
 /// 「我的」页：对照微信小程序 `photo-album/pages/mine` 精准还原。
@@ -291,7 +289,7 @@ class _MinePageState extends State<MinePage> with RouteAware {
               // 与首页 [_HomeMainView] 同一口径：内容再高，底栏也始终停在视口底部。
               Padding(
                 padding: _inset,
-                child: _MineTabBar(state: state, onOpenHome: onOpenHome),
+                child: _MineTabBar(onOpenHome: onOpenHome),
               ),
               const SizedBox(height: 13),
             ],
@@ -302,14 +300,15 @@ class _MinePageState extends State<MinePage> with RouteAware {
   }
 }
 
-/// 全屏背景：`bg01.png`（小程序 mine 用 bg01）。加载失败回退渐变 + 画笔。
+/// 全屏背景：`bg02.jpg`（2026-08-21 起全站统一这张，见 figma_common.FigmaScreenBackground 的说明）。
+/// 加载失败回退渐变 + 画笔。
 class _MineBackground extends StatelessWidget {
   const _MineBackground();
 
   @override
   Widget build(BuildContext context) {
     return Image.asset(
-      'assets/images/bg01.png',
+      'assets/images/bg02.jpg',
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
         return DecoratedBox(
@@ -637,16 +636,13 @@ class _ServiceRow extends StatelessWidget {
   }
 }
 
-/// 底部导航栏（与首页一致的胶囊样式，四格；「我的」高亮）。
+/// 底部导航栏（与首页一致的胶囊样式，**两格**；「我的」高亮）。
 ///
-/// 中间两格由 [kAiEntryEnabled] / [kGalleryEntryEnabled] 各自决定是否出现，与首页
-/// `_HomeTabBar` 同一组开关、同一批目标页——两个 tab 各画各的栏，
-/// 所以底栏的改动**两处都要同步**。
+/// ⚠️ 2026-08-21 同步小程序：中间的「AI助手」「官方图库」两格取消，入口收进首页六宫格。
+/// 两个 tab **各画各的栏**，所以底栏的改动永远要同时改首页的 `_HomeTabBar`。
 class _MineTabBar extends StatelessWidget {
-  const _MineTabBar({required this.state, required this.onOpenHome});
+  const _MineTabBar({required this.onOpenHome});
 
-  /// AI 页需要全局业务状态（登录态/用户 id），点中间那格时透传过去。
-  final PhotoFrameState state;
   final VoidCallback onOpenHome;
 
   @override
@@ -678,34 +674,8 @@ class _MineTabBar extends StatelessWidget {
               ),
             ),
           ),
-          if (kAiEntryEnabled)
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                // 同小程序 goAi：AI 页不是 tab，push 进去，返回即回本 tab。
-                onTap: () => openAiChat(context, state),
-                child: _MineTabItem(
-                  iconAsset: 'assets/images/ai-tab.png',
-                  fallbackIcon: Icons.auto_awesome_outlined,
-                  label: AppL10n.of(context).tabAi,
-                  color: const Color(0xFF777D86),
-                ),
-              ),
-            ),
-          if (kGalleryEntryEnabled)
-            Expanded(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                // 同小程序 goGallery：图库页同样是 push 出去的普通页。
-                onTap: () => openOfficialGallery(context),
-                child: _MineTabItem(
-                  iconAsset: 'assets/images/tab-gallery.png',
-                  fallbackIcon: Icons.collections_outlined,
-                  label: AppL10n.of(context).tabGallery,
-                  color: const Color(0xFF777D86),
-                ),
-              ),
-            ),
+          // 2026-08-21 同步小程序：中间两格「AI助手」「官方图库」取消，
+          // 入口都在首页六宫格（见 home_main_view._castSection）。底栏回到两格。
           Expanded(
             child: _MineTabItem(
               iconAsset: 'assets/images/tabbar-mine02.png',

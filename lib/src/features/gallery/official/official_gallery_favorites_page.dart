@@ -179,7 +179,7 @@ class _OfficialGalleryFavoritesPageState
       title: l10n.galleryFavoritesTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
-      background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
+      background: Image.asset('assets/images/bg02.jpg', fit: BoxFit.cover),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

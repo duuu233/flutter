@@ -96,7 +96,7 @@ class _RootTransitionBackdrop extends StatelessWidget {
     return ColoredBox(
       color: const Color(0xFFF7FAFF),
       child: Image.asset(
-        'assets/images/bg01.png',
+        'assets/images/bg02.jpg',
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) => const SizedBox.expand(),
       ),

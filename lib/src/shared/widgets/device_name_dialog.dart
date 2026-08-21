@@ -288,7 +288,7 @@ class _DeviceNameMark extends StatelessWidget {
       width: 32,
       height: 32,
       child: Image.asset(
-        'assets/images/home-icon02.png',
+        'assets/images/home-device-thumb.png',
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => const Icon(
           Icons.photo_library_outlined,

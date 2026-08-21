@@ -72,7 +72,7 @@ class _StarCoinPageState extends State<StarCoinPage> {
     final l10n = AppL10n.of(context);
     return FigmaScreen(
       title: l10n.starCoinTitle,
-      background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
+      background: Image.asset('assets/images/bg02.jpg', fit: BoxFit.cover),
       body: _loading
           ? const SizedBox(height: 320, child: PageLoading())
           : _loadFailed

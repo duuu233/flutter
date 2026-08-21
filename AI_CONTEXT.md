@@ -329,6 +329,16 @@ Battery display is connected-only. Command `0x01` is not a page-battery source; 
 and `0x04` would allow competing values and break the cache contract. A real `0%` is valid and must
 not be treated as “missing”.
 
+The device-details "firmware update" row follows the same connected-only placeholder contract
+(2026-08-20, mirrors the mini-program): the right-hand side shows the version the device is actually
+running (`0x03 GET_SW_VER`), falling back to `--`, and "a new version exists" is expressed by a red
+dot next to the chevron. **Disconnected means `--` and no dot** — with no version evidence the row
+must not raise an alarm. Tapping the row still checks the backend and falls back to `isUpdate`, so
+"check the version without Bluetooth" survives; the dot is simply more conservative than the tap.
+⚠️ `DeviceItem.firmwareVersion` is **sticky** on the App side (never cleared on disconnect, unlike
+the mini-program), so this row must gate on the live session — reading the field directly would show
+the version left over from the previous connection as "the current version".
+
 ### 6. Image selection, editing, and projection
 
 ```text
@@ -348,6 +358,10 @@ Camera/gallery selection
        -> FrameBleClient sends windowed BLE packets and waits for cumulative ACKs
        -> on success, update backend record with the real imgIndex
        -> on a later per-image failure, attempt device-side slot rollback
+  -> when the whole batch ends (all sent, one image failed, or the user aborted),
+     send exactly one 0x24 display refresh pointing at the FIRST slot written
+     successfully in this batch; never mid-batch (some firmware drops the BLE link
+     on 0x24, which would fail every remaining image)
   -> refresh connected-device capacity/mask
   -> on overall success, refresh account image count
 ```
@@ -372,7 +386,18 @@ message substrings.
   deleted them) are **skipped** rather than pushed into the `0x12` mask — one empty slot used to make
   the firmware reject the **whole batch** with `0x07`. Only result codes `0x05`/`0x07` are waved
   through (`FrameProtocol.skippableDeleteResults`); busy `0x0B`, flash-write `0x04`, aborted transfer
-  `0x09`, disconnects and timeouts still abort with the backend record untouched.
+  `0x09`, disconnects and timeouts count as "the device probably did **not** delete it".
+- 2026-08-20 (mirrors the mini-program the same day): the two halves **never block each other**.
+  A real device-side failure no longer aborts — it is carried out in
+  `DevicePhotoDeleteOutcome.deviceError` and the cast records are deleted anyway; conversely a failing
+  record API never rolls the device back. The caller merges both halves into one toast (both ok /
+  device failed / records failed / both failed). The accepted cost: when the device really did not
+  delete, the record is gone first and that image becomes a ghost on the frame, clearable only via
+  "clear all". The **connect precondition is deliberately kept** (`DevicePhotoDeleteOutcome.blocked`):
+  if we cannot reach that device, neither half runs — no `0x12` was ever sent, so dropping records
+  would lose them without the user touching the device. The `0x01` mask read is likewise
+  non-blocking now (busy included): it is only an optimisation, its failure must not take the record
+  half down with it.
 - If the `0x01` mask read fails, **nothing** may be classified as "already gone" (that would delete
   records while images stay on the frame) — the selected slots are sent as-is and the benign result
   codes are the safety net. An all-zero mask is a *valid* mask and does mean "device has no images".

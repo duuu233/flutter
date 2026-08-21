@@ -1304,7 +1304,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       title: l10n.castPreviewTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
-      background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
+      background: Image.asset('assets/images/bg02.jpg', fit: BoxFit.cover),
       body: Column(
         children: [
           _buildCounter(),

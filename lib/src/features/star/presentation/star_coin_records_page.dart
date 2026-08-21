@@ -124,7 +124,7 @@ class _StarCoinRecordsPageState extends State<StarCoinRecordsPage> {
       title: l10n.starRecordsTitle,
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
-      background: Image.asset('assets/images/bg01.png', fit: BoxFit.cover),
+      background: Image.asset('assets/images/bg02.jpg', fit: BoxFit.cover),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

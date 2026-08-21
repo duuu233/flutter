@@ -127,10 +127,17 @@ class FigmaScreen extends StatelessWidget {
   }
 }
 
-/// 默认页面背景：`bg01.png` 铺满（对应小程序全屏 `.mock-bg__image`，全部页面统一用同一张背景）。
+/// 默认页面背景：`bg02.jpg` 铺满（对应小程序全屏 `.mock-bg__image`，全部页面统一用同一张背景）。
 /// 加载失败回退到顶部浅蓝渐变过渡到底部白。
+///
+/// ⚠️ 2026-08-21 换图：小程序把全站背景换成了
+/// `https://oss.boltfox.cn/prodFile/202608211340094498724.jpg`（浅蓝墙面 + 窗光），
+/// App 侧背景是**打进包里的本地图**，所以把同一张图落成 `assets/images/bg02.jpg`（与线上逐字节相同）。
+/// 旧的暖白背景 `assets/images/bg01.png` **保留在仓库里**（产品要求「怕要换回去」），
+/// 要整体换回去：把本文件的默认值与各页写死的 `bg02.jpg` 一起改回 `bg01.png` 即可
+/// （`grep -rn "assets/images/bg02.jpg" lib` 能列全）。
 class FigmaScreenBackground extends StatelessWidget {
-  const FigmaScreenBackground({super.key, this.asset = 'assets/images/bg01.png'});
+  const FigmaScreenBackground({super.key, this.asset = 'assets/images/bg02.jpg'});
 
   final String asset;
 

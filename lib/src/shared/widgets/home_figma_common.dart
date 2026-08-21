@@ -4,41 +4,12 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 import '../l10n/app_l10n.dart';
 
-/// Figma 首页 / 绑定设备流程的公共组件库（非页面）：背景、投屏方式卡片、
-/// 蓝牙雷达、绑定设备卡片等通用控件，被首页及绑定相关页面复用。
-class FigmaHomeBackground extends StatelessWidget {
-  const FigmaHomeBackground({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const Stack(
-      children: [
-        Positioned.fill(child: ColoredBox(color: Color(0xFFF5F9FF))),
-        Positioned(
-          left: 0,
-          top: 0,
-          width: 376,
-          height: 812,
-          child: FigmaHomeAssetImage(
-            assetPath: 'assets/images/home_background.png',
-            fallback: FigmaSoftBackground(),
-          ),
-        ),
-        Positioned(
-          left: 0,
-          top: 0,
-          width: 375,
-          height: 812,
-          child: FigmaHomeAssetImage(
-            assetPath: 'assets/images/home_wave_overlay.png',
-            fallback: SizedBox.shrink(),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
+/// Figma 首页 / 绑定设备流程的公共组件库（非页面）：投屏方式卡片、蓝牙雷达、
+/// 绑定设备卡片等通用控件，被首页及绑定相关页面复用。
+///
+/// ⚠️ 2026-08-21 删掉了 `FigmaHomeBackground`：它是**全项目没人用**的死类，
+/// 而且引用的 `home_background.png` / `home_wave_overlay.png` **两张图从来就不在仓库里**
+/// （靠 errorBuilder 兜着才没炸）。页面背景统一走 `FigmaScreenBackground`（bg02.jpg）。
 class FigmaHomeAssetImage extends StatelessWidget {
   const FigmaHomeAssetImage({
     super.key,
@@ -546,7 +517,7 @@ class FigmaBindDeviceCard extends StatelessWidget {
             // 原实现更离谱：不是资源图而是 Material 的 videocam 字形，还按列表下标染成橙/绿/蓝，
             // 同一列表里几台设备图标颜色各不相同，与首页毫无关系。
             Image.asset(
-              'assets/images/home-icon02.png',
+              'assets/images/home-device-thumb.png',
               width: 48,
               height: 48,
               fit: BoxFit.contain,

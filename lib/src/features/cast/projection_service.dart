@@ -29,6 +29,11 @@ import '../../network/dithering_api.dart';
 import '../../shared/l10n/app_l10n.dart';
 import 'smooth_progress.dart';
 
+/// IMG_MASK 字节串 → 十六进制串（诊断日志用；字节序与协议一致，低字节在前）。
+/// 2026-08-20 排查「投完屏设备显示的不是这张」时加的三条日志共用它。
+String _maskHex(List<int> mask) =>
+    mask.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+
 /// 投屏进度回调载荷。语义完全对齐小程序 `result.js`（进度页三段式：转码→处理→传输）。
 class CastProgress {
   const CastProgress({
@@ -193,13 +198,41 @@ class ServerImageProjectionService {
     // 批量投屏时每张的前半段都在慢间隔上重新协商（详见 device_ble.beginTransferSession）。
     // 失败不阻断（旧固件可能不支持 0x13），只是跑得慢一点。
     var sessionOpened = false;
-    // 最后一张的异步刷屏(0x24)Future：收尾把连接间隔回落到空闲档(100ms)时要等它跑完再发——
-    // 刷屏期间设备对新指令回忙(0x0B)，两者挤在一起会让回落白白失败。失败/中断路径无刷屏则保持 null。
+    // 收尾那一次异步刷屏(0x24)的 Future：把连接间隔回落到空闲档(100ms)时要等它跑完再发——
+    // 刷屏期间设备对新指令回忙(0x0B)，两者挤在一起会让回落白白失败。一张都没成功则保持 null。
     Future<int>? lastRefresh;
     // 多图全部写入后仍**只刷一次**，但最终展示的是本批**第一张**成功写入的照片
     // （2026-08-04 产品口径，对齐小程序 result.js `firstSuccessfulIndex`）。
     // ⚠️ 用 null 表示「还没有成功过」：槽位 0 是相框第一个位置，是合法值，不能用 -1/0 当哨兵判假。
     int? firstSuccessfulIndex;
+    // 整单只刷一次屏，触发点是「整个投屏流程结束」：全部传完、中途某张失败、用户中断都算收尾，
+    // 只要已经有图物理写进设备(firstSuccessfulIndex != null)就补这一次 0x24。
+    // ⚠️ 2026-08-20 口径修正（对齐小程序 result.js scheduleFinalRefresh）：此前只在「最后一张
+    // 传完」那一格触发，选 5 张第 3 张失败时前 2 张已经在设备里、屏上却还停在投屏前那张
+    //（结果页还按部分成功判成功）。
+    // 中途张一律不刷：部分固件收到 0x24 会断开蓝牙，批量传输中途刷屏会让后续图片传输失败。
+    // 追加3：0x24 是 fire-and-forget，不 await——图片已写入设备，立即返回结果页，刷屏在后台继续
+    //（真机墨水屏刷完要 ~4s）。刷屏成败本就不影响投屏结果。
+    void scheduleFinalRefresh() {
+      final index = firstSuccessfulIndex;
+      // 每个出口都打日志（2026-08-20 同步小程序：真机排查时「发送那一刻」曾无任何输出——
+      // 0x24 的应答要等墨水屏物理刷完 ~4s 才回，提前退出页面就什么都看不到）。
+      // 一张都没成功 → 设备上没有本批的图，不刷；已排过 → 不重复排（收尾路径只会走其一）。
+      if (index == null) {
+        debugPrint('[投屏] 收尾刷屏跳过：本单没有成功写入设备的图片，无可刷槽位');
+        return;
+      }
+      if (lastRefresh != null) {
+        debugPrint('[投屏] 收尾刷屏已在途，不重复发送');
+        return;
+      }
+      debugPrint(
+        '[投屏] 收尾刷屏(0x24)发送：index=$index'
+        '（本批第一张成功写入的槽位；应答要等墨水屏物理刷完 ~4s 才回）',
+      );
+      // 存下刷屏 Future：finally 里把连接间隔回落到空闲档要等它跑完再发（避免撞 0x0B）。
+      lastRefresh = client.refreshScreen(index).catchError((_) => 0xFF);
+    }
     try {
       // 1) 读取真实设备信息（屏幕尺寸/类型/容量/已存掩码）。B2：走精简读取，不带 0x03 固件版本。
       emit(0, _l10n?.castReadingDeviceInfo ?? '正在读取设备信息…');
@@ -226,6 +259,16 @@ class ServerImageProjectionService {
       // 只差 N 张空间时也把能放下的都投进去(部分成功)，而不是一张不投直接整单失败。
       // 每张选槽位时若已无空位(firstFreeIndex<0)才抛「设备已存满」，配合下方「uploaded>=1 即成功页」。
       var usedIndexes = FrameProtocol.maskToIndexes(info.imgMask);
+      // 开场设备信息（2026-08-20 诊断日志，同步小程序 result.js 第三节）：
+      // curImgIndex / imgMask / 已存槽位都在刚读回的这一帧 0x01 里，**不额外发指令**。
+      // 本次读到的 curImgIndex 就是「上一次投屏收尾那条 0x24 到底生效没有」的证据——
+      // 排查「投完屏设备显示的不是这张」时，先看它是不是上次刷屏指过去的那个槽位。
+      debugPrint(
+        '[投屏] 设备信息：屏型=0x${info.screenType.toRadixString(16)} '
+        '${info.width}x${info.height} 当前显示槽位=${info.curImgIndex} '
+        'imgMask=${_maskHex(info.imgMask)} '
+        '已存槽位=$usedIndexes',
+      );
 
       // A3 预取流水线：设备帧的「后端转码 + 下载 + D1/D2 预处理」是纯网络/纯计算，与 BLE 图传互不占用
       // 资源。投第 i 张(走蓝牙)的同时并行预取第 i+1 张的设备帧；只预取下一张(最多 1 张在后台)，中断浪费
@@ -321,7 +364,7 @@ class ServerImageProjectionService {
 
         // 本张设备事务：只有 BLE 图传失败才回滚删掉刚传到设备的图，再向外抛出让整单判失败。
         try {
-          await trace.measure(
+          final imgEnd = await trace.measure(
             'ble-transfer-image-${i + 1}',
             () => client.uploadImage(
               screenType: info.screenType,
@@ -344,6 +387,17 @@ class ServerImageProjectionService {
               },
             ),
           );
+          // 槽位落点核对（2026-08-20 诊断日志，同步小程序 result.js 第三节）：
+          // 0x22 结束应答回的是**新的 IMG_MASK**，用它确认「这张确实落在我们指定的槽位上」。
+          // 没置位说明固件没存进请求的 IMG_INDEX（或掩码陈旧、槽位被另一端占了）——那样的话
+          // 收尾 0x24 指过去的就是别的图。只告警不拦截：图已经写进设备了。
+          if (!FrameProtocol.maskToIndexes(imgEnd.imgMask).contains(index)) {
+            debugPrint(
+              '[投屏] ⚠️ 第 ${i + 1}/$total 张写入后 IMG_MASK 里没有请求的槽位 $index：'
+              'imgMask=${_maskHex(imgEnd.imgMask)}'
+              ' 已存 ${imgEnd.imgCount} 张',
+            );
+          }
         } catch (error) {
           // 进度条就地冻结：失败时最后一段增量往往还没铺完，不冻结会在报错后继续往前爬，
           // 看着像「还在传/已传成功」。freeze 连前瞻领先的部分一起钳回真实目标。
@@ -398,20 +452,12 @@ class ServerImageProjectionService {
           current: uploaded,
         );
 
-        // 只有最后一张传完后才刷新屏幕(0x24)：部分固件收到 0x24 会断开蓝牙，批量传输中途刷屏会导致
-        // 后续图片传输失败。故中间张一律不刷屏，等全部传完只执行一次 0x24。
-        // ⚠️ 刷的是**第一张**成功写入的槽位（2026-08-04 产品口径），不是刚传完的这一张：
-        //    多图投屏结束后相框应停在本批的首图上。张数与刷屏次数一字未改，只换了索引。
-        // 追加3：0x24 改 fire-and-forget，不 await——图片已全部写入设备，立即返回成功页，刷屏在后台继续
-        //（真机墨水屏刷完要 ~4s，成功页因此提前）。刷屏成败本就不影响投屏结果。
-        if (i == total - 1) {
-          // 存下刷屏 Future：finally 里把连接间隔回落到空闲档要等它跑完再发（避免撞 0x0B）。
-          lastRefresh = client
-              .refreshScreen(firstSuccessfulIndex ?? index)
-              .catchError((_) => 0xFF);
-        }
+        // 刷屏(0x24)不在循环里发：中途刷屏会让部分固件断开蓝牙、拖垮后续图片传输。
+        // 统一由收尾的 scheduleFinalRefresh() 只发一次（见上方声明处的口径注释）。
       }
 
+      // 整批传完 → 流程结束，按本批第一张成功的槽位刷一次屏。
+      scheduleFinalRefresh();
       trace.finish(success: true);
       return ProjectionResult(
         success: true,
@@ -420,6 +466,10 @@ class ServerImageProjectionService {
         message: _l10n?.castTransferredSingle ?? '投屏成功',
       );
     } on ProjectionAbortedException {
+      // 中断同样是「投屏流程结束」：已经写进设备的几张仍留在设备上，照口径按第一张成功的
+      // 槽位补这一次 0x24（一张都没成功则内部直接跳过）。链路已被挂起时这次刷屏会失败，
+      // 失败被吞掉，不影响本单判定。
+      scheduleFinalRefresh();
       // 部分成功也判成功页（对齐小程序 finishProjection：uploaded>=1 → success）：已物理写入设备的
       // 照片不该被显示成「投屏失败」，否则用户会重投造成重复上传（占用新槽位）。
       trace.finish(success: uploaded >= 1, stage: 'aborted');
@@ -433,6 +483,9 @@ class ServerImageProjectionService {
         failureKind: FrameBleErrorKind.aborted,
       );
     } catch (error) {
+      // 中途失败也是「投屏流程结束」：失败那张已在上面回滚(0x12)，之前成功的几张仍物理留在
+      // 设备上，照口径按第一张成功的槽位补这一次 0x24（一张都没成功则内部直接跳过）。
+      scheduleFinalRefresh();
       final raw = error is FrameBleException ? error.message : error.toString();
       // 图传内部中止（uploadImage 抛 'UPLOAD_ABORTED'）与外层一致，给友好文案。
       final aborted =
@@ -453,8 +506,8 @@ class ServerImageProjectionService {
       );
     } finally {
       // 整批结束（成功/失败/中断都算）恢复省电：系统侧 LOW_POWER + 下发 0x13 回落到空闲连接间隔(100ms)。
-      // 只在真的开过会话时才恢复。不 await——避免拖慢结果页返回；且若最后一张刚触发异步刷屏(0x24)，
-      // 要等它跑完再发（刷屏期间设备回忙 0x0B，挤在一起会白白失败），失败/中断路径无刷屏则立即回落。
+      // 只在真的开过会话时才恢复。不 await——避免拖慢结果页返回；且若收尾刚触发异步刷屏(0x24)，
+      // 要等它跑完再发（刷屏期间设备回忙 0x0B，挤在一起会白白失败），无在途刷屏则立即回落。
       if (sessionOpened) {
         final refresh = lastRefresh;
         if (refresh != null) {

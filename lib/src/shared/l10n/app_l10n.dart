@@ -1266,6 +1266,11 @@ class AppL10n {
   String get devCarouselSetting =>
       _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
   String get devCarouselDisabled => _pick('未启用', 'Off', '無効');
+
+  /// 详情页「轮播设置」右侧值：开着一律「已开启」，不再显示顺序/随机
+  /// （2026-08-21 同步小程序 `getPlaybackLabel`：这一行只回答「开没开」，
+  /// 具体是顺序还是随机进设置页看）。
+  String get devCarouselEnabled => _pick('已开启', 'On', '有効');
   String get devCarouselRandom => _pick('随机轮播', 'Shuffle', 'ランダム再生');
   String get devCarouselSequential => _pick('顺序轮播', 'In Order', '順番再生');
   String get devDeviceId => _pick('设备ID', 'Device ID', 'デバイスID');
@@ -1287,12 +1292,10 @@ class AppL10n {
     '新しいバージョン $version',
   );
 
-  // 「固件升级」行右侧的**版本比对结论**（2026-08-12 两端同改）。原来显示的是版本号本身，
-  // 用户看到一个数字却无从判断该不该升级。读不到设备当前版本时用 `--`，不拿「已是最新」骗他不去升级。
-  String get devFirmwareUpdateAvailable =>
-      _pick('有版本可更新', 'Update available', '更新があります');
-  String get devFirmwareUpToDate =>
-      _pick('已是最新版本', 'Up to date', '最新です');
+  // 2026-08-20 删除：`devFirmwareUpdateAvailable`「有版本可更新」/ `devFirmwareUpToDate`「已是最新版本」。
+  // 「固件升级」行右侧改回只显示**设备当前在跑的版本号**（读不到给 `--`），有没有新版本改由箭头旁的
+  // 红点表达，这两句结论文案在详情页已无处可用（点进 OTA 页后的结论文案是另一套 `ota*`）。
+  // 与小程序同步删除 `detail.js` 的 `OTA_TEXT_UPDATE` / `OTA_TEXT_LATEST`。
   String get devClearAll => _pick('一键清空', 'Clear All', '一括消去');
   String get devClearing => _pick('清空中…', 'Clearing…', '消去中…');
   String get devCleared => _pick('已清空', 'Cleared', '消去しました');
@@ -1540,6 +1543,23 @@ class AppL10n {
     '写真を読み込めません。カメラ／アルバムの権限を確認して再試行してください。',
   );
   String get homeConnectingDevice => _pick('连接设备中', 'Connecting…', '接続中…');
+
+  // ── 低电量提醒（2026-08-21 同步小程序）────────────────────────────────
+  // 口径：**用户主动点**需要连接电子纸设备的功能按钮时，电量 ≤10% 弹一次；
+  // 自动连接的场景不弹（投屏流程内部的续连等），弹窗只会打断正在跑的流程。
+  // 两档分界：10%~4% 一段、≤3% 另一段（需求原文写「3%以下」，字面上 3% 落在两档中间的缝里，
+  // 第一档明确到 4% 为止，所以 3% 归下面那档，与小程序 CRITICAL_BATTERY_MAX 一致）。
+  String get lowBatteryTitle => _pick('电量提醒', 'Battery Notice', 'バッテリー通知');
+  String get lowBatteryMessage => _pick(
+    '目前电子纸设备电量较低，请将电子纸设备放置在光线明亮处使用，并可适当减少操作频次。',
+    'The e-paper device is running low on battery. Place it in a well-lit spot and use it less often for now.',
+    '電子ペーパーのバッテリー残量が少なくなっています。明るい場所に置いて、操作の頻度を控えめにしてください。',
+  );
+  String get lowBatteryCriticalMessage => _pick(
+    '目前电子纸设备电量低于3%，即将关机，请将电子纸设备放置在阳光充足或光线明亮的区域，进行光能充电即可恢复使用。',
+    'The e-paper device is below 3% battery and will power off soon. Place it in direct sunlight or a bright area to recharge with light and it will resume working.',
+    '電子ペーパーのバッテリー残量が3%未満で、まもなく電源が切れます。日当たりの良い場所や明るい場所に置くと、光で充電されて再び使えるようになります。',
+  );
   String get homeOfflineTitle => _pick('离线模式', 'Offline Mode', 'オフラインモード');
   String get homeOfflineMessage => _pick(
     '当前网络异常，app进入离线模式无法同步投屏记录与图库',
@@ -1560,6 +1580,27 @@ class AppL10n {
       _pick('拍摄照片并投屏', 'Take a photo and cast it', '写真を撮って投影');
   String get homeCastAlbumCardSubtitle =>
       _pick('选择照片并投屏', 'Pick a photo and cast it', '写真を選んで投影');
+
+  // ── 首页六大入口（2026-08-21 同步小程序改版）────────────────────────────
+  // 原来首页只有「拍照 / 相册」两张卡，底栏另有「AI助手」「官方图库」两格；
+  // 改版后底栏只剩「首页 / 我的」，六个入口全部收进首页 3×2 宫格。
+  // ⚠️ 前两项的**标题变了**（拍照 → 拍照投屏、相册 → 相册投屏），
+  //    但底部「选择投屏方式」弹层里那两行仍用旧的 homeCastCameraTitle/homeCastAlbumTitle，
+  //    两套别互相替换。副标题两项复用旧的，文案完全一致。
+  String get homeEntryCameraTitle =>
+      _pick('拍照投屏', 'Camera Cast', 'カメラ投影');
+  String get homeEntryAlbumTitle => _pick('相册投屏', 'Album Cast', 'アルバム投影');
+  String get homeEntryUploadsTitle =>
+      _pick('我的上传', 'My Uploads', 'マイアップロード');
+  String get homeEntryUploadsSubtitle =>
+      _pick('管理我的照片', 'Manage my photos', '写真を管理');
+  String get homeEntryAiTitle => _pick('AI创作', 'AI Create', 'AI作成');
+  String get homeEntryAiSubtitle =>
+      _pick('AI生成精美图片', 'Generate images with AI', 'AIで画像を生成');
+  String get homeEntryGallerySubtitle =>
+      _pick('海量精选美图', 'Curated wallpapers', '厳選画像が多数');
+  String get homeEntryDevicesSubtitle =>
+      _pick('管理我的设备', 'Manage my devices', 'デバイスを管理');
   String get homeBindSearchingTitle =>
       _pick(
         '正在搜索附近电子纸设备',
@@ -1784,6 +1825,26 @@ class AppL10n {
     '照片已删除，投屏记录未全部删除，请稍后重试',
     'Photos deleted, but some cast records could not be removed. Please retry later.',
     '写真は削除しましたが、一部の投映履歴を削除できませんでした。後で再試行してください。',
+  );
+
+  /// 两半都删成功。原来这句写在 `state.dart` 的设备侧返回值里；2026-08-20 两半互不阻断后，
+  /// 「成功」是由调用方合并两半结果才得出的结论，文案跟着搬到这里。
+  String get galDeleteDone =>
+      _pick('已删除所选照片。', 'Selected photos deleted.', '選択した写真を削除しました。');
+
+  /// 2026-08-20（两半互不阻断）：设备侧没删掉，但投屏记录已经删了。
+  /// 必须把设备侧的原因报出来——只说「已删除」的话，用户不会知道相框上那张图其实还在。
+  String galDeleteRecordOnly(String reason) => _pick(
+    '投屏记录已删除，$reason',
+    'Cast records deleted. $reason',
+    '投映履歴を削除しました。$reason',
+  );
+
+  /// 2026-08-20（两半互不阻断）：设备侧与记录侧都没删成功，两边原因一起说。
+  String galDeleteBothFailed(String reason) => _pick(
+    '电子纸设备与投屏记录都未删除成功：$reason',
+    'Failed to delete from both the e-paper device and the cast records: $reason',
+    '電子ペーパーと投映履歴のどちらも削除できませんでした：$reason',
   );
   String get galEmptyTitle => _pick(
     '当前电子纸设备还没有投屏成功的照片',
