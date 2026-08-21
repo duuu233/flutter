@@ -61,6 +61,72 @@ bool serialsMatch(Object? a, Object? b) {
   return longer.startsWith(shorter) || longer.endsWith(shorter);
 }
 
+/// 广播 Device_ID 与后端记录里的完整 ID 是否**可能**是同一台 —— **只用于筛扫描候选**。
+///
+/// 2026-08-11（同步小程序 `broadcastCandidateMatch`）：固件把广播 Device_ID 从 4 字节换成
+/// 6 字节后，正式入口连不上。根因是 [serialsMatch] 的规则②「长度相同却不相等 → 两台设备」：
+/// 老固件是 8hex vs 12hex（长度不同，走前缀/后缀锚定，匹配得上），新固件变成 12hex vs 12hex，
+/// 只要广播那 6 字节与 0x01 的写法不完全一致（字节序反过来、或取的是 MAC 的另一段）
+/// 就被一票否决 —— **一个候选都筛不出**，扫满 12 秒后报「未搜索到该电子纸设备」。
+///
+/// 因此候选筛选放宽成两轮，[strongOnly]=true 时只认第一轮：
+///  1) **强匹配**：精确相等 / 短的是长的前缀或后缀（老口径）/ 整串**字节序相反**；
+///  2) **弱匹配**：4 字节锚段（首 4 / 末 4 字节，正序或倒序）重合。
+///
+/// ⚠️ 放宽的只是「哪些设备值得连一次看看」，**身份闸一步没让**：连上后照旧 0x01 精确校验
+/// （[verifiedDeviceSerialMatch]），不匹配就断开、排除该候选、下一轮重扫。代价是最坏多连错
+/// 一次，收益是无论固件把广播 ID 换成哪种写法都还能连上。
+/// [serialsMatch] 本身保持严格——它还被活动会话认领用着，那里没有 0x01 兜底。
+bool broadcastCandidateMatch(Object? broadcast, Object? record, {bool strongOnly = false}) {
+  final left = normalizeSerial(broadcast);
+  final right = normalizeSerial(record);
+  if (left.isEmpty || right.isEmpty) {
+    return false;
+  }
+  if (serialsMatch(left, right)) {
+    return true;
+  }
+  if (left.length == right.length && left == _reverseBytes(right)) {
+    return true; // 整串字节序相反：同一个 MAC，两端读法不同
+  }
+  if (strongOnly) {
+    return false;
+  }
+  // 弱匹配：4 字节（8 hex）锚段重合。同批设备共享 OUI，前 4 字节可能偶合到邻居，
+  // 所以调用方必须先挑强匹配，没有强匹配才用弱匹配（见 BleController.matchScannedDevice）。
+  for (final a in _anchors(left)) {
+    for (final b in _anchors(right)) {
+      if (a == b) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+/// 序列号首尾各 4 字节的锚段（含字节序相反的写法）。
+Set<String> _anchors(String serial) {
+  const anchorHex = 8; // 4 字节
+  if (serial.length < anchorHex) {
+    return const <String>{};
+  }
+  final head = serial.substring(0, anchorHex);
+  final tail = serial.substring(serial.length - anchorHex);
+  return <String>{head, tail, _reverseBytes(head), _reverseBytes(tail)};
+}
+
+/// 按字节翻转一串 hex（`AABBCC` → `CCBBAA`）；长度为奇数时原样返回。
+String _reverseBytes(String serial) {
+  if (serial.length.isOdd) {
+    return serial;
+  }
+  final buffer = StringBuffer();
+  for (var i = serial.length - 2; i >= 0; i -= 2) {
+    buffer.write(serial.substring(i, i + 2));
+  }
+  return buffer.toString();
+}
+
 /// 两组稳定设备身份是否指向同一台设备。
 ///
 /// 两侧只取完整 6 字节 ID 并精确比较；广播短 ID 不具备稳定身份资格。

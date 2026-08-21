@@ -41,6 +41,8 @@ class FrameAdvertising {
     required this.deviceId,
     required this.battery,
     this.deviceIdComplete = false,
+    this.deviceIdLayoutFallback = false,
+    this.companyMatched = false,
   });
 
   final int screenType;
@@ -54,6 +56,15 @@ class FrameAdvertising {
   /// ⚠️ **身份判定不看它**——判重、认领会话、绑定入库一律仍只认连上后 0x01 读到的值，
   /// 广播是明文、可被伪造重放。见 `docs/architecture/BLE_CONNECTION_AND_IDENTITY.md`。
   final bool deviceIdComplete;
+
+  /// 优选布局（长度够就先按 6 字节解）解不通、**回退**另一种布局才解出来的
+  /// （2026-08-11 同步小程序）。上层可据此把这条结果看得轻一点，但不必丢弃：
+  /// 丢了这台设备在列表里连屏型/电量都没有，也排不进候选。
+  final bool deviceIdLayoutFallback;
+
+  /// 厂商数据带 `0xFFFF` Company_ID —— 即「确认是本产品的广播」。
+  /// 扫描白名单在设备名缺席时靠它放行；兜底候选也只在它为真的设备里挑。
+  final bool companyMatched;
 
   final int battery;
 }
@@ -539,7 +550,7 @@ class FrameProtocol {
     return payload;
   }
 
-  /// CMD=0x21 数据包(6.8.2)：PKT_SEQ(2,小端)+DATA(本片最多 236 字节)。
+  /// CMD=0x21 数据包(6.8.2)：PKT_SEQ(2,小端)+DATA(本片最多 489 字节，2026-08-14 由 236 放宽)。
   static List<int> buildImgDataPayload(int seq, List<int> chunk) {
     final payload = <int>[];
     _pushUint16LE(payload, seq);
@@ -619,12 +630,24 @@ class FrameProtocol {
   /// 屏型不认识或电量非法（>100）视为非相框广播，返回 null。
   ///
   /// ⚠️ 新旧固件必须同时支持（灰度期两种设备并存）：靠「Company_ID 之后的剩余长度」区分，
-  /// 这是唯一可靠的判据——老包恒为 6 字节(1+4+1)、新包恒为 8 字节(1+6+1)。
-  /// 长度够 8 时**只按新版解**，绝不回退老版：回退会把 Device_ID 的第 5 个字节当成电量，
-  /// 校验碰巧通过时就会**静默给出错误的设备 ID 和错误的电量**（无报错，极难排查）。
+  /// 老包恒为 6 字节(1+4+1)、新包恒为 8 字节(1+6+1)，长度够就**优选**新布局。
+  ///
+  /// 2026-08-11（同步小程序）：优选布局**解不通时才回退**另一种。原实现是「长度够 8 就只按
+  /// 新版解、绝不回退」，理由是「回退会把 Device_ID 的第 5 个字节当成电量，校验碰巧通过就
+  /// 静默给出错误的 ID 和电量」——那条约束针对的是「**两种都解得通**时不许回退」；而这里的
+  /// 前提是优选布局**已经作废**（屏型不认识或电量 >100），原本整条广播就要丢掉，设备在列表里
+  /// 连屏型/电量都没有、也排不进候选。回退出来的结果带 [FrameAdvertising.deviceIdLayoutFallback]
+  /// 标记，供上层辨别。
   /// 与小程序 `frame-protocol.js parseAdvertising` 逐条对齐，改一端必须同步另一端。
   static FrameAdvertising? parseAdvertising(List<int> bytes) {
-    FrameAdvertising? attempt(int offset, int idLength) {
+    final companyMatched =
+        bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFF;
+
+    FrameAdvertising? attempt(
+      int offset,
+      int idLength, {
+      bool layoutFallback = false,
+    }) {
       // 屏型(1) + ID(idLength) + 电量(1)
       if (bytes.length < offset + idLength + 2) return null;
       final screenType = bytes[offset] & 0xFF;
@@ -638,6 +661,8 @@ class FrameProtocol {
         model: screen.model,
         deviceId: _bytesToId(bytes, offset + 1, idLength),
         deviceIdComplete: idLength == adDeviceIdLenV2,
+        deviceIdLayoutFallback: layoutFallback,
+        companyMatched: companyMatched,
         battery: battery,
       );
     }
@@ -645,7 +670,14 @@ class FrameProtocol {
     FrameAdvertising? attemptAt(int offset) {
       final rest = bytes.length - offset;
       if (rest >= adDeviceIdLenV2 + 2) {
-        return attempt(offset, adDeviceIdLenV2); // 新固件：屏型1 + ID6 + 电量1
+        // 新固件：屏型1 + ID6 + 电量1
+        final preferred = attempt(offset, adDeviceIdLenV2);
+        if (preferred != null) return preferred;
+        // 优选布局解不通（屏型/电量校验没过）→ 这条本来要整个丢掉，此时才试老布局
+        if (rest >= adDeviceIdLenV1 + 2) {
+          return attempt(offset, adDeviceIdLenV1, layoutFallback: true);
+        }
+        return null;
       }
       if (rest >= adDeviceIdLenV1 + 2) {
         return attempt(offset, adDeviceIdLenV1); // 老固件：屏型1 + ID4 + 电量1
@@ -654,7 +686,7 @@ class FrameProtocol {
     }
 
     // 含 Company_ID：前两字节为 0xFF 0xFF，则从第 2 字节起为 Screen_Type
-    if (bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFF) {
+    if (companyMatched) {
       final withId = attemptAt(2);
       if (withId != null) return withId;
     }

@@ -83,11 +83,13 @@ class AiI18n {
       AppLanguage.en: 'Missing message ID',
       AppLanguage.ja: 'メッセージIDがありません',
     },
+    // 张数 2026-08-12 由 4 张放宽到 5 张（与 `_kMaxImages` / [AppL10n.aiMaxImages] 必须一致）。
+    // ⚠️ BoltStar 文档 §二写的仍是 4 张，若服务端没同步放宽，第 5 张会被它按 20012 打回。
     'error.20012': {
-      AppLanguage.zh: '一次最多处理 4 张图片',
-      AppLanguage.zhHant: '一次最多處理 4 張圖片',
-      AppLanguage.en: 'You can process up to 4 images at a time',
-      AppLanguage.ja: '一度に処理できる画像は最大4枚です',
+      AppLanguage.zh: '一次最多处理 5 张图片',
+      AppLanguage.zhHant: '一次最多處理 5 張圖片',
+      AppLanguage.en: 'You can process up to 5 images at a time',
+      AppLanguage.ja: '一度に処理できる画像は最大5枚です',
     },
     // v1.0.4 新增：每用户最多 20 个会话（`POST /session/new` 回 20013 MAX_SESSIONS_REACHED）
     'error.20013': {

@@ -341,13 +341,31 @@ class BleConnectPlan {
 /// 单设备 BLE 会话。一个实例管理一台已连接设备的收发与图传。
 class FrameBleClient {
   /// 真实投屏参数，与小程序 `utils/device-ble.js` 保持一致。
-  /// pace/window 从 [BleTuning] 取（默认值就是小程序那组 3ms / 10 包）——正式包内可在
+  /// pace/window 从 [BleTuning] 取（默认值就是小程序那组 3ms / 50 包）——正式包内可在
   /// 「投屏性能自检」页临时改成对照组，不必为一次对照实验重新出一个包。
   static int get transferPacketPaceMs => BleTuning.paceMs;
   static int get transferWindowPackets => BleTuning.windowPackets;
-  static const int transferWindowMaxPackets = 10;
+  /// 窗口上限。2026-08-14 由 10 提到 50（固件收包缓冲扩到 50 包），与小程序
+  /// `TRANSFER_WINDOW_MAX` 同步。这是**上限**，实际窗口由下方 AIMD 按设备吞吐自适应。
+  static const int transferWindowMaxPackets = 50;
   static const Duration transferAckAdvanceTimeout = Duration(milliseconds: 600);
   static const int transferMaxRetries = 15;
+
+  // ── AIMD 拥塞控制参数（2026-08-14 与小程序 createAdaptivePacer 同步）──────────
+  /// 首轮还没有观测值时的 ACK 超时。
+  static const int ackTimeoutStartMs = 600;
+  /// 有观测值后的下限：判早了也只是多等一轮宽限，不会立刻整窗重发。
+  static const int ackTimeoutMinMs = 300;
+  /// 上限：再慢也该判为丢包/中断。
+  static const int ackTimeoutMaxMs = 3000;
+  /// 退让时每包间隔的上限。窗口才是防溢出的主控，间隔抬太高只会白拖慢。
+  static const double paceBackoffMaxMs = 16;
+  /// 连续几个干净窗口把窗口向 capWindow 涨一档。
+  static const int windowRecoverAfter = 2;
+  /// 顶着丢包记忆(capWindow)跑满这么多个干净窗口，才允许 cap +1 小步上探。
+  static const int capProbeAfter = 8;
+  /// 连续几个干净窗口把退让抬上去的每包间隔砍半回落。
+  static const int paceRecoverAfter = 2;
 
   /// 建连预算（阶梯 + autoConnect 兜底）统一由 [BleConnectPlan] 描述，
   /// 按候选的原始 RSSI 在 `BleController._connectPlanForRssi` 里选档。
@@ -397,6 +415,11 @@ class FrameBleClient {
   // FF01 是否也支持「有应答写」——[BleTuning.forceAckedWrite] 的前提。
   bool _supportsAckedWrite = false;
   int _lastImgAck = -1; // 设备已连续接收到的最后包号
+
+  /// 本条会话上一张图收敛出的稳态窗口（AIMD 的 capWindow）。多张连传时第二张起直接从它出发，
+  /// 不再每张都从满窗重新撞一遍设备缓冲（每次撞墙 ≈1~2s 的宽限+超时+整窗重发）。
+  /// 与小程序 `session.tunedWindow` 同源。断连重建会话即复位（字段随实例走）。
+  int? _tunedWindow;
   // 图传发送方在等 0x23 累计 ACK 时挂起的唤醒器；ACK 一到 _onNotify 即 complete。
   // 图传协议全程串行（同一时刻只有一张图在传），单个字段即可。
   Completer<void>? _imgAckWaiter;
@@ -426,14 +449,25 @@ class FrameBleClient {
   bool get writeWithoutResponse => _writeWithoutResponse;
   BluetoothDevice? get device => _device;
 
-  /// 由 MTU 推算每个图片数据包能装多少字节（上限 236，见 6.8.2）。
+  /// 每个 0x21 图片数据包的数据字节上限（6.8.2）。
+  /// 2026-08-14 由 236 提到 489（固件那轮传输优化：0x21 的 PAYLOAD = PKT_SEQ(2)+数据，
+  /// PAYLOAD 上限 491；489+8=497=500-3 正好卡满 MTU 500 的单次可写上限），
+  /// 与小程序 `IMG_DATA_CHUNK_MAX` 同步。
+  static const int imgDataChunkMax = 489;
+
+  /// 由 MTU 推算每个图片数据包能装多少字节（上限 [imgDataChunkMax]，见 6.8.2）。
   /// 必须保证「整帧(=chunk+8) ≤ 单次可写(=MTU-3)」，否则数据包会被静默丢弃导致图传卡死。
+  ///
+  /// 顶不到 MTU 500 的链路不需要特判，这里按「数据 ≤ MTU-11」如实收缩：
+  /// MTU 247→236（与 08-14 之前完全一致）、iPhone 常见的 185→174。
   int get dataChunk {
     final writable = (_mtu <= 0 ? 185 : _mtu) - 3;
-    final maxFrame = writable < 244 ? writable : 244;
+    final maxFrame = writable < imgDataChunkMax + 8
+        ? writable
+        : imgDataChunkMax + 8;
     final chunk = maxFrame - 8;
     if (chunk < 1) return 1;
-    return chunk > 236 ? 236 : chunk;
+    return chunk > imgDataChunkMax ? imgDataChunkMax : chunk;
   }
 
   /// 收紧 flutter_blue_plus 自身的日志级别（进程内做一次，由 `main()` 调用）。
@@ -882,7 +916,7 @@ class FrameBleClient {
 
       _mtu = await _negotiateMtu(device);
       // 埋点①：MTU 是「iOS 投屏慢」排查的第一现场，chunk 直接决定包数。
-      // iPhone 正常 mtu=185（部分新机 527）对应 chunk=174；Android requestMtu(512) 后 chunk=236。
+      // iPhone 正常 mtu=185（部分新机 527）对应 chunk=174；Android requestMtu(512) 后 chunk=489。
       _perfLog(
         'connected',
         'connected platform=${Platform.isAndroid ? 'android' : 'ios'} '
@@ -1126,7 +1160,7 @@ class FrameBleClient {
 
   /// 协商 / 读取本次会话的 ATT MTU。
   ///
-  /// Android：主动 `requestMtu(512)`，真机通常给到 517 → 分包稳拿上限 236。
+  /// Android：主动 `requestMtu(512)`，真机通常给到 517 → 分包稳拿上限 489（2026-08-14 起）。
   ///
   /// iOS：**没有任何请求 MTU 的 API**，只能读系统协商结果。而 flutter_blue_plus 的
   /// `device.mtuNow` 是原生侧推上来的缓存值，`connect()` 返回时这条消息可能还没到，
@@ -1870,10 +1904,10 @@ class FrameBleClient {
     required int width,
     required int height,
     required Uint8List data,
-    // 发送节奏上界（ms）。3ms 对齐小程序 PACKET_PACE_MS：固件已扩大收包缓冲(10 包)，
+    // 发送节奏上界（ms）。3ms 对齐小程序 PACKET_PACE_MS：固件已扩大收包缓冲(50 包)，
     // 配合 7.5ms 连接间隔按最快速率喂数据。原来默认 10ms —— AIMD 每 6 个干净窗口才降 0.5ms，
     // 从 10 探到 0 要 120 个窗口，整张图的前 1/6 都跑在明显偏慢的节奏上。
-    // null = 用当前 [BleTuning] 的值（默认 3ms / 10 包）。不能写成默认参数值，
+    // null = 用当前 [BleTuning] 的值（默认 3ms / 50 包）。不能写成默认参数值，
     // 因为它们已改成读运行时旋钮的 getter，而默认参数必须是编译期常量。
     int? pace,
     int? window,
@@ -1952,7 +1986,7 @@ class FrameBleClient {
           ? 1
           : (windowSize > transferWindowMaxPackets
                 ? transferWindowMaxPackets
-                : windowSize); // 固件收包缓冲 10 包，夹到 [1,10]
+                : windowSize); // 固件收包缓冲 50 包，夹到 [1,50]
       final totalPackets = (dataSize + chunk - 1) ~/ chunk;
 
       // D1：预取阶段按会话分包大小预组好的全部 0x21 帧，分包/帧数对得上才用（会话重建后 MTU 可能变化）；
@@ -1977,6 +2011,26 @@ class FrameBleClient {
       const paceProbeAfter = 6;
       double curPace = paceMs.toDouble();
       int cleanRun = 0;
+
+      // ── 丢包记忆（类 TCP ssthresh，2026-08-14 与小程序 createAdaptivePacer 同步）──
+      // 没有这层记忆时：窗口减半收敛到设备吃得下的档位后，每 2 个干净窗口就往回涨，
+      // 涨过设备缓冲又溢出，每次溢出付出「宽限＋超时＋整窗重发」≈1~2s ——
+      // 一张几百包的图要撞墙几十次，真机表现就是「参数更大反而慢好几倍」。
+      // 设备收包缓冲是固定容量、不是随行情波动的网络拥塞，所以丢包点必须记住：
+      // 超时后 cap 压到减半值，此后窗口最多涨回 cap；cap 只按每 [capProbeAfter] 个干净窗口
+      // +1 小步上探——射频毛刺造成的误判能慢慢爬回来，固定的缓冲上限则让 cap 稳定钉住。
+      // [_tunedWindow] 是上一张收敛出的稳态窗口：多张连传第二张起直接从稳态出发。
+      int capWindow = _tunedWindow == null
+          ? win
+          : (_tunedWindow! < win ? _tunedWindow! : win);
+      int curWindowAimd = capWindow;
+      int minWindow = capWindow;
+      // 实测「等一次 0x23 推进」耗时的指数滑动平均，用于自适应 ACK 超时
+      double emaAdvanceMs = 0;
+      // 同一卡点是否已用过一次「宽限等待」：先多等一轮再判丢包，别把「慢」当成「丢」。
+      // ⚠️ 重试后**不重置**：宽限的语义是「同一个卡点先多等一轮」，每次重试都重置的话
+      // 同一个卡点每轮都白付一次双倍超时的宽限，卡顿成本直接翻倍。
+      bool graceUsed = false;
       _lastImgAck = -1;
       onProgress?.call(0, totalPackets, 'start');
 
@@ -1993,13 +2047,9 @@ class FrameBleClient {
             kind: FrameBleErrorKind.aborted,
           );
         }
-        // 卡住重试时收敛：窗口逐步缩到 1 包、每包间隔逐步拉大，专门救「设备只收按序包、忙时丢包」。
-        final curWindow = retries == 0
-            ? win
-            : (win - retries < 1 ? 1 : win - retries);
-        final sendPace = retries == 0
-            ? curPace
-            : (curPace + 30 * retries > 150 ? 150.0 : curPace + 30 * retries);
+        // AIMD：窗口与每包间隔由拥塞控制状态决定（不再按 retries 临时缩一点、一推进就弹回满窗）。
+        final curWindow = curWindowAimd;
+        final sendPace = curPace;
 
         // 填窗：保持在途未确认包 < curWindow，每次 0x23 推进后回到这里补满。
         while (nextSeq < totalPackets &&
@@ -2027,24 +2077,53 @@ class FrameBleClient {
         if (_lastImgAck >= totalPackets - 1) break;
 
         final before = _lastImgAck;
-        // 等设备 0x23 把「已连续接收包号」推过 before；超时 600ms（< 设备 1s 红线，PRD 6.4.1）。
+        // ACK 超时按实测推进耗时自适应（设备只是慢时别误判成丢包）；宽限那一轮等更久——
+        // 真丢包多花的这点时间，远小于误判后整窗重发的代价。
+        // ⚠️ num.clamp() 的静态类型是 num（int 上没有窄化重载），必须 .toInt() 才能赋给 int
+        final int ackBase = emaAdvanceMs > 0
+            ? (emaAdvanceMs * 4 + 150)
+                  .round()
+                  .clamp(ackTimeoutMinMs, ackTimeoutMaxMs)
+                  .toInt()
+            : ackTimeoutStartMs;
+        final int ackWaitMs = graceUsed
+            ? (ackBase * 2 > ackTimeoutMaxMs ? ackTimeoutMaxMs : ackBase * 2)
+            : ackBase;
+        final swAdvance = Stopwatch()..start();
         final advanced = await _waitAckAdvance(
           before,
-          transferAckAdvanceTimeout,
+          Duration(milliseconds: ackWaitMs),
         );
+        swAdvance.stop();
         if (!advanced) {
           // 超时回调和通知可能同时发生；重发前再复查一次，已推进就直接继续填窗。
           if (_lastImgAck > before) {
             retries = 0;
+            graceUsed = false;
             onProgress?.call(_confirmed(totalPackets), totalPackets, 'data');
+            continue;
+          }
+          // 第一次超时先宽限等一轮：设备只是慢时整窗重发只会把它压得更死
+          // （重发的包同样要排队，而它还没消化完上一批）。
+          if (!graceUsed) {
+            graceUsed = true;
             continue;
           }
           if (++retries > transferMaxRetries) {
             throw FrameBleException(
-              '图传中断：设备停在已接收第 $_lastImgAck 包不再前进。可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunk 字节',
+              '图传中断：设备停在已接收第 $_lastImgAck 包不再前进'
+              '（已自动退让到窗口 $curWindowAimd 包 / 每包间隔 ${curPace.toStringAsFixed(1)}ms 仍无推进）。'
+              '可能设备忙或处理不过来。当前 MTU=$_mtu、每包 $chunk 字节',
             );
           }
           totalRetries++;
+          // AIMD 退让：窗口减半并**记住丢包点**（capWindow），每包间隔翻倍且保持住。
+          curWindowAimd = curWindowAimd ~/ 2 < 1 ? 1 : curWindowAimd ~/ 2;
+          capWindow = curWindowAimd; // 此后最多涨回这里
+          final doubled = (curPace < 1 ? 1.0 : curPace) * 2;
+          curPace = doubled > paceBackoffMaxMs ? paceBackoffMaxMs : doubled;
+          if (curWindowAimd < minWindow) minWindow = curWindowAimd;
+          cleanRun = 0;
           onProgress?.call(
             _confirmed(totalPackets),
             totalPackets,
@@ -2053,10 +2132,6 @@ class FrameBleClient {
             retries: retries,
           );
           nextSeq = _lastImgAck + 1;
-          curPace = curPace + paceStep > paceMs
-              ? paceMs.toDouble()
-              : curPace + paceStep;
-          cleanRun = 0;
           final backoff = (50 * retries) > 150
               ? 150
               : 50 * retries; // 极短退避(≤150ms)
@@ -2064,20 +2139,44 @@ class FrameBleClient {
           continue;
         }
 
-        // 干净窗口：连续 paceProbeAfter 个就下探更快一档（AIMD，探到 0）。
-        if (retries != 0) {
-          cleanRun = 0;
-        } else if (curPace > paceFloor && ++cleanRun >= paceProbeAfter) {
+        // ── 干净窗口 ────────────────────────────────────────────────────────
+        final advanceMs = swAdvance.elapsedMilliseconds.toDouble();
+        emaAdvanceMs = emaAdvanceMs > 0
+            ? emaAdvanceMs * 0.75 + advanceMs * 0.25
+            : advanceMs;
+        graceUsed = false;
+        retries = 0;
+        cleanRun++;
+        if (curWindowAimd < capWindow && cleanRun % windowRecoverAfter == 0) {
+          // cap 以内快速涨回（丢包后的临时缩窗尽快恢复到已知安全档）
+          final grown = curWindowAimd + (win ~/ 8 < 1 ? 1 : win ~/ 8);
+          curWindowAimd = grown > capWindow ? capWindow : grown;
+        } else if (curWindowAimd >= capWindow &&
+            capWindow < win &&
+            cleanRun % capProbeAfter == 0) {
+          // 顶着 cap 稳跑很久了才小步 +1 上探，试探设备是不是其实吃得下更多
+          capWindow += 1;
+          curWindowAimd = capWindow;
+        }
+        if (curPace > paceMs) {
+          // 退让抬上去的间隔快速砍半回落到起点：窗口已经压住了溢出，间隔长期抬着只会白拖慢
+          if (cleanRun % paceRecoverAfter == 0) {
+            final halved = (curPace / 2).floorToDouble();
+            curPace = halved < paceMs ? paceMs.toDouble() : halved;
+          }
+        } else if (curPace > paceFloor && cleanRun % paceProbeAfter == 0) {
+          // 链路一直干净就继续往下探每包间隔（可以探到地板）
           curPace = curPace - paceStep < paceFloor
               ? paceFloor
               : curPace - paceStep;
-          cleanRun = 0;
         }
-        retries = 0;
         onProgress?.call(_confirmed(totalPackets), totalPackets, 'data');
       }
 
       swData.stop();
+      // 把本张收敛出的稳态窗口(capWindow)记到会话上：同一条连接的下一张从它出发。
+      // 干净跑完时 cap = 配置上限，等于没约束。
+      _tunedWindow = capWindow;
 
       // 0x22 结束：设备核对整图 CRC32 并落盘，给足 20s。
       final swEnd = Stopwatch()..start();
@@ -2100,7 +2199,7 @@ class FrameBleClient {
             'throughput=${kbps.toStringAsFixed(1)}KB/s '
             'retries=$totalRetries finalPace=${curPace.toStringAsFixed(1)}ms '
             'reqInterval=${BleTuning.skipConnIntervalRequest ? 'none' : '$transferConnIntervalMs'}ms '
-            'win=$win writeWithoutResponse=$_imgWriteWithoutResponse '
+            'win=$win->min$minWindow->cap$capWindow writeWithoutResponse=$_imgWriteWithoutResponse '
             'tuning=${BleTuning.describe()} ok=${endAck.ok}',
       );
 

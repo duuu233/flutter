@@ -6,8 +6,8 @@ import '../l10n/app_l10n.dart';
 ///
 /// 用法是**三分支互斥链**，loading 分支必须排他优先、写在最前：
 /// ```dart
-/// if (!state.albumLoaded) const PageLoading()
-/// else if (photos.isEmpty) ...页内空态
+/// if (!state.castRecordsLoaded) const PageLoading()
+/// else if (records.isEmpty) ...页内空态
 /// else ...列表
 /// ```
 /// 不要写成「空态 if」和「loading 遮罩 if」两条独立分支——那样首帧会同时命中空态。

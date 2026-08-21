@@ -22,11 +22,18 @@ import '../../cast/recast_download.dart';
 /// - 沿用原「设备照片」页的整套 UI：常驻可选（全选 + 数量 + 每格选择圈 + 底部三枚圆钮）；
 /// - 底部第一枚由原「刷新屏幕(0x24)」改为「再次投屏」：单选投一张、多选/全选按批量传输
 ///   走同一条链路（上限 [CastUploadLimit.batchLimit]）；
-/// - 底部第二枚沿用图库删除：设备槽位(0x12) + 相册记录 + **来源投屏记录**三处一起删。
+/// - 底部第二枚是删除：设备槽位(0x12) + **来源投屏记录**两处一起删。
 ///
-/// ⚠️ 相册照片（[PhotoFrameState.myAlbum]）仍是设备槽位（`imgIndex`）的账本：删除时先按记录的
-///    [CastRecord.photoId] 换算回 [AlbumPhoto] 再交给 [PhotoFrameState.deleteAlbumPhotos]，
-///    不要改成用投屏记录自己的 `imageIndex`——那只是当次投屏的历史值，设备侧之后被删/被清空都不会回写。
+/// ⚠️ 本页（2026-08-17 起）**不再调用任何「我的图库」接口**：数据来源只剩设备列表
+///    （[PhotoFrameState.refreshDevices]，铺设备下拉）与投屏成功记录
+///    （[PhotoFrameState.refreshCastRecords]，铺网格）。
+///    · 删除索引的唯一来源是**这条投屏记录自己的 `imgIndex`**（见
+///      [PhotoFrameState.resolveDeleteSlots]）：列表本就是投屏记录铺的，记录里的索引正是投屏成功时
+///      `editUserProductImgRecord` 写进去的那份；缺索引整批终止，绝不推算。
+///    · 再次投屏的图直接用记录自己的 `img`：2026-07-22 起上传的就是原图，图库照片与这条记录
+///      本就是同一次上传的同一张，绕图库那一跳只多一个请求。
+///    · 唯一保留的「清空」相关行为是提醒：进页面/切设备时查 `getUserProductClearImg`
+///      （[_checkDeviceClearStatus]），它查的是 UserProduct 侧设备状态，不属于图库列表链路。
 class GalleryPage extends StatefulWidget {
   const GalleryPage({super.key, required this.state});
 
@@ -70,8 +77,11 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
 
   /// 首屏/重入的完整加载：
   /// 1. 先拿设备列表——设备回来才知道默认筛哪台（记录接口要带 userProductId，顺序不能并发）；
-  /// 2. 再并发拉「相册照片（槽位账本 + 原图）」与「当前设备的投屏成功记录（列表数据源）」；
+  /// 2. 再拉当前设备的投屏成功记录（本页唯一的列表数据源）；
   /// 3. 最后查一次一键清除状态。
+  ///
+  /// 2026-08-17：第 2 步原本是「相册照片 + 投屏记录」两个接口并发，图库那个已经没有消费方了，
+  /// 留着等于让一个用不上的接口有权把整页打成「加载失败」（它和 getDevices 一起进 Future.wait）。
   Future<void> _loadAll() async {
     if (mounted) {
       setState(() => _loading = true);
@@ -81,7 +91,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       return;
     }
     _ensureDeviceFilter();
-    await Future.wait([state.refreshAlbum(), _refreshRecords()]);
+    await _refreshRecords();
     if (!mounted) {
       return;
     }
@@ -135,7 +145,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     }
     // 期间可能解绑了当前筛选的设备：重新定一次默认设备再拉数据。
     _ensureDeviceFilter();
-    await Future.wait([state.refreshAlbum(), _refreshRecords()]);
+    await _refreshRecords();
     if (!mounted) {
       return;
     }
@@ -143,7 +153,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     _checkDeviceClearStatus();
   }
 
-  /// 下拉每次展开前只重拉设备接口，不复用上次进页时的设备列表，也不连带重拉整份相册。
+  /// 下拉每次展开前只重拉设备接口，不复用上次进页时的设备列表，也不连带重拉记录。
   Future<void> _refreshDeviceFiltersForMenu() async {
     await state.refreshDevices();
     if (!mounted) {
@@ -193,13 +203,16 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     return disambiguateDeviceFilterLabels(options);
   }
 
-  /// 默认选中单台设备（对齐小程序 `album/list.js pickDefaultFilter`，2026-08-05 口径）：
+  /// 默认选中单台设备（对齐小程序 `album/list.js pickDefaultFilter`，2026-08-17 收成三档）：
   ///
   /// 1. **保留用户当前选中的那台**（仍在筛选项里）——本页 `didPopNext` 会重跑，不保留的话
   ///    「点进照片再返回」会把用户手动切过的设备冲掉；
   /// 2. 否则**第一台连接中的**设备（外面刚连上哪台，进来就看哪台）；
-  /// 3. 否则第一台「有照片」的设备（避免默认打开空设备）；
-  /// 4. 再否则设备列表首台。
+  /// 3. 再否则设备列表首台。
+  ///
+  /// 2026-08-17 删掉了原来夹在 2、3 之间的「第一台有照片的设备」：它的判据取自图库照片的归属
+  /// 设备，而本页数据源是投屏记录、图库列表已不再拉。要按「哪台有照片」排就得把每台设备的记录
+  /// 都拉一遍（一台一个请求），代价远大于收益——且第 2 档已经覆盖了最常见的场景。
   ///
   /// ⚠️ 连接态**现算**（[PhotoFrameState.isDeviceActuallyConnected] = 真实 BLE 会话 + 身份比对），
   /// 不看 [DeviceItem.connected] 那个缓存标记——它可能是上一次刷新前的旧值，也可能只表示
@@ -225,17 +238,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
           selectable.contains(device.id) &&
           state.isDeviceActuallyConnected(device.id),
     );
-    final hasPhotos = state.myAlbum.map((photo) => photo.deviceId).toSet();
     _deviceFilter =
         (connected.isNotEmpty ? connected.first : null)?.id ??
         devices
             .firstWhere(
-              (device) =>
-                  selectable.contains(device.id) && hasPhotos.contains(device.id),
-              orElse: () => devices.firstWhere(
-                (device) => selectable.contains(device.id),
-                orElse: () => devices.first,
-              ),
+              (device) => selectable.contains(device.id),
+              orElse: () => devices.first,
             )
             .id;
   }
@@ -253,22 +261,6 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
               (filter == null || record.deviceId == filter),
         )
         .toList();
-  }
-
-  /// 记录 → 相册照片（按 [CastRecord.photoId] = 后端 `uProductImgId` 关联）。
-  /// 取不到返回 null：相册照片已被删 / 后端没回该字段，这类记录只能删记录本身，
-  /// 也没有图库原图可用（再次投屏回退用记录里的投屏图）。
-  AlbumPhoto? _photoOfRecord(CastRecord record) {
-    final photoId = record.photoId;
-    if (photoId == null || photoId.isEmpty) {
-      return null;
-    }
-    for (final photo in state.myAlbum) {
-      if (photo.id == photoId) {
-        return photo;
-      }
-    }
-    return null;
   }
 
   /// 已选记录，按**网格展示顺序**返回（不是 Set 的迭代顺序）：
@@ -395,10 +387,11 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   }
 
   /// 删除选中照片（对齐小程序 album/list.js confirmDeleteSelected）：
-  /// 设备槽位(0x12，含删到屏显图时的补刷屏) → 相册记录 → **来源投屏记录**，三处一起删。
+  /// 设备槽位(0x12，含删到屏显图时的补刷屏) → **来源投屏记录**，两处一起删。
   ///
-  /// 必须连投屏记录一起删：本页列表就是按成功记录铺的，只删设备与相册记录的话，
-  /// 下次进来这张照片还在列表里。
+  /// 必须连投屏记录一起删：本页列表就是按成功记录铺的，只删设备侧的话，下次进来这张还在列表里。
+  /// 2026-08-17 起端上到此为止，**不再删图库照片**（`delUserProductImg` 已整体下线），
+  /// 图库照片的清理归后端。
   Future<void> _confirmDelete() async {
     final records = _selectedRecordsInOrder;
     if (records.isEmpty) {
@@ -416,29 +409,26 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (confirmed != true || !mounted) {
       return;
     }
-    // 记录 → 相册照片 id：设备槽位解析与相册记录删除都按它走，顺带去重。
-    // 换算不到的记录（相册照片已删 / 后端没回 uProductImgId）设备侧本就无从删起，
-    // 只删记录本身——不能因此挡住整批删除，否则这类记录会永久卡在列表里。
-    final photoIds = <String>{};
-    for (final record in records) {
-      final photo = _photoOfRecord(record);
-      if (photo != null) {
-        photoIds.add(photo.id);
-      }
-    }
-    // ⚠️ 相册账本这次没加载成功时，photoId 一律换算不到——继续走下去就变成「只删记录、
-    //    不删设备上的图」，相框上会留下再也删不掉的孤儿图片。这种情况直接拦下让用户重试，
-    //    不能靠「换算不到就只删记录」那条兜底（那条只针对个别记录，不针对整份账本缺失）。
-    if (photoIds.length < records.length && state.albumLoadError) {
-      AppToast.warn(context, l10n.galDeleteNeedAlbum);
+    // 待删槽位只认**每条投屏记录自己的 imgIndex**：任意一条缺索引/非法就整批终止，
+    // 绝不按设备掩码或列表顺序推算位置（推算只会删掉别人的图）。
+    final slots = PhotoFrameState.resolveDeleteSlots(records);
+    if (slots == null) {
+      AppToast.warn(context, l10n.galDeleteNoSlot);
       return;
     }
-    // 权限门禁：删除会走设备侧 0x12，未连接时 deleteAlbumPhotos 内部自动扫连
+    // 目标设备 = 当前分类的这台（列表本就是按它向后端筛出来的）；记录带 userProductId 时以它为准。
+    final targetDeviceId = records.first.deviceId.isNotEmpty
+        ? records.first.deviceId
+        : (_deviceFilter ?? '');
+    if (targetDeviceId.isEmpty) {
+      AppToast.warn(context, l10n.galRecastNoDevice);
+      return;
+    }
+    // 权限门禁：删除会走设备侧 0x12，未连接时 deleteDevicePhotoSlots 内部自动扫连
     // （state.dart `connectDevice`）——扫连**必须**先拿到蓝牙/定位授权。
     // 位置在「用户已确认删除」之后、蒙层 loading 之前：授权框要单独出现，
     // 不能和设备操作同屏（见 PermissionGate 文档）。
-    if (photoIds.isNotEmpty &&
-        (!await PermissionGate.ensureBleReady(context) || !mounted)) {
+    if (!await PermissionGate.ensureBleReady(context) || !mounted) {
       return;
     }
     // 设备侧删除(0x12)可能耗时较久（最长约 180s），期间用蒙层 loading 阻断误操作
@@ -446,16 +436,18 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     _showBlockingLoading(l10n.galDeleting);
     // dismiss 不做 mounted 门控（hide 本就不依赖 context）：页面在 await 期间被
     // 卸载时也要收掉 root 栈上 canPop:false 的蒙层，否则整个 App 假死。
-    ActionFeedback? albumFeedback;
+    // 与 _recastSelected 同一套写法：非空 final 在 try 里赋值，异常时后面的代码本就到不了。
+    final ActionFeedback deviceFeedback;
     ({int total, int failed})? recordResult;
     try {
-      if (photoIds.isNotEmpty) {
-        albumFeedback = await state.deleteAlbumPhotos(photoIds);
-      }
-      // 设备/相册没删成功就**不动**投屏记录：留着记录用户才能重试，
+      deviceFeedback = await state.deleteDevicePhotoSlots(
+        deviceId: targetDeviceId,
+        slots: slots,
+      );
+      // 设备侧没删成功就**不动**投屏记录：留着记录用户才能重试，
       // 也不会出现「列表里没了、设备上还挂着」。
-      if (albumFeedback == null || albumFeedback.success) {
-        // 允许部分失败：设备与相册记录已经删掉，不能因为记录没删干净就整体回滚。
+      if (deviceFeedback.success) {
+        // 允许部分失败：设备上的图已经删掉，不能因为记录没删干净就整体回滚。
         recordResult = await state.deleteCastRecords(
           records.map((record) => record.id),
         );
@@ -466,14 +458,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (!mounted) {
       return;
     }
-    // 复制成 final 局部再判空：try 块里赋值的变量在 try 之后不做类型提升。
-    final album = albumFeedback;
-    if (album != null && !album.success) {
-      AppToast.warn(context, album.message);
+    if (!deviceFeedback.success) {
+      AppToast.warn(context, deviceFeedback.message);
       return;
     }
     setState(_selectedIds.clear);
-    // 以后端为准重新对账（相册计数、记录列表都要跟着变）。
+    // 以后端为准重新对账（张数、记录列表都要跟着变）。
     await _reloadRecordsForFilter();
     if (!mounted) {
       return;
@@ -483,16 +473,11 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       AppToast.warn(context, l10n.galDeleteRecordPartialFail);
       return;
     }
-    if (album == null) {
-      // 这批记录都没有对应的相册照片（孤儿记录），只删掉了记录本身。
-      _showFeedback(l10n.galDeleted);
-      return;
-    }
-    // 「照片在此设备异常」「刷屏失败」这类「删成功但结果不理想」走警告样式。
-    if (album.warn) {
-      AppToast.warn(context, album.message);
+    // 「刷屏失败」这类「删成功但结果不理想」走警告样式。
+    if (deviceFeedback.warn) {
+      AppToast.warn(context, deviceFeedback.message);
     } else {
-      _showFeedback(album.message);
+      _showFeedback(deviceFeedback.message);
     }
   }
 
@@ -526,14 +511,14 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       _showFeedback(l10n.galRecastLimit(limit));
       return;
     }
-    // 图源优先「相册里同一张照片的原图」（按 uProductImgId 关联）：记录里的 img 是后端按设备
-    // 尺寸转换过的，直接拿去预览会显得被拉伸；相册 img 与首次投屏同源，两次进预览页显示一致。
-    // 相册照片已删 / 后端没回 uProductImgId 时退回记录里的图（保持可用）。与小程序同口径。
+    // 图源直接取记录自己的 img（2026-08-17：不再按 uProductImgId 回图库找原图）。
+    // 那一跳的旧理由是「记录里的 img 是后端按设备尺寸转换过的，直接预览会显得被拉伸」，写于
+    // 2026-07-06；自 2026-07-22 `setUserProductUpload` 改传**原图**（只按设备长边等比缩、
+    // 不改比例）起就已失效——图库那条照片与这条记录本就是同一次上传的同一张图，绕一圈只多一个
+    // 请求。缩略图仅在 img 缺失时兜底。与小程序 doRetryProjection 同口径。
     final urls = <String>[];
     for (final record in records) {
-      final photo = _photoOfRecord(record);
-      final url =
-          photo?.imageUrl ?? record.imageUrl ?? record.thumbUrl ?? '';
+      final url = record.imageUrl ?? record.thumbUrl ?? '';
       if (url.isNotEmpty) {
         urls.add(url);
       }

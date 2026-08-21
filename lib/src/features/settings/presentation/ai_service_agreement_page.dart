@@ -56,15 +56,15 @@ class AiServiceAgreementPage extends StatelessWidget {
       LegalSection(
         heading: l10n.pick('1. 服务说明', '1. Service Description', '1. サービス内容'),
         body: l10n.pick(
-          '1.1 本服务基于“阿里云百炼”大模型服务平台提供技术支持，为您提供包括文本对话、'
+          '1.1 本服务基于“火山引擎”大模型服务平台提供技术支持，为您提供包括文本对话、'
               'AI图片生成、AI图片美化等功能。\n\n'
               '1.2 本服务仅限您在同意本协议后，于我们指定的小程序或App内使用。',
-          '1.1 The Service is technically supported by the Alibaba Cloud Model '
-              'Studio foundation-model platform and provides features including '
+          '1.1 The Service is technically supported by the Volcano Engine '
+              'foundation-model platform and provides features including '
               'text chat, AI image generation, and AI image enhancement.\n\n'
               '1.2 You may use the Service only after agreeing to this Agreement '
               'and only within a mini program or App designated by us.',
-          '1.1 本サービスは、Alibaba Cloud Model Studioの大規模モデルサービス'
+          '1.1 本サービスは、火山引擎（Volcano Engine）の大規模モデルサービス'
               'プラットフォームによる技術支援に基づき、テキスト対話、AI画像生成、'
               'AI画像加工などの機能を提供します。\n\n'
               '1.2 本サービスは、本規約に同意した後、当社が指定するミニプログラム'
@@ -78,28 +78,31 @@ class AiServiceAgreementPage extends StatelessWidget {
           '2. データの利用と許諾',
         ),
         body: l10n.pick(
+          // ⚠️ 2.2「不会被存储」按小程序口径**原样保留**：新的同意弹窗文案已不再作这条
+          // 承诺，两处对同一件事的说法现在不一致，属法律文本、待产品/法务定夺，端上不擅自动。
           '2.1 授权：为提供本服务，您授权我们将您主动提交的文字或图片内容传输至'
-              '“阿里云百炼”AI服务进行处理。\n\n'
+              '“火山引擎”AI服务进行处理。\n\n'
               '2.2 数据处理：您明确知悉并同意，您发送的内容仅用于处理您本次的AI请求，'
               '不会被存储，也不会被用于任何模型训练或优化。\n\n'
-              '2.3 技术提供方：本服务的底层AI技术由阿里云计算有限公司（或其关联公司）提供。',
+              '2.3 技术提供方：本服务的底层AI技术由北京火山引擎科技有限公司（或其关联公司）提供。',
           '2.1 Authorization: To provide the Service, you authorize us to '
-              'transmit text or images that you actively submit to Alibaba '
-              'Cloud Model Studio AI services for processing.\n\n'
+              'transmit text or images that you actively submit to the Volcano '
+              'Engine AI service for processing.\n\n'
               '2.2 Data processing: You expressly acknowledge and agree that '
               'content you send is used only to process your current AI request, '
               'will not be stored, and will not be used for any model training '
               'or optimization.\n\n'
               '2.3 Technology provider: The underlying AI technology for the '
-              'Service is provided by Alibaba Cloud Computing Co., Ltd. or its affiliates.',
+              'Service is provided by Beijing Volcano Engine Technology Co., Ltd. '
+              'or its affiliates.',
           '2.1 許諾：本サービスを提供するため、お客様は、自ら送信したテキスト'
-              'または画像を処理のためAlibaba Cloud Model StudioのAIサービスへ'
+              'または画像を処理のため火山引擎（Volcano Engine）のAIサービスへ'
               '送信することを当社に許諾します。\n\n'
               '2.2 データ処理：送信内容は今回のAIリクエストの処理にのみ使用され、'
               '保存されず、いかなるモデルの学習または最適化にも使用されないことを、'
               'お客様は明確に理解し同意するものとします。\n\n'
-              '2.3 技術提供者：本サービスの基盤AI技術は、Alibaba Cloud Computing '
-              'Co., Ltd.またはその関連会社が提供します。',
+              '2.3 技術提供者：本サービスの基盤AI技術は、北京火山引擎科技有限公司'
+              '（Beijing Volcano Engine Technology Co., Ltd.）またはその関連会社が提供します。',
         ),
       ),
       LegalSection(

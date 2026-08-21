@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'package:flutter/foundation.dart' show kDebugMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,7 +19,9 @@ import '../../../state.dart';
 ///
 /// 流程对齐小程序：进入即拉设备详情（`fetchDeviceFirmwareInfo` → getUserProductDetail）判断
 /// 是否有可升级固件；真实升级复用图传已连接的设备，走独立的 FF10 OTA 服务（见 [FrameOtaClient]）。
-/// 无硬件 / 无真实固件时可用「干跑测试(mock 固件)」验证读包/组帧/分包链路。
+/// ⚠️ 2026-08-13（两端同步）：**整套「干跑测试(mock 固件)」已删除**——留着它，「升级成功」
+/// 就有了两种含义（真机 DFU 成功 / 本地编码校验通过），真机联调时看日志很容易把干跑的成功
+/// 当成设备真的升上去了。
 ///
 /// 与「更新 BoltStar」(App 版本更新，`update_boltstar_page`) 是两件事：这里升级的是相框设备固件。
 class OtaUpgradePage extends StatefulWidget {
@@ -85,7 +89,14 @@ Future<void> startOtaFlow(
   }
   final target = updated ?? device;
   // ③ 已是最新 / 无有效可升级包：提示后返回。
-  if (!target.hasFirmwareUpdate) {
+  //
+  // 2026-08-12（两端同源）：判据与详情页右侧那行**同一处**（[evaluateFirmwareUpdate]）——
+  // 只有读不到设备当前版本时才退回后端的 `isUpdate` 标记。两处各判各的会让用户卡在
+  // 「详情说有版本可更新 → 点进来却说已是最新」，永远升不了级。
+  final verdict = evaluateFirmwareUpdate(target);
+  final canUpgradeNow = verdict == FirmwareUpdateVerdict.update ||
+      (verdict == FirmwareUpdateVerdict.unknown && target.hasFirmwareUpdate);
+  if (!canUpgradeNow) {
     await showAppNoticeDialog(
       context,
       title: AppL10n.of(context).otaFirmwareUpgrade,
@@ -128,6 +139,18 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   _OtaStage _stage = _OtaStage.checking;
   bool _aborted = false;
 
+  /// 打中止标记的时刻。收尾（[_resetDeviceAfterInterrupt]）据此判断「现在这条链路是不是
+  /// 用户在我离开之后自己新建的」——是的话绝不能断（见该方法注释）。
+  DateTime? _abortedAt;
+
+  /// 一轮升级的**同步**并发闸（对齐小程序 `ota.js` 的 `_running`）。
+  ///
+  /// 不能再用 `_stage == upgrading` 当闸：自动开始那条路现在**先把画面落到进行中**
+  /// （不闪按钮，见 [_load]），若仍以 stage 判断，[_runUpgrade] 头一行就会把自己挡回去。
+  /// 反过来，自动扫连可达十几秒、期间 stage 也还没变，用户点一下就能并发出第二条 DFU 流
+  /// （同一 session 交叉写 DATA 必败）。
+  bool _running = false;
+
   // 设备名/状态文案初值留空，展示时在 build 里按当前语言兜底
   //（字段初始化处没有 context，硬编码中文会绕过 i18n）。
   String _deviceName = '';
@@ -162,6 +185,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     // 页面离开：升级中则打中止标记，让传输尽快干净停下（切后台/离开会挂起蓝牙）。
     if (_stage == _OtaStage.upgrading) {
       _aborted = true;
+      _abortedAt = DateTime.now();
     }
     super.dispose();
   }
@@ -179,13 +203,6 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       return '${(bytes / 1024).round()}KB';
     }
     return '${bytes}B';
-  }
-
-  // 版本号一致性：去空格后不区分大小写；任一为空不视为一致（避免「未知版本」被误判已最新）。
-  static bool _sameVersion(String a, String b) {
-    final na = a.trim().toUpperCase();
-    final nb = b.trim().toUpperCase();
-    return na.isNotEmpty && nb.isNotEmpty && na == nb;
   }
 
   Future<void> _load() async {
@@ -229,12 +246,15 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     final bleFw = _connected ? (_ble.info?.firmwareVersion ?? '') : '';
     final currentVersion = (bleFw.isNotEmpty ? bleFw : device.firmwareVersion).trim();
     final latestVersion = device.newVersionNo.trim();
-    final alreadyLatest = _sameVersion(currentVersion, latestVersion);
-    final hasUpdateFlag = device.isUpdate == 1 && !alreadyLatest;
-    final hasPackage = hasUpdateFlag && device.hasFirmwareUpdate;
+    // 与详情页右侧那行**同一处判定**（见 [evaluateFirmwareUpdate]）：以设备实测版本为准，
+    // 读不到才退回后端 `isUpdate` 标记，保住「不连蓝牙也能查版本」。
+    final verdict = evaluateFirmwareUpdate(device, currentVersion: currentVersion);
+    final hasPackage = verdict == FirmwareUpdateVerdict.update ||
+        (verdict == FirmwareUpdateVerdict.unknown && device.hasFirmwareUpdate);
+    final packageInvalid = verdict == FirmwareUpdateVerdict.invalid;
 
     String invalidReason = '';
-    if (hasUpdateFlag && !device.hasFirmwareUpdate) {
+    if (packageInvalid) {
       if (latestVersion.isEmpty || device.downloadPath.isEmpty) {
         invalidReason = l10n.otaInvalidMissingInfo;
       } else {
@@ -242,6 +262,9 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       }
     }
 
+    // 从详情页「立刻更新」进来（autoStart）且包就绪时，**直接以进行中画面落地**：
+    // 先渲染一帧「发现新版本 + 可点的主按钮」再切进行中，那一帧就是用户看到的按钮闪动。
+    final autoStarting = widget.autoStart && hasPackage;
     setState(() {
       _deviceName = device.name.isEmpty ? l10n.otaDefaultDeviceName : device.name;
       _currentVersion = currentVersion.isEmpty ? '--' : currentVersion;
@@ -255,15 +278,18 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
               : l10n.otaConfirmAfterDownload)
           : '--';
 
-      if (hasUpdateFlag && !hasPackage) {
+      if (packageInvalid) {
         _stage = _OtaStage.invalid;
         _statusText = l10n.otaCannotUpgrade;
         _errorMessage = invalidReason;
         _releaseNotes = const [];
       } else if (hasPackage) {
-        _stage = _OtaStage.available;
-        _statusText = _connected ? l10n.otaNewVersionFound : l10n.otaDeviceNotConnected;
-        _errorMessage = _connected ? '' : l10n.otaConnectFirstHint;
+        _stage = autoStarting ? _OtaStage.upgrading : _OtaStage.available;
+        _statusText = autoStarting
+            ? l10n.otaUpgrading
+            : (_connected ? l10n.otaNewVersionFound : l10n.otaDeviceNotConnected);
+        _errorMessage = (autoStarting || _connected) ? '' : l10n.otaConnectFirstHint;
+        _progressText = autoStarting ? l10n.otaPreparingUpgrade : '';
         _releaseNotes = [l10n.otaNewVersionNote(latestVersion)];
       } else {
         _stage = _OtaStage.latest;
@@ -272,20 +298,27 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         _releaseNotes = const [];
       }
     });
-    // 详情页确认「立刻更新」进入(auto=1)：包就绪且已连接则自动开始升级。
-    if (widget.autoStart &&
-        _stage == _OtaStage.available &&
-        _connected &&
-        mounted) {
-      _runUpgrade(dryRun: false);
+    // 详情页确认「立刻更新」进入(auto=1)：包就绪即自动开始。
+    // 不再要求已连接——入口那次连接可能在进页面的路上掉了，_runUpgrade 自己会先连。
+    if (autoStarting && mounted) {
+      // 补一层 catch：万一这一跳自己抛了错，画面已经落在「进行中」且没有按钮区，
+      // 不接住的话用户会卡在一个动不了的屏上。
+      unawaited(
+        _runUpgrade().catchError((Object error, StackTrace stack) {
+          debugPrint('[OTA] 自动开始升级抛错：$error');
+          if (mounted) {
+            setState(() {
+              _stage = _OtaStage.available;
+              _statusText = l10n.otaNewVersionFound;
+              _errorMessage = l10n.otaGenericFailure;
+            });
+          }
+        }),
+      );
     }
   }
 
-  OtaFirmwarePackage _buildPackage({required bool dryRun}) {
-    if (dryRun || !_hasPackage) {
-      // 干跑 / 无真实固件：用 mock 固件校验编码链路。
-      return const OtaFirmwarePackage(mock: true, sizeBytes: 65536, version: 'mock');
-    }
+  OtaFirmwarePackage _buildPackage() {
     return OtaFirmwarePackage(
       packageUrl: _downloadPath,
       sizeBytes: _sizeBytes,
@@ -301,26 +334,55 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     });
   }
 
-  Future<void> _runUpgrade({required bool dryRun}) async {
-    if (_stage == _OtaStage.upgrading) return;
+  Future<void> _runUpgrade() async {
+    if (_running) return;
+    _running = true;
+    try {
+      await _doRunUpgrade();
+    } finally {
+      _running = false;
+    }
+  }
+
+  Future<void> _doRunUpgrade() async {
     final l10n = AppL10n.of(context);
-    // 真实升级要求已连接；干跑不需要。
-    if (!dryRun && !_connected) {
+    // ⚠️ 2026-08-11（对齐小程序）：未连接**不再是拦截理由，而是「先连上再升」**。
+    // 此前这里直接 return，而按钮又画着可点，用户点下去毫无反应，只能自己退回详情页连一次。
+    // 现在就地自动扫连（与详情页入口同一套 connectDevice：权限引导 + 扫描 + 连接），
+    // 连不上才如实回到可重试状态。
+    if (!_connected) {
+      if (!await PermissionGate.ensureBleReady(context) || !mounted) return;
       setState(() {
-        _stage = _OtaStage.available;
-        _statusText = l10n.otaDeviceNotConnected;
-        _errorMessage = l10n.otaNoBleConnection;
+        _stage = _OtaStage.upgrading;
+        _statusText = l10n.otaConnecting;
+        _errorMessage = '';
+        _progress = 0;
+        _progressText = l10n.otaConnecting;
       });
-      return;
+      final feedback = await widget.state.connectDevice(widget.deviceId);
+      if (!mounted) return;
+      if (!feedback.success) {
+        setState(() {
+          _stage = _OtaStage.available;
+          _statusText = l10n.otaDeviceNotConnected;
+          _errorMessage = feedback.message.isNotEmpty
+              ? feedback.message
+              : l10n.otaConnectFailedRetry;
+        });
+        return;
+      }
     }
 
     _aborted = false;
+    // 连同上一轮的中止时刻一起清掉：留着的话，本轮的链路（建立时刻必然晚于那个旧时间戳）
+    // 会被收尾方误判成「用户新建的连接」而跳过收尾。
+    _abortedAt = null;
     setState(() {
       _stage = _OtaStage.upgrading;
-      _statusText = dryRun ? l10n.otaDryRunning : l10n.otaUpgrading;
+      _statusText = l10n.otaUpgrading;
       _errorMessage = '';
       _progress = 0;
-      _progressText = dryRun ? l10n.otaPreparingDryRun : l10n.otaPreparingUpgrade;
+      _progressText = l10n.otaPreparingUpgrade;
     });
 
     // 逐帧联调日志（移植小程序 detail.js「OTA测试」）：设备→APP 的应答全部打印
@@ -352,42 +414,22 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     try {
       final target = widget.state.deviceById(widget.deviceId);
       final result = await _ble.upgradeFirmware(
-        _buildPackage(dryRun: dryRun),
+        _buildPackage(),
         expectedSerial: target.serialNumber,
         expectedScreenCode: target.screenType.code,
-        dryRun: dryRun,
         pace: 3,
+        // 传错包/下载截断/刷错面板在发第一帧前就本地拦住：刷错固件不可逆，不能等设备回错误码。
+        // 判不出面板时 otaPanelOfDevice 返回 0，预检自动跳过这一项，不误伤。
+        expectPanel: otaPanelOfDevice(screenCode: target.screenType.code),
+        expectVersion: target.newVersionNo,
         onProgress: _onProgress,
         shouldAbort: () => _aborted,
         // 逐帧 hex 日志仅 debug 输出：release 下 debugPrint 仍会写 logcat，
         // 会把 OTA 帧协议细节暴露给任何可读日志的调试者。
-        onMonitor: (dryRun || !kDebugMode) ? null : monitor,
+        onMonitor: kDebugMode ? monitor : null,
       );
 
       if (!mounted) return;
-
-      if (result.dryRun) {
-        final crcHex =
-            '0x${result.crc32.toRadixString(16).toUpperCase().padLeft(8, '0')}';
-        setState(() {
-          _stage = _OtaStage.success;
-          _statusText = l10n.otaDryRunPassed;
-          _progress = 1;
-          _progressText = l10n.otaDryRunPassedDetail(
-            result.size,
-            result.totalPackets,
-            result.chunkSize,
-          );
-          _releaseNotes = [
-            l10n.otaFirmwareSizeNote(result.size),
-            l10n.otaLocalCrc32Note(crcHex),
-            l10n.otaChunkingNote(result.totalPackets, result.chunkSize, result.prn),
-            l10n.otaStartFrameNote(result.startFrameHex),
-            l10n.otaFirstDataFrameNote(_ellipsis(result.firstDataFrameHex, 47)),
-          ];
-        });
-        return;
-      }
 
       // 固件已确认(2026-07-01)：收满且 CRC32 无误必回 0xF3、回完约 2s 后才复位重启。confirmed:false 已成
       // 兜底死路——真拿不到 0xF3 时 FrameOtaClient 会抛错走 catch，不再返回「软成功」。万一仍走到这里，
@@ -407,8 +449,20 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
           // 已确认升级成功：把本地当前版本置为新版本，隐藏可升级包。
           _currentVersion = _latestVersion;
           _hasPackage = false;
+          // 设备在 END 校验通过约 2s 后就复位运行新固件，这条 GATT 链路立刻作废。
+          // 如实告诉用户「正在重启、稍等几秒再连」——否则他立刻回去点投屏，
+          // 会以为是升级把设备刷坏了。
+          _errorMessage = '';
+          _releaseNotes = [l10n.otaDeviceRebootingHint];
         }
       });
+      if (!unconfirmed) {
+        // 主动断链：设备正在重启，留着一条死链路只会让详情页/首页拿它发指令一直等到超时
+        // （小程序那边是同一条口径）。best-effort，断不掉也不影响本页结论。
+        unawaited(_ble.disconnect().catchError((Object error) {
+          debugPrint('[OTA] 升级成功后断链失败（可忽略）：$error');
+        }));
+      }
       if (!unconfirmed && finalRxFrame.isNotEmpty) {
         // 真机联调：按两种 RESULT 偏移解读 0xF3，定下规格书 §5.2 未敲定的偏移。
         debugPrint('[OTA] ${decodeFinalResultFrame(finalRxFrame)}');
@@ -416,21 +470,27 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       // NOTE: 小程序会 best-effort 调 reportDeviceFirmwareUpgrade 回报后台；
       // 该接口不在 BoltFox `/Client/...` 用户前端接口内，App 侧暂不回报（如后端提供再接）。
     } on OtaAbortedException {
+      // 收尾必须在 mounted 检查**之前**：中断最常见的成因就是页面被 pop（dispose 打的
+      // _aborted），此刻 mounted 已经是 false，放在后面等于永远不执行。
+      await _resetDeviceAfterInterrupt();
       if (!mounted) return;
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = dryRun ? l10n.otaDryRunFailed : l10n.otaUpgradeFailed;
+        _statusText = l10n.otaUpgradeFailed;
         _errorMessage = l10n.otaInterrupted;
       });
     } catch (error) {
-      if (!mounted) return;
       final aborted = _aborted;
+      if (aborted) {
+        await _resetDeviceAfterInterrupt();
+      }
+      if (!mounted) return;
       // 原始异常进日志；用户只看 OtaException 的协议文案或通用「升级失败」，
       // 不把 PlatformException 之类的技术堆栈文本原样糊到界面上。
       debugPrint('[OTA] 升级失败: $error');
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = dryRun ? l10n.otaDryRunFailed : l10n.otaUpgradeFailed;
+        _statusText = l10n.otaUpgradeFailed;
         _errorMessage = aborted
             ? l10n.otaInterrupted
             : error is OtaException
@@ -440,13 +500,42 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     }
   }
 
-  static String _ellipsis(String s, int max) => s.length <= max ? s : s.substring(0, max);
+  /// 中断（切后台 / 退出升级页 / 用户确认离开）之后的设备侧收尾。
+  ///
+  /// 同步小程序 `docs/changes/2026-08-12-OTA失败中断不再拖垮设备连接.md` ④：
+  /// **中断要走和失败同一套收尾**。此前这里什么都不做，代价有两层：
+  /// ① 设备的 DFU 状态机停在半截，同一条 GATT 连接上再 START 必被回 `0x05`——虽然
+  ///    [BleController.upgradeFirmware] 的 wedged-retry 能自愈（断链 → 等 3s → 重连 → 重来），
+  ///    但那是下一次升级白白多花的一整轮，本来这一刻断一次链就免了；
+  /// ② 连接还留着，而设备正忙着收拾自己：详情页/首页拿这条链路读 0x01、读电量会一直等到超时，
+  ///    界面上却写着「已连接」——现场那句「升级中断后读不到设备信息」就是它。
+  ///
+  Future<void> _resetDeviceAfterInterrupt() async {
+    // ⚠️ 忙判定（2026-08-13，同步小程序「复位第二刀」那条时序漏洞）：这一刀可能晚到
+    // 几秒~十几秒才落下 —— `shouldAbort` 不在 await 中途生效，传输循环要走到下一个窗口
+    // 间隙、END 最长等 15s 才发现中断。此刻用户往往**已经回详情页点了连接**：
+    // 照断不误就会把他刚建好的链路一起拆掉；若正砍在「连上了但还没登记」之间，
+    // 还会留下一条账本外的连接占着设备（单连接设备被占时不广播 → 又回到「重进 App 才好」）。
+    final abortedAt = _abortedAt;
+    final linkAt = _ble.linkEstablishedAt;
+    if (_ble.connecting ||
+        (abortedAt != null && linkAt != null && linkAt.isAfter(abortedAt))) {
+      debugPrint('[OTA] 跳过中断收尾断链：当前链路是中断之后新建/正在建的，不是本轮 OTA 那条');
+      return;
+    }
+    debugPrint('[OTA] 升级中断：断开链路让设备的 DFU 状态机复位');
+    try {
+      await _ble.disconnect();
+    } catch (error) {
+      // best-effort：断不掉也只是回到改动前的状态，不该再往上抛
+      debugPrint('[OTA] 中断收尾断链失败（可忽略）：$error');
+    }
+  }
 
   // ── 视图 ─────────────────────────────────────────────────
-  bool get _canUpgrade =>
-      _stage != _OtaStage.upgrading && _hasPackage && _connected;
-
-  bool get _canDryRun => _stage != _OtaStage.upgrading;
+  // 「点得动」只取决于「有升级包且不在升级中」——未连接不再是拦截理由，点下去会先自动扫连
+  // （见 _runUpgrade）。此前这里含 _connected，按钮画着却点不动，就是用户反馈的「OTA 没反应」。
+  bool get _canUpgrade => _stage != _OtaStage.upgrading && _hasPackage;
 
   String get _actionText {
     final l10n = AppL10n.of(context);
@@ -454,7 +543,10 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       case _OtaStage.upgrading:
         return l10n.otaUpgrading;
       case _OtaStage.available:
-        return _connected ? l10n.otaUpgradeNowAction : l10n.otaDeviceNotConnected;
+        // 未连接时说清楚「点了会先连设备」，别让用户以为按钮坏了
+        return _connected
+            ? l10n.otaUpgradeNowAction
+            : l10n.otaConnectAndUpgrade;
       case _OtaStage.invalid:
         return l10n.otaCannotUpgrade;
       case _OtaStage.failed:
@@ -474,7 +566,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       return;
     }
     if (_canUpgrade) {
-      _runUpgrade(dryRun: false);
+      _runUpgrade();
     }
   }
 
@@ -498,6 +590,8 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     if (_stage == _OtaStage.checking) {
       return FigmaScreen(
         title: l10n.otaTitle,
+        // 与主画面同口径：本页不留「随手点一下就走」的顶部入口（见 _buildScreen）
+        showBack: false,
         body: Padding(
           padding: const EdgeInsets.only(top: 120),
           // 与其他页一致的转圈 loading（原来只有一行静态文字，没有加载指示）。
@@ -505,9 +599,6 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         ),
       );
     }
-
-    // 无真实升级包/未连接时，展示「干跑测试」入口，方便无硬件时验证编码链路。
-    final showDryRun = _canDryRun && (!_hasPackage || !_connected);
 
     // 升级中拦截返回：之前无任何拦截，误触返回/侧滑会静默中止固件传输
     // （dispose 打 _aborted），且中断提示只在页内可见，用户毫无感知。
@@ -520,7 +611,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
           Navigator.of(context).pop();
         }
       },
-      child: _buildScreen(context, l10n, showDryRun),
+      child: _buildScreen(context, l10n),
     );
   }
 
@@ -539,9 +630,16 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     return leave ?? false;
   }
 
-  Widget _buildScreen(BuildContext context, AppL10n l10n, bool showDryRun) {
+  Widget _buildScreen(BuildContext context, AppL10n l10n) {
     return FigmaScreen(
       title: l10n.otaTitle,
+      // 2026-08-13（两端同改）：**去掉顶部返回箭头**。升级不可逆、中断有代价，
+      // 页面里不留「随手点一下就走」的入口。
+      // ⚠️ 去掉的只是箭头：底部按钮区在非进行中时会给一颗「返回」（见下），
+      // 否则升级成功后用户在本页找不到任何出口，就从「防误触」变成「把人困住」。
+      // 进行中确实一个返回入口都没有（这正是需求要的），系统手势那条路仍有
+      // PopScope 的「退出将中断本次升级」二次确认拦着。
+      showBack: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -562,21 +660,41 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
                 color: Color(0xFF808690), fontSize: 12, height: 1.5),
           ),
           const SizedBox(height: 16),
-          if (showDryRun)
-            FigmaSecondaryButton(
-              label: l10n.otaDryRunTest,
-              onPressed: _canDryRun ? () => _runUpgrade(dryRun: true) : null,
-            ),
           // 内容与底部固定按钮之间的留白：FigmaScreen 给 bottom 的上内边距只有 8，
           // 卡片多/报错卡片出现时滚到底就会顶在按钮上（对齐小程序 2026-08-03 把
           // .ota-body / .result-body 下内边距补到 40rpx=20px：8 + 12 = 20）。
           const SizedBox(height: 12),
         ],
       ),
-      bottom: FigmaPrimaryButton(
-        label: _actionText,
-        onPressed:
-            (_canUpgrade || _stage == _OtaStage.failed) ? _onAction : null,
+      bottom: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FigmaPrimaryButton(
+            label: _actionText,
+            onPressed:
+                (_canUpgrade || _stage == _OtaStage.failed) ? _onAction : null,
+          ),
+          // 顶部箭头去掉之后唯一的可见出口（对齐小程序底部那颗「返回」）：
+          // 进行中不画——那一屏本来就不该有返回入口。
+          if (_stage != _OtaStage.upgrading) ...[
+            const SizedBox(height: 8),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.of(context).maybePop(),
+              child: Container(
+                height: 40,
+                alignment: Alignment.center,
+                child: Text(
+                  l10n.aiBack,
+                  style: const TextStyle(
+                    color: Color(0xFF6F6B66),
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -637,6 +755,31 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
             label:
                 '${_progressText.isNotEmpty ? _progressText : (_stage == _OtaStage.available ? l10n.otaReadyToUpgrade : l10n.otaNoUpgradeNeeded)}  ·  ${(_progress * 100).round()}%',
           ),
+          // 两条升级规则**只在进行中这一屏**出现（2026-08-13 两端同改）：其余画面挂着它
+          // 只会跟结论文案抢注意力（「已是最新版本」下面写「意外中断可能导致设备无法使用」
+          // 是没有意义的）。整块左对齐——居中会让长句断点参差、序号对不齐。
+          if (_stage == _OtaStage.upgrading) ...[
+            const SizedBox(height: 14),
+            Text(
+              l10n.otaRuleWaitPatiently,
+              textAlign: TextAlign.left,
+              style: const TextStyle(
+                color: Color(0xFF808690),
+                fontSize: 12,
+                height: 1.6,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              l10n.otaRuleRecoverHint,
+              textAlign: TextAlign.left,
+              style: const TextStyle(
+                color: Color(0xFF808690),
+                fontSize: 12,
+                height: 1.6,
+              ),
+            ),
+          ],
         ],
       ),
     );

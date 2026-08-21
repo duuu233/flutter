@@ -45,6 +45,22 @@ enum _DirectConnectOutcome {
   skipped,
 }
 
+/// 0x01 完整身份校验的结局（见 `BleController._verifyBoundDeviceIdentity`）。
+///
+/// 分成三态而不是 bool，是因为 [unreadable] 与 [mismatched] 的处置**完全相反**：
+/// 前者要继续给这个候选机会，后者必须把它排除掉。混为一谈的代价见该方法的文档注释。
+enum _IdentityVerdict {
+  /// 读到 0x01 且完整 Device_ID 与目标一致。
+  verified,
+
+  /// 读到了，但**不是**这一台（或屏型不符）——串台证据确凿，排除该候选。
+  mismatched,
+
+  /// 0x01 读不回来（超时 / 异常 / 应答里没有 Device_ID），**无从判定**。
+  /// 不是「不是这台」的证据：设备刚被中断的 DFU 折腾过时，这恰恰是常态。
+  unreadable,
+}
+
 /// 「弱信号不抢第一帧」闸门（移植小程序 `active-device.scanForTarget`）。
 ///
 /// 扫描一命中就发起连接，抓到的往往是整个窗口里信号最差的那一帧——本相框广播间隔约 3s，
@@ -120,6 +136,14 @@ class BleController extends ChangeNotifier {
 
   bool get connected => _client.connected;
 
+  /// 当前这条链路是**什么时候**建起来的（断开即清空）。
+  ///
+  /// 2026-08-13 核对小程序「复位第二刀砍到用户新连接」那条风险时补的判据：OTA 中断的收尾
+  /// 可能晚到几秒~十几秒才执行（传输循环要走到下一个窗口间隙、END 最长等 15s 才发现中断），
+  /// 那时用户往往已经回详情页重新连上了。收尾方据此判断「现在这条链路还是不是我那条」，
+  /// 是别人的就不许断（宁可这一轮没收尾，也不能把用户正用着的连接拆了）。
+  DateTime? linkEstablishedAt;
+
   bool get _hasActiveTask => connecting || _transferInProgress || otaInProgress;
 
   /// Applies only the outer session lease. Scan, connect, reconnect, MTU,
@@ -130,6 +154,7 @@ class BleController extends ChangeNotifier {
 
   void _handleLinkStateChanged(bool alive) {
     if (alive) {
+      linkEstablishedAt = DateTime.now();
       _connectionLease.noteActivity();
       _startKeepAlive();
       // 连接保活前台服务与连接同生命周期（连接必然发生在 App 前台，
@@ -144,6 +169,7 @@ class BleController extends ChangeNotifier {
       return;
     }
     _stopKeepAlive();
+    linkEstablishedAt = null;
     // 断开（含租约到期主动断开）即撤前台服务，进程回到可回收状态。
     unawaited(NativeDeviceApi.stopConnectionKeepAliveService());
     _transferInProgress = false;
@@ -201,10 +227,21 @@ class BleController extends ChangeNotifier {
 
   /// 当前会话登记的序列号（广播短 ID + 固件完整 ID，可能只有其一）。
   ///
-  /// 广播短 ID 仅供扫描候选筛选；[sessionMatchesSerial] 会过滤它，只允许
-  /// 0x01 完整 ID 认领后端记录。
+  /// 本次会话见过的序列号（广播 ID + 0x01 读回的 ID）。
+  /// **只用于「这条会话看起来像不像目标」的启发式判断**，判断之后必须再走一次
+  /// [_verifyBoundDeviceIdentity]（见 [connectBoundDevice] 的第二段）。
   List<String> get sessionSerials => [
     if (broadcastDeviceId.isNotEmpty) broadcastDeviceId,
+    if ((info?.deviceId ?? '').isNotEmpty) info!.deviceId,
+  ];
+
+  /// **经 0x01 GET_INFO 核实过**的会话身份 —— 认领后端记录只认它。
+  ///
+  /// 2026-08-11（同步小程序「会话认领只认 0x01 核实过的 ID」）：老固件时代广播只有 4 字节，
+  /// 天然被 `isCompleteDeviceSerial` 挡在认领门外，这道闸是**隐式**的；固件把广播扩到
+  /// 6 字节后，明文、可伪造重放的广播值就有了认领活动会话的资格 —— 一台设备播的 ID 恰好
+  /// 等于另一条记录的完整 ID，投屏/删图/**OTA** 就会打到错的设备上（且不可逆）。
+  List<String> get verifiedSessionSerials => [
     if ((info?.deviceId ?? '').isNotEmpty) info!.deviceId,
   ];
 
@@ -213,8 +250,8 @@ class BleController extends ChangeNotifier {
       info != null ? info!.screenType : broadcastScreenType;
 
   /// 这台后端记录的序列号是否指向当前活动会话。
-  /// 后端记录与会话都必须有 6 字节完整 ID 并精确相等；
-  /// 不能仅凭可能重复的广播 4 字节短 ID 复用会话。
+  /// 后端记录与会话都必须有 6 字节完整 ID 并精确相等，且会话那一侧必须是
+  /// **0x01 核实过**的值（见 [verifiedSessionSerials]）——广播值不具备认领资格。
   /// [screenCode]：设备记录的屏幕类型码（FrameScreenType.code）。传入后先按型号一票否决，
   /// 防「序列号 4/6 字节偶合」把不同型号设备误认成当前会话（跨型号串台）。
   bool sessionMatchesSerial(String serial, {int screenCode = 0}) {
@@ -224,7 +261,7 @@ class BleController extends ChangeNotifier {
     if (!sameScreenCode(screenCode, sessionScreenCode)) {
       return false;
     }
-    return sessionSerialsMatch(sessionSerials, serial);
+    return sessionSerialsMatch(verifiedSessionSerials, serial);
   }
 
   /// 扫描结果的展示名：platformName → 广播名 → MAC。
@@ -321,10 +358,15 @@ class BleController extends ChangeNotifier {
 
   /// 把后端已绑定设备(只有序列号/名称)和扫描结果匹配，返回该设备的 [ScanResult]。
   /// 移植小程序 active-device.matchScannedDevice + list/detail 兜底规则：
-  /// 序列号用 serialsMatch 容错比对（广播 4 字节 vs 后端 6 字节互为子串也算同一台）；
   /// 连接已绑定设备不按名称匹配——设备名可随意改，广播名始终是产品名（EF6-370 等），
   /// 按名匹配在改名后必然「搜不到设备/连接不上」，且同型号广播名相同可能连错台。
   /// 没有完整序列号的历史记录不再按名称兜底；需要删除记录后重新绑定。
+  ///
+  /// 2026-08-11（同步小程序）：序列号比对改用 [broadcastCandidateMatch] 的**强弱两轮**
+  /// —— 固件把广播 Device_ID 换成 6 字节后，`serialsMatch` 的「长度相同却不相等」会把
+  /// 唯一的候选一票否决（写法/字节序但凡不同就筛不出任何设备）。**先挑强匹配**：
+  /// 同批设备共享 OUI，弱匹配的 4 字节锚段可能偶合到邻居，让强匹配先挑走正主。
+  /// 身份闸不动：连上后仍由 0x01 精确校验裁决。
   static ScanResult? matchScannedDevice(
     List<ScanResult> found, {
     required String serial,
@@ -332,7 +374,10 @@ class BleController extends ChangeNotifier {
     int screenCode = 0,
     Set<String> excludedDeviceIds = const {},
   }) {
-    if (isCompleteDeviceSerial(serial)) {
+    if (!isCompleteDeviceSerial(serial)) {
+      return null;
+    }
+    ScanResult? pick({required bool strongOnly}) {
       for (final result in found) {
         if (excludedDeviceIds.contains(result.device.remoteId.str)) {
           continue;
@@ -345,13 +390,46 @@ class BleController extends ChangeNotifier {
         if (!sameScreenCode(screenCode, ad.screenType)) {
           continue;
         }
-        if (serialsMatch(ad.deviceId, serial)) {
+        if (broadcastCandidateMatch(ad.deviceId, serial, strongOnly: strongOnly)) {
           return result;
         }
       }
       return null;
     }
-    return null;
+
+    return pick(strongOnly: true) ?? pick(strongOnly: false);
+  }
+
+  /// 扫描窗口走满、按序列号一个候选都没筛出来时的**兜底候选**（2026-08-11 同步小程序
+  /// `matchScannedDeviceFallback`）：从「确认是本产品广播（Company_ID=0xFFFF）+ 屏型与本
+  /// 记录一致」的设备里挑信号最强的一台，连上去让 0x01 裁决。
+  ///
+  /// ⚠️ **只在完整窗口结束后用，绝不能放进 `until`**：第一帧来的邻居设备会被抢着连上。
+  /// 它的存在意义是「固件把广播 ID 换成了我们完全没预料到的写法」时仍有一条路可走；
+  /// 连错了也只是多断一次链（身份闸照旧）。
+  static ScanResult? matchScannedDeviceFallback(
+    List<ScanResult> found, {
+    int screenCode = 0,
+    Set<String> excludedDeviceIds = const {},
+  }) {
+    ScanResult? best;
+    for (final result in found) {
+      if (excludedDeviceIds.contains(result.device.remoteId.str)) {
+        continue;
+      }
+      final ad = advertisingOf(result);
+      if (ad == null || !ad.companyMatched) {
+        continue;
+      }
+      // 屏型必须对得上，且这里**要求两侧都已知**：兜底本就宽，不能再让「未知屏型」也进来。
+      if (screenCode == 0 || ad.screenType != screenCode) {
+        continue;
+      }
+      if (best == null || result.rssi > best.rssi) {
+        best = result;
+      }
+    }
+    return best;
   }
 
   /// 请求蓝牙权限并确认已开启。返回 false 表示不可用（调用方提示后中止）。
@@ -673,15 +751,25 @@ class BleController extends ChangeNotifier {
   ///
   /// 扫描广播只有 4 字节短 ID，同尺寸设备可能相同；必须读取 0x01 的 6 字节完整
   /// Device_ID 后再与用户点击的后端记录核对。名称是可编辑展示字段，不参与物理身份。
-  Future<bool> _verifyBoundDeviceIdentity({
+  /// 验身的三种结局。
+  ///
+  /// **[unreadable] 与 [mismatched] 必须分开**（2026-08-12，同步小程序
+  /// `docs/changes/2026-08-12-OTA失败中断不再拖垮设备连接.md` ①）：
+  /// 「0x01 读不回来」**不是**「这台不是我要的」的证据 —— 设备刚被中断的 DFU 折腾过、
+  /// 正在收拾自己的状态机时，读超时是常态。此前两者都返回 false，调用方一律按「串台」处理：
+  /// 把这个 remoteId **永久排除**出本次编排、并删掉直连缓存。于是 OTA 失败后第一次重连
+  /// 就把**正确的那台**排除掉了，后面几轮无论怎么扫都只剩「未搜索到该电子纸设备」——
+  /// 与小程序那边「升级失败后连不上，杀掉重进才好」是同一个现场，只是成因相反：
+  /// 小程序是**该断不断**，这里是**断了还顺手把它拉黑**。
+  Future<_IdentityVerdict> _verifyBoundDeviceIdentity({
     required String serial,
     required int screenCode,
   }) async {
     if (!isCompleteDeviceSerial(serial)) {
-      return false;
+      return _IdentityVerdict.mismatched;
     }
     if (!sameScreenCode(screenCode, sessionScreenCode)) {
-      return false;
+      return _IdentityVerdict.mismatched;
     }
     var actual = info?.deviceId ?? '';
     if (actual.isEmpty) {
@@ -693,7 +781,12 @@ class BleController extends ChangeNotifier {
         debugPrint(
           '[BLE identity] failed to read 0x01 expected=$serial error=$error',
         );
-        return false;
+        return _IdentityVerdict.unreadable;
+      }
+      if (actual.isEmpty) {
+        // 读回来了却没有 Device_ID：同样是「无从判定」，不能当成「不是这台」
+        debugPrint('[BLE identity] 0x01 returned no device id expected=$serial');
+        return _IdentityVerdict.unreadable;
       }
     }
     final matched = verifiedDeviceSerialMatch(serial, actual);
@@ -705,7 +798,7 @@ class BleController extends ChangeNotifier {
         'name=$deviceName',
       );
     }
-    return matched;
+    return matched ? _IdentityVerdict.verified : _IdentityVerdict.mismatched;
   }
 
   /// 连接一台已绑定设备（移植小程序 active-device.ensureDeviceConnected 语义）。
@@ -733,15 +826,18 @@ class BleController extends ChangeNotifier {
       trace.finish(success: true);
       return null;
     }
-    // 现有会话可能只登记到广播短 ID（此前 0x01 读取失败）。如果它看起来像目标，
-    // 先补读 0x01 验身；确认成功即可复用，失败再断开重扫。
+    // 现有会话可能只登记到广播 ID（此前 0x01 读取失败）。如果它**看起来**像目标，
+    // 先补读 0x01 验身；确认成功才复用，失败再断开重扫。
+    // 判据用候选口径（[broadcastCandidateMatch]，含 6 字节字节序相反的写法）而不是严格的
+    // serialsMatch：这里放宽是安全的 —— 紧接着就是 0x01 精确校验，放宽只影响「要不要多读一次」。
     if (connected &&
         sameScreenCode(screenCode, sessionScreenCode) &&
-        sessionSerials.any((value) => serialsMatch(value, serial))) {
+        sessionSerials.any((value) => broadcastCandidateMatch(value, serial))) {
       if (await _verifyBoundDeviceIdentity(
-        serial: serial,
-        screenCode: screenCode,
-      )) {
+            serial: serial,
+            screenCode: screenCode,
+          ) ==
+          _IdentityVerdict.verified) {
         _connectionLease.noteActivity();
         trace.mark('reuse-verified-active-session');
         trace.finish(success: true);
@@ -854,6 +950,22 @@ class BleController extends ChangeNotifier {
               screenCode: screenCode,
               excludedDeviceIds: excludedDeviceIds,
             );
+        if (target == null) {
+          // 整窗都没筛出候选：最后从「本产品广播 + 同屏型」里挑信号最强的一台试一次
+          // （固件换了我们没预料到的广播 ID 写法时的唯一出路，身份仍由 0x01 裁决）。
+          target = matchScannedDeviceFallback(
+            found,
+            screenCode: screenCode,
+            excludedDeviceIds: excludedDeviceIds,
+          );
+          if (target != null) {
+            trace.mark('fallback-candidate-${target.device.remoteId.str}');
+            debugPrint(
+              '[BLE] 按序列号未筛出候选，改用同型号兜底候选 '
+              '${target.device.remoteId.str}（连上后仍由 0x01 校验身份）',
+            );
+          }
+        }
       }
       if (target == null) {
         break;
@@ -889,10 +1001,11 @@ class BleController extends ChangeNotifier {
         }
         continue;
       }
-      if (await _verifyBoundDeviceIdentity(
+      final verdict = await _verifyBoundDeviceIdentity(
         serial: serial,
         screenCode: screenCode,
-      )) {
+      );
+      if (verdict == _IdentityVerdict.verified) {
         if (directProbed == _DirectConnectOutcome.missed) {
           // 直连没连上、扫描却连上了同一台 ⇒ 设备本来就够得着，是直连这条路不通。
           _noteDirectConnectMiss();
@@ -900,11 +1013,28 @@ class BleController extends ChangeNotifier {
         trace.finish(success: true, stage: 'identity-verified');
         return null;
       }
-      excludedDeviceIds.add(remoteId);
-      // 身份不符：这个句柄绝不能再留在直连缓存里，否则每次复连都先串一次台。
-      await BleDirectConnectCache.instance.remove(serial);
+      // 验身没过一律先断链：连上了却不能用的链路留着，只会让设备被自己占住不广播
+      //（单连接设备被占时不再广播，下一轮扫描必然「未搜索到」）。断链是幂等的。
       await disconnect();
-      trace.mark('identity-mismatch-excluded-$remoteId');
+      if (verdict == _IdentityVerdict.mismatched) {
+        excludedDeviceIds.add(remoteId);
+        // 身份不符：这个句柄绝不能再留在直连缓存里，否则每次复连都先串一次台。
+        await BleDirectConnectCache.instance.remove(serial);
+        trace.mark('identity-mismatch-excluded-$remoteId');
+      } else {
+        // 读不到 0x01：**不排除、也不删缓存**——这多半就是我们要的那台，只是它此刻
+        // 正忙（刚被中断的 DFU、刚重启）。按「连接失败」同款处理：允许原地重连一次，
+        // 反复读不到才排除。把它拉黑等于亲手制造「设备就在眼前却搜不到」。
+        final failures = (connectFailures[remoteId] ?? 0) + 1;
+        connectFailures[remoteId] = failures;
+        if (failures >= _maxConnectFailuresPerCandidate) {
+          excludedDeviceIds.add(remoteId);
+          trace.mark('identity-unreadable-excluded-$remoteId');
+        } else {
+          retryTarget = chosen;
+          trace.mark('identity-unreadable-will-retry-$remoteId');
+        }
+      }
     }
     trace.finish(success: false, stage: 'verified-target-not-found');
     return lastConnectError ?? _l10n.bleDeviceNotFound;
@@ -997,14 +1127,16 @@ class BleController extends ChangeNotifier {
           plan: BleConnectPlan.probe,
         ),
       );
-      if (error == null &&
-          await _verifyBoundDeviceIdentity(
-            serial: serial,
-            screenCode: screenCode,
-          )) {
+      final verdict = error == null
+          ? await _verifyBoundDeviceIdentity(
+              serial: serial,
+              screenCode: screenCode,
+            )
+          : null;
+      if (verdict == _IdentityVerdict.verified) {
         return true;
       }
-      if (error == null) {
+      if (verdict == _IdentityVerdict.mismatched) {
         // 是相框但不是这一台：排除，别让紧接着的扫描再连一遍。
         excludedDeviceIds.add(remoteId);
         trace.mark('system-device-identity-mismatch-$remoteId');
@@ -1013,6 +1145,10 @@ class BleController extends ChangeNotifier {
         if (await BleDirectConnectCache.instance.get(serial) == remoteId) {
           await BleDirectConnectCache.instance.remove(serial);
         }
+      } else if (verdict == _IdentityVerdict.unreadable) {
+        // 读不到 0x01 不构成「不是这台」的证据（见 [_IdentityVerdict]）：不排除、不删缓存，
+        // 下面断链后交给扫描路径再试一次——它可能正是我们要的那台，只是此刻正忙。
+        trace.mark('system-device-identity-unreadable-$remoteId');
       }
       if (connected) {
         await disconnect();
@@ -1068,18 +1204,24 @@ class BleController extends ChangeNotifier {
       'direct-connect-probe',
       () => connectByRemoteId(cachedId, name: name),
     );
-    if (error == null &&
-        await _verifyBoundDeviceIdentity(
-          serial: serial,
-          screenCode: screenCode,
-        )) {
+    final verdict = error == null
+        ? await _verifyBoundDeviceIdentity(
+            serial: serial,
+            screenCode: screenCode,
+          )
+        : null;
+    if (verdict == _IdentityVerdict.verified) {
       _directConnectMisses = 0;
       return _DirectConnectOutcome.verified;
     }
-    // 连上了但验身没过（缓存串台）：排除这个句柄并清掉缓存，别让它下次再来一遍。
-    if (error == null) {
+    // 连上了但**读到的 ID 不是这台**（缓存串台）：排除这个句柄，别让它下次再来一遍。
+    // 读不到 0x01 则不排除（见 [_IdentityVerdict]）——缓存指的很可能就是正确的那台，
+    // 只是它此刻正忙；把它拉黑会让紧接着的扫描连正确设备都跳过。
+    if (verdict == _IdentityVerdict.mismatched) {
       excludedDeviceIds.add(cachedId);
       trace.mark('direct-connect-identity-mismatch');
+    } else if (verdict == _IdentityVerdict.unreadable) {
+      trace.mark('direct-connect-identity-unreadable');
     }
     // 赌不中就必须把缓存删掉：留着的话，设备真的离线/换了地址时，
     // 每次复连都要先白花一次探测超时。下一次扫描连上后会重新写入。
@@ -1124,8 +1266,10 @@ class BleController extends ChangeNotifier {
 
   /// 设备固件 OTA(DFU) 升级。复用图传已建立的连接（OTA 走独立的 FF10 服务）。
   ///
-  /// [dryRun]=true 时不连蓝牙，纯本地校验编码/分包（无硬件或无固件时用）。
-  /// 真实升级要求当前已连接设备（[connected]），否则抛 [OtaException]。
+  /// 升级要求当前已连接设备（[connected]），否则抛 [OtaException]。
+  ///
+  /// ⚠️ 2026-08-13（两端同步）：**干跑（本地校验编码/分包，不连蓝牙）整套已删除**——
+  /// 它让「升级成功」有了两种含义，真机联调时很容易把干跑的成功当成设备真的升上去了。
   Future<OtaResult> upgradeFirmware(
     OtaFirmwarePackage pkg, {
     String expectedSerial = '',
@@ -1133,30 +1277,92 @@ class BleController extends ChangeNotifier {
     void Function(OtaProgress)? onProgress,
     bool Function()? shouldAbort,
     void Function(String dir, String hex)? onMonitor,
-    bool dryRun = false,
     int pace = 3,
+    int expectPanel = 0,
+    String expectVersion = '',
   }) async {
-    if (dryRun) {
-      return FrameOtaClient.dryRunUpgrade(
-        pkg,
-        onProgress: onProgress,
-        shouldAbort: shouldAbort,
-      );
-    }
-
-    final dev = _client.device;
-    if (dev == null || !_client.connected) {
-      throw OtaException('设备未连接，请先在详情页连接设备后再升级');
-    }
     if (expectedSerial.isEmpty ||
         !sessionMatchesSerial(expectedSerial, screenCode: expectedScreenCode)) {
       throw OtaException('当前连接的不是要升级的设备，请返回详情页重新连接');
     }
 
-    final ota = FrameOtaClient(dev)..onMonitor = onMonitor;
     otaInProgress = true;
     _connectionLease.taskStarted();
     notifyListeners();
+    try {
+      try {
+        return await _runDfuAttempt(
+          pkg,
+          onProgress: onProgress,
+          shouldAbort: shouldAbort,
+          onMonitor: onMonitor,
+          pace: pace,
+          expectPanel: expectPanel,
+          expectVersion: expectVersion,
+        );
+      } on OtaAbortedException {
+        rethrow;
+      } on OtaException catch (error) {
+        // 设备还停在上一轮没走完的 DFU 里（START 回 0x05 / 头信息始终收不下）：
+        // 此刻它一个 payload 字节都没收下，断链让它复位后从 START 整轮重来是安全的。
+        // 不这么做的话，用户之后每次点升级都被同一个状态挡住，只能去重启设备。
+        if (!error.isWedgedSession || (shouldAbort?.call() ?? false)) rethrow;
+        onProgress?.call(
+          const OtaProgress(
+            phase: 'starting',
+            percent: 13,
+            message: '设备仍停在上一次升级状态，正在断开复位后重试…',
+          ),
+        );
+        await disconnect();
+        await Future<void>.delayed(_dfuStateResetWait);
+        if (shouldAbort?.call() ?? false) throw OtaAbortedException();
+        final reconnectError = await connectBoundDevice(
+          serial: expectedSerial,
+          screenCode: expectedScreenCode,
+        );
+        if (reconnectError != null) {
+          throw OtaException('设备复位后重连失败：$reconnectError');
+        }
+        try {
+          return await _runDfuAttempt(
+            pkg,
+            onProgress: onProgress,
+            shouldAbort: shouldAbort,
+            onMonitor: onMonitor,
+            pace: pace,
+            expectPanel: expectPanel,
+            expectVersion: expectVersion,
+          );
+        } on OtaException catch (retryError) {
+          throw _wedgedRetryError(retryError);
+        }
+      }
+    } finally {
+      otaInProgress = false;
+      _connectionLease.taskFinished();
+      notifyListeners();
+    }
+  }
+
+  /// 断链复位后留给设备退出 DFU 状态的时间。
+  static const Duration _dfuStateResetWait = Duration(seconds: 3);
+
+  /// 一轮完整的 DFU：开传输档 → START → 头信息握手 → 传数据 → END。
+  Future<OtaResult> _runDfuAttempt(
+    OtaFirmwarePackage pkg, {
+    void Function(OtaProgress)? onProgress,
+    bool Function()? shouldAbort,
+    void Function(String dir, String hex)? onMonitor,
+    int pace = 3,
+    int expectPanel = 0,
+    String expectVersion = '',
+  }) async {
+    final dev = _client.device;
+    if (dev == null || !_client.connected) {
+      throw OtaException('设备未连接，请先在详情页连接设备后再升级');
+    }
+    final ota = FrameOtaClient(dev)..onMonitor = onMonitor;
     try {
       // OTA 与图传共用同一物理连接：升级前同样切到极速连接间隔（0x13 + HIGH 优先级），
       // 结束后回落空闲档。否则整轮 OTA 跑在 100ms 空闲间隔上，PRN=3 的停等每次
@@ -1167,6 +1373,8 @@ class BleController extends ChangeNotifier {
         onProgress: onProgress,
         shouldAbort: shouldAbort,
         pace: pace,
+        expectPanel: expectPanel,
+        expectVersion: expectVersion,
       );
     } finally {
       // 只取消 OTA 自身的 FF11 通知订阅；物理连接由 _client 持有（升级后设备多半已重启断开）。
@@ -1174,9 +1382,26 @@ class BleController extends ChangeNotifier {
       // 回落空闲连接间隔。升级成功设备会复位重启断开连接——endTransferSession
       // 对已断链是安全的 best-effort（内部检查 _linkAlive 并吞掉 0x13 失败）。
       await _client.endTransferSession();
-      otaInProgress = false;
-      _connectionLease.taskFinished();
-      notifyListeners();
     }
+  }
+
+  /// 复位重来那一轮仍然失败：把「该去断电重启设备」说清楚，别让用户以为是包或信号的问题。
+  OtaException _wedgedRetryError(OtaException error) {
+    if (error.kind == OtaFailureKind.startRejectedBusy) {
+      return OtaException(
+        'OTA 启动被拒绝：设备仍停在上一次未完成的升级状态（${otaResultText(0x05)}）。请把设备断电重启后再试。',
+      );
+    }
+    if (error.kind == OtaFailureKind.headerStuck) {
+      final rejected = error.message.contains('状态错误');
+      return OtaException(
+        rejected
+            ? '设备一直报「设备状态错误」：它接受了 START，却在两轮连接、多次重发里始终不肯受理 128 字节头信息，'
+                  '说明设备端的 OTA 状态没有复位。请把设备断电重启后再试。（升级包本身不对时设备会回 0x0A~0x0E，而不是 0x05。）'
+            : '头信息握手无应答：设备接受了 START，却在两轮连接、多次重发里都没有回复 128 字节头信息的校验结果。'
+                  '请把设备断电重启后再试（升级包与面板/型号不匹配时设备会明确回 0x0C，而不是不应答）。',
+      );
+    }
+    return error;
   }
 }

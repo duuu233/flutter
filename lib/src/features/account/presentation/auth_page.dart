@@ -234,8 +234,17 @@ class _AuthPageState extends State<AuthPage>
       if (!mounted) {
         return;
       }
-      if (!feedback.success) {
-        // 同邮箱登录：成功不弹提示，失败才提示。
+      if (feedback.success) {
+        // 2026-08-19：微信登录**成功也提示**（Android/iOS 一致）。这与邮箱登录的
+        // 「成功不弹提示」是有意的差别——微信登录中途切到微信客户端再跳回 App，
+        // 回来时用户需要一句确认这趟授权走通了，光靠界面切到主壳层不够明确。
+        //
+        // 时序：这句只在**换到 userToken 之后**才弹，所以「授权成功但后端拒登」
+        // 不会先弹一句成功再被错误顶掉。toast 走根 Overlay（AppToast rootOverlay），
+        // 紧接着根节点把登录页换成主壳层也不会把它带走。
+        _showFeedback(AppL10n.of(context).accWechatLoginSuccess);
+      } else {
+        // 同邮箱登录：失败才提示（成功侧见上面的微信特例）。
         // 调试期补一条「微信侧已拿到 code」的事实：微信授权成功、后端换 token 失败时，
         // 只看 toast 文案分不清是哪一段挂了（详见 _withDiagnostics）。
         // 其后跟着状态层给的请求现场（[ActionFeedback.diagnostics]，当前是被 406 拒掉

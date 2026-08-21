@@ -106,7 +106,7 @@ class _HomeMainView extends StatelessWidget {
         // 无论内容多高，「我的」入口都在视口里，不会被内容顶出去。
         Padding(
           padding: _textInset,
-          child: _HomeTabBar(onOpenMine: onOpenMine),
+          child: _HomeTabBar(state: state, onOpenMine: onOpenMine),
         ),
         const SizedBox(height: 13),
       ],

@@ -416,7 +416,10 @@ class ProjectionProgress extends StatelessWidget {
                       // 重新跑一遍 250ms。而进度回调约 120ms 一次、动画要 250ms，
                       // 结果就是动画永远跑不完就被打断，橙条不停往回弹再冲上去（锯齿闪烁）。
                       tween: Tween<double>(end: percent.clamp(0.0, 1.0)),
-                      duration: const Duration(milliseconds: 250),
+                      // 2026-08-14：percent 现在由 SmoothProgress 按 33ms 节拍连续推进，
+                      // 补间时长必须 ≤ 该节拍——否则上一格还没补完下一格就来了，
+                      // 橙条会一路拖在数字后面（原来的 250ms 是给「8 次/秒跳变」配的）。
+                      duration: const Duration(milliseconds: 33),
                       curve: Curves.easeOut,
                       builder: (context, value, child) => FractionallySizedBox(
                         alignment: Alignment.centerLeft,
