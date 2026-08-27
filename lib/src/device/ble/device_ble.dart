@@ -88,6 +88,23 @@ class FrameBleException implements Exception {
   @override
   String toString() => message;
 
+  /// 「设备忙(0x0B)」：设备答得上话、只是正忙于处理其它指令（规格书 v1.5 §6.6.1），
+  /// 指令**被主动拒绝、根本没执行**——与断连/超时/写失败不是一回事，稍后重试即可成功。
+  ///
+  /// 判据优先认 [resultCode]（机器可读，不受前缀/翻译层改写影响），拿不到时退回文案匹配
+  /// （对齐小程序 `protocol.isBusyError`）。谁在用：「我的相册」删除要「捕捉到繁忙就整批中止、
+  /// 一条数据都不删」的地方（`PhotoFrameState.deleteDevicePhotoSlots`）。
+  ///
+  /// ⚠️ **不能只看 [kind]**：`FrameBleErrorKind.busy` 还被端上自己的图传门闩
+  /// （「已有图传进行中，请等待当前传输结束」）复用，那不是设备回的 0x0B，
+  /// 归成「设备繁忙」会让提示对不上因果。
+  static bool isBusy(Object? error) {
+    if (error is FrameBleException && error.resultCode != null) {
+      return FrameProtocol.isBusyResult(error.resultCode!);
+    }
+    return FrameProtocol.isBusyMessage(error?.toString());
+  }
+
   /// 删除图片(0x12)时可以「按已删继续」的良性失败：图片不存在(0x05) / 掩码不一致(0x07)。
   /// 判据见 [FrameProtocol.skippableDeleteResults]；没有结果码时退回文案匹配。
   static bool isSkippableDelete(Object? error) {

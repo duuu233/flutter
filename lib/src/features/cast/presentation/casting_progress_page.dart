@@ -9,6 +9,7 @@ import '../../../device/ble/device_ble.dart' show FrameBleErrorKind;
 import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../cast_photo_picker.dart';
 import '../projection_service.dart';
@@ -289,6 +290,18 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 「继续投屏」：不跳首页，在本页弹「拍照 / 相册」二选一，选完图替换本页进入新一轮投屏
   /// （对齐小程序 result.js continueProjection）。
   Future<void> _continueProjection() async {
+    // 「继续投屏」是主动操作，按小程序 result.js `pickAndContinue` 的口径要提醒一次电量
+    // （2026-08-27 补齐 08-21 遗留入口）。⚠️ 这一支**自己不建连接**——连接发生在下一页
+    // （预览页预热 / 投屏页续连），那属于自动连接、按口径不弹；所以只有「此刻已连着这台」
+    // 时才读得到电量、才会弹。
+    final tipDevice = widget.device;
+    final tipState = widget.state;
+    if (tipDevice != null && tipState != null) {
+      await showLowBatteryTipIfNeeded(context, tipState, tipDevice.id);
+      if (!mounted) {
+        return;
+      }
+    }
     // 走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款），取代原手搓 ListTile 版。
     final source = await CastPhotoPicker.chooseSource(context);
     if (source == null || !mounted) {

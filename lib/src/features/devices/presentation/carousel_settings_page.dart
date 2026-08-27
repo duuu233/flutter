@@ -4,6 +4,7 @@ import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 
 /// 轮播设置页：开启/关闭轮播 + 选择轮播方式（顺序 / 随机）。
@@ -58,7 +59,17 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
     if (_busy) {
       return;
     }
+    // 闸先上再弹提醒：提醒是个 await，不先锁住的话弹窗停留期间还能再点一次开关。
     setState(() => _busy = true);
+    // 主动改轮播开关/方式 = 一次设备操作：先提醒电量，再进「保存中」蒙层
+    // （对齐小程序 slideshow.js `applyPlayback` 走的 ensureConnectedForAction，
+    //  2026-08-27 补齐 08-21 那轮遗留的入口）。
+    // ⚠️ 本页入口已由详情页判过「已连接」才放进来，断线后 setDeviceCarousel 内部还会自动扫连；
+    // 那一支重连发生在提醒之后、端上此刻读不到电量 → 不弹（没有判据就不报警）。
+    await showLowBatteryTipIfNeeded(context, widget.state, widget.deviceId);
+    if (!mounted) {
+      return;
+    }
     AppLoadingDialog.show(context, AppL10n.of(context).saving);
     // hide 放 finally 且不做 mounted 门控（hide 不依赖 context）：页面在 await
     // 期间被卸载时也要收掉 root 栈上 canPop:false 的蒙层。

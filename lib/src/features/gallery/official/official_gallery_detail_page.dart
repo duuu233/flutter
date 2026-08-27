@@ -8,6 +8,7 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/device_picker_sheet.dart';
 import '../../../shared/widgets/figma_common.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../cast/recast_download.dart';
@@ -228,6 +229,13 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
           AppToast.warn(context, feedback.message);
           return;
         }
+      }
+
+      // 「连接并投屏」是主动操作：本来就连着 / 刚扫连上都提醒一次电量
+      // （2026-08-27 补齐 08-21 遗留入口）。放在下载蒙层之前，不与蒙层抢屏。
+      await showLowBatteryTipIfNeeded(context, state, device.id);
+      if (!mounted) {
+        return;
       }
 
       // 预览页只接受本地路径，远程图必须先下下来

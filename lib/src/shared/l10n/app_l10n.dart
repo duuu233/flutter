@@ -1866,9 +1866,15 @@ class AppL10n {
   // 目前无消费方。留着这一条只为万一要改回来时不用重译；不要拿它当新标题复用。
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
   String get mineServiceHelp => _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
-  /// 2026-08-04：「设备照片」与「投屏管理」两张卡合并为「我的相册」（投屏成功的照片）。
+  /// 2026-08-04：「设备照片」与「投屏管理」两张卡合并为一张（投屏成功的照片）。
   /// 合并后宫格由三卡变两卡、卡片等分宽度，日语不再需要为 102 宽缩写。
-  String get mineMyGallery => _pick('我的相册', 'My Album', 'マイアルバム');
+  ///
+  /// 2026-08-24 标题由「我的相册」改成「我的上传」（同步小程序 `mine.wxml`，旧 key
+  /// `mineMyGallery` 一并改名）。与 [homeEntryUploadsTitle] 文案相同、**故意各留一份**：
+  /// 首页宫格与「我的」页那张卡是两处产品件，以后只改一处时不该互相牵连。
+  /// ⚠️ 卡片副标题的张数同日改取 `getUserInfo` 的 `imgCount`（上传口径，含投屏失败/已删），
+  /// 与标题是同一个决定——目的地仍是「我的相册」页（投屏成功记录），别再把标题改回去。
+  String get mineMyUploads => _pick('我的上传', 'My Uploads', 'マイアップロード');
   String get mineMyDevices => _pick('我的设备', 'My Devices', 'マイデバイス');
   // 英语「Cast Management」在窄卡里过长换行，缩为单词「Casting」。
   // 2026-08-04 起「我的」不再有这张卡，本条仍供投屏管理页自身（投屏结果页「投屏明细」进入）使用。

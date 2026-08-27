@@ -7,6 +7,7 @@ import '../../../device/ble_controller.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/permission_gate.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
@@ -261,6 +262,13 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
     if (!feedback.success) {
       _snack(context, feedback.message);
+      return;
+    }
+    // 主动点「连接」连上之后，电量 ≤10% 先提醒一次
+    // （2026-08-27 补齐 08-21 那轮遗留的入口，对齐小程序 ensureConnectedForAction）。
+    // 只在**连接**方向弹：断开不需要电量做判断，弹了也没有可操作的下一步。
+    if (!wasConnected) {
+      await showLowBatteryTipIfNeeded(context, state, device.id);
     }
   }
 
@@ -284,8 +292,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
     if (!feedback.success) {
       _snack(context, feedback.message);
+      return false;
     }
-    return feedback.success;
+    // 主动点「投屏」自动扫连上之后，电量 ≤10% 先提醒一次（与设备列表页 _ensureConnected 同一套）。
+    await showLowBatteryTipIfNeeded(context, state, deviceId);
+    return true;
   }
 
   /// 拍照 / 相册选择面板：走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款）。
@@ -299,6 +310,12 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     if (!state.isDeviceActuallyConnected(device.id)) {
       final connected = await _ensureConnected(context, device.id);
       if (!connected || !context.mounted) {
+        return;
+      }
+    } else {
+      // 已连接这一支没走连接流程，低电量提醒在这里补（对齐首页 _startCast 的同名分支）。
+      await showLowBatteryTipIfNeeded(context, state, device.id);
+      if (!context.mounted) {
         return;
       }
     }

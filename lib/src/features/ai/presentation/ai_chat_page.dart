@@ -15,6 +15,7 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/device_picker_sheet.dart';
 import '../../../shared/widgets/figma_common.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
@@ -1943,6 +1944,16 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
           return;
         }
         target = widget.state.deviceById(target.id);
+      }
+    }
+
+    // 「投屏」是主动操作：本来就连着 / 刚在弹层里连上，都提醒一次电量
+    // （2026-08-27 补齐 08-21 遗留入口）。放在下载蒙层之前，不与蒙层抢屏。
+    final tipTarget = target;
+    if (tipTarget != null) {
+      await showLowBatteryTipIfNeeded(context, widget.state, tipTarget.id);
+      if (!mounted) {
+        return;
       }
     }
 

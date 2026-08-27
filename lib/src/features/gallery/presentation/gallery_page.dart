@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
@@ -392,9 +393,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// 2026-08-20 口径：两半**互不阻断**——先发设备删除指令，无论它成功、失败还是设备根本没应答，
   /// 都继续删投屏记录；反过来记录接口失败也不回滚设备。两半的结果最后合并成一条提示
   ///（都成功=已删除 / 设备失败=「投屏记录已删除，<原因>」/ 记录失败 / 都失败）。
-  /// 唯一的例外是连接前置：连不上这台设备时两半都不执行（[DevicePhotoDeleteOutcome.blocked]）。
-  /// 代价（产品已确认接受）：设备真的没删掉时记录先没了，相框上那张图成了只能靠「一键清空」
-  /// 清理的幽灵图——删除以「从我的相册里消失」为准，设备侧尽力而为。
+  /// 两个例外走 [DevicePhotoDeleteOutcome.blocked]（两半都不执行、只 toast 原因）：
+  /// ① 连接前置——连不上这台设备时端上一条 0x12 都没发出去；
+  /// ② **设备繁忙 0x0B**（2026-08-24）——指令被设备主动拒绝、根本没执行，提示「当前电子纸设备
+  ///    繁忙，请稍后重试」后**记录一条不删、列表不刷新、选中态保留**，用户稍后原样再点即可。
+  /// 代价（产品已确认接受）：设备**真失败**（0x04/0x09/断连超时）时记录先没了，相框上那张图成了
+  /// 只能靠「一键清空」清理的幽灵图——删除以「从我的相册里消失」为准，设备侧尽力而为。
   ///
   /// 必须连投屏记录一起删：本页列表就是按成功记录铺的，只删设备侧的话，下次进来这张还在列表里。
   /// 2026-08-17 起端上到此为止，**不再删图库照片**（`delUserProductImg` 已整体下线），
@@ -438,6 +442,16 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (!await PermissionGate.ensureBleReady(context) || !mounted) {
       return;
     }
+    // 主动点「删除」= 一次设备操作：先提醒电量，再进「删除中」蒙层
+    // （对齐小程序 album/list.js `ensureConnectedDevice` → ensureConnectedForAction；
+    //  2026-08-27 补齐 08-21 那轮遗留的入口）。
+    // ⚠️ 与小程序有一处**有意的收窄**：那边是「先连上再弹」，App 侧这条链路的扫连发生在
+    // `deleteDevicePhotoSlots` 内部（连接前置刻意留在 state 层），所以未连接时端上此刻
+    // 读不到电量 → 不弹（没有判据就不报警），只有本来就连着这台才提醒。
+    await showLowBatteryTipIfNeeded(context, state, targetDeviceId);
+    if (!mounted) {
+      return;
+    }
     // 设备侧删除(0x12)可能耗时较久（最长约 180s），期间用蒙层 loading 阻断误操作
     // （对齐小程序 wx.showLoading({title:'删除中', mask:true})）。
     _showBlockingLoading(l10n.galDeleting);
@@ -452,8 +466,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
         slots: slots,
       );
       // 2026-08-20 口径：设备侧删没删掉**都**照删投屏记录，两半互不阻断。
-      // 只有「前置条件不满足」（没选照片 / 设备不存在 / 连不上这台设备）才两半都不执行——
-      // 那时端上一条 0x12 都没发出去，照删记录等于用户完全没碰到设备就丢了记录。
+      // 只有 blocked 才两半都不执行：前置条件不满足（没选照片 / 设备不存在 / 连不上这台设备）——
+      // 那时端上一条 0x12 都没发出去，照删记录等于用户完全没碰到设备就丢了记录；
+      // 以及**设备繁忙 0x0B**（2026-08-24）——指令被主动拒绝、根本没执行，重试即可，
+      // 先删记录只会白留一张幽灵图。
       // 允许部分失败：不能因为记录没删干净就回滚设备（设备上的图已经删掉了）。
       if (!deviceOutcome.blocked) {
         recordResult = await state.deleteCastRecords(
@@ -467,6 +483,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       return;
     }
     if (deviceOutcome.blocked) {
+      // 数据一点没动：**不清选中、不刷列表**，用户稍后原样再点一次就能重试（繁忙尤其如此）。
       AppToast.warn(context, deviceOutcome.blockedMessage);
       return;
     }
@@ -591,6 +608,12 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
         return;
       }
       final device = state.deviceById(targetDeviceId);
+      // 「再次投屏」自己建的连接：连上之后提醒一次电量，再进下载蒙层
+      // （2026-08-27 补齐 08-21 遗留入口；提醒不阻断，用户点掉就继续下载）。
+      await showLowBatteryTipIfNeeded(context, state, targetDeviceId);
+      if (!mounted) {
+        return;
+      }
 
       // 逐张下载到本地：小程序的预览页能直接吃远程 URL，Flutter 预览页只接受本地路径。
       final paths = <String>[];

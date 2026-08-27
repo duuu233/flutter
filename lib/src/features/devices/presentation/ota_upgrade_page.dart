@@ -13,6 +13,7 @@ import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 
 /// 设备固件 OTA 升级页 —— 由微信小程序版 `subpackages/device/ota/ota`（ota.js + ota.wxml）移植。
@@ -75,6 +76,13 @@ Future<void> startOtaFlow(
       AppToast.show(context, feedback.message);
       return;
     }
+  }
+  // 主动点「固件升级」这一行：本来就连着 / 刚扫连上都要提醒一次电量
+  // （对齐小程序 detail.js `enterOtaUpgrade` 走的 ensureConnectedForAction，
+  //  2026-08-27 补齐 08-21 那轮遗留的入口）。位置在版本 loading 之前，不与蒙层抢屏。
+  await showLowBatteryTipIfNeeded(context, state, device.id);
+  if (!context.mounted) {
+    return;
   }
   // ② loading 下二次拉取最新版本信息。
   AppLoadingDialog.show(context, AppL10n.of(context).otaCheckingVersion);
@@ -150,6 +158,11 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   /// 反过来，自动扫连可达十几秒、期间 stage 也还没变，用户点一下就能并发出第二条 DFU 流
   /// （同一 session 交叉写 DATA 必败）。
   bool _running = false;
+
+  /// 详情页「立刻更新」带过来的**自动开始那一跳**：入口 [startOtaFlow] 刚弹过低电量提醒，
+  /// 本页第一轮不再弹第二遍（对齐小程序「一次点击只弹一次」）。
+  /// 一次性消费：此后本页的手动「连接并升级 / 重新升级」照常各弹各的。
+  late bool _lowBatteryTipDoneByEntry = widget.autoStart;
 
   // 设备名/状态文案初值留空，展示时在 build 里按当前语言兜底
   //（字段初始化处没有 context，硬编码中文会绕过 i18n）。
@@ -371,7 +384,16 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         });
         return;
       }
+      // 本页「连接并升级」自己扫连上的：提醒一次电量（2026-08-27 补齐遗留入口）。
+      await showLowBatteryTipIfNeeded(context, widget.state, widget.deviceId);
+      if (!mounted) return;
+    } else if (!_lowBatteryTipDoneByEntry) {
+      // 本来就连着：正常也要提醒一次；只有详情页「立刻更新」自动带过来的第一轮跳过
+      // ——那一跳的入口刚弹过，这里再弹就成了一次点击弹两遍。
+      await showLowBatteryTipIfNeeded(context, widget.state, widget.deviceId);
+      if (!mounted) return;
     }
+    _lowBatteryTipDoneByEntry = false;
 
     _aborted = false;
     // 连同上一轮的中止时刻一起清掉：留着的话，本轮的链路（建立时刻必然晚于那个旧时间戳）

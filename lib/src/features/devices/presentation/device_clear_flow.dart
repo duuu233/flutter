@@ -4,6 +4,7 @@ import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 
 /// 一键清空进行中标记：并发触发（连点）时第二路直接返回。
@@ -56,6 +57,13 @@ Future<void> startClearDeviceFlow(
   _clearFlowBusy = true;
   try {
     final l10n = AppL10n.of(context);
+    // 一键清空不经过任何「连接前置」函数（入口刚判过连接、clearDeviceMemory 也不自动扫连），
+    // 低电量提醒只能自己弹一次；位置在**两步确认之前**，对齐小程序 detail.js `clearCopies`
+    // （2026-08-27 补齐 08-21 那轮遗留的入口）。
+    await showLowBatteryTipIfNeeded(context, state, deviceId);
+    if (!context.mounted) {
+      return;
+    }
     // 第一步：警示「同时清空设备与小程序/APP 图库」。点完还有第二步，按钮是「继续」。
     final warned = await showAppConfirmDialog(
       context,

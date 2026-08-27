@@ -175,4 +175,56 @@ void main() {
       expect(FrameBleException.isSkippableDelete(null), isFalse);
     });
   });
+
+  // 2026-08-24（同步小程序 tests/album-delete-independent.test.js 第 ⑥/⑥'/⑦ 组）：
+  // 相册删除撞上**设备繁忙 0x0B** 时整批中止、一条数据都不删。
+  // 这里只钉判据 [FrameBleException.isBusy]——「中止」那一步在
+  // PhotoFrameState.deleteDevicePhotoSlots 里返回 blockedMessage，需要真实 BLE 会话，
+  // 单测覆盖不到（同本文件其它组的做法：只测纯逻辑）。
+  group('设备繁忙(0x0B) 的判据', () {
+    test('带结果码：认码，不看文案', () {
+      final busy = FrameBleException(
+        '电子纸设备-未知提示',
+        resultCode: FrameProtocol.busyResult,
+      );
+
+      expect(FrameBleException.isBusy(busy), isTrue);
+    });
+
+    test('没有结果码时退回文案匹配（device_ble 的集中拦截就是这种）', () {
+      expect(
+        FrameBleException.isBusy(FrameBleException(FrameProtocol.busyMessage)),
+        isTrue,
+      );
+      expect(
+        FrameBleException.isBusy(Exception('电子纸设备-${FrameProtocol.busyMessage}')),
+        isTrue,
+      );
+    });
+
+    test('端上自己的图传门闩虽然也叫 busy，但不是设备回的 0x0B', () {
+      // 「已有图传进行中」是本地串行门闩（kind 复用了 busy），归成「设备繁忙」会让因果对不上，
+      // 所以 isBusy 刻意不看 kind。
+      final localGuard = FrameBleException(
+        '已有图传进行中，请等待当前传输结束',
+        kind: FrameBleErrorKind.busy,
+      );
+
+      expect(FrameBleException.isBusy(localGuard), isFalse);
+    });
+
+    test('别的失败不能被当成繁忙（它们仍要走「两半互不阻断」照删记录）', () {
+      for (final code in [0x00, 0x04, 0x05, 0x07, 0x09, 0x0a]) {
+        expect(
+          FrameBleException.isBusy(
+            FrameBleException(FrameProtocol.resultText(code), resultCode: code),
+          ),
+          isFalse,
+          reason: '结果码 0x${code.toRadixString(16)} 不是设备繁忙',
+        );
+      }
+      expect(FrameBleException.isBusy(Exception('指令 0x12 应答超时')), isFalse);
+      expect(FrameBleException.isBusy(null), isFalse);
+    });
+  });
 }

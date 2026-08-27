@@ -409,14 +409,21 @@ class DevicePhotoDeleteOutcome {
     this.refreshWarn = '',
   });
 
-  /// **前置条件**不满足（没选照片 / 设备记录不存在 / 连不上这台设备）：两半都不执行，原样提示。
+  /// **两半都不执行**时的原样提示，调用方据此 toast 后直接返回（不删记录、不刷列表、不清选中）。
   ///
-  /// 与「设备侧失败」不是一回事：连不上设备时端上根本没发出过 0x12，此时照删记录会让用户在
-  /// 完全没碰到设备的情况下丢掉记录。小程序侧同样保留了这道连接前置（`ensureConnectedDevice`）。
+  /// 两类来源：
+  /// - 前置条件不满足（没选照片 / 设备记录不存在 / 连不上这台设备）——端上根本没发出过 0x12，
+  ///   此时照删记录会让用户在完全没碰到设备的情况下丢掉记录。小程序侧同样保留了这道连接前置
+  ///   （`ensureConnectedDevice`）；
+  /// - **设备繁忙 0x0B**（2026-08-24 新增，协议文档口径）——指令被设备主动拒绝、根本没执行
+  ///   （规格书 v1.5 §6.6.1，刷墨水屏/写 Flash 的忙窗口约几秒），稍后重试就能真删掉，
+  ///   先把记录删掉只会白留一张幽灵图。见 [PhotoFrameState.deleteDevicePhotoSlots]。
   final String blockedMessage;
 
-  /// 设备侧**真失败**的原因（设备忙 0x0B / Flash 写失败 0x04 / 传输中断 0x09 / 断连超时）。
+  /// 设备侧**真失败**的原因（Flash 写失败 0x04 / 传输中断 0x09 / 断连超时）：可能真的没删掉、
+  /// 也可能删了一半，仍按「两半互不阻断」继续删记录。
   /// 空 = 设备侧成功，或按良性结果码（0x05 图片不存在 / 0x07 掩码不一致）当作已删跳过。
+  /// ⚠️ 设备忙 0x0B 不走这里，2026-08-24 起改由 [blockedMessage] 整批中止。
   final String deviceError;
 
   /// 删到了「屏幕当前正显示的那张」，补发的刷屏(0x24)失败：图已经删掉了，只是屏幕没切过去。
@@ -488,7 +495,8 @@ class PhotoFrameState extends ChangeNotifier {
   bool _castRecordsLoaded = false;
   bool _userLoaded = false;
 
-  // 「我的」页「我的相册」卡片上的张数：**全部设备**的投屏成功记录条数（2026-08-05）。
+  // 全部设备的投屏成功记录条数（2026-08-05 起曾是「我的」页那张卡的张数口径，
+  // 2026-08-24 改取 getUserInfo 的 imgCount 后**保留备用**，见 [mineCastSuccessCount]）。
   // 单独存一份计数（而不是复用 _castRecords.length）：那份列表被图库页/投屏管理页按各自的
   // 设备与状态条件反复覆盖，长度随最后一次谁刷的而变，不能当账号级合计用。
   int _mineCastSuccessCount = 0;
@@ -515,7 +523,8 @@ class PhotoFrameState extends ChangeNotifier {
   /// 用户资料首屏是否已出结果（「我的」页据此决定显示真实统计还是占位 `--`）。
   bool get userLoaded => _userLoaded;
 
-  /// 「我的相册」张数是否已出结果（「我的」页据此在拿到数字前显示 `--张照片`）。
+  /// 投屏成功记录条数是否已出结果。2026-08-24 起「我的」页不看它了（两张卡的
+  /// 「已出结果」都看 [userLoaded]），与 [mineCastSuccessCount] 一并保留备用。
   bool get mineCastSuccessLoaded => _mineCastSuccessLoaded;
 
   AppLanguage get language => _language;
@@ -620,19 +629,22 @@ class PhotoFrameState extends ChangeNotifier {
     return '${value.year}-$month-$day $hour:$minute';
   }
 
-  /// 「我的」页「我的相册」卡片上的张数 = **全部设备**的投屏成功记录条数
-  /// （2026-08-05，由 [refreshMineCastSuccessCount] 写入；对齐小程序 mine.js
-  /// `photoCount: castSuccessCount`）。
+  /// 「我的」页「我的上传」卡片上的张数 = 用户信息接口 `GET /Client/User/getUserInfo` 的
+  /// `imgCount`（2026-08-24 起，接口文档口径；对齐小程序 mine.js
+  /// `photoCount: Number(userInfo.imgCount) || 0`）。后端算什么就显示什么。
   ///
-  /// 不再用账号级 `imgCount`（相册口径）：那个数把投屏失败的、已从设备删掉的都算在内，
-  /// 与点进「我的相册」看到的列表对不上。
-  int get minePhotoCount => _mineCastSuccessCount;
+  /// ⚠️ 这是对 2026-08-05「改用投屏成功记录条数」的**有意回退**：卡片文案已从「我的相册」
+  /// 改成「我的上传」，口径就是用户上传过的张数（含投屏失败的、已从设备删掉的），
+  /// 与点进去的成功记录列表本来就不是同一个数——别再为了对齐列表把它改回去。
+  int get minePhotoCount => _currentUser.imgCount;
 
-  /// 「我的」页的设备数：优先后端统计（getUserInfo 的 `productCount`），
-  /// 未下发（0）时回退本地列表长度——对齐小程序 mine.js。
-  int get mineDeviceCount => _currentUser.productCount > 0
-      ? _currentUser.productCount
-      : _devices.length;
+  /// 投屏成功记录条数（2026-08-05～08-24 曾是上面那张卡的口径，现**保留备用**）：
+  /// 由 [refreshMineCastSuccessCount] 写入，当前没有页面读它。
+  int get mineCastSuccessCount => _mineCastSuccessCount;
+
+  /// 「我的」页的设备数 = 用户信息接口的 `productCount`（2026-08-24 起，同上口径）。
+  /// 不再回退本地设备列表长度：两个数字都只认后端这一份，本页也因此少打一个设备列表请求。
+  int get mineDeviceCount => _currentUser.productCount;
 
   DeviceItem deviceById(String deviceId) => _findDevice(deviceId);
 
@@ -1806,6 +1818,12 @@ class PhotoFrameState extends ChangeNotifier {
   /// 改前是「非良性结果码直接判失败」：设备忙(0x0B)/Flash 写失败(0x04)/断连超时时整批中止，
   /// 记录一条都不删，用户回到相册看见照片还在、再点一次还是同样的报错。
   ///
+  /// ⚠️ 2026-08-24 例外（同步小程序同名函数，协议文档口径）：**设备繁忙 0x0B 恢复为整批中止**——
+  /// 无论撞在 0x01 掩码回读还是 0x12 删除应答上，都以 [DevicePhotoDeleteOutcome.blockedMessage]
+  /// 返回「当前电子纸设备繁忙，请稍后重试」，调用方据此**一条记录都不删、列表不刷新、选中态保留**。
+  /// 繁忙是设备回帧主动拒绝、指令根本没执行，不存在「删了一半」的中间态，天然可重试；
+  /// 而 0x04/0x09/断连超时确实可能已删掉一部分，仍走上面的「互不阻断」。
+  ///
   /// 代价（产品已确认接受）：设备真的没删掉时记录先没了 → 相框上那张图成了「相册里看不到、
   /// 端上也没有它 imgIndex」的幽灵图，只能靠「一键清空」清理。
   ///
@@ -1862,6 +1880,12 @@ class PhotoFrameState extends ChangeNotifier {
     }
     String refreshWarn = '';
     String deviceError = '';
+    // 设备繁忙的统一提示（与小程序 protocol.BUSY_MESSAGE 同一句中文）。
+    final busyMessage = tr(
+      zh: FrameProtocol.busyMessage,
+      en: 'The e-paper device is busy, please try again later.',
+      ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
+    );
     // 1) 先读一次设备当前 IMG_MASK(0x01)，把待删槽位分成「设备上还在的」和「已经不在的」两拨。
     //
     //    为什么要读：同一台设备可能被两部手机连过。另一部手机删掉了 A，设备上只剩 B、C，
@@ -1872,13 +1896,18 @@ class PhotoFrameState extends ChangeNotifier {
     //      · 槽位在设备上已空 → 跳过设备侧，来源记录照删，不影响同批其它张；
     //      · 槽位上现在躺着另一端后传的别的图 → 仍按索引删掉，不做内容比对（产品明确接受：
     //        索引是我们唯一的定位手段，根治要靠后端的 imgIndex 唯一性规则）；
-    //      · 回读失败（设备忙 / 刚断连 / 应答超时）→ **不拦**，按记录里的真实 imgIndex 原样下发，
-    //        交给 0x12 的良性结果码兜底（2026-08-20：设备忙原本在这里直接中止，与「两半互不阻断」
-    //        冲突——回读只是一次辅助优化，它失败不该连记录也一起删不掉）。
+    //      · 回读失败（刚断连 / 应答超时）→ **不拦**，按记录里的真实 imgIndex 原样下发，
+    //        交给 0x12 的良性结果码兜底（回读只是一次辅助优化，它失败不该连记录也一起删不掉）；
+    //      · 回读回**设备繁忙 0x0B** → 2026-08-24 起**整批中止、什么都不删**：连 0x01 都被主动
+    //        拒了，紧随其后的 0x12 也必然被拒，与其先把记录删掉留幽灵图，不如让用户稍后重试。
     FrameDeviceInfo? info;
     try {
       info = await client.readTransferInfo();
     } catch (e) {
+      if (FrameBleException.isBusy(e)) {
+        debugPrint('[相册删除] 回读设备掩码(0x01)时设备繁忙，整批中止，不删除任何数据：$e');
+        return DevicePhotoDeleteOutcome(blockedMessage: busyMessage);
+      }
       debugPrint('[相册删除] 回读设备掩码(0x01)失败，按选中槽位原样下发：$e');
       info = null;
     }
@@ -1912,21 +1941,20 @@ class PhotoFrameState extends ChangeNotifier {
           }
         }
       } catch (e) {
+        // 「设备繁忙(0x0B)」：指令被设备主动拒绝、根本没执行 → 整批中止，什么都不删
+        //（2026-08-24 口径，见函数头注释）。必须判在下面两个分支之前：它是唯一
+        // 「中止且不动任何数据」的出口，记录接口一次都不会调。
+        if (FrameBleException.isBusy(e)) {
+          debugPrint('[相册删除] 0x12 回了设备繁忙(0x0B)，整批中止，不删除任何数据：$e');
+          return DevicePhotoDeleteOutcome(blockedMessage: busyMessage);
+        }
         // 「图片不存在(0x05) / 掩码不一致(0x07)」：要删的图设备上本来就没有——上一步的掩码回读
         // 与真正下发之间，另一端仍可能再删一张，所以这里还要兜一次。这类结果码按已删继续删记录。
         if (FrameBleException.isSkippableDelete(e)) {
           debugPrint('[相册删除] 0x12 回了「图片不存在/掩码不一致」，按设备侧已无此图继续删记录：$e');
-        } else if (FrameProtocol.isBusyMessage(e.toString())) {
-          // 设备忙(0x0B)：设备答得上话、只是暂时在忙，别归成通用「设备删除失败」。
-          deviceError = tr(
-            zh: '当前电子纸设备繁忙，请稍后重试',
-            en: 'The e-paper device is busy, please try again later.',
-            ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
-          );
-          debugPrint('[相册删除] 设备删除(0x12)遇到设备忙，不影响后续记录删除：$e');
         } else {
-          // Flash 写失败(0x04)、传输中断(0x09)、断连/应答超时：设备侧「可能真的没删掉」。
-          // 只记下来，不再中止——记录侧照删（2026-08-20 口径）。
+          // Flash 写失败(0x04)、传输中断(0x09)、断连/应答超时：设备侧「可能真的没删掉、
+          // 也可能删了一半」。只记下来，不中止——记录侧照删（2026-08-20 口径）。
           deviceError = tr(
             zh: '电子纸设备删除失败，请检查电子纸设备连接后重试。',
             en: 'Failed to delete from the e-paper device. Check the connection and retry.',
@@ -2029,7 +2057,11 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 「我的」页「我的相册」卡片的张数：**全部设备**的投屏成功记录条数（写入 [minePhotoCount]）。
+  /// **全部设备**的投屏成功记录条数（写入 [mineCastSuccessCount]）。
+  ///
+  /// ⚠️ 2026-08-24 起「我的」页的「我的上传」张数改取 `getUserInfo` 的 `imgCount`，
+  /// 本方法**当前没有调用方**，与小程序 `api.getProjectionSuccessCount()` 一样保留备用
+  /// （口径若再变可直接复用，实现里的分页判停规则不便重写）。
   ///
   /// 与「我的相册」列表同口径（`deviceUploadState:1` + 本地按状态兜底），只是不带
   /// `userProductId`——卡片统计的是全部设备的合计，不是当前选中的那台。

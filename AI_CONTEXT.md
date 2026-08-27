@@ -395,9 +395,20 @@ message substrings.
   delete, the record is gone first and that image becomes a ghost on the frame, clearable only via
   "clear all". The **connect precondition is deliberately kept** (`DevicePhotoDeleteOutcome.blocked`):
   if we cannot reach that device, neither half runs — no `0x12` was ever sent, so dropping records
-  would lose them without the user touching the device. The `0x01` mask read is likewise
-  non-blocking now (busy included): it is only an optimisation, its failure must not take the record
-  half down with it.
+  would lose them without the user touching the device. A failing `0x01` mask read is likewise
+  non-blocking: it is only an optimisation, its failure must not take the record half down with it.
+- 2026-08-24 (mirrors the mini-program the same day; protocol doc rule): **device busy `0x0B` is the
+  one exception and aborts the whole batch again.** Wherever it is caught — the `0x01` mask read or
+  the `0x12` ack — `deleteDevicePhotoSlots` returns it as `DevicePhotoDeleteOutcome.blockedMessage`
+  ("当前电子纸设备繁忙，请稍后重试"), so the caller toasts it and returns: **no cast record is
+  deleted, the list is not reloaded, the selection is kept** for an immediate retry. Rationale: busy
+  means the frame **actively refused** and never executed the command (spec v1.5 §6.6.1, a few
+  seconds of e-ink refresh / flash write), so there is no "half deleted" state and a retry really
+  works — deleting the record first would only leave a ghost image for nothing. `0x04`/`0x09`/
+  disconnect/timeout keep the 2026-08-20 behaviour (records deleted anyway) because they really may
+  have deleted part of the batch. The predicate is `FrameBleException.isBusy` (result code first,
+  message fallback — the ack interceptor throws busy **without** a `resultCode`); it deliberately
+  ignores `FrameBleErrorKind.busy`, which the local image-transfer latch reuses.
 - If the `0x01` mask read fails, **nothing** may be classified as "already gone" (that would delete
   records while images stay on the frame) — the selected slots are sent as-is and the benign result
   codes are the safety net. An all-zero mask is a *valid* mask and does mean "device has no images".
@@ -492,11 +503,19 @@ Logout / successful account deletion / session expiry
     `_CollapsibleGap` (zero intrinsic height) so a short window shrinks the whitespace first and only
     scrolls once it is fully collapsed — never `Flexible(child: SizedBox(...))`, whose intrinsic height
     makes `IntrinsicHeight` jump straight to scrolling (2026-08-05 home-page regression).
-17. **The "My Album" count is cast-success records, not `imgCount`.** (2026-08-05) `minePhotoCount`
-    comes from `refreshMineCastSuccessCount()` (all devices, `deviceUploadState: 1`), matching what
-    the album list shows. It is stored separately from `castRecords`, whose contents are owned by the
-    gallery/cast-management pages' own filters. `UserProfile.imgCount` is still parsed but no longer
-    displayed.
+17. **Both "Mine" cards read the user-info API.** (2026-08-24, replacing the 2026-08-05 rule)
+    `minePhotoCount` = `UserProfile.imgCount` and `mineDeviceCount` = `UserProfile.productCount`,
+    both straight from `GET /Client/User/getUserInfo` (`refreshCurrentUser`), so `MinePage._reload()`
+    fires that **single** request — no device list (the old device-count fallback) and no
+    `refreshMineCastSuccessCount()` (the old photo-count source). "Loaded" for both subtitles is
+    `userLoaded`. This is a deliberate revert of 2026-08-05: the card is now labelled "我的上传"
+    (uploads), so counting uploads — failed casts and images since deleted from the frame included —
+    is the intended meaning; it was never going to match the success-record list, so do not "fix" it
+    back. `refreshMineCastSuccessCount()` / `mineCastSuccessCount` are kept unused for reuse.
+    The card title moved with it: `AppL10n.mineMyGallery` was renamed to `mineMyUploads`
+    ("我的上传" / "My Uploads" / "マイアップロード"), matching the mini program. Its copy duplicates
+    `homeEntryUploadsTitle` on purpose — home grid and this card are two separate product surfaces.
+    The destination is unchanged (`AppRoutes.figmaGallery`, the cast-success list).
 18. **AI-service consent is versioned and user-scoped.** `AiServiceConsent` stores acceptance under
     agreement version plus raw login user ID. A missing cache blocks requests, account switching
     never inherits another user's choice, and logout/deletion/session expiry remove the current

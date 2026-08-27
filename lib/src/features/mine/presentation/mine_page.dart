@@ -51,8 +51,8 @@ class _MinePageState extends State<MinePage> with RouteAware {
 
   /// 被覆盖的页 pop 回来（如投屏/上传完再返回）：重新拉数，等价小程序 mine.onShow。
   ///
-  /// 这是「上传图片后回我的，设备数字不更新」的根因：设备数取的是 `getUserInfo` 的
-  /// `productCount`（账号级总数），而 `refreshDevices` **不会**更新该字段——
+  /// 这是「上传图片后回我的，数字不更新」的根因：两张卡的数字取的都是 `getUserInfo` 的
+  /// `productCount` / `imgCount`（账号级总数），别的接口**不会**更新这两个字段——
   /// 不重新打 `getUserInfo` 就永远是旧值。
   @override
   void didPopNext() {
@@ -60,14 +60,14 @@ class _MinePageState extends State<MinePage> with RouteAware {
   }
 
   void _reload() {
-    // 三个接口并发：
-    // · refreshCurrentUser —— 头像/昵称/ID、设备数（账号级 productCount）与星币余额；
-    // · refreshDevices     —— productCount 缺失时的设备数兜底（state.mineDeviceCount）；
-    // · refreshMineCastSuccessCount —— 「我的相册」张数 = 全部设备的投屏成功记录条数
-    //   （2026-08-05 起不再用账号级 imgCount，所以这里也不必再拉相册列表）。
+    // 只打一个接口：refreshCurrentUser（`GET /Client/User/getUserInfo`）——
+    // 头像/昵称/ID、星币余额，以及**两张卡的数字**（设备数 `productCount`、
+    // 上传数 `imgCount`）都在这一份出参里（2026-08-24 起，对齐小程序 mine.js）。
+    //
+    // 原先并发的另两个请求已去掉：`refreshDevices` 只是 productCount 缺失时的设备数兜底，
+    // `refreshMineCastSuccessCount` 只是「我的相册」张数的老口径（投屏成功记录条数）。
+    // 两个数字现在都只认后端这一份，进/回本页少打两个请求。
     widget.state.refreshCurrentUser().then((_) => _ensureStarBalance());
-    widget.state.refreshDevices();
-    widget.state.refreshMineCastSuccessCount();
   }
 
   /// 「星币管理」行右侧的余额（对齐小程序 `mine.js` 的 `tokenBalance`）。
@@ -179,7 +179,9 @@ class _MinePageState extends State<MinePage> with RouteAware {
                                       title: AppL10n.of(context).mineMyDevices,
                                       subtitle: AppL10n.of(context)
                                           .mineDeviceCountText(
-                                            state.userLoaded || state.devicesLoaded,
+                                            // 数字只来自 getUserInfo，所以「已出结果」
+                                            // 只看 userLoaded（原先还看设备列表兜底）。
+                                            state.userLoaded,
                                             state.mineDeviceCount,
                                           ),
                                       onTap: () {
@@ -197,10 +199,12 @@ class _MinePageState extends State<MinePage> with RouteAware {
                                       fallbackIcon:
                                           Icons.photo_size_select_actual_outlined,
                                       fallbackColor: const Color(0xFFFF6A24),
-                                      title: AppL10n.of(context).mineMyGallery,
+                                      title: AppL10n.of(context).mineMyUploads,
                                       subtitle: AppL10n.of(context)
                                           .minePhotoCountText(
-                                            state.mineCastSuccessLoaded,
+                                            // 同上：2026-08-24 起张数取 getUserInfo 的
+                                            // imgCount，不再等投屏记录计数出结果。
+                                            state.userLoaded,
                                             state.minePhotoCount,
                                           ),
                                       onTap: () {
