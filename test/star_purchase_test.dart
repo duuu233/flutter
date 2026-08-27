@@ -118,6 +118,76 @@ void main() {
       expect(creation.payPalApproveUrl, isEmpty);
       expect(creation.exceptionMsg, 'PAYPAL_CREATE_FAILED');
     });
+
+    // 2026-08-27 联调：后端可能**直接透传 PayPal Orders v2 建单的原始返回**，
+    // 字段名是 id / status / links[]，不是接口文档里的 payPalOrderId / payPalApproveUrl。
+    // 认错的表现是「接口 200 却提示未能拉起支付」，所以两种形状都得认。
+    test('PayPal 原始返回也认：id → orderId，links[rel=approve] → approveUrl', () {
+      final creation = StarPayCreation.fromJson(const {
+        'id': '5O190127TN364715T',
+        'status': 'CREATED',
+        'links': [
+          {
+            'href':
+                'https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T',
+            'rel': 'self',
+            'method': 'GET',
+          },
+          {
+            'href':
+                'https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T',
+            'rel': 'approve',
+            'method': 'GET',
+          },
+          {
+            'href':
+                'https://api.sandbox.paypal.com/v2/checkout/orders/5O190127TN364715T/capture',
+            'rel': 'capture',
+            'method': 'POST',
+          },
+        ],
+      });
+
+      expect(creation.payPalOrderId, '5O190127TN364715T');
+      expect(
+        creation.payPalApproveUrl,
+        'https://www.sandbox.paypal.com/checkoutnow?token=5O190127TN364715T',
+      );
+      expect(creation.status, 'CREATED');
+      // ⚠️ capture 是 PayPal 的**服务端** API（要商户 secret 换的 OAuth2 token），
+      // 端上既不解析也不调用——这里顺带钉住「没有把它落到任何可调用的地方」。
+      expect(creation.payPalApproveUrl, isNot(contains('/capture')));
+    });
+
+    test('两种形状同时给时以后端映射过的字段为准', () {
+      final creation = StarPayCreation.fromJson(const {
+        'payPalApproveUrl': 'https://www.sandbox.paypal.com/checkoutnow?token=MAPPED',
+        'payPalOrderId': 'MAPPED',
+        'id': 'RAW',
+        'links': [
+          {'href': 'https://www.sandbox.paypal.com/checkoutnow?token=RAW', 'rel': 'approve'},
+        ],
+      });
+      expect(creation.payPalOrderId, 'MAPPED');
+      expect(creation.payPalApproveUrl, endsWith('token=MAPPED'));
+    });
+
+    test('links 结构不对时不炸，按「拉不起支付」处理', () {
+      expect(
+        StarPayCreation.fromJson(const {'id': 'X', 'links': 'not-a-list'})
+            .payPalApproveUrl,
+        isEmpty,
+      );
+      expect(
+        StarPayCreation.fromJson(const {
+          'id': 'X',
+          'links': [
+            {'rel': 'self', 'href': 'https://api.sandbox.paypal.com/x'},
+          ],
+        }).payPalApproveUrl,
+        isEmpty,
+      );
+    });
   });
 
   group('查单', () {

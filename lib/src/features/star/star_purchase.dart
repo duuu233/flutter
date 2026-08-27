@@ -17,14 +17,17 @@ import 'star_coin_api.dart';
 /// 判据是**服务端余额变多**。用户在 PayPal 页面点了取消同样会跳回 App，把「跳回来」
 /// 当成功会直接给出「购买成功」的假消息。
 ///
-/// ⚠️ **本轮的两处后端未决**（见 `docs/history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
-/// 1. **capture（实际扣款）谁做**：PayPal Orders v2 是 create → approve → capture 三步，
-///    `setCreatePay` 出参只有 `payPalApproveUrl` / `payPalOrderId`，**没有 capture 端点**。
-///    若后端不在 webhook 里 capture，用户授权完钱也不会扣 —— 那时本链路的表现是
-///    「余额轮询超时 → 结果确认中」，**不会误报成功**，这正是把判据放在余额上的价值。
-/// 2. **`return_url` 配的是什么**：能配成 App 的自定义 scheme 才谈得上精确回跳；
-///    当前按「用户自己切回 App」处理（页面监听 `AppLifecycleState.resumed`），
-///    另给一颗「我已完成支付」的手动按钮兜底。
+/// ✅ **capture（实际扣款）由后端在回调里做**（2026-08-27 后端确认）。PayPal Orders v2 是
+/// create → approve → capture 三步，第三步是 PayPal 的**服务端** API（要商户 secret 换的
+/// OAuth2 token），端上做不了也不该做。所以本链路第 ④ 步跳完就没端上的事了，
+/// 第 ⑤ 步单纯等「后端 capture 完 → 加星币 → 余额变多」。
+/// ⚠️ 这意味着到账要经过「PayPal 回调 → 后端 capture → 入账」两跳，比小程序的微信回调更长；
+/// [confirmDelays] 那 9.4s 是照搬小程序的节奏，**联调时要实测**，常态兜不住就把尾巴加长。
+///
+/// ⚠️ **仍未决**（见 `docs/history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
+/// **`return_url` 配的是什么** —— 能配成 App 的自定义 scheme 才谈得上精确回跳；
+/// 当前按「用户自己切回 App」处理（页面监听 `AppLifecycleState.resumed`），
+/// 另给一颗「我已完成支付」的手动按钮兜底。
 class StarPurchase {
   const StarPurchase._();
 
@@ -89,6 +92,9 @@ class StarPurchase {
     debugPrint(
       '[PayPal] setCreatePay 返回 payPalOrderId=${creation.payPalOrderId.isEmpty ? '(空)' : creation.payPalOrderId} '
       'approveUrl=${creation.payPalApproveUrl.isEmpty ? '(空)' : '有'} '
+      // status 只在后端透传 PayPal 原始返回时才有值（CREATED/APPROVED/COMPLETED），
+      // 用来一眼看出「后端到底映没映射这一层」
+      'status=${creation.status.isEmpty ? '(空)' : creation.status} '
       'exceptionMsg=${creation.exceptionMsg.isEmpty ? '(空)' : creation.exceptionMsg}',
     );
 

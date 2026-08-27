@@ -34,6 +34,16 @@ class StarCoinApi {
 
   static String _toText(Object? value) => '${value ?? ''}'.trim();
 
+  /// 取第一个非空串（同一个信息后端可能给在不同字段名下，见 [StarPayCreation.fromJson]）。
+  static String _firstNonEmpty(List<String> values) {
+    for (final value in values) {
+      if (value.isNotEmpty) {
+        return value;
+      }
+    }
+    return '';
+  }
+
   /// 列表出参归一：分页壳（`pageData`）、`list` 包一层、裸数组三种都认。
   /// ⚠️ `list` 这一路是 2026-08-27 补的（对齐小程序 `pageRows`）——`getGoodsList`
   /// 到底包哪层未联调过，认错一层的表现是「套餐页空列表」而不是报错，很难查。
@@ -348,29 +358,73 @@ class StarOrder {
   final int payType;
 }
 
-/// 创建支付结果（`ClientCreatePayApiOut`）。三渠道共用一个壳，这里只落地
-/// **PayPal 那两个字段 + 异常信息**：微信/支付宝两端不走 App 这条链路，
-/// 提前把用不到的字段搬进来只会让人以为它们是活的。
+/// 创建支付结果。**两种形状都认**（2026-08-27 联调发现后端可能直接透传 PayPal 原始返回）：
+///
+/// 1. 接口文档写的 `ClientCreatePayApiOut`（三渠道共用壳）：
+///    `payPalApproveUrl` / `payPalOrderId` / `exceptionMsg`（+ 微信、支付宝那一堆）；
+/// 2. **PayPal Orders v2 建单的原始返回**：`id` + `status` + `links[]`，
+///    授权地址在 `links` 里 `rel == "approve"` 的那条的 `href`。
+///
+/// ⚠️ 两种都认是**有意为之**：后端到底映不映射这一层至今没确认，而认错的表现是
+/// 「接口 200、却提示未能拉起支付」——最难查的那种。哪天口径定死了，可以把没用的那条删掉。
+///
+/// 微信/支付宝那些同壳字段端上一概不落地：App 两端都不走它们，搬进来只会让人以为是活的。
+///
+/// ⚠️ **`links` 里的 `rel == "capture"` 故意不解析、更不调用**：那是 PayPal 的**服务端** API
+/// （`POST /v2/checkout/orders/{id}/capture`），要带商户 client secret 换来的 OAuth2 token。
+/// 把它放到端上等于公开发布商户凭证，任何人都能拿去扣款/退款。
+/// ✅ 2026-08-27 后端确认：**capture 已经做在回调里**，端上什么都不用调。
 class StarPayCreation {
   const StarPayCreation({
     required this.payPalApproveUrl,
     required this.payPalOrderId,
+    required this.status,
     required this.exceptionMsg,
   });
 
   factory StarPayCreation.fromJson(Map<String, dynamic> json) {
     return StarPayCreation(
-      payPalApproveUrl: StarCoinApi._toText(json['payPalApproveUrl']),
-      payPalOrderId: StarCoinApi._toText(json['payPalOrderId']),
+      // 先认后端映射过的字段，空了再从 PayPal 原始返回的 links 里取
+      payPalApproveUrl: StarCoinApi._firstNonEmpty([
+        StarCoinApi._toText(json['payPalApproveUrl']),
+        _linkHref(json['links'], 'approve'),
+      ]),
+      payPalOrderId: StarCoinApi._firstNonEmpty([
+        StarCoinApi._toText(json['payPalOrderId']),
+        StarCoinApi._toText(json['id']),
+      ]),
+      status: StarCoinApi._toText(json['status']),
       exceptionMsg: StarCoinApi._toText(json['exceptionMsg']),
     );
+  }
+
+  /// 从 PayPal 原始返回的 `links[]` 里取指定 `rel` 的 `href`。
+  /// 结构不对（不是数组、元素不是对象、没有这个 rel）一律返回空串，交给调用方报「拉不起支付」。
+  static String _linkHref(Object? links, String rel) {
+    if (links is! List) {
+      return '';
+    }
+    for (final link in links) {
+      if (link is! Map) {
+        continue;
+      }
+      if (StarCoinApi._toText(link['rel']).toLowerCase() == rel) {
+        return StarCoinApi._toText(link['href']);
+      }
+    }
+    return '';
   }
 
   /// PayPal 的用户授权跳转地址。空 = 这单拉不起支付。
   final String payPalApproveUrl;
 
-  /// PayPal 侧订单 id。端上只用于日志排查（认单一律用 [StarOrder.orderNo]）。
+  /// PayPal 侧订单 id。端上只用于日志排查（认单一律用我们平台的 [StarOrder.orderNo]）。
   final String payPalOrderId;
+
+  /// PayPal 原始返回里的订单状态（`CREATED` → 授权前；`APPROVED` → 用户已授权、待 capture；
+  /// `COMPLETED` → 已扣款）。后端映射过的出参里没有这个字段，那时是空串。
+  /// **只进日志**：端上判「买到没买到」一律以服务端余额为准，不看这个。
+  final String status;
 
   /// 渠道侧异常信息。`retCode=200` 但这个字段有值的情况后端未明确，
   /// 端上按「有 approveUrl 就走、没有就报错」判定，异常信息只进日志与错误详情。

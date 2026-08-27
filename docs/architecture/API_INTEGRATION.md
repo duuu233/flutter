@@ -168,11 +168,16 @@ BoltStar 当前使用三套不同的远端服务：
 之后的事；用户在 PayPal 点取消同样会跳回 App。端上唯一可信的判据是**服务端余额变多**
 （与小程序「不拿支付 success 回调加余额」同一条规矩）。
 
-⚠️ **三处待后端确认**（联调前必须问清，见
-`../history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
-1. **PayPal 的 capture（实际扣款）谁做**——`setCreatePay` 出参只有 `payPalApproveUrl` /
-   `payPalOrderId`，**没有 capture 端点**。若后端不在 webhook 里 capture，用户授权完钱也不会扣；
-   端上表现为「余额轮询超时 → 结果确认中」，**不会误报成功**。
+✅ **capture 由后端在回调里做**（2026-08-27 确认）。PayPal Orders v2 的第三步 capture 是
+**PayPal 的服务端 API**（要商户 secret 换的 OAuth2 token），端上做不了也不该做 ——
+`setCreatePay` 若透传 PayPal 原始返回，`links` 里那条 `rel:"capture"` **端上一概不解析、不调用**。
+⚠️ 代价是到账要走「PayPal 回调 → 后端 capture → 入账」**两跳**，比小程序的微信回调更长，
+而 `StarPurchase.confirmDelays` 的 9.4s 是照搬小程序的，**联调必须实测**。
+
+⚠️ **仍待后端确认**（见 `../history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
+1. **`setCreatePay` 的 `retData` 是哪种形状**——接口文档写的是 `payPalApproveUrl` /
+   `payPalOrderId`，后端给的样例却是 PayPal 原始返回（`id` / `status` / `links[]`）。
+   端上**两种都认**（映射过的字段优先），认错的表现是「接口 200 却提示未能拉起支付」。
 2. **`return_url` 配的是什么**——能配成 App 自定义 scheme 才谈得上精确回跳，当前按「用户自己
    切回来」处理。
 3. **套餐 `amount` 对 PayPal 是什么币种**——现在按人民币展示（`_kCurrencySymbol`），
