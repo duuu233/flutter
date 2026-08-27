@@ -179,7 +179,7 @@ void main() {
       final events = <Map<String, dynamic>>[];
       final parser = AiSseParser(events.add)
         ..push('data: {"type":"done","orientation":"square"}');
-      expect(events, isEmpty, '还没 flush，最后一行留着等下一块');
+      expect(events, isEmpty, reason: '还没 flush，最后一行留着等下一块');
       parser.flush();
       expect(events.length, 1);
       expect(events.first['orientation'], 'square');
@@ -200,7 +200,7 @@ void main() {
         ..flush();
 
       expect(events.length, 2);
-      expect(events.first['content'], '第一行\n第二行', '正文里的换行必须原样留着');
+      expect(events.first['content'], '第一行\n第二行', reason: '正文里的换行必须原样留着');
       expect(events.last['type'], 'done');
     });
 
