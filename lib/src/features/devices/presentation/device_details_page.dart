@@ -870,9 +870,11 @@ class _DetailRow extends StatelessWidget {
 
 /// 「屏幕尺寸」行图标：相框 + 底座 + 顶部橙色双向标注箭头。
 ///
-/// 1:1 复刻小程序 `assets/images/device-detail-screen-size.svg`（48×48 视图盒）。
-/// Flutter 侧没有 SVG 依赖，也不值得为一枚图标引入 flutter_svg，故按同一组坐标绘制
-///（同 `_FrameLogoPainter` 的做法），按 20/48 缩放到行内 20×20。
+/// 1:1 复刻**小程序仓库**里的 `photo-album/assets/images/device-detail-screen-size.svg`
+///（48×48 视图盒）。Flutter 侧没有 SVG 依赖，也不值得为一枚图标引入 flutter_svg，
+/// 故按同一组坐标绘制（同 `_FrameLogoPainter` 的做法），按 20/48 缩放到行内 20×20。
+/// ⚠️ 本仓一度也拷了一份同名 SVG，因为**从来没有代码引用**（用的就是本类），
+/// 2026-08-27 随其它孤儿素材一并删除——要对坐标请回小程序那份看。
 class _ScreenSizeGlyph extends StatelessWidget {
   const _ScreenSizeGlyph();
 

@@ -37,7 +37,7 @@ class _AuthPageState extends State<AuthPage>
   /// 入场动效：表单整体上浮 16px 落位。
   ///
   /// 根节点（闪屏 ↔ 登录页 ↔ 主壳层）是 fade-through 切换，而闪屏和本页共用同一张
-  /// 背景图 bg01，真正在换的只有前景内容——不给前景加位移的话观感就是「没有动效」。
+  /// 背景图 bg02.jpg，真正在换的只有前景内容——不给前景加位移的话观感就是「没有动效」。
   /// 这里给表单补一个上浮：位移是 Transform，不参与布局，不影响键盘弹起时的滚动。
   /// 本页只在「登出后」和「冷启动未登录」时挂载一次，动画不会反复播放。
   late final AnimationController _entryController = AnimationController(

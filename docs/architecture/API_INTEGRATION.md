@@ -78,6 +78,10 @@ BoltStar 当前使用三套不同的远端服务：
 | 星币余额 | `GET /Client/Order/getUserAccount` | `getUserAccount` → `AiToken.fetchBalance` / `StarCoinApi.fetchAccount` |
 | 星币购买/消费记录 | `GET /Client/Order/getUserAccountTrade` | `getUserAccountTrade` → `StarCoinApi.fetchRecords` |
 | 星币消耗规则 | `GET /Client/Order/getAiConfigList` | `getAiConfigList` → `StarCoinApi.fetchRules`（`retData` 是**裸数组**，顺序原样保留） |
+| 星币套餐 | `GET /Client/Order/getGoodsList` | `getGoodsList` → `StarCoinApi.fetchPackages`（2026-08-27 新接） |
+| 建单 | `POST /Client/Order/addOrder` | `addOrder` → `StarCoinApi.createOrder`。入参 `goodsId`+`payType`，**出参 `orderNo` 是后面两步的钥匙** |
+| 创建支付 | `POST /Client/Pay/setCreatePay` | `setCreatePay` → `StarCoinApi.createPay`。安卓取 `payPalApproveUrl` 跳授权；出参是三渠道共用壳 |
+| 查支付侧订单 | `GET /Client/Pay/getPayQuery` | `getPayQuery` → `StarCoinApi.queryPay`。⚠️ `payState` 枚举后端未给，端上只认 **1=已支付** |
 | 官方图库分类/列表/详情 | `GET /Client/Product/{getImgCategory,getProductImgList,getProductImgDetail}` | 同名方法 → `OfficialGalleryApi` |
 | 图片收藏/取消、收藏列表 | `POST /Client/Product/setImgCollected`、`GET /Client/Product/getProductImgCollectionList` | 同上。⚠️ 收藏切换返回的布尔语义未定，端上按**取反当前态**推新状态 |
 | 能否发起 AI 对话 | `GET /Client/Order/chkAiDialogue` | `chkAiDialogue` → `AiToken.canDialogue` |
@@ -134,10 +138,47 @@ BoltStar 当前使用三套不同的远端服务：
   但调试台只在 debug 构建可达，关掉开关的正式包等于整块功能不可见。
 - 语音输入仍是占位；下载只写应用缓存目录。
 
-### 星币（Order）
+### 星币（Order / Pay）
 
-支付体系（套餐、下单、支付、购买/消费记录）目前**只有小程序端有页面**，App 侧 IAP 未接，
-所以这里只接了 AI 模块用得到的两个：
+⚠️ **支付渠道按端分工**（产品口径 2026-08-27，**不是三端同一套**）：
+
+| 端 | 渠道 | `payType` | 状态 |
+| --- | --- | --- | --- |
+| 微信小程序 | 微信支付（虚拟支付） | 1 | 小程序端已上线 |
+| **安卓 App** | **PayPal** | **3** | **2026-08-27 接入**（本仓） |
+| iOS App | Apple 内购 | 2 | **未接**，星币页仍显示「去小程序买」 |
+
+端上不要按平台现写 `if`，取 `StarPayType.forCurrentPlatform`；能不能买取
+`StarPayType.supportedOnThisApp`（iOS 为 false → 不给购买入口，**付不了就别建单**）。
+
+安卓 PayPal 的完整链路（编排在 `features/star/star_purchase.dart`）：
+
+1. `GET /Client/Order/getGoodsList` 取套餐；
+2. `POST /Client/Order/addOrder`（`goodsId` + `payType=3`）→ 拿 **`orderNo`**；
+3. `POST /Client/Pay/setCreatePay`（`orderNo` + `payType=3`）→ 拿 `payPalApproveUrl`；
+   入参里的 `device`/`language`/`terminal`/`userToken` 由 [ApiClient] 经 header + query 注入，
+   业务层只传前两个；
+4. `url_launcher` 以 `LaunchMode.externalApplication` 跳授权（**不用内嵌 WebView**：
+   PayPal 风控会拒一部分内嵌 WebView 的登录，且装了 PayPal App 时外跳能直接唤起它）；
+5. 用户切回 App（页面监听 `AppLifecycleState.resumed`，另有「我已完成支付」手动兜底）后
+   **轮询 `getUserAccount` 直到余额变多**——退避 ~9.4s，与小程序 `CONFIRM_DELAYS` 同节奏；
+   超时再查一次 `GET /Client/Pay/getPayQuery` 把措辞分成「已付款、稍后到账」与「结果确认中」。
+
+⚠️ **铁律：不拿「用户跳回来了」当成功。** approve 只是授权，扣款/发货是渠道回调打到我们后端
+之后的事；用户在 PayPal 点取消同样会跳回 App。端上唯一可信的判据是**服务端余额变多**
+（与小程序「不拿支付 success 回调加余额」同一条规矩）。
+
+⚠️ **三处待后端确认**（联调前必须问清，见
+`../history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
+1. **PayPal 的 capture（实际扣款）谁做**——`setCreatePay` 出参只有 `payPalApproveUrl` /
+   `payPalOrderId`，**没有 capture 端点**。若后端不在 webhook 里 capture，用户授权完钱也不会扣；
+   端上表现为「余额轮询超时 → 结果确认中」，**不会误报成功**。
+2. **`return_url` 配的是什么**——能配成 App 自定义 scheme 才谈得上精确回跳，当前按「用户自己
+   切回来」处理。
+3. **套餐 `amount` 对 PayPal 是什么币种**——现在按人民币展示（`_kCurrencySymbol`），
+   若 PayPal 侧收美元，符号与价格口径要一起改。
+
+AI 模块用到的两个只读/校验接口：
 
 - `GET /Client/Order/getUserAccount` —— 取 `availableToken`（**String**，端上转数字）作 AI 侧余额展示。
   取不到显示 `--`，**不用 0 兜底**；端上**不得**自减（没有「消费星币」的 Client 端点，扣费在服务端）。

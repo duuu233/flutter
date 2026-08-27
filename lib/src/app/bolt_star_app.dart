@@ -33,7 +33,7 @@ const double _kRootFadeThroughSplit = 0.35;
 /// 新页进场的起始缩放：从 1.04 落回 1.0（出场反向：1.0 推远到 1.04）。
 ///
 /// 用 >1 而不是 Material fadeThrough 标准的 0.92→1.0：这几页全是全屏铺底图，
-/// 从小于 1 进场会在四周露出底下垫的 bg01，出现一圈「画中画」边缝；
+/// 从小于 1 进场会在四周露出底下垫的那层背景，出现一圈「画中画」边缝；
 /// 从 1.04 收缩则溢出屏幕外，永远不露边。
 const double _kRootEntryScale = 1.04;
 
@@ -43,7 +43,7 @@ const double _kRootEntryScale = 1.04;
 /// 空间感。这里改成两段接力（Interval 曲线在 AnimatedSwitcher 上配）：
 ///   0%─35%    旧页淡出，同时轻微推远（1.0→1.04）
 ///   35%─100%  新页淡入，从 1.04 缩放落位（easeOutCubic 后段舒缓）
-/// 中间的空档由 [_rootTransitionLayout] 垫的 bg01 撑住：背景恒定、只有前景
+/// 中间的空档由 [_rootTransitionLayout] 垫的背景图撑住：背景恒定、只有前景
 /// 内容在换——这正是市面 App「启动页→首页」的通行手感。
 /// 进出场共用同一个 Tween：出场条目的动画反向跑，自动得到「推远退场」。
 Widget _rootTransitionBuilder(Widget child, Animation<double> animation) {
@@ -64,7 +64,7 @@ Widget _rootTransitionBuilder(Widget child, Animation<double> animation) {
 /// 为什么需要这一层：`home` 底下没有任何东西负责铺底（路由本体不绘制背景），
 /// 交叉淡入时两页各自半透明，合成后的覆盖率不足 1，会直接透到引擎的黑色底色。
 /// 表现就是切换中间画面整体压暗一下——用户反馈的「闪了一下」。
-/// 垫上与闪屏/登录页同一张 `bg01.png` 后，背景层在整个切换过程中恒等于 bg01，
+/// 垫上与闪屏/登录页同一张 `bg02.jpg` 后，背景层在整个切换过程中恒等于它，
 /// 只有前景内容（LOGO ↔ 登录表单）在淡入淡出，视觉上完全没有明暗跳变。
 ///
 /// `previousChildren.isNotEmpty` 恰好等价于「正在切换」：切换结束后旧页条目被

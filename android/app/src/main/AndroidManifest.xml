@@ -97,5 +97,18 @@
         <!-- 微信授权登录：Android 11+（targetSdk≥30）的包可见性限制下，不声明这一条时
              微信 SDK 的 isWXAppInstalled 恒为 false —— 表现是装了微信也提示「请先安装微信」。 -->
         <package android:name="com.tencent.mm"/>
+        <!-- 外部浏览器：星币购买的 PayPal 授权页、检查更新的 APK 下载地址都靠 url_launcher
+             以 http(s) VIEW 意图跳出去（见 star_purchase.dart：PayPal 风控会拒一部分内嵌
+             WebView 的登录，故一律走外部浏览器 / PayPal App）。Android 11+ 的包可见性限制下
+             不声明这一条时，url_launcher 解析不到可用浏览器（canLaunchUrl 恒 false、
+             部分机型 launchUrl 也直接返回 false），表现就是「点了没反应」。 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="http"/>
+        </intent>
     </queries>
 </manifest>

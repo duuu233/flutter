@@ -336,10 +336,16 @@ class BoltFoxApi {
     return _http.postJson('/Client/User/userOff');
   }
 
-  // ==================== 星币（Order）====================
+  // ==================== 星币（Order / Pay）====================
   //
-  // 支付体系（购买套餐、订单、记录）目前**只有小程序端**有页面，APP 侧的 IAP 待接；
-  // 这里只补 AI 模块用得到的两个只读/校验接口（2026-08-12 与小程序对齐）。
+  // 2026-08-12 首次接入时只补了 AI 模块用得到的只读/校验接口（购买链路当时只有小程序端有）。
+  // 2026-08-27 补齐**安卓端 PayPal 购买链路**：套餐 → 建单 → 创建支付 → 查单。
+  //
+  // ⚠️ 支付渠道**按端分工**（产品口径，不是三端同一套）：
+  //   小程序 = 微信支付（`payType=1`，走 `wx.requestVirtualPayment` 虚拟支付）
+  //   安卓   = PayPal（`payType=3`，本轮接入）
+  //   iOS    = Apple 内购（`payType=2`，未接；`/Client/Pay/setApplePayVerify*` 那几个是它的）
+  // 端上不要按平台去猜 `payType`，取 [StarPayType.forCurrentPlatform]。
 
   /// 账户概览：`availableToken` / `totalToken` / `consumeToken`（后端**都是 String**）。
   /// AI 侧只取可用余额展示，扣费一律在服务端发生（端上不得自减，见 [AiToken]）。
@@ -381,6 +387,70 @@ class BoltFoxApi {
   /// 判定与兜底收在 [AiToken.canDialogue]，页面不要直接调这个方法。
   static Future<dynamic> chkAiDialogue() {
     return _http.getJson('/Client/Order/chkAiDialogue');
+  }
+
+  /// 商品（套餐）列表 → `ClientGoodsApiOut[]`。
+  ///
+  /// 出参 `goodsId` / `goodsName` / `num`(基础星币) / `giveNum`(赠送) / `amount`(售价)
+  /// / `wxProductId`(微信侧道具 id) / `appleProductId`(苹果侧商品 id)。
+  /// ⚠️ `unitPrice` 是 **integer** 且不含赠送口径，直接渲染会变成「≈¥0/星币」——
+  /// 单价一律按「含赠送总数」在端上自算（对齐小程序 `unitPriceOf`），见 [StarPackage.unitPrice]。
+  static Future<dynamic> getGoodsList() {
+    return _http.getJson('/Client/Order/getGoodsList');
+  }
+
+  /// 在我们平台创建订单 → `amount` / `orderId` / `orderNo`（+ 微信侧的
+  /// `signData`/`paySig`/`signature`，PayPal 用不到）。
+  ///
+  /// **`orderNo` 是整条支付链的钥匙**：`setCreatePay` 与 `getPayQuery` 都按它认单。
+  ///
+  /// ⚠️ 建单即在后台留下一条待支付单，端上要**先确认这一端付得了再调**
+  /// （对齐小程序：iOS 微信版本不够时提前拦住，不留永远付不掉的死单）。
+  static Future<dynamic> addOrder({
+    required Object goodsId,
+    required int payType,
+  }) {
+    return _http.postJson(
+      '/Client/Order/addOrder',
+      body: {'goodsId': goodsId, 'payType': payType},
+    );
+  }
+
+  /// 创建支付（2026-08-27 新增，安卓 PayPal 走这条）。
+  ///
+  /// 入参只有 `orderNo` + `payType`，其余四个（device/language/terminal/userToken）
+  /// 由 [ApiClient] 经 header + query 注入。出参 `ClientCreatePayApiOut` 是**三个渠道共用的一个壳**，
+  /// 按 `payType` 只有对应那几个字段有值：
+  /// - PayPal：`payPalApproveUrl`(用户授权跳转地址) / `payPalOrderId`
+  /// - 微信：`wxPayAppId` / `wxPayPartnerId` / `wxPayPrepayId` / `wxPayNonceStr` /
+  ///   `wxPayTimestamp` / `wxPayPackage`(固定 `Sign=WXPay`) / `wxPaySign` / `wxPaySignType`(RSA)
+  /// - 支付宝：`aliPayBody`
+  /// 失败时 `exceptionMsg` 带渠道侧的异常信息（`retCode` 非 200 走 [ApiException]）。
+  static Future<dynamic> setCreatePay({
+    required String orderNo,
+    required int payType,
+  }) {
+    return _http.postJson(
+      '/Client/Pay/setCreatePay',
+      body: {'orderNo': orderNo, 'payType': payType},
+      // 超时不重试：重试等于对同一订单重复创建支付单，PayPal 侧会多出一张授权单。
+      retryOnTimeout: false,
+    );
+  }
+
+  /// 查支付侧订单状态。入参 `payType` + **`orderNo`（我们平台的订单号）**，
+  /// 出参 `payState` / `payNo` / `exceptionMsg`。
+  ///
+  /// ⚠️ **`payState` 的枚举后端至今没给**（swagger 只写「支付状态」）。端上沿用小程序口径
+  /// **1=已支付**，其余值一律按「结果确认中」措辞，**绝不说成失败**——钱可能已经付了。
+  static Future<dynamic> getPayQuery({
+    required String orderNo,
+    required int payType,
+  }) {
+    return _http.getJson(
+      '/Client/Pay/getPayQuery',
+      query: {'orderNo': orderNo, 'payType': payType},
+    );
   }
 
   // ==================== 官方图库（Product）====================

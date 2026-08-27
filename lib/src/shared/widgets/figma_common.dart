@@ -132,10 +132,11 @@ class FigmaScreen extends StatelessWidget {
 ///
 /// ⚠️ 2026-08-21 换图：小程序把全站背景换成了
 /// `https://oss.boltfox.cn/prodFile/202608211340094498724.jpg`（浅蓝墙面 + 窗光），
-/// App 侧背景是**打进包里的本地图**，所以把同一张图落成 `assets/images/bg02.jpg`（与线上逐字节相同）。
-/// 旧的暖白背景 `assets/images/bg01.png` **保留在仓库里**（产品要求「怕要换回去」），
-/// 要整体换回去：把本文件的默认值与各页写死的 `bg02.jpg` 一起改回 `bg01.png` 即可
-/// （`grep -rn "assets/images/bg02.jpg" lib` 能列全）。
+/// App 侧背景是**打进包里的本地图**，所以把同一张图落成 `assets/images/bg02.jpg`（与线上逐字节相同，
+/// 2026-08-27 复核 sha256 一致）。
+/// ⚠️ 2026-08-27：旧的暖白背景 `assets/images/bg01.png` 已**删除**（产品确认不会换回去了，
+/// 省下 1.1 MB 包体）。要再换背景就改本文件的默认值 + 各页写死的那几处，
+/// `grep -rn "assets/images/bg02.jpg" lib` 能列全。
 class FigmaScreenBackground extends StatelessWidget {
   const FigmaScreenBackground({super.key, this.asset = 'assets/images/bg02.jpg'});
 

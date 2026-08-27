@@ -674,7 +674,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       centerContent: _filterOptions.isEmpty ? null : _buildDeviceFilterChip(),
       scrollable: false,
       bodyPadding: EdgeInsets.zero,
-      // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
+      // 全ページ共通背景 bg02.jpg（小程序は全画面 mock-bg = 単一背景）。
       background: Image.asset('assets/images/bg02.jpg', fit: BoxFit.cover),
       // 四分支互斥链（loading 优先）：接口没回来之前只显示 loading，绝不先渲染空态；
       // 刷新失败且本地无数据 → 「加载失败 + 重试」（断网时不能误显示「还没有照片」）。

@@ -43,7 +43,7 @@ class PageLoading extends StatelessWidget {
           Text(
             label ?? AppL10n.of(context).loading,
             // .page-loading__text → 26rpx(=13) / #8b9098。
-            // 原来写的是**白色**文字 —— 而页面背景 bg01 是浅色的，等于隐形。
+            // 原来写的是**白色**文字 —— 而页面背景（bg02.jpg）是浅色的，等于隐形。
             style: const TextStyle(
               color: Color(0xFF8B9098),
               fontSize: 13,

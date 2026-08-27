@@ -1,11 +1,16 @@
+import 'dart:io' show Platform;
+
 import '../../network/boltfox_api.dart';
 
 /// 星币（原「Token」，2026-08-12 全站改称；后端字段名仍是 `availableToken` 等）的数据层。
 ///
-/// ⚠️ **App 侧只读**：购买链路（套餐下单 + 支付）目前**只有小程序端**有 ——
-/// 小程序走微信虚拟支付，App 侧对应的是 Apple IAP / Android 内购，尚未接入。
-/// 所以这里只有账户、套餐（展示用）、记录、消耗规则四个读接口，
-/// **没有 addOrder**：没接支付就先别在后台留一串永远付不掉的待支付单。
+/// 账户、套餐、记录、消耗规则四个读接口 + 购买链路（建单 → 创建支付 → 查单）。
+///
+/// ⚠️ **支付渠道按端分工**（产品口径）：小程序=微信支付、**安卓=PayPal**、iOS=Apple 内购。
+/// 2026-08-27 接的是**安卓 PayPal 这一条**；iOS 的 IAP 仍未接，[StarPayType.supportedOnThisApp]
+/// 为 false 时页面不给购买入口——建单即在后台留下待支付单，付不了就别建。
+///
+/// 购买编排（余额基线 → 建单 → 拉起 → 轮询到账）在 `star_purchase.dart`，本文件只管接口与归一。
 ///
 /// 余额与「能不能发起 AI 对话」的闸在 `features/ai/ai_token.dart`（AI 侧要用，独立一份）。
 class StarCoinApi {
@@ -29,8 +34,14 @@ class StarCoinApi {
 
   static String _toText(Object? value) => '${value ?? ''}'.trim();
 
+  /// 列表出参归一：分页壳（`pageData`）、`list` 包一层、裸数组三种都认。
+  /// ⚠️ `list` 这一路是 2026-08-27 补的（对齐小程序 `pageRows`）——`getGoodsList`
+  /// 到底包哪层未联调过，认错一层的表现是「套餐页空列表」而不是报错，很难查。
   static List<Map<String, dynamic>> _rows(Object? data) {
-    final Object? list = data is Map ? data['pageData'] : data;
+    Object? list = data;
+    if (data is Map) {
+      list = data['pageData'] ?? data['list'];
+    }
     if (list is! List) {
       return const [];
     }
@@ -61,6 +72,15 @@ class StarCoinApi {
       totalPurchased: _toInt(data['totalToken']),
       totalSpent: _toInt(data['consumeToken']),
     );
+  }
+
+  /// 套餐列表（`GET /Client/Order/getGoodsList`）。
+  ///
+  /// 拉不到或空列表都返回空表，由页面决定怎么呈现（购买页空表 = 不给按钮，
+  /// 而不是给一颗点了必然失败的「立即购买」）。
+  static Future<List<StarPackage>> fetchPackages() async {
+    final data = await BoltFoxApi.getGoodsList();
+    return _rows(data).map(StarPackage.fromJson).toList();
   }
 
   /// 星币消耗规则表（`GET /Client/Order/getAiConfigList`）。
@@ -151,6 +171,265 @@ class StarCoinApi {
           : rows.length >= recordPageSize,
     );
   }
+
+  // ==================== 购买链路（2026-08-27，安卓 PayPal）====================
+
+  /// 建单（`POST /Client/Order/addOrder`）→ [StarOrder]。
+  ///
+  /// ⚠️ 调用方要先确认这一端**付得了**（[StarPayType.supportedOnThisApp]）：
+  /// 建单即在后台留下一条待支付单，付不掉的单子攒着只会让对账多一堆垃圾。
+  static Future<StarOrder> createOrder({
+    required StarPackage package,
+    required int payType,
+  }) async {
+    final data = await BoltFoxApi.addOrder(
+      goodsId: package.goodsId,
+      payType: payType,
+    );
+    final order = StarOrder.fromJson(
+      data is Map ? data.cast<String, dynamic>() : const {},
+      payType: payType,
+    );
+    if (order.orderNo.isEmpty) {
+      // orderNo 是后面两步的钥匙，缺了就没法继续；这里挑明，别让 setCreatePay 拿空串去问。
+      throw StarPurchaseException(
+        StarPurchaseError.orderNoMissing,
+        '下单成功但未拿到订单号',
+      );
+    }
+    return order;
+  }
+
+  /// 创建支付（`POST /Client/Pay/setCreatePay`）→ [StarPayCreation]。
+  static Future<StarPayCreation> createPay({
+    required String orderNo,
+    required int payType,
+  }) async {
+    final data = await BoltFoxApi.setCreatePay(
+      orderNo: orderNo,
+      payType: payType,
+    );
+    return StarPayCreation.fromJson(
+      data is Map ? data.cast<String, dynamic>() : const {},
+    );
+  }
+
+  /// 查支付侧订单（`GET /Client/Pay/getPayQuery`）。
+  ///
+  /// **静默失败返回 null**：这一步只用来把提示措辞说准（「已付款、稍后到账」还是
+  /// 「结果确认中」），不该再弹一个错盖住主流程的结果弹窗。
+  static Future<StarPayQuery?> queryPay({
+    required String orderNo,
+    required int payType,
+  }) async {
+    if (orderNo.isEmpty) {
+      return null;
+    }
+    try {
+      final data = await BoltFoxApi.getPayQuery(
+        orderNo: orderNo,
+        payType: payType,
+      );
+      return StarPayQuery.fromJson(
+        data is Map ? data.cast<String, dynamic>() : const {},
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+}
+
+/// `addOrder` / `setCreatePay` / `getPayQuery` 的 `payType`（swagger `ClientOrderAddApiIn.payType`）。
+///
+/// ⚠️ **按端分工，不是三端同一套**（产品口径 2026-08-27）：
+/// 小程序=[wechat]、**安卓=[paypal]**、iOS=[apple]。
+class StarPayType {
+  const StarPayType._();
+
+  /// 微信支付（小程序=虚拟支付）。App 两端都不走这条。
+  static const int wechat = 1;
+
+  /// iOS 内购。⚠️ 通道未接入，[supportedOnThisApp] 在 iOS 上因此为 false。
+  static const int apple = 2;
+
+  /// PayPal。安卓端 2026-08-27 接入。
+  static const int paypal = 3;
+
+  /// 当前平台该用哪个 `payType`。
+  ///
+  /// ⚠️ 别在业务里按平台现写 if：这个映射是产品口径（安卓不是「安卓内购」而是 PayPal），
+  /// 分散写必然有人照旧文档写成 IAP。
+  static int get forCurrentPlatform => Platform.isIOS ? apple : paypal;
+
+  /// 这一端的通道**是否真的能付**。iOS 的 IAP 尚未接入 → false，
+  /// 页面据此不给购买入口（付不了就别建单，见 [StarCoinApi.createOrder]）。
+  static bool get supportedOnThisApp => Platform.isAndroid;
+}
+
+/// 套餐（`ClientGoodsApiOut`）。
+class StarPackage {
+  const StarPackage({
+    required this.goodsId,
+    required this.name,
+    required this.tokens,
+    required this.gift,
+    required this.price,
+    required this.wxProductId,
+    required this.appleProductId,
+  });
+
+  factory StarPackage.fromJson(Map<String, dynamic> json) {
+    return StarPackage(
+      goodsId: StarCoinApi._toInt(json['goodsId']),
+      name: StarCoinApi._toText(json['goodsName']),
+      tokens: StarCoinApi._toInt(json['num']),
+      gift: StarCoinApi._toInt(json['giveNum']),
+      price: StarCoinApi._toDouble(json['amount']),
+      // 两个渠道商品 id 端上都不直接拿去调支付（微信侧由服务端签进 signData；
+      // PayPal 侧订单也由服务端建），留着是为了排查「这档在这一端配没配」。
+      wxProductId: StarCoinApi._toText(json['wxProductId']),
+      appleProductId: StarCoinApi._toText(json['appleProductId']),
+    );
+  }
+
+  final int goodsId;
+  final String name;
+
+  /// 基础星币数。
+  final int tokens;
+
+  /// 赠送星币数。
+  final int gift;
+
+  /// 售价。⚠️ 币种由后端决定（PayPal 侧是否换算成美元仍待后端确认，见文档 TODO）。
+  final double price;
+
+  final String wxProductId;
+  final String appleProductId;
+
+  /// 合计获得 = 基础 + 赠送。购买页与记录页共用，避免两处各算一遍算出不同的数。
+  int get totalTokens => tokens + gift;
+
+  /// 单价（约）。⚠️ 按**含赠送**总数算：否则赠送多的档位单价反而显得更贵，
+  /// 与「越买越划算」的排序相悖。不用后端的 `unitPrice`（integer 且不含赠送，会显示成 0）。
+  String get unitPrice {
+    final total = totalTokens;
+    if (total <= 0) {
+      return '0.00';
+    }
+    return (price / total).toStringAsFixed(2);
+  }
+}
+
+/// 建单结果（`ClientAddOrderApiOut`）。微信侧的签名三件套 PayPal 用不到，不在这里落地。
+class StarOrder {
+  const StarOrder({
+    required this.orderNo,
+    required this.orderId,
+    required this.amount,
+    required this.payType,
+  });
+
+  factory StarOrder.fromJson(Map<String, dynamic> json, {required int payType}) {
+    return StarOrder(
+      orderNo: StarCoinApi._toText(json['orderNo']),
+      orderId: StarCoinApi._toText(json['orderId']),
+      amount: StarCoinApi._toDouble(json['amount']),
+      payType: payType,
+    );
+  }
+
+  /// **我们平台的订单号**，`setCreatePay` / `getPayQuery` 都按它认单
+  /// （不是 PayPal 侧的 `payPalOrderId`，也不是微信侧的 `outTradeNo`）。
+  final String orderNo;
+
+  final String orderId;
+  final double amount;
+  final int payType;
+}
+
+/// 创建支付结果（`ClientCreatePayApiOut`）。三渠道共用一个壳，这里只落地
+/// **PayPal 那两个字段 + 异常信息**：微信/支付宝两端不走 App 这条链路，
+/// 提前把用不到的字段搬进来只会让人以为它们是活的。
+class StarPayCreation {
+  const StarPayCreation({
+    required this.payPalApproveUrl,
+    required this.payPalOrderId,
+    required this.exceptionMsg,
+  });
+
+  factory StarPayCreation.fromJson(Map<String, dynamic> json) {
+    return StarPayCreation(
+      payPalApproveUrl: StarCoinApi._toText(json['payPalApproveUrl']),
+      payPalOrderId: StarCoinApi._toText(json['payPalOrderId']),
+      exceptionMsg: StarCoinApi._toText(json['exceptionMsg']),
+    );
+  }
+
+  /// PayPal 的用户授权跳转地址。空 = 这单拉不起支付。
+  final String payPalApproveUrl;
+
+  /// PayPal 侧订单 id。端上只用于日志排查（认单一律用 [StarOrder.orderNo]）。
+  final String payPalOrderId;
+
+  /// 渠道侧异常信息。`retCode=200` 但这个字段有值的情况后端未明确，
+  /// 端上按「有 approveUrl 就走、没有就报错」判定，异常信息只进日志与错误详情。
+  final String exceptionMsg;
+}
+
+/// 查单结果（`getPayQuery`）。
+class StarPayQuery {
+  const StarPayQuery({
+    required this.payState,
+    required this.payNo,
+    required this.exceptionMsg,
+  });
+
+  factory StarPayQuery.fromJson(Map<String, dynamic> json) {
+    return StarPayQuery(
+      payState: StarCoinApi._toInt(json['payState']),
+      payNo: StarCoinApi._toText(json['payNo']),
+      exceptionMsg: StarCoinApi._toText(json['exceptionMsg']),
+    );
+  }
+
+  /// ⚠️ **枚举后端未给**。端上沿用小程序口径：只认 `1 = 已支付`，
+  /// 其余值一概按「结果确认中」措辞，不说成失败（钱可能已经付了）。
+  final int payState;
+
+  final String payNo;
+  final String exceptionMsg;
+
+  bool get paid => payState == 1;
+}
+
+/// 购买链路的失败原因。页面按这个分支措辞——「用户自己取消」和「真失败」
+/// 不能都弹「购买失败」。
+enum StarPurchaseError {
+  /// 这一端的支付通道没接入（当前 = iOS）。
+  channelUnavailable,
+
+  /// 建单成功但没拿到 `orderNo`（后端出参异常）。
+  orderNoMissing,
+
+  /// `setCreatePay` 没回 `payPalApproveUrl`。
+  approveUrlMissing,
+
+  /// 跳不起 PayPal 授权页（没有浏览器 / 系统拒绝）。
+  launchFailed,
+}
+
+class StarPurchaseException implements Exception {
+  StarPurchaseException(this.reason, this.message, {this.detail});
+
+  final StarPurchaseError reason;
+  final String message;
+
+  /// 排查用的补充信息（渠道 exceptionMsg、URL 等），**不直接展示给用户**。
+  final String? detail;
+
+  @override
+  String toString() => 'StarPurchaseException($reason, $message, $detail)';
 }
 
 class StarAccount {

@@ -58,7 +58,7 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
     final l10n = AppL10n.of(context);
     return FigmaScreen(
       title: l10n.accModifyEmailTitle,
-      // 全ページ共通背景 bg01（小程序は全画面 mock-bg = 単一背景）。
+      // 全ページ共通背景 bg02.jpg（小程序は全画面 mock-bg = 単一背景）。
       background: const FigmaScreenBackground(),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,

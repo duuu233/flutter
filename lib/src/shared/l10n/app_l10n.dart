@@ -1737,11 +1737,89 @@ class AppL10n {
   /// 折成两行、把括号拆开，而「消耗」二字区块标题「星币消耗规则」已经交代过。
   String get starRuleColCost => _pick('星币/次', 'Per use', '1回あたり');
 
-  /// App 侧还没有购买链路（IAP 未接），如实告诉用户去哪儿买，而不是画一颗点不动的按钮。
+  /// ⚠️ **只在 iOS 上出现**：安卓 2026-08-27 起走 PayPal（见 [starBuyEntryTitle]），
+  /// iOS 的 Apple 内购仍未接。措辞不能再写「App 端」——那会把已经能买的安卓也一起否掉。
   String get starPurchaseUnavailable => _pick(
-    'App 端暂未开放星币购买，请前往微信小程序「BoltStar 智能相框」购买后在此查看余额。',
-    'Buying stars is not available in the app yet. Purchase in the BoltStar mini program; your balance shows up here.',
-    'アプリではスターコインを購入できません。WeChat ミニプログラムで購入すると、残高がここに反映されます。',
+    'iOS 端暂未开放星币购买，请前往微信小程序「BoltStar 智能相框」购买后在此查看余额。',
+    'Buying stars is not available on iOS yet. Purchase in the BoltStar mini program; your balance shows up here.',
+    'iOS ではスターコインを購入できません。WeChat ミニプログラムで購入すると、残高がここに反映されます。',
+  );
+
+  // ── 星币购买（2026-08-27 安卓接入 PayPal；小程序=微信支付、iOS=Apple 内购未接）──
+
+  String get starBuyEntryTitle => _pick('购买星币', 'Buy Stars', 'スターコインを購入');
+  String get starBuyEntryDesc =>
+      _pick('选择套餐，PayPal 支付', 'Choose a plan, pay with PayPal', 'プランを選んで PayPal で支払う');
+  String get starBuyTitle => _pick('确认购买', 'Confirm Purchase', '購入の確認');
+  String get starBuyChoosePackage => _pick('选择套餐', 'Choose a plan', 'プランを選択');
+  String get starBuyPayChannel => _pick('支付方式', 'Payment method', '支払い方法');
+
+  /// 套餐卡上的赠送角标。
+  String starBuyGift(int count) =>
+      _pick('赠 $count', '+$count bonus', '$count ボーナス');
+
+  /// 套餐卡底部的单价（约）。⚠️ 按含赠送总数算，见 [StarPackage.unitPrice]。
+  String starBuyUnitPrice(String price, String currency) =>
+      _pick('≈ $currency$price/星币', '≈ $currency$price/star', '≈ $currency$price/コイン');
+
+  String get starBuyTotalGain => _pick('合计获得', 'You get', '合計獲得');
+  String get starBuyAmountDue => _pick('应付金额', 'Total', 'お支払い金額');
+  String get starBuyNow => _pick('立即购买', 'Buy now', '今すぐ購入');
+  String get starBuyEmpty =>
+      _pick('暂无可购买的套餐', 'No plans available right now', '購入できるプランがありません');
+
+  /// 三段式 loading 文案：这条链路最长约 10s，中间没反馈用户会以为卡死。
+  String get starBuyStageOrder => _pick('正在下单…', 'Creating order…', '注文を作成中…');
+  String get starBuyStagePay =>
+      _pick('正在拉起支付…', 'Opening PayPal…', 'PayPal を起動中…');
+  String get starBuyStageConfirm =>
+      _pick('正在确认到账…', 'Confirming payment…', '入金を確認中…');
+
+  String get starBuyApprovingTitle =>
+      _pick('已跳转 PayPal', 'PayPal opened', 'PayPal を開きました');
+  String get starBuyApprovingDesc => _pick(
+    '请在 PayPal 完成支付，然后回到这里。星币到账后余额会自动更新。',
+    'Finish the payment in PayPal, then come back here. Your balance updates once the stars arrive.',
+    'PayPal で支払いを完了してから、この画面に戻ってください。入金後に残高が更新されます。',
+  );
+  String get starBuyApprovingDone =>
+      _pick('我已完成支付', 'I have paid', '支払いを完了しました');
+  String get starBuyApprovingGiveUp =>
+      _pick('放弃本次支付', 'Cancel this payment', 'この支払いをやめる');
+
+  /// 到账确认成功。数量取**服务端余额的增量**，不是套餐上写的数（以服务端为准）。
+  String starBuySucceeded(int gained) => _pick(
+    '购买成功，到账 $gained 星币',
+    'Purchase complete — $gained stars added',
+    '購入完了：$gained コインが追加されました',
+  );
+
+  /// 查单说已支付、但余额还没变。⚠️ 不能说成失败：钱已经付了。
+  String get starBuyPendingPaid => _pick(
+    '已收到付款，星币稍后到账',
+    'Payment received. Your stars will arrive shortly.',
+    '支払いを受け付けました。まもなく反映されます。',
+  );
+
+  /// 余额没变、查单也没说已支付。⚠️ 同样**不说失败**：可能是用户取消了，
+  /// 也可能是渠道回调慢，端上分不清，就别替后端下结论。
+  String get starBuyPendingUnknown => _pick(
+    '支付结果确认中，可稍后在购买记录里查看',
+    'Still confirming the payment. Check your purchase records later.',
+    '支払い結果を確認中です。購入履歴で後ほどご確認ください。',
+  );
+
+  String get starBuyOrderFailed =>
+      _pick('下单失败，请稍后重试', 'Could not create the order. Please try again.', '注文の作成に失敗しました。後でもう一度お試しください。');
+  String get starBuyCreatePayFailed => _pick(
+    '未能拉起 PayPal 支付，请稍后重试',
+    'Could not start the PayPal payment. Please try again.',
+    'PayPal の支払いを開始できませんでした。後でもう一度お試しください。',
+  );
+  String get starBuyLaunchFailed => _pick(
+    '打不开 PayPal 页面，请确认已安装浏览器或 PayPal App',
+    'Could not open PayPal. Make sure a browser or the PayPal app is installed.',
+    'PayPal を開けませんでした。ブラウザまたは PayPal アプリを確認してください。',
   );
 
   // ── 官方图库 / 我的收藏（2026-08-12 App 侧补齐该模块，对齐小程序 subpackages/gallery）──

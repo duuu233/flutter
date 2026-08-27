@@ -12,7 +12,7 @@ part of 'home_page.dart';
 
 /// 全屏背景：底色 + 背景图（[asset]，加载失败时回退到渐变光晕画笔）。
 ///
-/// 全部页面统一用同一张背景 `bg01.png`（对应小程序全屏 `.mock-bg__image`）。
+/// 全部页面统一用同一张背景 `bg02.jpg`（对应小程序全屏 `.mock-bg__image`）。
 class _HomeBackground extends StatelessWidget {
   const _HomeBackground({required this.asset});
 
@@ -493,8 +493,9 @@ class _GreetingTitle extends StatelessWidget {
 /// 左 36 / 右 36 / 上 28 / 下 44。注意投影**偏下、上下不对称**，
 /// 所以整幅在卡面盒子里不能居中，得按 28:44 的比例往上偏。
 ///
-/// 旧的 bg01(卡面) + bg02(投影) 两层叠加已被这一张替代：bg03 自带投影和
-/// 40rpx 圆角，因此既不需要 ClipRRect，也不需要第二层图。
+/// 旧的 `home-bg01.png`(卡面) + `home-bg02.png`(投影) 两层叠加已被这一张替代：
+/// `home-bg03.png` 自带投影和 40rpx 圆角，因此既不需要 ClipRRect，也不需要第二层图。
+/// （那两张图 2026-08-21 清理孤儿素材时已删；与页面背景 `bg01/bg02` 是不同的两组文件，别混。）
 const double _kCardW = 654;
 const double _kCardH = 304;
 const double _kArtW = 726;

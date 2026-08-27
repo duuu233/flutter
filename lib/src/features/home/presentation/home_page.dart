@@ -213,7 +213,7 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // 全ページ共通背景 bg01（小程序は首页/绑定流程とも同一 mock-bg 背景）。
+    // 全ページ共通背景 bg02.jpg（小程序は首页/绑定流程とも同一 mock-bg 背景）。
     const backgroundAsset = 'assets/images/bg02.jpg';
 
     // 设备列表首屏还没回来时先显示 loading：否则首帧必然先渲染一次「未绑定」绑定引导页，

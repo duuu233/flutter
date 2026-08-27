@@ -6,14 +6,16 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../star_coin_api.dart';
 import 'star_coin_records_page.dart';
+import 'star_purchase_page.dart';
 
 /// 星币管理，对照微信小程序 `photo-album/subpackages/token/index`
 /// （2026-08-12 App 侧补齐；小程序那边叫「星币管理」，原「Token 管理」）。
 ///
-/// ⚠️ **与小程序有意不同：App 侧没有「立即购买」**。购买链路在小程序走微信虚拟支付，
-/// App 对应的是 Apple IAP / Android 内购，**尚未接入** —— 与其画一颗点了没反应（或者更糟：
-/// 在后台留下一串永远付不掉的待支付单）的按钮，不如如实告诉用户「先去小程序买」。
-/// IAP 接上后：把 [_PurchaseHint] 换成套餐卡 + 下单按钮即可，其余不动。
+/// ⚠️ **购买入口按端分工**（产品口径 2026-08-27）：小程序=微信支付、**安卓=PayPal**、
+/// iOS=Apple 内购。安卓 2026-08-27 接入 PayPal，本页给出 [_BuyEntry] 进 [StarPurchasePage]；
+/// iOS 的 IAP 仍未接，[StarPayType.supportedOnThisApp] 为 false，继续显示 [_PurchaseHint]
+/// 那句「去小程序买」—— 与其画一颗点了没反应（或者更糟：在后台留下一串永远付不掉的
+/// 待支付单）的按钮，不如如实告诉用户。IAP 接上后把这个分支一并换成购买入口即可。
 class StarCoinPage extends StatefulWidget {
   const StarCoinPage({super.key});
 
@@ -67,6 +69,16 @@ class _StarCoinPageState extends State<StarCoinPage> {
     });
   }
 
+  /// 进确认购买页。买成功（含「已付款、稍后到账」）会带 true 回来 → 重拉余额。
+  Future<void> _openPurchase() async {
+    final bought = await Navigator.of(context).push<bool>(
+      AppPageRoute<bool>(builder: (_) => const StarPurchasePage()),
+    );
+    if (bought == true && mounted) {
+      await _load();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
@@ -97,7 +109,11 @@ class _StarCoinPageState extends State<StarCoinPage> {
                   _RulesCard(rules: _rules, l10n: l10n),
                 ],
                 const SizedBox(height: 20),
-                const _PurchaseHint(),
+                // 付得了才给入口：iOS 的 IAP 未接，给按钮只会建出一串付不掉的单。
+                if (StarPayType.supportedOnThisApp)
+                  _BuyEntry(onTap: _openPurchase)
+                else
+                  const _PurchaseHint(),
                 const SizedBox(height: 28),
               ],
             ),
@@ -354,7 +370,49 @@ class _RuleRow extends StatelessWidget {
   }
 }
 
-/// 购买入口的替代说明（见本页文件头：App 侧 IAP 未接）。
+/// 购买入口（安卓 = PayPal）。样式与 [_RecordsEntry] 同款，两行一箭头。
+class _BuyEntry extends StatelessWidget {
+  const _BuyEntry({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: FigmaGlassCard(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 17),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.starBuyEntryTitle, style: _StarStyles.cardTitle),
+                  const SizedBox(height: 8),
+                  Text(l10n.starBuyEntryDesc, style: _StarStyles.label),
+                ],
+              ),
+            ),
+            const Text(
+              '›',
+              style: TextStyle(
+                color: Color(0xFF777E88),
+                fontSize: 26,
+                fontWeight: FontWeight.w300,
+                height: 1,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 购买入口的替代说明（**只在 iOS**：Apple 内购未接，见本页文件头）。
 /// ⚠️ 不用 [FigmaInfoTip]：那个是单行 Row，这句话长，会溢出。
 class _PurchaseHint extends StatelessWidget {
   const _PurchaseHint();

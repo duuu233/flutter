@@ -41,7 +41,7 @@
 | 协议/隐私 | settings agreement/privacy | 对应 settings 页面 | ✅ | 标题、日期、章节和正文一致 |
 | App 更新 | 小程序更新页 | `update_boltstar_page.dart` | 🔶 | App 走原生版本检查和安装包下载 |
 | 官方图库 / 我的收藏 | `subpackages/gallery` | `features/gallery/official` | ✅⚠️ | **2026-08-12 App 侧补齐**：列表（分类条 + 端上补的「全部」+ 右端固定「收藏」入口 + 两列瀑布流 + 上拉续页）、详情（沉浸式大图 + 收藏 + 开始投屏，走与「再次投屏」同一条链路）、我的收藏。接口 `/Client/Product/{getImgCategory,getProductImgList,getProductImgDetail,setImgCollected,getProductImgCollectionList}`，字段口径与小程序逐条对齐。⚠️ 两处后端缺口两端同款兜底：列表项**没有图片比例**（先按 3:4 占位、加载完校正那一张，**不重新分列**）、**没有收藏态**（另拉一页收藏列表在端上标记）。**2026-08-19 入口对齐**：底栏由两格扩到四格，官方图库进第三格（与小程序同位），「我的 → 服务与帮助」里那一行同步删掉。⚠️未编译/未真机 |
-| 星币（支付体系） | `subpackages/token` | `features/star` | 🔶 | **2026-08-12 App 侧补齐只读部分**：星币管理（余额卡 + 购买&消费记录入口 + **星币消耗规则表** `GET /Client/Order/getAiConfigList`）与记录页（购买/消费两 Tab、分页）。⚠️ **购买链路仍未接**：小程序走微信虚拟支付，App 对应 Apple IAP / Android 内购，所以数据层**故意不实现 addOrder**，页面如实提示「去小程序购买，余额在这儿看」——画一颗点不动的按钮、或在后台留下永远付不掉的待支付单都更糟。IAP 接上后把提示换成套餐卡 + 下单即可 |
+| 星币（支付体系） | `subpackages/token` | `features/star` | 🔶 | **2026-08-12 App 侧补齐只读部分**：星币管理（余额卡 + 购买&消费记录入口 + **星币消耗规则表** `GET /Client/Order/getAiConfigList`）与记录页（购买/消费两 Tab、分页）。**2026-08-27 安卓补齐购买链路（PayPal）**：新增确认购买页（套餐卡 + 支付方式 + 立即购买），`getGoodsList` → `addOrder`(`payType=3`) → `setCreatePay` → 外跳 `payPalApproveUrl` → 回到 App 轮询余额确认到账。⚠️ **渠道按端分工，不是三端同一套**：小程序=微信虚拟支付(1)、**安卓=PayPal(3)**、**iOS=Apple 内购(2) 仍未接**（iOS 星币页继续显示「去小程序购买，余额在这儿看」——付不了就别给按钮，免得在后台留下永远付不掉的待支付单）。⚠️ 到账判据与小程序同一条规矩：**服务端余额变多**才算买到，不认「用户跳回来了」。⚠️ 后端三处待确认：PayPal capture 谁做、`return_url` 配什么、套餐 `amount` 对 PayPal 的币种 |
 | App 邮箱注册/改密 | 不适用 | `features/account` | 🔶 | App 平台专属 |
 
 ## 3. 全局行为
@@ -96,6 +96,12 @@
 - 临时：App 内置「安卓原生 vs `flutter_blue_plus`」连接 A/B 探针（性能自检页首卡，仅安卓可用），
   用于判定是否值得把传输层原生化，**不是产品能力**，定版后整体拆除；见
   `../history/2026-07/2026-07-30-安卓原生连接AB对比.md`。
+- 支付渠道（2026-08-27）：**小程序=微信支付、安卓=PayPal、iOS=Apple 内购**，三端各走各的，
+  不是同一条链路。小程序端**不需要** PayPal（其确认购买页的 PayPal 选项一直隐藏着、
+  `token-api.purchase` 直接 reject `PAYPAL_UNAVAILABLE`）；安卓端**不走内购**（此前文档一律写成
+  「Apple IAP / Android 内购」，是旧口径，已按本条改正）。共用的只有前两步（`getGoodsList` /
+  `addOrder`）与查单（`getPayQuery`），拉起支付那一步各端不同：小程序 `wx.requestVirtualPayment`、
+  安卓 `setCreatePay` → `payPalApproveUrl` 外跳、iOS 待接 `/Client/Pay/setApplePayVerify*`。
 - AI 语音：小程序可使用微信能力；App 尚未接录音与 STT。
 - 底栏：两端同为四格（首页 / AI助手 / 官方图库 / 我的），中间两格都不是 tab（各自 push 一个页面，
   返回即回原 tab）。App 侧 2026-08-19 补齐，同时删掉「我的 → 服务与帮助」里的「官方图库」行

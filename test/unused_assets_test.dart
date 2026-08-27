@@ -37,7 +37,8 @@ void main() {
     sources[entity.path] = raw;
     liveRefs.addAll(assetRef.allMatches(stripComments(raw)).map((m) => m.group(0)!));
   }
-  final allSource = sources.values.join('\n');
+  // 只留剥过注释的那份：原来另有一份含注释的 allSource，专供「bg01.png 的认领注释还在吗」
+  // 那条断言用；2026-08-27 那条反向成「文件不许存在」后就没有消费方了，留着只会被 analyze 报未使用。
   final liveSource = sources.values.map(stripComments).join('\n');
 
   final assetFiles = imagesDir
@@ -80,14 +81,19 @@ void main() {
     });
   });
 
-  test('故意留着的图：认领它的注释还在，否则该跟着删', () {
-    // 旧的暖白背景。2026-08-21 全站换成 bg02.jpg，产品要求「怕要换回去」先留着。
-    expect(File('assets/images/bg01.png').existsSync(), isTrue);
+  test('旧背景 bg01.png 已删，不许再塞回来', () {
+    // 2026-08-21 全站换成 bg02.jpg 后，bg01.png 一度按产品要求「怕要换回去」留在包里；
+    // 2026-08-27 产品确认不会换回去，图删掉（省 1.1 MB 包体），各页注释里的 bg01 字样一并改成 bg02。
+    // 这条**反着钉**：原来是「必须还在 + 认领注释还在」，现在是「不许再出现」——
+    // 重新加回来只会又变成一张没人引用的 1.1 MB 死重量。
     expect(
-      allSource.contains('bg01.png'),
-      isTrue,
-      reason: 'bg01.png 靠 figma_common.dart 的回滚说明认领才留着；那段注释若已删，这张 1.1MB 的图也该删',
+      File('assets/images/bg01.png').existsSync(),
+      isFalse,
+      reason: '旧背景已于 2026-08-27 删除；真要回滚请连同 figma_common 的说明一起改，别只把图塞回来',
     );
+    // ⚠️ 只钉「文件不在」，不钉「代码里不许提它」：figma_common.dart 那段换背景说明里
+    // 写着「旧背景已删」正是给下一个人看的，把注释也一并禁掉等于逼人删掉这段来龙去脉。
+    // 真正要防的是图被悄悄塞回来——上面那条就够了。
   });
 
   test('assets/images 里不许有无人引用的图（白占包体）', () {
@@ -96,7 +102,9 @@ void main() {
       'assets/images/device-list-icon0',
       'assets/images/ai-orientation-',
     ];
-    const parked = <String>['assets/images/bg01.png'];
+    // 故意保留的无引用素材：当前一张都没有（bg01.png 2026-08-27 已删）。
+    // 再往里加必须写明理由与认领它的注释在哪，否则下一轮没人知道能不能删。
+    const parked = <String>[];
 
     final unused = assetFiles.where((path) {
       if (liveRefs.contains(path)) return false;
