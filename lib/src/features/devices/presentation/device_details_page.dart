@@ -157,7 +157,14 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   /// 后端拿它比对才算得出 `isUpdate`（见 [PhotoFrameState.fetchDeviceFirmwareInfo]）。
   /// 两步都是**静默 best-effort**：失败不弹错——本页主要信息不依赖它，红点不亮而已。
   Future<void> _refreshDetail() async {
-    await state.refreshConnectedDeviceInfo(widget.deviceId);
+    // includeFirmwareVersion: 本页「固件升级」那一行右侧显示的就是**设备当前在跑的版本号**，
+    // 红点也靠它与云端 newVersionNo 比对，所以这里要连 0x03 一起读
+    //（小程序 `loadDetail → readDeviceInfo` 一直是这么做的；App 之前只读 0x01，
+    //  于是那一行长期显示 `--`、红点也无从判起）。
+    await state.refreshConnectedDeviceInfo(
+      widget.deviceId,
+      includeFirmwareVersion: true,
+    );
     if (!mounted) {
       return;
     }

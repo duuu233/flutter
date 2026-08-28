@@ -13,10 +13,16 @@ import '../../state.dart' show AppLanguage;
 /// 底层是系统自带的语音识别（iOS `SFSpeechRecognizer` / Android `SpeechRecognizer`），
 /// 音频不出手机、不上传，**后端零改动**。小程序那边同理（微信「同声传译」插件在端上转文字）。
 ///
-/// ⚠️ **安卓国行无 GMS 的机型（华为、部分小米/OV）没有系统识别服务**，
-/// [ensureReady] 会返回 false，页面据此降级成一句「本机不支持语音输入」，
-/// 而不是让用户按住了没反应。真机覆盖率不能接受时，下一步才是「录音上传后端 ASR」
-/// （那条要后端加接口，见 `docs/history/2026-08/2026-08-28-App十八项修复与小程序同步.md` 的待办）。
+/// ⚠️ **安卓国行机（华为、以及不少小米/OV 的国内版）没有系统识别服务** —— 这不是权限问题：
+/// `SpeechRecognizer.isRecognitionAvailable()` 直接为 false，[ensureReady] 随之返回 false。
+/// 2026-08-28 真机实测确认：授权弹窗照弹（麦克风权限是系统给的），点完同意仍然报「不支持」，
+/// 因为缺的是**识别服务**不是权限。清单里那两条 `<queries>` 只能解决「有服务但看不见」，
+/// 服务本身不存在时无解。
+///
+/// 页面据此降级成一句可操作的提示（引导用输入法自带的语音输入），而不是让人按住了没反应。
+/// 要在这些机器上做出「按住说话」，只有一条路：**录音上传做 ASR**——
+/// 端上用录音插件采集，音频交给后端转文字（第三方 ASR 的 AppKey 不能进客户端，
+/// 所以绕不开后端）。见本轮文档的待办。
 ///
 /// ⚠️ 插件把「识别」封装成一个**全局单例**式的会话：同一时刻只能有一路。
 /// 聊天页可能同时躺着好几个（从会话列表点开一条就新开一页），所以这里也做成单例，
@@ -118,11 +124,14 @@ class AiVoiceInput {
             _completeFinal(_words);
           }
         },
-        localeId: await _resolveLocaleId(language),
-        listenFor: maxDuration,
-        // 开着 partialResults 而不是只要终局：部分安卓 ROM 在 `partialResults: false` 时
-        // 会把结果一并吞掉，攒中间结果反而是更稳的拿法（反正不上屏）。
+        // ⚠️ `localeId` / `listenFor` **必须写在 SpeechListenOptions 里**：
+        // 6.6 起 `listen()` 上的同名具名参数已废弃（analyzer 会报 deprecated_member_use），
+        // 7.0 直接移除。写进 options 在 6.6+ 与 7.x 上都成立。
         listenOptions: stt.SpeechListenOptions(
+          localeId: await _resolveLocaleId(language),
+          listenFor: maxDuration,
+          // 开着 partialResults 而不是只要终局：部分安卓 ROM 在 `partialResults: false` 时
+          // 会把结果一并吞掉，攒中间结果反而是更稳的拿法（反正不上屏）。
           partialResults: true,
           cancelOnError: true,
         ),

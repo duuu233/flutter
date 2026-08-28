@@ -63,7 +63,6 @@ class _ProfilePageState extends State<ProfilePage> {
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
     final user = widget.state.currentUser;
-    final emailText = user.email.isEmpty ? l10n.accNotBound : user.email;
 
     return FigmaScreen(
       title: l10n.accProfileTitle,
@@ -104,29 +103,36 @@ class _ProfilePageState extends State<ProfilePage> {
                 const FigmaFormDivider(),
                 // 小程序 `{{userInfo.id || '--'}}`：拿不到 ID 时占位，不留空。
                 FigmaInfoRow(label: 'ID', value: user.id.isEmpty ? '--' : user.id),
-                const FigmaFormDivider(),
-                FigmaInfoRow(
-                  label: l10n.accEmail,
-                  value: emailText,
-                  onTap: () {
-                    Navigator.of(context).pushNamed<void>(
-                      user.email.isEmpty
-                          ? AppRoutes.figmaBindEmailIncomplete
-                          : AppRoutes.figmaModifyEmail,
-                    );
-                  },
-                ),
-                const FigmaFormDivider(),
-                // 修改密码：原为已注册路由但无入口的孤儿页，这里接上入口。
-                FigmaInfoRow(
-                  label: l10n.accModifyPasswordTitle,
-                  value: '',
-                  onTap: () {
-                    Navigator.of(
-                      context,
-                    ).pushNamed<void>(AppRoutes.figmaModifyPassword);
-                  },
-                ),
+                // 「邮箱」「修改密码」两行**只对邮箱账号显示**（2026-08-28 产品要求）。
+                //
+                // 判据用「有没有邮箱」而不是「这次是怎么登录的」：微信授权登录的账号本就没有邮箱，
+                // 两行一个是改邮箱、一个是改密码，对它都无从谈起（后端也没有密码可改）。
+                // 而且这个判据顺带把「微信登录后又绑了邮箱」这种情况带对了 —— 绑完就该显示出来，
+                // 按登录方式判反而会一直藏着。
+                if (user.email.isNotEmpty) ...[
+                  const FigmaFormDivider(),
+                  FigmaInfoRow(
+                    label: l10n.accEmail,
+                    // 走到这里 email 必非空（外层已判），不用再兜「未绑定」文案
+                    value: user.email,
+                    onTap: () {
+                      Navigator.of(
+                        context,
+                      ).pushNamed<void>(AppRoutes.figmaModifyEmail);
+                    },
+                  ),
+                  const FigmaFormDivider(),
+                  // 修改密码：原为已注册路由但无入口的孤儿页，这里接上入口。
+                  FigmaInfoRow(
+                    label: l10n.accModifyPasswordTitle,
+                    value: '',
+                    onTap: () {
+                      Navigator.of(
+                        context,
+                      ).pushNamed<void>(AppRoutes.figmaModifyPassword);
+                    },
+                  ),
+                ],
               ],
             ),
           ),

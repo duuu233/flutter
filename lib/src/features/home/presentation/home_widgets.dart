@@ -653,28 +653,27 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
   }
 }
 
-/// 设备卡的玻璃底（小程序 `.carousel-glass`）。
+/// 设备卡的卡面（小程序 `.carousel-glass`）：**透明底 + 一层投影**，没别的。
 ///
-/// 逐项对照：`box-shadow: 0 4px 16px rgba(60,53,16,0.12)` → [BoxShadow]（同值直用，
-/// 全站其它卡片也是这么换算的）；`backdrop-filter: blur(10.55px)` → [ImageFilter.blur]，
-/// CSS 的模糊半径约等于 2σ，所以 sigma 取 10.55/2。
+/// ⚠️ 2026-08-28 二次修正：上一版按 CSS 里写着的 `backdrop-filter: blur(10.55px)` 加了
+/// [BackdropFilter]，观感仍然不对 —— 产品确认那块**就是透明的**（那条 backdrop-filter
+/// 在微信/安卓 webview 上多半根本没生效，所以线上看到的一直是「透明 + 投影」）。
+/// 这里去掉模糊：模糊本身还逐帧重算、压在横滑的 [PageView] 里白白吃 GPU。
 ///
-/// ⚠️ **不铺底色**：小程序把 `.carousel-glass` 里那行 `background: linear-gradient(...)`
-/// 注释掉了，只留模糊与投影 —— 卡面因此是「把墙面糊一层」，换任何背景图都自动协调。
-/// [BackdropFilter] 需要一个会参与绘制的子节点才生效，所以给一层全透明的 [ColoredBox]。
-///
-/// ⚠️ 模糊是逐帧重算的，压在横滑的 [PageView] 里有成本。这是与小程序对齐的做法，
-/// 卡片只有一张、面积也不大，实测再看；要退回纯色卡面的话只需把 BackdropFilter 换成
-/// 一层半透明白（视觉会略「实」一点）。
+/// 投影按 `box-shadow: 0px 4px 16px rgba(60, 53, 16, 0.12)` 换算：
+/// 偏移 (0,4)、模糊 16、色 `#3C3510` @12% = `0x1F3C3510`。
+/// 模糊值直接用 CSS 的数值 —— 与本项目其它卡片的换算口径一致
+///（Flutter 的 `blurRadius` 与 CSS 的 blur-radius 并非同一物理量，严格换算约是 ×0.87，
+///  但全站都按 1:1 转，单独在这里换算反而与别处对不齐）。
 class _CardGlass extends StatelessWidget {
   const _CardGlass();
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(_kCardRadius);
     return DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: radius,
+        // 不铺任何底色：卡面就是透明的，露出下面的墙面背景。
+        borderRadius: BorderRadius.circular(_kCardRadius),
         boxShadow: const [
           BoxShadow(
             color: Color(0x1F3C3510), // rgba(60, 53, 16, 0.12)
@@ -682,13 +681,6 @@ class _CardGlass extends StatelessWidget {
             offset: Offset(0, 4),
           ),
         ],
-      ),
-      child: ClipRRect(
-        borderRadius: radius,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 5.275, sigmaY: 5.275),
-          child: const ColoredBox(color: Color(0x00FFFFFF)),
-        ),
       ),
     );
   }
@@ -744,9 +736,17 @@ class _ConnectedDeviceCard extends StatelessWidget {
                 },
               ),
               // 右侧设备信息。
-              SizedBox(
-                width: 138,
-                height: 110,
+              //
+              // ⚠️ 宽度由**写死 138 改成上限 190**（2026-08-28）：138 是按中文「连接蓝牙」
+              // 四个字量的，英文 "Connect Bluetooth" 连图标带内边距要 150+，直接撑爆
+              //（按钮是 mainAxisSize.min 的内容宽，卡在这个 138 的父约束上）。
+              // 190 = 卡片内容宽 291 − 圆环 83 − 两侧呼吸，够放最长的那一版文案；
+              // 上限而不是定宽，所以中文时这一列仍按内容收窄，`spaceAround` 的留白不变。
+              // 列里的设备名本来就是 maxLines:1 + ellipsis，不会因为放宽而顶出去。
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 190),
+                child: SizedBox(
+                  height: 110,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -816,9 +816,15 @@ class _ConnectedDeviceCard extends StatelessWidget {
                       ),
                     ] else ...[
                       const SizedBox(height: 22),
-                      _HomeConnectButton(onTap: onConnect),
+                      // 按钮自己也别硬撑：宽度跟文案走，实在放不下就省略号，
+                      // 绝不横向溢出（Row 的交叉轴是 start，这里用 Align 收窄到内容宽）。
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: _HomeConnectButton(onTap: onConnect),
+                      ),
                     ],
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -868,13 +874,19 @@ class _HomeConnectButton extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 6),
-            Text(
-              AppL10n.of(context).homeConnectBluetooth,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w500,
-                height: 1,
+            // Flexible + ellipsis 是最后一道保险：宽度已经跟着文案走（见上面那层
+            // ConstrainedBox 的说明），万一将来某个语种更长，也只是省略号，不会溢出。
+            Flexible(
+              child: Text(
+                AppL10n.of(context).homeConnectBluetooth,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  height: 1,
+                ),
               ),
             ),
           ],

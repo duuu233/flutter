@@ -294,7 +294,11 @@ class _BottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final stage = stageText;
-    return Column(
+    // 贴底留白补到 30（小程序 `.cta-button` 的 `bottom: 60rpx + safe`）：
+    // [FigmaScreen] 的 bottom 槽只给了 12，是全站通用值，不为这一页去改公共组件。
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 18),
+      child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -336,7 +340,8 @@ class _BottomBar extends StatelessWidget {
             // iOS：通道未接，按钮置灰（原因写在上面那句 [_ApplePendingNote] 里）。
             onPressed: busy || !payable ? null : onBuy,
           ),
-      ],
+        ],
+      ),
     );
   }
 }

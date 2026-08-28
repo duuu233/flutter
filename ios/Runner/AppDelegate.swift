@@ -2,6 +2,9 @@ import Flutter
 import UIKit
 import CoreBluetooth
 import CoreLocation
+// PHPhotoLibrary / PHAssetChangeRequest 在 Photos 里（PhotosUI 只给 PHPicker 那套）。
+// 靠 PhotosUI 的伞头间接带出来能不能编过依赖模块的 re-export 规则，显式写一行不留悬念。
+import Photos
 import PhotosUI
 import AVFoundation
 

@@ -183,9 +183,14 @@ class _StarCoinPageState extends State<StarCoinPage> {
       // 套餐都没下发时不画：没有可买的东西就别摆按钮。
       bottom: _loading || _loadFailed || _packages.isEmpty
           ? null
-          : FigmaPrimaryButton(
-              label: l10n.starBuyNow,
-              onPressed: _selected == null ? null : _openPurchase,
+          : Padding(
+              // 贴底留白补到 30（小程序 `.cta-button` 的 `bottom: 60rpx + safe`）；
+              // [FigmaScreen] 的 bottom 槽只给 12，是全站通用值，不为这一页改公共组件。
+              padding: const EdgeInsets.only(bottom: 18),
+              child: FigmaPrimaryButton(
+                label: l10n.starBuyNow,
+                onPressed: _selected == null ? null : _openPurchase,
+              ),
             ),
     );
   }

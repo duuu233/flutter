@@ -917,7 +917,16 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   /// 按设备 id 回读真机内存/索引。投屏完成页调用时不改变当前选中的设备。
-  Future<void> refreshConnectedDeviceInfo(String deviceId) async {
+  /// [includeFirmwareVersion]：顺带把固件版本（`0x03 GET_SW_VER`）也读回来。
+  ///
+  /// 默认 false —— 投屏等热路径只要 0x01，多一个往返会挡在首张图之前。
+  /// **设备详情页要传 true**：那一行右侧就是「设备当前在跑的版本号」，红点也靠它比对
+  /// （对齐小程序 `detail.js loadDetail → readDeviceInfo`，它一直是连 0x03 一起读的）。
+  /// 已经读到过版本就不再重复读，避免旧固件不支持 0x03 时每次重入都白等一个超时。
+  Future<void> refreshConnectedDeviceInfo(
+    String deviceId, {
+    bool includeFirmwareVersion = false,
+  }) async {
     final device = _deviceByIdOrNull(deviceId);
     if (device == null) {
       return;
@@ -928,11 +937,17 @@ class PhotoFrameState extends ChangeNotifier {
     }
     final trace = DeviceInteractionTrace('refresh-device-core-info');
     try {
-      // 内存/索引刷新只需要 0x01；固件版本 0x03 在连接/OTA 场景读取。
-      // 避免旧固件不支持 0x03 时，每次页面重入都额外等满 6 秒。
+      // 内存/索引刷新只需要 0x01；固件版本 0x03 仅在调用方明确要时才附带
+      //（见 [includeFirmwareVersion]）。本会话已经读到过版本就不再读第二遍。
+      final client = BleController.instance.client;
+      final knownVersion =
+          BleController.instance.info?.firmwareVersion ?? '';
+      final needSwVer = includeFirmwareVersion && knownVersion.isEmpty;
       final info = await trace.measure(
-        'read-core-info-0x01',
-        BleController.instance.client.readTransferInfo,
+        needSwVer ? 'read-core-info-0x01+0x03' : 'read-core-info-0x01',
+        // readDeviceInfo = 0x01 + 0x03，且 0x03 失败时自己吞掉、照常返回 0x01 的结果，
+        // 所以旧固件不支持 0x03 也只是这一次多等一个指令超时，不会连内存/索引一起丢。
+        needSwVer ? client.readDeviceInfo : client.readTransferInfo,
       );
       // 读 0x01 期间（100~500ms）若有并发的 refreshDevices 完成，_devices 已被整体换过，
       // 上面捕获的 device 就成了游离对象——写进去 UI 永远读不到（connectDevice 早有同款

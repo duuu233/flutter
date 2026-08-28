@@ -2,8 +2,6 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/gestures.dart'
-    show PointerDownEvent, PointerMoveEvent, PointerUpEvent;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:http/http.dart' as http;
@@ -261,6 +259,15 @@ const List<int> _kToolFlex = <int>[100, 100, 135, 175];
 const double _kToolGap = 4;
 const double _kToolHeight = 29;
 const Color _kToolText = Color(0xFF6F6F6F);
+
+/// 工具胶囊里文字的基准字号（小程序 25rpx≈12.5；2026-08-28 收到 12）。
+///
+/// ⚠️ 真正解决「英文太大放不下」的不是这个数，是 [_buildToolLabel] 的 `BoxFit.scaleDown`：
+/// 四个语种的词长差得远（相册/Album、一键生图/Generate），写死任何一个字号都会顾此失彼。
+const double _kToolFontSize = 12;
+
+/// 胶囊左右内边距：文字不要贴着圆角边（小程序那边靠 grid 的余量带出同样的呼吸感）。
+const double _kToolPadding = 8;
 
 /// 输入卡的外边距与内边距。浮层要按输入卡的**内容区**对齐，所以两边共用这两个值。
 const double _kInputCardMargin = 16;
@@ -3322,6 +3329,34 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     );
   }
 
+  /// 工具胶囊里的文字。
+  ///
+  /// `BoxFit.scaleDown` 是这里的关键：**放不下就整体缩小，而不是截成省略号**。
+  /// 原来是 `Flexible + ellipsis`，中文正好、英文就被截成「Gener…」——四个格子宽度是按
+  /// 1:1:1.35:1.75 分死的，靠字号一刀切不可能同时照顾四个语种。scaleDown 只在放不下时
+  /// 才缩，中文那版一个像素都不会变。
+  Widget _buildToolLabel(
+    String text, {
+    required Color color,
+    FontWeight? weight,
+  }) {
+    return Flexible(
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: Text(
+          text,
+          maxLines: 1,
+          style: TextStyle(
+            color: color,
+            fontSize: _kToolFontSize,
+            fontWeight: weight,
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 工具行里一颗普通胶囊（相册 / 拍照）。
   Widget _buildQuickTool({
     required String icon,
@@ -3338,21 +3373,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
           borderRadius: BorderRadius.circular(999),
           border: Border.all(color: const Color(0x2E7D7D7D)),
         ),
+        padding: const EdgeInsets.symmetric(horizontal: _kToolPadding),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             AiIcon(icon, size: 13.5),
             const SizedBox(width: 4.5),
-            // 小程序那边是 nowrap 溢出可见；Flutter 里溢出会直接报错，所以给省略号兜底
-            //（四语种里德文/日文更长，窄屏上宁可截字也不能崩布局）。
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(color: _kToolText, fontSize: 12.5),
-              ),
-            ),
+            _buildToolLabel(label, color: _kToolText),
           ],
         ),
       ),
@@ -3376,6 +3403,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
             color: active ? const Color(0xFFF5A77E) : const Color(0x2E7D7D7D),
           ),
         ),
+        padding: const EdgeInsets.symmetric(horizontal: _kToolPadding),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -3385,16 +3413,9 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
               opacity: 0.75,
             ),
             const SizedBox(width: 4.5),
-            Flexible(
-              child: Text(
-                AppL10n.of(context).aiOrientationLabel(_orientation),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: active ? kAiOrange : _kToolText,
-                  fontSize: 12.5,
-                ),
-              ),
+            _buildToolLabel(
+              AppL10n.of(context).aiOrientationLabel(_orientation),
+              color: active ? kAiOrange : _kToolText,
             ),
             const SizedBox(width: 4.5),
             // 箭头/关闭都用等大的方图：切换时按钮里的内容宽度不变，
@@ -3439,6 +3460,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
                   ),
                 ],
         ),
+        padding: const EdgeInsets.symmetric(horizontal: _kToolPadding),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
@@ -3454,17 +3476,10 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
               ),
             ),
             const SizedBox(width: 4.5),
-            Flexible(
-              child: Text(
-                AppL10n.of(context).aiGenerateImage,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: active ? kAiOrange : Colors.white,
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
+            _buildToolLabel(
+              AppL10n.of(context).aiGenerateImage,
+              color: active ? kAiOrange : Colors.white,
+              weight: FontWeight.w500,
             ),
           ],
         ),

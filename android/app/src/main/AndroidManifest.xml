@@ -121,5 +121,10 @@
         <intent>
             <action android:name="android.speech.RecognitionService"/>
         </intent>
+        <!-- 部分 ROM 只认按包名的可见性声明（上面那条按 action 查不到）。
+             Google 语音服务由「Google」这个应用提供，显式再点一次名。
+             ⚠️ 这两条都只解决「有服务但看不见」；**国行无 GMS 的机器根本没有这个服务**，
+             声明再多也查不出来（见 `ai_voice_input.dart` 文件头的说明）。 -->
+        <package android:name="com.google.android.googlequicksearchbox"/>
     </queries>
 </manifest>

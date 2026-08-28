@@ -815,9 +815,9 @@ class AppL10n {
   /// ⚠️ 最常见的是**安卓国行无 GMS 的机型**（华为、部分小米/OV）：系统压根没装识别服务。
   /// 措辞只说结果、不解释技术原因，也不许诺「以后会有」。
   String get aiVoiceUnavailable => _pick(
-    '当前设备不支持语音输入，请用键盘输入',
-    'Voice input is not available on this device. Please type instead.',
-    'この端末では音声入力を利用できません。キーボードで入力してください',
+    '本机未提供系统语音识别，可用键盘上的语音输入',
+    'No system speech recognition on this device — use your keyboard\'s voice input.',
+    'この端末にはシステム音声認識がありません。キーボードの音声入力をご利用ください',
   );
 
   /// 麦克风 / 语音识别授权被拒时的引导框。
