@@ -82,7 +82,8 @@ class AiVoiceInput {
       if (!_available) {
         debugPrint('[AiVoice] 本机没有可用的语音识别服务');
       }
-      _permissionDenied = _available && !_speech.hasPermission;
+      // ⚠️ `hasPermission` 是 **Future<bool>**（不是同步 getter），要 await。
+      _permissionDenied = _available && !(await _speech.hasPermission);
     } catch (error) {
       // 插件未注册（如桌面端跑 widget 测试）等异常一律按「不支持」处理，绝不冒泡到 UI。
       debugPrint('[AiVoice] initialize 异常: $error');

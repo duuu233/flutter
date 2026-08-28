@@ -3687,8 +3687,10 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       _recording = true;
       _voiceCancel = false;
     });
+    // ⚠️ 取当前语种走 `AppL10n.of(context).language`：`languageOf` 是
+    // [AppLocalizationsScope] 上的静态方法，不在 [AppL10n] 上。
     final started = await voice.start(
-      language: AppL10n.languageOf(context),
+      language: AppL10n.of(context).language,
     );
     if (!mounted) {
       return;
