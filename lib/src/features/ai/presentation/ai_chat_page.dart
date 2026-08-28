@@ -236,6 +236,14 @@ const List<String> _kStyleKeys = ['anime', 'portrait', 'landscape', 'cartoon'];
 /// （小程序 `VOICE_CANCEL_DY` 同款交互，仿微信）。
 const double _kVoiceCancelDy = 60;
 
+/// 一段语音的最长时长（与小程序 `VOICE_MAX_MS` 同值）。
+///
+/// 到点**不丢**：按「松手」处理 —— 把已经识别到的内容照常发出去，再提示一句
+/// （见 [_AiChatPageState._endVoice] 的 `reachedLimit`）。说太久本来也不好识别，
+/// 更不该让用户按了一分钟最后什么都没发出去。
+/// ⚠️ 改这个数要同时改 [AppL10n.aiVoiceMaxDuration] 里的「1 分钟」字样。
+const Duration _kVoiceMaxDuration = Duration(seconds: 60);
+
 /// 图片比例（需求：竖向/横向/方形；API `img_orientation` 必传，只认这三个值）。
 const List<String> _kOrientationKeys = ['vertical', 'horizontal', 'square'];
 
@@ -507,6 +515,10 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   /// 后续的 move/up 事件直接忽略，不再重复弹提示。
   bool _voiceRejected = false;
 
+  /// 录满 [_kVoiceMaxDuration] 的闹钟。到点自动收尾（见 [_beginVoice]）；
+  /// 手动松手 / 取消 / 页面销毁都要把它取消掉，否则会在录音早就结束后空放一枪。
+  Timer? _voiceLimitTimer;
+
   /// 手指还按在「按住说话」上。
   ///
   /// ⚠️ 这个标记是给 [_beginVoice] 里的 await 用的：首次按下要先 `initialize()`
@@ -611,6 +623,8 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     appRouteObserver.unsubscribe(this);
     _stopGenerate(silent: true);
     // 页面走了还按着说话（返回手势/被 pop）：丢掉这一轮，别让隐藏页继续占着麦克风。
+    _voiceLimitTimer?.cancel();
+    _voiceLimitTimer = null;
     if (_recording) {
       unawaited(AiVoiceInput.instance.cancel());
     }
@@ -3706,6 +3720,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     // [AppLocalizationsScope] 上的静态方法，不在 [AppL10n] 上。
     final started = await voice.start(
       language: AppL10n.of(context).language,
+      maxDuration: _kVoiceMaxDuration,
     );
     if (!mounted) {
       return;
@@ -3723,14 +3738,35 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       });
       _voiceRejected = true;
       AppToast.show(context, l10n.aiVoiceUnavailable);
+      return;
     }
+    // 录满上限自动收尾。引擎那边 `listenFor` 到点也会停，但那只停了识别 ——
+    // 界面还挂在「录音中」等抬手，用户会以为还在录（可能一直按着不放）。
+    // 所以这里自己拿表，到点按「松手」走一遍：内容照发、提示一句。
+    _voiceLimitTimer?.cancel();
+    _voiceLimitTimer = Timer(_kVoiceMaxDuration, () {
+      if (mounted && _recording) {
+        unawaited(_endVoice(cancel: _voiceCancel, reachedLimit: true));
+      }
+    });
   }
 
-  /// 松手 / 取消：收浮层，再决定发不发。
-  Future<void> _endVoice({required bool cancel}) async {
+  /// 松手 / 取消 / 录满上限：收浮层，再决定发不发。
+  ///
+  /// [reachedLimit]：这一次不是用户松的手，而是录满了 [_kVoiceMaxDuration]。
+  /// **内容照发**（说没说完都发出去，别让人白按一分钟），发完补一句提示。
+  /// ⚠️ 唯一的例外是「手指正停在取消区」：那时用户已经明确表示这段不要了，
+  /// 上限只是替他松了手，语义应当仍是取消 —— 所以这里沿用当前的 [cancel] 状态，
+  /// 而不是无条件发送。
+  Future<void> _endVoice({
+    required bool cancel,
+    bool reachedLimit = false,
+  }) async {
     if (!_recording) {
       return;
     }
+    _voiceLimitTimer?.cancel();
+    _voiceLimitTimer = null;
     final voice = AiVoiceInput.instance;
     setState(() {
       _recording = false;
@@ -3749,8 +3785,12 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       return;
     }
     if (text.isEmpty) {
+      // 一个字都没识别到：这句比「已达上限」更该说，两条提示不叠着弹。
       AppToast.show(context, AppL10n.of(context).aiVoiceNoSpeech);
       return;
+    }
+    if (reachedLimit) {
+      AppToast.show(context, AppL10n.of(context).aiVoiceMaxDuration);
     }
     await _sendVoiceText(text);
   }

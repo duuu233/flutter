@@ -806,6 +806,14 @@ class AppL10n {
   String get aiVoiceTipCancel =>
       _pick('松开手指，取消发送', 'Release to cancel', '指を離すと取り消します');
 
+  /// 录满上限自动发送时的提示。⚠️ 文案里的「1 分钟」与 `_kVoiceMaxDuration`
+  /// / 小程序 `VOICE_MAX_MS` 是同一个数，改时长要一起改这句。
+  String get aiVoiceMaxDuration => _pick(
+    '已达最长 1 分钟，已自动发送',
+    'Reached the 1-minute limit — sent automatically',
+    '最長 1 分に達したため、自動送信しました',
+  );
+
   /// 识别不出任何文字（说太轻/环境太吵/一开口就松手）。
   String get aiVoiceNoSpeech =>
       _pick('没听清，请再说一次', 'Didn\'t catch that — try again', '聞き取れませんでした。もう一度どうぞ');
