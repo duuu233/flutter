@@ -524,8 +524,8 @@ class _GiftBadge extends StatelessWidget {
 /// 几何逐项对齐：行高 128rpx=64、左右内边距 28rpx=14、图标 64rpx=32（圆角 14rpx=7）、
 /// 名称左边距 26rpx=13 / 32rpx=16 / w500、右侧箭头 24rpx=12。
 ///
-/// 🔶 图标与小程序不同：那边用的是 `pay-wechat.png` 那类切图，PayPal 没有对应素材
-///（`pay-wechat.png` 已在 2026-08-27 清理无引用素材时删掉），这里用同尺寸的圆角色块 + 内置图标顶上。
+/// 图标用 `pay-paypal.png`（与小程序 `.pay-icon` 同一个位置、同一套尺寸：64rpx=32、圆角 14rpx=7）。
+/// 图缺失时回退到同尺寸的品牌蓝圆角块 + 内置钱包图标，不至于空一块。
 class _PayPalChannelCard extends StatelessWidget {
   const _PayPalChannelCard();
 
@@ -541,18 +541,27 @@ class _PayPalChannelCard extends StatelessWidget {
         height: 62, // 64 - 上下各 1 的描边
         child: Row(
           children: [
-            Container(
-              width: 32,
-              height: 32,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: const Color(0xFF0070BA),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: const Icon(
-                Icons.account_balance_wallet_rounded,
-                size: 19,
-                color: Colors.white,
+            ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: Image.asset(
+                'assets/images/pay-paypal.png',
+                width: 32,
+                height: 32,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) => Container(
+                  width: 32,
+                  height: 32,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF0070BA),
+                    borderRadius: BorderRadius.circular(7),
+                  ),
+                  child: const Icon(
+                    Icons.account_balance_wallet_rounded,
+                    size: 19,
+                    color: Colors.white,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 13),

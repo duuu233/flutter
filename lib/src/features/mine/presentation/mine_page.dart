@@ -376,7 +376,8 @@ class _ProfileCard extends StatelessWidget {
               },
             ),
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 0, 17, 0),
+              // 小程序 `.profile-card` 的 `padding: 0 34rpx 0 44rpx` = 左 22 / 右 17。
+              padding: const EdgeInsets.fromLTRB(22, 0, 17, 0),
               child: Row(
                 children: [
                   _Avatar(avatarUrl: avatarUrl),
@@ -404,11 +405,14 @@ class _ProfileCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                  // 小程序这里是 `mine-icon-right.png` 40rpx=20 的切图；那张图 2026-08-27
+                  // 清理无引用素材时已删（App 各处箭头都是画的），所以仍用字符箭头，
+                  // 只把字号收到与 20 的切图观感相当。
                   const Text(
                     '›',
                     style: TextStyle(
                       color: Color(0xFF777E88),
-                      fontSize: 29,
+                      fontSize: 26,
                       fontWeight: FontWeight.w300,
                       height: 1,
                     ),
@@ -430,19 +434,23 @@ class _Avatar extends StatelessWidget {
   /// 后端头像地址（真实用户数据，非静态资源）；为空或加载失败回退本地默认头像。
   final String avatarUrl;
 
+  /// 头像直径。小程序 `.profile-avatar` 是 160rpx = 80；
+  /// App 这边原来写的 56 明显小一圈，2026-08-28 对齐过来。
+  static const double _size = 80;
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 56,
-      height: 56,
+      width: _size,
+      height: _size,
       clipBehavior: Clip.antiAlias,
       decoration: const BoxDecoration(shape: BoxShape.circle),
       child: avatarUrl.isNotEmpty
           ? CachedNetworkImage(
               imageUrl: avatarUrl,
               fit: BoxFit.cover,
-              // 56lp 圆形头像，按物理像素解码，避免原图全尺寸位图进内存。
-              memCacheWidth: (56 * MediaQuery.devicePixelRatioOf(context))
+              // 圆形头像按物理像素解码，避免原图全尺寸位图进内存。
+              memCacheWidth: (_size * MediaQuery.devicePixelRatioOf(context))
                   .round(),
               errorWidget: (context, url, error) => _defaultAvatar(),
             )
@@ -468,7 +476,8 @@ class _Avatar extends StatelessWidget {
 }
 
 /// 常用功能宫格卡片（小程序 `.quick-card`，高 296rpx=148）：
-/// 底图 `mine-bg02.png` + 图标（`mine-icon0x.png`，112rpx≈56）+ 标题 + 说明。
+/// 卡面按小程序 `.quick-card` 画（渐变 + 白描边 + 投影，见 [build] 里的说明）
+/// + 图标（`mine-icon0x.png`，圆底 112rpx≈56、图 68rpx≈34）+ 标题 + 说明。
 ///
 /// 2026-08-04 起宽度由外层 [Expanded] 等分决定（三卡→两卡），不再写死 102。
 class _FeatureCard extends StatelessWidget {
@@ -496,27 +505,48 @@ class _FeatureCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        height: 148,
+        height: 148, // 小程序 `.quick-card` 的 296rpx
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // 卡片底图铺满（圆角 20）。
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: Image.asset(
-                'assets/images/mine-bg02.png',
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.40),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.31),
-                      ),
-                    ),
-                  );
-                },
+            // 卡面**画出来**，不再铺底图（2026-08-28 修「卡片右边露一条白边」）。
+            //
+            // ⚠️ 病灶：原来铺的是 `mine-bg02.png`，**102×148** —— 那是 2026-08-04 之前
+            // 「三张 102 定宽卡」时代的切图。08-04 改成两张卡等分屏宽后，卡片实际宽度
+            // 变成约 158（375 屏：(375-48-10.5)/2），BoxFit.cover 于是把这张图横向放大
+            // 1.55 倍去填：图里**烘焙好的 1px 白描边**跟着被放大、上下又被裁掉，
+            // 露在右边的就是那条粗细不匀的白边，屏越宽越明显。
+            //
+            // 小程序那边根本没有这张图（`assets/images` 里查无此文件），`.quick-card`
+            // 是纯 CSS 画的。照它写：
+            //   border-radius: 20px
+            //   border: 1px solid rgba(255,255,255,0.31)
+            //   background: linear-gradient(326deg,
+            //       rgba(255,255,255,.24) 6.29%, rgba(255,255,255,.43) 97.85%)
+            //   box-shadow: 0 4px 12px rgba(44,63,97,0.03)
+            // 画出来的卡面与宽度无关，任何屏宽都不会再有描边被拉伸的问题。
+            DecoratedBox(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.31)),
+                // 326deg：CSS 0° 朝上、顺时针；326° 指向左上，所以起点在右下、终点在左上。
+                // 方向向量 (sin326°, −cos326°) = (−0.559, −0.829)，取其两端作 Alignment。
+                gradient: LinearGradient(
+                  begin: const Alignment(0.559, 0.829),
+                  end: const Alignment(-0.559, -0.829),
+                  colors: [
+                    Colors.white.withValues(alpha: 0.24),
+                    Colors.white.withValues(alpha: 0.43),
+                  ],
+                  stops: const [0.0629, 0.9785],
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF2C3F61).withValues(alpha: 0.03),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
               ),
             ),
             Column(
@@ -803,10 +833,11 @@ class _MineTextStyles {
   );
 
   // .profile-name → 40rpx(=20) / weight 700 / #2a2d32
+  /// 小程序 `.profile-name`：40rpx=20、**w500**、#2a2d2d（App 原来是 w700，粗了一档）。
   static const profileName = TextStyle(
-    color: Color(0xFF2A2D32),
+    color: Color(0xFF2A2D2D),
     fontSize: 20,
-    fontWeight: FontWeight.w700,
+    fontWeight: FontWeight.w500,
     height: 1,
   );
 

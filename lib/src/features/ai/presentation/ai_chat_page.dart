@@ -327,7 +327,10 @@ class _AiImage {
     : pad = _clampPad(pad);
 
   final String url;
-  final String? serverId;
+
+  /// 服务端 message_id。历史消息一进来就有；本轮新发的要等 SSE `init` 事件贴回来
+  /// （见 [_AiChatPageState._applyUserMessageIds]），所以**不是 final**。
+  String? serverId;
   double pad;
 }
 
@@ -352,7 +355,11 @@ class _AiMessage {
   final String role;
   final _MsgKind kind;
   String content;
-  final String? serverId;
+
+  /// 服务端 message_id。历史消息一进来就有；本轮新发的要等 SSE `init` 事件贴回来
+  /// （见 [_AiChatPageState._applyUserMessageIds]），所以**不是 final**。
+  String? serverId;
+
   final List<_AiImage> images;
   bool loading;
   bool typing;
@@ -380,7 +387,11 @@ class _AiMessage {
 
 /// 在途流式回复的状态。一次只可能有一条（`_sending` 期间不许再发）。
 class _StreamState {
-  _StreamState(this.holderId);
+  _StreamState(
+    this.holderId, {
+    required this.imageBubbleIds,
+    required this.textBubbleId,
+  });
 
   /// 内容写进哪个气泡。
   final int holderId;
@@ -400,6 +411,13 @@ class _StreamState {
   /// 服务端 `mode` 事件定的这一轮走向：`image` = 生图（出渐变占位盒）、`text` = 纯文字、
   /// `''` = 还没收到（老部署不推这个事件，各处按「未知」兜底走 progress 那条路）。
   String mode = '';
+
+  /// 本轮**用户图片气泡**的本地 id，顺序与请求里的 `image_urls` 一一对应；
+  /// `init` 事件回来的 `image_msg_ids` 按同样的顺序贴回去。
+  final List<int> imageBubbleIds;
+
+  /// 本轮**用户文字气泡**的本地 id，对应 `init` 的 `user_msg_id`。
+  final int textBubbleId;
 
   /// 服务端最新推到的里程碑，只增不减（重复/乱序推也不会让进度倒退）。
   int target = 0;
@@ -1037,6 +1055,11 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     }
     final newChatTitle = AppL10n.of(context).aiNewChat;
     final prevTitle = _sessionTitle;
+    // 图片气泡与文字气泡的本地 id **分开记**：SSE `init` 事件会回来
+    // `image_msg_ids`（与图片顺序一一对应）+ `user_msg_id`，要按各自的位置贴回去
+    // （见 [_applyUserMessageIds]）。userMsgIds 是两者的合集，只用于建会话失败时整批撤回。
+    final imageBubbleIds = <int>[];
+    var textBubbleId = 0;
     final userMsgIds = <int>[];
     setState(() {
       // 用户消息：先按张追加图片气泡，再追加文字气泡（需求 6.3 用户侧维持原样）
@@ -1047,6 +1070,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
           kind: _MsgKind.image,
           images: [image],
         );
+        imageBubbleIds.add(bubble.id);
         userMsgIds.add(bubble.id);
         _messages.add(bubble);
       }
@@ -1056,6 +1080,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
         kind: _MsgKind.text,
         content: message,
       );
+      textBubbleId = textBubble.id;
       userMsgIds.add(textBubble.id);
       _messages.add(textBubble);
       // 首条消息后标题自动变为首条内容（与后端 session.title 行为一致，本地同步免重拉）。
@@ -1093,6 +1118,8 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       message,
       styleKey,
       images.map((image) => image.url).toList(),
+      imageBubbleIds: imageBubbleIds,
+      textBubbleId: textBubbleId,
     );
   }
 
@@ -1120,8 +1147,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   Future<void> _dispatchChat(
     String message,
     String? styleKey,
-    List<String> urls,
-  ) async {
+    List<String> urls, {
+    /// 本轮用户图片气泡的本地 id（顺序同 [urls]）与文字气泡的本地 id，
+    /// 交给 [_StreamState] 保管，等 `init` 事件把服务端 message_id 贴回去。
+    /// 重试路径（[_onRetryMessage]）不重建用户气泡，传空即可。
+    List<int> imageBubbleIds = const <int>[],
+    int textBubbleId = 0,
+  }) async {
     // 占位气泡就是最终那一个气泡：文字打进它的 content、图片挂进它的 images（需求 3：图文同一气泡）
     final holder = _AiMessage(
       id: ++_uid,
@@ -1137,7 +1169,11 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
 
     // 局部持有这次的流状态：[_stream] 会被停止生成/切会话清空，catch 里靠它分辨
     // 「这条流是不是还归我管」，以及「断线前已经吐出内容了没有」。
-    final stream = _beginStream(holder.id);
+    final stream = _beginStream(
+      holder.id,
+      imageBubbleIds: imageBubbleIds,
+      textBubbleId: textBubbleId,
+    );
     try {
       final call = _api.chatStream(
         sessionId: _sessionId,
@@ -1283,8 +1319,16 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   // 兼容没有 mode 的老部署：progress 事件照旧能把占位盒唤出来（见 case 'progress'），
   // 只是显形时机从 pre_text 推迟到第一条 progress —— 两者本来就前后脚，观感无差。
 
-  _StreamState _beginStream(int holderId) {
-    final stream = _StreamState(holderId);
+  _StreamState _beginStream(
+    int holderId, {
+    List<int> imageBubbleIds = const <int>[],
+    int textBubbleId = 0,
+  }) {
+    final stream = _StreamState(
+      holderId,
+      imageBubbleIds: imageBubbleIds,
+      textBubbleId: textBubbleId,
+    );
     _stream = stream;
     return stream;
   }
@@ -1300,9 +1344,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     }
 
     switch (event.type) {
-      // 开流握手 / 心跳：都不带要渲染的内容（init = 服务端已受理，heartbeat = 长等待期间
-      // 用来续命连接的空包）。界面继续挂着三点动画即可 —— 显式列出来，免得以后有人以为漏处理。
+      // 开流握手。不带要渲染的内容（界面继续挂着三点动画），但 2026-08-28 起**带回本轮
+      // 用户消息的 message_id** —— 刚发出去的图/文能不能删得掉全靠它，见 [_applyUserMessageIds]。
       case 'init':
+        _applyUserMessageIds(stream, event);
+
+      // 心跳：长等待期间用来续命连接的空包，什么都不用做。
+      // 显式列出来，免得以后有人以为漏处理了。
       case 'heartbeat':
         break;
 
@@ -1418,6 +1466,57 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
 
       default:
         break; // 文档未列出的事件类型：忽略，别让未知事件把这一轮搞挂
+    }
+  }
+
+  /// 把 SSE `init` 事件带回的服务端 message_id 贴到刚上屏的用户气泡上。
+  ///
+  /// 事件形状（后端 2026-08-28 新增）：
+  /// ```json
+  /// { "type": "init", "user_msg_id": "文字消息id", "image_msg_ids": ["图1id", "图2id"] }
+  /// ```
+  /// `image_msg_ids` 与请求里的 `image_urls` **顺序一一对应**（一张图 = 一条消息 = 一个 id）。
+  ///
+  /// ⚠️ 这一步解决的是「发一张照片 → 立刻删 → 退出重进又回来」：在此之前 `/chat` 全程不回
+  /// 消息 id，本轮新发的气泡 `serverId` 是空的，删除只能删本地（[_deleteBubbleImage] 里那个
+  /// `serverId.isNotEmpty` 判断过不去）。贴上之后，刚发的照片点删除就会真的打
+  /// `DELETE /chat/history`，不必再等一次历史刷新。
+  ///
+  /// 图片气泡**两处都贴**（消息本身 + `images[0]`），与历史消息的模型保持一致：
+  /// 删单图走 `images[0].serverId`、删整条走消息上的那个，重复由 [_deleteMessage] 去重收口。
+  ///
+  /// 不 setState：`serverId` 不参与渲染，贴上去只是为了后续删除能用，刷一帧纯属浪费。
+  /// 老部署不推这两个字段 → 取到空，行为与改动前完全一致。
+  void _applyUserMessageIds(_StreamState stream, AiStreamEvent event) {
+    _AiMessage? bubbleOf(int localId) {
+      if (localId == 0) {
+        return null;
+      }
+      for (final item in _messages) {
+        if (item.id == localId) {
+          return item;
+        }
+      }
+      return null; // 气泡已被用户删掉：静默跳过
+    }
+
+    if (event.userMsgId.isNotEmpty) {
+      bubbleOf(stream.textBubbleId)?.serverId = event.userMsgId;
+    }
+    // 按位取：后端给的条数理论上等于本轮发的图数，取两者的较小值，多/少都不越界。
+    final count = event.imageMsgIds.length < stream.imageBubbleIds.length
+        ? event.imageMsgIds.length
+        : stream.imageBubbleIds.length;
+    for (var i = 0; i < count; i++) {
+      final id = event.imageMsgIds[i];
+      final bubble = bubbleOf(stream.imageBubbleIds[i]);
+      if (id.isEmpty || bubble == null) {
+        continue;
+      }
+      bubble.serverId = id;
+      if (bubble.images.isNotEmpty) {
+        bubble.images.first.serverId = id;
+      }
     }
   }
 

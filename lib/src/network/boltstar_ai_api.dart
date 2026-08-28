@@ -754,6 +754,8 @@ class AiStreamEvent {
     this.message = '',
     this.orientation = '',
     this.mode = '',
+    this.userMsgId = '',
+    this.imageMsgIds = const <String>[],
     this.code,
     this.detail = '',
   });
@@ -770,6 +772,14 @@ class AiStreamEvent {
       orientation: json['orientation']?.toString() ?? '',
       // `mode` 事件的取值。同时认塞在 `content` 里的写法（对齐小程序取值方式）。
       mode: (json['mode'] ?? json['content'] ?? '').toString(),
+      // `init` 事件带回本轮**用户消息**的服务端 id（2026-08-28 后端新增）。
+      userMsgId: json['user_msg_id']?.toString() ?? '',
+      imageMsgIds: json['image_msg_ids'] is List
+          ? <String>[
+              for (final id in json['image_msg_ids'] as List)
+                if ('${id ?? ''}'.trim().isNotEmpty) '$id'.trim(),
+            ]
+          : const <String>[],
       code: json['code'] == null ? null : int.tryParse('${json['code']}'),
       detail:
           json['detail']?.toString() ??
@@ -791,6 +801,17 @@ class AiStreamEvent {
   /// 仅 `mode` 事件带（服务端 2026-08-07 新增）：`image` = 这一轮出图、`text` = 纯文字。
   /// 空串 = 没收到（老部署不推这个事件），调用方按「未知」兜底。
   final String mode;
+
+  /// 仅 `init` 事件带（服务端 2026-08-28 新增）：本轮**文字**用户消息的 message_id。
+  ///
+  /// 有了它，刚发出去的消息才删得掉 —— 在此之前 `/chat` 全程不回消息 id，端上只能删本地，
+  /// 重进会话又回来（见 [_AiChatPageState._applyUserMessageIds]）。
+  /// 老部署不推这两个字段，取到空即维持旧行为。
+  final String userMsgId;
+
+  /// 仅 `init` 事件带：本轮**图片**用户消息的 message_id 列表，
+  /// **顺序与请求里的 `image_urls` 一一对应**（一张图 = 一条消息 = 一个 id）。
+  final List<String> imageMsgIds;
 
   /// 仅 `error` 事件带。
   final int? code;
