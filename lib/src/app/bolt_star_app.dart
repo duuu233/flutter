@@ -12,6 +12,7 @@ import '../features/shell/presentation/shell_page.dart';
 import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
 import '../shared/l10n/app_l10n.dart';
+import '../shared/l10n/system_language.dart';
 import '../shared/widgets/app_dialog.dart';
 import '../shared/widgets/app_toast.dart';
 import '../shared/widgets/app_widgets.dart' show AppLoadingDialog;
@@ -116,7 +117,12 @@ class BoltStarApp extends StatefulWidget {
 }
 
 class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
-  final PhotoFrameState _state = PhotoFrameState.seeded();
+  /// 全局业务状态。初始语种跟随**手机系统语言**（不在四语种内则英文，见 [SystemLanguage]）：
+  /// 在这里就定好，而不是等 initState 里异步读完偏好再切——否则英文系统的用户
+  /// 首帧会先闪一屏简中。用户显式选过的语种由 initState 读回后覆盖。
+  final PhotoFrameState _state = PhotoFrameState.seeded(
+    language: SystemLanguage.resolve(),
+  );
   final BleController _ble = BleController.instance;
   int _currentIndex = 0;
 
@@ -161,6 +167,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       }
     });
     // 恢复上次选择的语言（持久化在本地）。异步读取，读到后 switchLanguage 会 notify 触发整树重译。
+    // 没有记录时不做事：初始值已经是系统语言（见 _state 的初始化）。
     LanguagePreference.load().then((language) {
       if (language != null && mounted) {
         _state.switchLanguage(language);
@@ -255,6 +262,19 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
       downloadUrl: info.downloadUrl,
       description: info.description,
     );
+  }
+
+  /// 系统语言变了（用户去系统设置改语言再切回来）：**没在「语种设置」里选过**的用户
+  /// 跟着一起变，选过的以那份为准——判定直接读偏好，settings 页保存后无需另行通知这里。
+  @override
+  void didChangeLocales(List<Locale>? locales) {
+    super.didChangeLocales(locales);
+    LanguagePreference.load().then((saved) {
+      if (saved != null || !mounted) {
+        return;
+      }
+      _state.switchLanguage(SystemLanguage.resolve());
+    });
   }
 
   /// AppLanguage → Flutter Locale（Material 内建组件文案的语言）。

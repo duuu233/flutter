@@ -437,8 +437,12 @@ class DevicePhotoDeleteOutcome {
 /// 页面只通过这个对象读取和触发业务动作；设备、相册、投屏记录、权限和登录态都在这里统一维护。
 /// 后续接入真实接口时，建议优先替换这些 action 方法内部实现，而不是让页面直接操作数据列表。
 class PhotoFrameState extends ChangeNotifier {
-  PhotoFrameState.seeded()
-    : _language = AppLanguage.zh,
+  /// [language] 为进程启动时的初始语种：App 端传入按手机系统语言解析出的值
+  /// （见 `SystemLanguage.resolve`），不传则保持简体中文。
+  /// 用户在「语种设置」里存过的选择由 `LanguagePreference` 读回后再经
+  /// [switchLanguage] 覆盖，优先级高于系统语言。
+  PhotoFrameState.seeded({AppLanguage? language})
+    : _language = language ?? AppLanguage.zh,
       _isLoggedIn = false,
       _currentUser = UserProfile(
         id: '',
@@ -458,6 +462,9 @@ class PhotoFrameState extends ChangeNotifier {
       _castRecords = [] {
     // BLE 层没有 BuildContext，用户可见错误文案（连接失败等）经此按当前语言取。
     BleController.instance.languageResolver = () => _language;
+    // 请求头 `language` 与初始语种对齐：跟随系统语言起步时，首屏那批请求
+    // （FAQ/协议/后端 retMsg）也必须按同一语种要，否则会先拿回一屏简中内容。
+    ApiSession.instance.setLanguage(_language);
   }
 
   AppLanguage _language;

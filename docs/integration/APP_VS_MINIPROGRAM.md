@@ -36,7 +36,7 @@
 | 设置 | `subpackages/settings/index` | `settings_page.dart` | ✅ | 联系、用户/隐私/AI 服务协议、退出、注销和失败留页一致；App 协议正文为四语种。**2026-07-31：注销账号第一次确认按钮由「确定」改「继续」（非终局操作）、检查更新图标改 `set-icon05.png`** |
 | 个人资料 | `subpackages/settings/profile` | `profile_page.dart` | ✅ | 进入刷新、头像本地预览与保存时提交一致 |
 | 邮箱 | `bind-email/change-email` | `bind_email_*` / `modify_email_page.dart` | ✅ | 验证码和 `changeUserEmail` 参数一致 |
-| 语言 | `subpackages/settings/language` | `language_settings_page.dart` | ✅🔶 | 四项 UI 一致；App 同时切换本地内置文案 |
+| 语言 | `subpackages/settings/language` | `language_settings_page.dart` | ✅🔶 | 四项 UI 一致；App 同时切换本地内置文案。**2026-08-28：App 首启跟随手机系统默认语言**（`SystemLanguage`，见 `history/2026-08/2026-08-28-App跟随系统语言.md`）——用户在本页存过的语种优先级最高，没存过才看系统语言，且跟随系统时不写盘。🔶 **兜底有意不同**：系统语言不在四语种内时 App 落 **英文**，小程序 `utils/language.js` 落 `zh-Hans`（归一规则本身两端一致：繁体认 Hant/TW/HK/MO）|
 | 操作指南 | `subpackages/settings/guide` | `guide_page.dart` | ✅ | 全量分页、默认收起、语种刷新一致；HTML 渲染技术不同 |
 | 协议/隐私 | settings agreement/privacy | 对应 settings 页面 | ✅ | 标题、日期、章节和正文一致 |
 | App 更新 | 小程序更新页 | `update_boltstar_page.dart` | 🔶 | App 走原生版本检查和安装包下载 |
