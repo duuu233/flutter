@@ -37,6 +37,14 @@ Info.plist URL Scheme 保持 AppID）。**但服务端 AASA 尚未部署**：实
 管理后台 SPA 的 `index.html`（`content-type: text/html`），该域名对任意路径都做 SPA 兜底。
 AASA 落地前 iOS 微信登录仍不可用，详见第九节。
 
+2026-08-11 第二次更新（iOS 回跳链路补齐）：「授权完回到 App 弹 `Route not found`、Dart 侧
+拿不到 code」的根因不在 AASA，而在 fluwx 与 Flutter scene 生命周期的衔接——fluwx 声明自己
+已迁移 scene（`FlutterSceneLifeCycleDelegate`）却没实现 `scene:openURLContexts:`，引擎的
+app 兜底恰好又会跳过这类插件，于是 URL Scheme 回跳两条链都收不到，最后被 Flutter 的深链
+兜底当成路由名推给 `onGenerateRoute`。已补 `SceneDelegate` 转发 +
+`FlutterDeepLinkingEnabled=false`（见 9.5）。这是兜底链路，**不替代 AASA**：
+治本仍是 9.2 → 9.3。
+
 剩余阻塞项：
 
 1. **（当前唯一实锤阻塞）** 后端把 `/Client/User/setWechatAuthorizLogin` 加入免登录白名单，
@@ -143,6 +151,8 @@ com.boltfox.boltstar
 | Universal Link | `https://badmin.boltfox.cn/app/` | 已定（2026-08-11） |
 | `Runner.entitlements` Associated Domain | `applinks:badmin.boltfox.cn` | 已配 |
 | `WECHAT_UNIVERSAL_LINK` 默认值 | `https://badmin.boltfox.cn/app/` | 已配，不传 `--dart-define` 也一致 |
+| `Info.plist` `FlutterDeepLinkingEnabled` | `false` | 已加（2026-08-11），理由见 9.5 |
+| `SceneDelegate.swift` URL Scheme 转发 | `scene:openURLContexts:` → app delegate 链 | 已补（2026-08-11），理由见 9.5 |
 | `https://badmin.boltfox.cn/.well-known/apple-app-site-association` | — | ❌ **未部署**（返回后台 SPA 的 HTML） |
 | 微信开放平台 Universal Link 登记 | — | ⬜ 待确认 |
 
@@ -151,10 +161,15 @@ Universal Link 回跳时落回 Safari，App 收不到授权回调。客户端侧
 为空即以 `config` 错误拒绝拉起，不发无效请求）现在因为有了默认值不会再触发——**这意味着
 iOS 上会真的拉起微信，失败点后移到回跳**，排查时看的是「授权完能不能回到 App」。
 
-Universal Link 回调不需要额外 Swift 代码：本工程用了 `UIApplicationSceneManifest` +
+**Universal Link 回调**不需要额外 Swift 代码：本工程用了 `UIApplicationSceneManifest` +
 `SceneDelegate`，而 fluwx 的 `FluwxPlugin` 同时实现了
 `application:continueUserActivity:restorationHandler:` 与 `scene:continueUserActivity:`，
 `FlutterSceneDelegate` 会把 scene 生命周期转发给插件。
+
+**URL Scheme 回调则必须自己补一段 Swift**（2026-08-11 补，见 9.5）：fluwx 没实现
+`scene:openURLContexts:`，引擎的 app 兜底又会跳过它，UL 不可用时微信按 URL Scheme 回跳的
+事件两条链都收不到。这是「AASA 没部署也应该能靠 scheme 兜底、结果反而弹出 `Route not found`」
+的根因。
 
 ### 3.4 Android 包可见性
 
@@ -357,7 +372,9 @@ flutter build apk --debug `
    在 Xcode 里打开时 Signing & Capabilities 会显示 Associated Domains。）
 3. `WeChatAuthorizationConfig.fromEnvironment()` 的 `WECHAT_UNIVERSAL_LINK` 默认值
    = `https://badmin.boltfox.cn/app/`，与上面两处同值。
-4. 构建时可显式重申（默认值已一致，正式包仍建议写全）：
+4. `ios/Runner/SceneDelegate.swift` 覆写 `scene:openURLContexts:`、`ios/Runner/Info.plist`
+   新增 `FlutterDeepLinkingEnabled=false`（URL Scheme 兜底链路，见 9.5）。
+5. 构建时可显式重申（默认值已一致，正式包仍建议写全）：
 
 ```shell
 --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc
@@ -398,7 +415,12 @@ flutter build apk --debug `
 ```bash
 curl -sSI https://badmin.boltfox.cn/.well-known/apple-app-site-association
 # HTTP/2 200, content-type: text/html   ← 返回的是管理后台 SPA 的 index.html
+curl -sS -o /dev/null -w '%{http_code}\n' \
+  https://app-site-association.cdn-apple.com/a/v1/badmin.boltfox.cn
+# 404   ← Apple CDN 侧同样没有该域名的记录
 ```
+
+（2026-08-11 当天二次复核，两条结果不变。）
 
 该域名是 Vue 管理后台（`曝石相框管理中心`），对任意路径都兜底返回 `index.html`，
 `/notexist-xyz` 也是 200。所以必须在 SPA 的 `try_files` 兜底**之前**加精确匹配，nginx 示例：
@@ -444,6 +466,51 @@ curl -sS "https://app-site-association.cdn-apple.com/a/v1/badmin.boltfox.cn"
 删除 App 重装，仅覆盖安装或重启不会重新拉取。设置 → 开发者 → Universal Links →
 Diagnostics 可以逐条验证域名关联状态。
 
+### 9.5 URL Scheme 回跳补链 + 关掉 Flutter 深链（2026-08-11 已完成）
+
+**症状**：iOS 点微信登录 → 微信授权页 → 回到 App 后停在一个标题为 `Route not found` 的空白页，
+Dart 侧那 2 分钟的 `authorize()` 一直等不到 code，最后按超时收场。Android 没有这个现象。
+
+**根因**（对着 `fluwx 6.0.0` / pod `fluwx 2.0.5` 与本工程锁定的引擎版本
+`cc0734ac716fbb8b90f3f9db8020958b1553afa7`（`.metadata`，Flutter 3.41 stable）源码逐段核对）：
+
+1. AASA 未部署 → Universal Link 关联不成立 → 微信降级用 URL Scheme
+   `wx4cf0c5f38a70d0bc://oauth?code=…&state=…` 回跳。
+2. 本工程启用了 `UIApplicationSceneManifest`，scheme 回跳只会触发
+   `UISceneDelegate.scene:openURLContexts:`，**不再触发** `application:openURL:options:`。
+3. `FluwxPlugin.h` 声明的是 `<FlutterPlugin, FlutterSceneLifeCycleDelegate>`，但 `.m` 里
+   只实现了 `scene:continueUserActivity:` 一个 scene 事件，**没有** `scene:openURLContexts:`
+   —— 声明「已迁移 scene」，实际只迁了 UL 那一半。
+4. 引擎的 `FlutterPluginSceneLifeCycleDelegate.scene:openURLContexts:` 先问 scene 链（无人认领），
+   再走 app 兜底 `sceneFallbackOpenURLContexts:`；而兜底里有一句
+   `if (isFallback && [self pluginSupportsSceneLifecycle:delegate]) continue;`，
+   该判断就是 `conformsToProtocol:@protocol(FlutterSceneLifeCycleDelegate)`
+   —— **fluwx 因为第 3 条的声明被跳过**，它的 `application:openURL:options:` 永远收不到。
+5. 两条链都没人处理 → 引擎按 deep link 处理：`FlutterSharedApplication.isFlutterDeepLinkingEnabled`
+   在 `Info.plist` 没有该键时**默认 YES**，于是整条 `wx…://oauth?code=…` 被当成路由名推给
+   Flutter → `AppRoutes.onGenerateRoute` 命中 `default:` → `_UnknownRoutePage`（`Route not found`）。
+
+**客户端改动（两处，互补）**：
+
+| 文件 | 改动 | 作用 |
+| --- | --- | --- |
+| `ios/Runner/SceneDelegate.swift` | 覆写 `scene:openURLContexts:`，逐条转回 `UIApplication.shared.delegate` 的 `application:openURL:options:`，全部没人认领时才 `super` | 走的是非 fallback 路径，不跳过 fluwx，`WXApi.handleOpenURL:` 照常拿到 code |
+| `ios/Runner/Info.plist` | 新增 `FlutterDeepLinkingEnabled = false` | 堵住第 5 步；本工程只认命名路由，从没打算让外部 URL 进 `onGenerateRoute` |
+
+两条都要：转发治的是「code 收不到」，关深链治的是「弹出 Route not found / 甩回 Safari」。
+`FlutterDeepLinkingEnabled=false` 对 UL 那条链同样是保险——fluwx 的
+`scene:continueUserActivity:` 返回值写成了 `void`，而引擎协议声明的是 `BOOL`，
+引擎读到的是未定义返回值；一旦读成 NO，引擎就会拿 `userActivity.webpageURL` 去做深链，
+且那条路径是 `relayToSystemIfUnhandled:YES`（Flutter 说没处理就把链接甩回系统 → 跳去 Safari）。
+
+**覆盖不到的一种情况**：App 在用户停留微信期间被系统回收。此时回跳 URL 只出现在
+`scene:willConnectTo:options:` 的 `connectionOptions` 里，而且 Dart 侧等 code 的 `Completer`
+已随进程消失——再怎么转发也补不回这次登录，用户重新点一次微信登录即可。有
+`FlutterDeepLinkingEnabled=false` 兜着，至少不会再弹 `Route not found`。
+
+**AASA 部署后这两条要不要撤**：不撤。UL 通了之后正常路径走 `scene:continueUserActivity:`，
+本节改动不参与；它们是 UL 抖动、被系统降级、AASA 缓存失效时的兜底，长期都该留着。
+
 ## 十、验收步骤
 
 1. 使用统一正式签名生成的 debug 或 release 包。
@@ -484,6 +551,8 @@ Diagnostics 可以逐条验证域名关联状态。
       后端旧配置必须一并替换）。
 - [ ] 后端是否使用 `/sns/oauth2/access_token`（而不是小程序的 `/sns/jscode2session`）。
 - [x] iOS Universal Link 取值 —— `https://badmin.boltfox.cn/app/`，客户端三处已同步（2026-08-11）。
+- [x] iOS URL Scheme 回跳补链（`SceneDelegate` 转发 + 关 `FlutterDeepLinkingEnabled`）——
+      治「回到 App 弹 `Route not found`、拿不到 code」（2026-08-11，见 9.5）。
 - [ ] **`badmin.boltfox.cn` 部署 `/.well-known/apple-app-site-association`**（iOS 侧当前阻塞点，见 9.2）。
 - [ ] iOS Bundle ID `com.boltfox.boltstar` 与 Universal Link 在微信开放平台的登记状态（见 9.3）。
 - [ ] 真机微信完整往返验收（2026-08-05 已编译 debug/release 并验证包名与签名；尚未真机授权）。

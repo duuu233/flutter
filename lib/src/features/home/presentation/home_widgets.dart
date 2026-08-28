@@ -12,7 +12,7 @@ part of 'home_page.dart';
 
 /// 全屏背景：底色 + 背景图（[asset]，加载失败时回退到渐变光晕画笔）。
 ///
-/// 全部页面统一用同一张背景 `bg01.png`（对应小程序全屏 `.mock-bg__image`）。
+/// 全部页面统一用同一张背景 `bg02.jpg`（对应小程序全屏 `.mock-bg__image`）。
 class _HomeBackground extends StatelessWidget {
   const _HomeBackground({required this.asset});
 
@@ -189,10 +189,16 @@ class _CircleIconButton extends StatelessWidget {
   }
 }
 
-/// 底部导航栏（首页主视图底部，「首页 / 我的」两个 Tab）。
+/// 底部导航栏（首页主视图底部，「首页 / AI助手 / 官方图库 / 我的」四格）。
 ///
 /// 对齐小程序 `custom-tabbar`：白色半透明胶囊（圆角全圆 + 柔和投影），
 /// 图标用 `tabbar-*.png`，首页态高亮 #ff6421、未选态 #777d86。
+///
+/// ⚠️ 2026-08-21 同步小程序：由四格收回**两格（首页 / 我的）**。原来中间两格是
+/// 「AI助手」「官方图库」，它们本就不是 tab（各自 push 一个页面），现在入口统一收进
+/// 首页六宫格（见 `home_main_view._castSection`），灰度开关 [kAiEntryEnabled] /
+/// [kGalleryEntryEnabled] 跟着搬到那里，仍然有效。
+/// ⚠️ 两个 tab **各画各的栏**，底栏的改动永远要同时改 `_MineTabBar`。
 class _HomeTabBar extends StatelessWidget {
   const _HomeTabBar({required this.onOpenMine});
 
@@ -224,6 +230,8 @@ class _HomeTabBar extends StatelessWidget {
               color: const Color(0xFFFF6421),
             ),
           ),
+          // 2026-08-21 同步小程序：中间两格「AI助手」「官方图库」取消，
+          // 两个入口都搬到首页六宫格（见 home_main_view._castSection）。底栏回到两格。
           Expanded(
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
@@ -270,13 +278,25 @@ class _HomeTabItem extends StatelessWidget {
               Icon(fallbackIcon, color: color, size: 24),
         ),
         const SizedBox(height: 2),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 12,
-            fontWeight: FontWeight.w400,
-            height: 1.2,
+        // 2026-08-19 底栏由两格扩到四格后，每格只剩屏宽的四分之一：中文放得下，
+        // 英/日的「Gallery / AIアシスタント」在窄屏上会顶出格子（Flutter 的表现是
+        // 黄黑条纹的 overflow 警示）。FittedBox 只在真放不下时按比例缩，中文一律原样，
+        // 比切成省略号（「AIアシス…」）好读。
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: TextStyle(
+                color: color,
+                fontSize: 12,
+                fontWeight: FontWeight.w400,
+                height: 1.2,
+              ),
+            ),
           ),
         ),
       ],
@@ -473,8 +493,9 @@ class _GreetingTitle extends StatelessWidget {
 /// 左 36 / 右 36 / 上 28 / 下 44。注意投影**偏下、上下不对称**，
 /// 所以整幅在卡面盒子里不能居中，得按 28:44 的比例往上偏。
 ///
-/// 旧的 bg01(卡面) + bg02(投影) 两层叠加已被这一张替代：bg03 自带投影和
-/// 40rpx 圆角，因此既不需要 ClipRRect，也不需要第二层图。
+/// 旧的 `home-bg01.png`(卡面) + `home-bg02.png`(投影) 两层叠加已被这一张替代：
+/// `home-bg03.png` 自带投影和 40rpx 圆角，因此既不需要 ClipRRect，也不需要第二层图。
+/// （那两张图 2026-08-21 清理孤儿素材时已删；与页面背景 `bg01/bg02` 是不同的两组文件，别混。）
 const double _kCardW = 654;
 const double _kCardH = 304;
 const double _kArtW = 726;
@@ -679,7 +700,7 @@ class _ConnectedDeviceCard extends StatelessWidget {
             children: [
               // 左侧圆环图标（home-icon02.png，166rpx≈83）。
               Image.asset(
-                'assets/images/home-icon02.png',
+                'assets/images/home-device-thumb.png',
                 width: 83,
                 height: 83,
                 fit: BoxFit.contain,
@@ -1009,23 +1030,34 @@ class _UnboundDevicePainter extends CustomPainter {
 // -----------------------------------------------------------------------------
 
 /// 主视图底部「拍照 / 相册」投屏入口大卡片。
-class _CastEntryCard extends StatelessWidget {
-  const _CastEntryCard({
+/// 首页六大入口宫格里的一张卡（2026-08-21 同步小程序改版）。
+///
+/// 小程序对应 `pages/home/home.wxml` 的 `.entry-card` + `home.wxss`：
+/// 卡 206×220rpx、圆角 28rpx、半透明白 0.55 压在背景图上；卡内「图标 + 文案组」整体垂直居中，
+/// 图标 66rpx、与文案间距 20rpx；文案行左边是标题(28rpx，每项主色)+副标题(18rpx)，右边是箭头徽标。
+///
+/// 宽度**不写死**：rpx 是按屏宽等比的单位（750rpx 恒等于屏幕宽度），把 206rpx 硬写成
+/// 103 逻辑像素会在窄屏溢出（2026-08-05 真机踩过：360dp 机器上两张 159 的卡就超了）。
+/// 所以宽度由外层三等分给出，这里只按 206:220 定高。
+class _HomeEntryCard extends StatelessWidget {
+  const _HomeEntryCard({
     required this.title,
     required this.subtitle,
-    required this.isCamera,
-    required this.artAsset,
+    required this.color,
+    required this.iconAsset,
     required this.arrowAsset,
-    required this.backgroundAsset,
+    required this.fallbackIcon,
     required this.onTap,
   });
 
   final String title;
   final String subtitle;
-  final bool isCamera;
-  final String artAsset;
+
+  /// 每张卡的主色：标题文字色，与箭头徽标同色系（取自素材）。
+  final Color color;
+  final String iconAsset;
   final String arrowAsset;
-  final String backgroundAsset;
+  final IconData fallbackIcon;
   final VoidCallback onTap;
 
   @override
@@ -1034,115 +1066,88 @@ class _CastEntryCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: AspectRatio(
-        // 小程序 `.projection-card` 是 318×310rpx。宽度由外层 Expanded 等分屏宽给出
-        // （rpx 本就是按屏宽等比的单位，写死 159 会在窄屏溢出，见 home_main_view 的说明），
-        // 这里只负责按设计稿的原始宽高比 318:310 定高。
-        // 阴影不来自图片透明边距，由下方 boxShadow 在卡外绘制，不计入布局尺寸。
-        aspectRatio: 318 / 310,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // 小程序当前 `.projection-card`：无描边、无额外白底，直接铺本地背景图；
-            // border-radius: 40rpx; box-shadow: 0 8rpx 32rpx rgba(60,53,16,0.12)。
-            DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x1F3C3510),
-                    offset: Offset(0, 4),
-                    blurRadius: 16,
-                  ),
-                ],
+        aspectRatio: 206 / 220,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            // .entry-card：rgba(255,255,255,.55) + 圆角 28rpx=14 + 与设备卡同一套阴影
+            color: Colors.white.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1A3C3510),
+                offset: Offset(0, 4),
+                blurRadius: 16,
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: Image.asset(backgroundAsset, fit: BoxFit.fill),
-              ),
-            ),
-            // 内容层：左上素材图 + 底部「名称/描述 + 箭头」行，对照小程序 .projection-card
-            // 的 flex 纵向流（.media-art 在上、.projection-copy 在下），按小程序数值换算留白。
-            Column(
+            ],
+          ),
+          child: Padding(
+            // 内边距左 20rpx=10 / 右 12rpx=6（右侧是箭头徽标，自带透明留白、视觉上不贴边）
+            padding: const EdgeInsets.only(left: 10, right: 6),
+            child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // `.media-art`：96rpx = 48；margin 28rpx 0 8rpx 34rpx。
-                Padding(
-                  padding: const EdgeInsets.only(top: 14, left: 17, bottom: 4),
-                  child: SizedBox(
-                    width: 48,
-                    height: 48,
-                    child: Image.asset(
-                      artAsset,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) {
-                        return Icon(
-                          isCamera
-                              ? Icons.photo_camera_rounded
-                              : Icons.photo_library_rounded,
-                          color: isCamera
-                              ? const Color(0xFFFF6A24)
-                              : const Color(0xFF287BFF),
-                          size: 44,
-                        );
-                      },
-                    ),
+                SizedBox(
+                  width: 33,
+                  height: 33,
+                  child: Image.asset(
+                    iconAsset,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) =>
+                        Icon(fallbackIcon, color: color, size: 30),
                   ),
                 ),
-                // `.projection-copy` 左内边距 34rpx = 17；右侧为完整的 132rpx = 66 图标画布。
-                Padding(
-                  padding: const EdgeInsets.only(left: 17),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _HomeTextStyles.cardTitle,
+                const SizedBox(height: 10),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _HomeTextStyles.entryTitle.copyWith(
+                              color: color,
                             ),
-                            const SizedBox(height: 6),
-                            Text(
-                              subtitle,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _HomeTextStyles.cardSubtitle,
-                            ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: _HomeTextStyles.entrySubtitle,
+                          ),
+                        ],
                       ),
-                      Transform.translate(
-                        // 对齐小程序 `translateY(4rpx)`，抵消图标内置阴影的透明留白。
-                        offset: const Offset(0, 2),
-                        child: SizedBox(
-                          width: 66,
-                          height: 66,
-                          child: Image.asset(
-                            arrowAsset,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                Icons.arrow_forward_rounded,
-                                color: isCamera
-                                    ? const Color(0xFFFF6A24)
-                                    : const Color(0xFF287BFF),
-                                size: 30,
-                              );
-                            },
+                    ),
+                    // 徽标素材 90×90 里白圆盘只占中间约 62，四周是透明阴影留白，
+                    // 所以画布 25（=50rpx）显示出来的圆盘约 17，与小程序一致；
+                    // 那圈留白压进右内边距（小程序用 margin-right:-10rpx，这里靠 -5 的位移）。
+                    Transform.translate(
+                      offset: const Offset(5, 0),
+                      child: SizedBox(
+                        width: 25,
+                        height: 25,
+                        child: Image.asset(
+                          arrowAsset,
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stackTrace) => Icon(
+                            Icons.play_arrow_rounded,
+                            color: color,
+                            size: 16,
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ],
             ),
-          ],
+          ),
         ),
       ),
     );

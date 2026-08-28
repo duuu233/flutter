@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import 'package:BoltStar/src/shared/widgets/app_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
@@ -254,6 +255,16 @@ class _CastManagementFigmaPageState extends State<CastManagementFigmaPage>
         return;
       }
       device = state.deviceById(record.deviceId);
+      // 连上之后先提醒一次电量，再继续下载（2026-08-27 补齐 08-21 遗留入口，
+      // 对齐小程序 records.js 的 ensureConnectedForAction）。
+      // 先收掉「连接设备中」蒙层：提醒要单独出现在干净的屏上，不与蒙层抢屏；
+      // hide 只精确移除自己那条路由、重复调用静默返回，所以下面 finally 里再 hide 一次也安全。
+      AppLoadingDialog.hide(context);
+      await showLowBatteryTipIfNeeded(context, state, record.deviceId);
+      if (!mounted) {
+        return;
+      }
+      AppLoadingDialog.show(context, l10n.castConnectingDevice);
       // 下载实现收口到 RecastDownload（与「我的相册」批量再次投屏共用同一份超时/命名规则）。
       localPath = await RecastDownload.toTempFile(recordImageUrl);
     } finally {

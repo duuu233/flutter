@@ -72,9 +72,19 @@ BoltStar 当前使用三套不同的远端服务：
 | 设备列表/详情 | `GET getUserProductList/getUserProductDetail` | 同名方法 |
 | 修改/删除设备 | `POST editUserProduct/delUserProduct` | 同名方法 |
 | 清空设备记录 | `POST clearUserProductImg` | `clearUserProductImg` |
-| 图库列表/删除 | `GET getUserProductImgList` / `POST delUserProductImg` | 同名方法 |
+| ~~图库列表/删除~~ | ~~`GET getUserProductImgList` / `POST delUserProductImg`~~ | **2026-08-17 端上删除**（后端接口仍在）。「我的相册」铺的是投屏成功记录，删除只认记录自己的 `imgIndex`、再次投屏直接用记录自己的 `img`；端上删除 = 设备槽位 `0x12` + `delUserProductImgRecord`，图库照片的清理归后端。勿再接回 |
 | 投屏记录列表/删除 | `GET getUserProductImgRecordList` / `POST delUserProductImgRecord` | 同名方法 |
 | 投屏记录新增/更新 | UserProduct 图片记录接口 | `ProjectionService` 成功/失败回写 |
+| 星币余额 | `GET /Client/Order/getUserAccount` | `getUserAccount` → `AiToken.fetchBalance` / `StarCoinApi.fetchAccount` |
+| 星币购买/消费记录 | `GET /Client/Order/getUserAccountTrade` | `getUserAccountTrade` → `StarCoinApi.fetchRecords` |
+| 星币消耗规则 | `GET /Client/Order/getAiConfigList` | `getAiConfigList` → `StarCoinApi.fetchRules`（`retData` 是**裸数组**，顺序原样保留） |
+| 星币套餐 | `GET /Client/Order/getGoodsList` | `getGoodsList` → `StarCoinApi.fetchPackages`（2026-08-27 新接） |
+| 建单 | `POST /Client/Order/addOrder` | `addOrder` → `StarCoinApi.createOrder`。入参 `goodsId`+`payType`，**出参 `orderNo` 是后面两步的钥匙** |
+| 创建支付 | `POST /Client/Pay/setCreatePay` | `setCreatePay` → `StarCoinApi.createPay`。安卓取 `payPalApproveUrl` 跳授权；出参是三渠道共用壳 |
+| 查支付侧订单 | `GET /Client/Pay/getPayQuery` | `getPayQuery` → `StarCoinApi.queryPay`。⚠️ `payState` 枚举后端未给，端上只认 **1=已支付** |
+| 官方图库分类/列表/详情 | `GET /Client/Product/{getImgCategory,getProductImgList,getProductImgDetail}` | 同名方法 → `OfficialGalleryApi` |
+| 图片收藏/取消、收藏列表 | `POST /Client/Product/setImgCollected`、`GET /Client/Product/getProductImgCollectionList` | 同上。⚠️ 收藏切换返回的布尔语义未定，端上按**取反当前态**推新状态 |
+| 能否发起 AI 对话 | `GET /Client/Order/chkAiDialogue` | `chkAiDialogue` → `AiToken.canDialogue` |
 
 设备扫描、连接、电量、轮播、刷屏、清空物理存储和 OTA 的核心动作是 BLE 端能力，不应在接口
 清单中伪装成后端接口。
@@ -106,9 +116,13 @@ BoltStar 当前使用三套不同的远端服务：
 - 非流式 Base URL：`https://boltstaat-agent-fwdomalzks.ap-southeast-1.fcapp.run`
 - 普通请求超时 15 秒；对话/图片增强 120 秒。
 - `user_id` 由 BoltFox 用户 ID 派生；未登录使用受控 demo ID。
+- **2026-08-12 起 `/chat` 还带 `usertoken`**（全小写）：值是登录接口下发的 `userToken`
+  （BoltFox 公共参数那一枚，**不是** `Authentication` 头里的 `jwtToken`），AI 网关拿它回
+  BoltFox 侧核对用户与扣费。名字或取值错了不会报错，只会静默变成「服务端认不出这个用户」。
 - 会话：新建、列表、删除。
 - 历史：读取、逐条删除。
-- 对话：`POST /chat`，支持最多 4 张公网图片 URL。
+- 对话：`POST /chat`，支持最多 **5** 张公网图片 URL（2026-08-12 由 4 张放宽；
+  ⚠️ BoltStar 文档 §二写的仍是 4 张，若服务端未同步放宽，第 5 张会被回 20012）。
 - 图片增强：`POST /image/enhance`。
 - 图片先压缩并通过 BoltFox `setFileUpload` 获得公网 URL，再提交 AI。
 - 文本、生成提示词和用户图片提交给阿里云百炼前，客户端必须确认当前 BoltFox 用户已同意
@@ -119,14 +133,74 @@ BoltStar 当前使用三套不同的远端服务：
 - 阿里云网关返回固定大写字段错误 `Code=JWTTokenIsMissing`、
   `Message=the jwt token is missing` 时，AI 网络层生成受信用户文案，toast 展示错误码、
   Message 与动态 `RequestId`。其它 `detail` 仍只允许写日志，不得展示。
-- 正式用户入口当前由 `kAiEntryEnabled=false` 屏蔽；调试暗门保留。
+- 正式用户入口 2026-08-19 起开放（`kAiEntryEnabled=true`，与小程序 `aiEntryEnabled` 同口径）：
+  首页/我的底部 tab 栏中间新增「AI助手」一格。开关仅留作灰度/应急下线；调试暗门保留，
+  但调试台只在 debug 构建可达，关掉开关的正式包等于整块功能不可见。
 - 语音输入仍是占位；下载只写应用缓存目录。
+
+### 星币（Order / Pay）
+
+⚠️ **支付渠道按端分工**（产品口径 2026-08-27，**不是三端同一套**）：
+
+| 端 | 渠道 | `payType` | 状态 |
+| --- | --- | --- | --- |
+| 微信小程序 | 微信支付（虚拟支付） | 1 | 小程序端已上线 |
+| **安卓 App** | **PayPal** | **3** | **2026-08-27 接入**（本仓） |
+| iOS App | Apple 内购 | 2 | **未接**，星币页仍显示「去小程序买」 |
+
+端上不要按平台现写 `if`，取 `StarPayType.forCurrentPlatform`；能不能买取
+`StarPayType.supportedOnThisApp`（iOS 为 false → 不给购买入口，**付不了就别建单**）。
+
+安卓 PayPal 的完整链路（编排在 `features/star/star_purchase.dart`）：
+
+1. `GET /Client/Order/getGoodsList` 取套餐；
+2. `POST /Client/Order/addOrder`（`goodsId` + `payType=3`）→ 拿 **`orderNo`**；
+3. `POST /Client/Pay/setCreatePay`（`orderNo` + `payType=3`）→ 拿 `payPalApproveUrl`；
+   入参里的 `device`/`language`/`terminal`/`userToken` 由 [ApiClient] 经 header + query 注入，
+   业务层只传前两个；
+4. `url_launcher` 以 `LaunchMode.externalApplication` 跳授权（**不用内嵌 WebView**：
+   PayPal 风控会拒一部分内嵌 WebView 的登录，且装了 PayPal App 时外跳能直接唤起它）；
+5. 用户切回 App（页面监听 `AppLifecycleState.resumed`，另有「我已完成支付」手动兜底）后
+   **轮询 `getUserAccount` 直到余额变多**——退避 ~9.4s，与小程序 `CONFIRM_DELAYS` 同节奏；
+   超时再查一次 `GET /Client/Pay/getPayQuery` 把措辞分成「已付款、稍后到账」与「结果确认中」。
+
+⚠️ **铁律：不拿「用户跳回来了」当成功。** approve 只是授权，扣款/发货是渠道回调打到我们后端
+之后的事；用户在 PayPal 点取消同样会跳回 App。端上唯一可信的判据是**服务端余额变多**
+（与小程序「不拿支付 success 回调加余额」同一条规矩）。
+
+✅ **capture 由后端在回调里做**（2026-08-27 确认）。PayPal Orders v2 的第三步 capture 是
+**PayPal 的服务端 API**（要商户 secret 换的 OAuth2 token），端上做不了也不该做 ——
+`setCreatePay` 若透传 PayPal 原始返回，`links` 里那条 `rel:"capture"` **端上一概不解析、不调用**。
+⚠️ 代价是到账要走「PayPal 回调 → 后端 capture → 入账」**两跳**，比小程序的微信回调更长，
+而 `StarPurchase.confirmDelays` 的 9.4s 是照搬小程序的，**联调必须实测**。
+
+⚠️ **仍待后端确认**（见 `../history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
+1. **`setCreatePay` 的 `retData` 是哪种形状**——接口文档写的是 `payPalApproveUrl` /
+   `payPalOrderId`，后端给的样例却是 PayPal 原始返回（`id` / `status` / `links[]`）。
+   端上**两种都认**（映射过的字段优先），认错的表现是「接口 200 却提示未能拉起支付」。
+2. **`return_url` 配的是什么**——能配成 App 自定义 scheme 才谈得上精确回跳，当前按「用户自己
+   切回来」处理。
+3. **套餐 `amount` 对 PayPal 是什么币种**——现在按人民币展示（`_kCurrencySymbol`），
+   若 PayPal 侧收美元，符号与价格口径要一起改。
+
+AI 模块用到的两个只读/校验接口：
+
+- `GET /Client/Order/getUserAccount` —— 取 `availableToken`（**String**，端上转数字）作 AI 侧余额展示。
+  取不到显示 `--`，**不用 0 兜底**；端上**不得**自减（没有「消费星币」的 Client 端点，扣费在服务端）。
+- `GET /Client/Order/chkAiDialogue` —— 发送前的唯一闸。
+  ⚠️ **两种答复不对称**：可以发＝`retCode 200` + `retData true`；
+  **不能发＝`retCode 403`** + `retMsg"token余额不足，需要最低余额：30.0 token"` + `retData null`，
+  也就是否定答复走的是 `ApiException` 那条**失败**路径 —— 只认 `retData==true` 会把它当成
+  「接口挂了」而放行。判定与兜底收在 `AiToken.canDialogue`：除 403 外的失败一律**放行**
+  （读不到判据就锁死 AI 是更糟的失败模式，`/chat` 侧服务端会再拒一次）。
 
 ## 7. 已知待确认
 
 - `getXTYUserToken` 的所有返回字段仍应以真机联调和最新 Swagger 为准。
 - 后端需要保证同一设备同一 `imgIndex` 的记录唯一性，避免旧记录幽灵指向已复用槽位。
 - AI 接口版本变化必须同时核对会话创建时机、错误码和图片消息结构。
+- `setImgCollected`（图库收藏，小程序已接）与 `chkAiDialogue` 返回布尔的语义都要与后端确认；
+  后者端上按「403 = 不允许」判定，改码就会失效。
 - 发布前必须验证微信、版本检查、图片上传、抖动 token 刷新和注销清理。
 
 ## 8. 维护规则

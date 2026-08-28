@@ -495,7 +495,7 @@ class _DeviceCard extends StatelessWidget {
                   // 该图 166×166、四角 alpha=0 自带圆角，所以**不再加底色容器**——
                   // 首页本身就没有底色，加了会在四角露出色晕，三处就不一致了。
                   Image.asset(
-                    'assets/images/home-icon02.png',
+                    'assets/images/home-device-thumb.png',
                     width: 60,
                     height: 60,
                     fit: BoxFit.contain,

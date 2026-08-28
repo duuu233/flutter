@@ -9,6 +9,7 @@ import '../../../device/ble/device_ble.dart' show FrameBleErrorKind;
 import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../cast_photo_picker.dart';
 import '../projection_service.dart';
@@ -289,6 +290,18 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   /// 「继续投屏」：不跳首页，在本页弹「拍照 / 相册」二选一，选完图替换本页进入新一轮投屏
   /// （对齐小程序 result.js continueProjection）。
   Future<void> _continueProjection() async {
+    // 「继续投屏」是主动操作，按小程序 result.js `pickAndContinue` 的口径要提醒一次电量
+    // （2026-08-27 补齐 08-21 遗留入口）。⚠️ 这一支**自己不建连接**——连接发生在下一页
+    // （预览页预热 / 投屏页续连），那属于自动连接、按口径不弹；所以只有「此刻已连着这台」
+    // 时才读得到电量、才会弹。
+    final tipDevice = widget.device;
+    final tipState = widget.state;
+    if (tipDevice != null && tipState != null) {
+      await showLowBatteryTipIfNeeded(context, tipState, tipDevice.id);
+      if (!mounted) {
+        return;
+      }
+    }
     // 走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款），取代原手搓 ListTile 版。
     final source = await CastPhotoPicker.chooseSource(context);
     if (source == null || !mounted) {
@@ -358,10 +371,18 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
     );
   }
 
-  /// 「投屏明细」整行可点：进投屏记录（小程序 goRecords 是 redirectTo，这里同样替换本页，
-  /// 避免记录页上面还压着一个已结束的投屏页）。
+  /// 「投屏明细」整行可点。2026-08-12 产品改口径（同步小程序）：由**投屏管理（投屏记录）**
+  /// 改成**我的相册** —— 刚投完屏的人想看的是「刚才那几张现在长什么样」，
+  /// 我的相册渲染的正是投屏成功的记录。行文案与右侧 n/n 计数没动。
+  ///
+  /// 仍用 pushReplacement（与改动前一致，小程序那边是 redirectTo）：结果页是流程终点，
+  /// 不该留在返回栈里让人退回来，目标页上面也不该压着一个已结束的投屏页。
+  ///
+  /// ⚠️ 副作用与小程序一致：投屏管理页（含失败记录 + 重新投屏）**自此没有入口**了
+  ///（2026-08-04 两端把「我的」里的入口去掉后，唯一入口就是这一行）。
+  /// 页面本身没下线，产品定了挂哪儿再把入口加回来。
   void _goRecords() {
-    Navigator.of(context).pushReplacementNamed(AppRoutes.figmaCastManagement);
+    Navigator.of(context).pushReplacementNamed(AppRoutes.figmaGallery);
   }
 
   String get _art {

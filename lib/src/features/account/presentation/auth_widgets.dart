@@ -6,7 +6,7 @@ import 'package:flutter/material.dart';
 /// 同一款渐变主按钮与协议确认行。**改这里 = 登录注册一起变**，两页不再各自手搓。
 /// 修改密码 / 忘记密码等二级页仍走 `figma_common.dart` 的表单卡风格，与此无关。
 
-/// 登录/注册页全屏背景：`bg01.png` 铺满，加载失败回退到手绘渐变。
+/// 登录/注册页全屏背景：`bg02.jpg` 铺满，加载失败回退到手绘渐变。
 class AuthBackground extends StatelessWidget {
   const AuthBackground({super.key});
 
@@ -15,7 +15,7 @@ class AuthBackground extends StatelessWidget {
     return ColoredBox(
       color: const Color(0xFFF7FAFF),
       child: Image.asset(
-        'assets/images/bg01.png',
+        'assets/images/bg02.jpg',
         fit: BoxFit.cover,
         errorBuilder: (context, error, stackTrace) =>
             const _AuthBackgroundFallback(),

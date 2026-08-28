@@ -185,6 +185,15 @@ class AppL10n {
 
   // ── 底部导航 ────────────────────────────────────────────────────────────
   String get tabHome => _pick('首页', 'Home', 'ホーム');
+  // 底栏中间两格的标题（2026-08-19 起底栏四格，与小程序 `custom-tabbar` 同位同名）。
+  //
+  // ⚠️ 这两条是**tab 专用短标题**，与页内标题不是同一个 key：
+  // · [tabAi]      ↔ [aiTitle]（AI 页内标题「AI生图」）
+  // · [tabGallery] ↔ [galleryOfficialTitle]（图库页导航标题「官方图库」）
+  // 四格之后每格只有屏宽的四分之一，页内标题的完整译名（Official Gallery /
+  // 公式ギャラリー）在这里放不下。别互相替换。
+  String get tabAi => _pick('AI助手', 'AI Assistant', 'AIアシスタント');
+  String get tabGallery => _pick('官方图库', 'Gallery', 'ギャラリー');
   String get tabMine => _pick('我的', 'Mine', 'マイ');
 
   // ── 设置页 ──────────────────────────────────────────────────────────────
@@ -205,21 +214,37 @@ class AppL10n {
     'Please agree to the BoltStar AI Service Agreement first',
     '先にBoltStar AIサービス規約に同意してください',
   );
+  /// 同意弹窗正文（三段，与小程序 `utils/ai-service-consent.js` 的 `CONSENT_SUMMARY` 同源）：
+  /// ① 发给谁、做什么；② 内容用途；③ **境外传输告知** —— AI 网关部署在新加坡，内容出境是
+  /// 需要单独告知的事项，细则在隐私政策第八节，弹窗只告知并指路，不复述整节法律文本。
+  ///
+  /// ⚠️ 简中按产品给的原文**逐字**写死；改动前请确认 `CONSENT_VERSION` 是否需要同步升版
+  /// （数据接收方 / 出境情形这类实质变更必须让老用户重新确认，见 [AiServiceConsent.version]）。
   String get aiServiceAgreementSummary => _pick(
     '为了使用 AI 服务（包括文本对话、根据文字生成图片、以及上传图片进行美化），'
-        '我们需要将您当前发送的内容（文字或图片）传输至“阿里云百炼”AI 服务进行处理，'
-        '该服务由阿里云计算有限公司提供。\n\n'
-        '您发送的内容仅用于本次操作，不会被存储或用于模型训练。',
+        '我们需要将您当前发送的内容（文字或图片）传输至“火山引擎”AI 服务进行处理，'
+        '该服务由北京火山引擎科技有限公司提供。\n\n'
+        '您发送的内容仅用于本次操作，不会被存储或用于模型训练。\n\n'
+        '因该 AI 服务网关部署于境外（新加坡），上述内容将传输至境外处理，'
+        '详情请见《BoltStar 隐私政策》第八节。',
     'To use AI services—including text chat, generating images from text, '
         'and enhancing uploaded images—we need to transmit the text or images '
-        'you send to Alibaba Cloud Model Studio for processing. This service '
-        'is provided by Alibaba Cloud Computing Co., Ltd.\n\n'
-        'Your content is used only for the current operation and will not be '
-        'stored or used for model training.',
+        'you send to the Volcano Engine AI service for processing. This service '
+        'is provided by Beijing Volcano Engine Technology Co., Ltd.\n\n'
+        'The content you send is used only for the current operation and will '
+        'not be stored or used for model training.\n\n'
+        'Because the AI service gateway is deployed outside mainland China '
+        '(Singapore), the content above is transferred abroad for processing. '
+        'See Section 8 of the BoltStar Privacy Policy for details.',
     'テキスト対話、テキストからの画像生成、アップロード画像の加工を含むAIサービスを'
-        '利用するため、送信されたテキストまたは画像を、Alibaba Cloud Computing Co., Ltd.'
-        'が提供する「Alibaba Cloud Model Studio」AIサービスへ送信して処理します。\n\n'
-        '送信内容は今回の処理にのみ使用され、保存またはモデル学習に利用されることはありません。',
+        '利用するため、送信されたテキストまたは画像を、北京火山引擎科技有限公司'
+        '（Beijing Volcano Engine Technology Co., Ltd.）が提供する'
+        '「火山引擎（Volcano Engine）」AIサービスへ送信して処理します。\n\n'
+        '送信内容は今回の操作にのみ使用され、保存されることも、モデル学習に'
+        '利用されることもありません。\n\n'
+        '当該AIサービスのゲートウェイは国外（シンガポール）に設置されているため、'
+        '上記の内容は国外へ送信のうえ処理されます。詳細は「BoltStar プライバシー'
+        'ポリシー」第8章をご覧ください。',
   );
   String get agree => _pick('同意', 'Agree', '同意する');
   String get disagree => _pick('不同意', 'Disagree', '同意しない');
@@ -337,6 +362,14 @@ class AppL10n {
     '微信授权已超时，请重新登录。',
     'WeChat authorization timed out. Please try again.',
     'WeChat認証がタイムアウトしました。再度お試しください。',
+  );
+  /// 微信授权登录成功提示（2026-08-19 需求：Android/iOS 从微信跳回 App 都要有反馈）。
+  /// 邮箱登录**不弹**成功提示（界面切到主壳层本身就是反馈），微信这条是特例——
+  /// 中间去了一趟微信客户端再跳回来，用户需要一句确认「这趟走通了」。
+  String get accWechatLoginSuccess => _pick(
+    '授权登录成功',
+    'Signed in with WeChat',
+    'WeChatでログインしました',
   );
   String get accWechatAuthFailed => _pick(
     '微信授权失败，请稍后重试',
@@ -816,18 +849,6 @@ class AppL10n {
     'ダウンロードに失敗しました（生成画像は24時間で失効）',
   );
   String get aiPreparingCast => _pick('准备投屏', 'Preparing cast…', 'キャストの準備中…');
-  String get aiPickCastDevice => _pick('选择投屏设备', 'Choose a device', 'キャスト先を選択');
-  String get aiPickCastDeviceDesc => _pick(
-    '选择电子纸设备后，将自动连接并开始投屏',
-    'The e-paper device will connect automatically and start casting.',
-    '選択した電子ペーパーに自動接続してキャストします',
-  );
-  String get aiDeviceConnected => _pick('已连接', 'Connected', '接続済み');
-  String get aiDeviceWillConnect => _pick(
-    '未连接，选择后自动连接',
-    'Not connected — will connect automatically',
-    '未接続（選択後に自動接続）',
-  );
   String get aiNoBoundDevice => _pick(
     '暂无已绑定电子纸设备，请先绑定电子纸设备',
     'No e-paper device bound yet. Please bind one first.',
@@ -855,16 +876,32 @@ class AppL10n {
     'Nothing was generated this time. Please try again.',
     '今回は生成されませんでした。もう一度お試しください',
   );
+  /// 上限 2026-08-12 由 4 张放宽到 5 张（与 `_kMaxImages` 必须一致），
+  /// 文案也换成产品给的那句（不再是「一次最多选择 N 张图片」）。
   String get aiMaxImages => _pick(
-    '一次最多选择 4 张图片',
-    'You can select up to 4 images at a time.',
-    '一度に選べる画像は最大4枚です',
+    '当前AI只允许上传5张图',
+    'You can upload up to 5 images to the AI.',
+    'AIにアップロードできる画像は最大5枚です',
   );
-  String get aiTokenEmptyTitle => _pick('Token 不足', 'Out of tokens', 'トークン不足');
+
+  /// 货币单位。2026-08-12 起对外一律叫「星币」（后端字段名仍是 `availableToken`，不动）。
+  String get aiTokenUnit => _pick('星币', 'Stars', 'スターコイン');
+  String get aiTokenEmptyTitle => _pick('星币不足', 'Out of stars', 'スターコイン不足');
+
+  /// 星币不足且**问得到**「至少需要多少」时的正文（数字来自后端 chkAiDialogue 的 retMsg）。
+  String aiTokenShortMessage(String amount) => _pick(
+    '发起一次 AI 对话至少需要 $amount 星币，当前余额不足。购买后即可继续和星宝聊天。',
+    'Each AI chat needs at least $amount stars, and your balance is short. Top up to keep chatting.',
+    'AI との会話には少なくとも $amount スターコインが必要です。チャージ後に続けられます。',
+  );
+
+  /// 抠不到数字（后端换了文案 / 403 是别的原因）时的兜底正文。
+  /// 🔶 与小程序的差异：小程序这句带「去购买」引导，APP 侧还没有购买页（IAP 未接），
+  /// 所以只说明情况、不指路。
   String get aiTokenEmptyMessage => _pick(
-    '当前 Token 余额不足，请前往「个人中心-Token管理」购买后继续使用（支付模块开发中）',
-    'Your token balance is empty. Purchase more in Profile → Tokens (payment module in progress).',
-    'トークン残高が不足しています。「マイページ - トークン管理」で購入してください（決済機能は開発中）',
+    '当前星币余额不足，无法发起 AI 对话。',
+    'Your star balance is too low to start an AI chat.',
+    'スターコイン残高が不足しているため、AI との会話を開始できません。',
   );
   String get aiBannedBanner => _pick(
     '账号已被限制，暂时无法使用 AI 对话',
@@ -1229,6 +1266,11 @@ class AppL10n {
   String get devCarouselSetting =>
       _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
   String get devCarouselDisabled => _pick('未启用', 'Off', '無効');
+
+  /// 详情页「轮播设置」右侧值：开着一律「已开启」，不再显示顺序/随机
+  /// （2026-08-21 同步小程序 `getPlaybackLabel`：这一行只回答「开没开」，
+  /// 具体是顺序还是随机进设置页看）。
+  String get devCarouselEnabled => _pick('已开启', 'On', '有効');
   String get devCarouselRandom => _pick('随机轮播', 'Shuffle', 'ランダム再生');
   String get devCarouselSequential => _pick('顺序轮播', 'In Order', '順番再生');
   String get devDeviceId => _pick('设备ID', 'Device ID', 'デバイスID');
@@ -1249,6 +1291,11 @@ class AppL10n {
     'New version $version available',
     '新しいバージョン $version',
   );
+
+  // 2026-08-20 删除：`devFirmwareUpdateAvailable`「有版本可更新」/ `devFirmwareUpToDate`「已是最新版本」。
+  // 「固件升级」行右侧改回只显示**设备当前在跑的版本号**（读不到给 `--`），有没有新版本改由箭头旁的
+  // 红点表达，这两句结论文案在详情页已无处可用（点进 OTA 页后的结论文案是另一套 `ota*`）。
+  // 与小程序同步删除 `detail.js` 的 `OTA_TEXT_UPDATE` / `OTA_TEXT_LATEST`。
   String get devClearAll => _pick('一键清空', 'Clear All', '一括消去');
   String get devClearing => _pick('清空中…', 'Clearing…', '消去中…');
   String get devCleared => _pick('已清空', 'Cleared', '消去しました');
@@ -1364,6 +1411,14 @@ class AppL10n {
       _pick('发现新版本', 'New version available', '新しいバージョンあり');
   String get otaDeviceNotConnected =>
       _pick('设备未连接', 'Device not connected', 'デバイス未接続');
+  /// 未连接时的主按钮文案：点它会先自动扫连再升级（不再是「按钮画着却点不动」）。
+  String get otaConnectAndUpgrade =>
+      _pick('连接并升级', 'Connect & upgrade', '接続してアップグレード');
+  String get otaConnectFailedRetry => _pick(
+    '未能连接电子纸设备，请确认设备已开机并靠近手机后重试。',
+    'Could not connect to the e-paper device. Make sure it is powered on and nearby, then try again.',
+    '電子ペーパーに接続できませんでした。電源が入っていて近くにあることを確認して、もう一度お試しください。',
+  );
   String get otaConnectFirstHint => _pick(
     '请先在详情页连接电子纸设备，并在升级过程中保持电子纸设备在线。',
     'Please connect the e-paper device on the details page first, and keep it online during the upgrade.',
@@ -1375,18 +1430,21 @@ class AppL10n {
     'No Bluetooth connection to the e-paper device. Please connect it on the details page before upgrading.',
     '電子ペーパーのBluetooth接続がありません。詳細ページで接続してからアップグレードしてください。',
   );
-  String get otaDryRunning => _pick('干跑中', 'Dry run…', 'ドライラン中…');
   String get otaUpgrading => _pick('升级中', 'Upgrading…', 'アップグレード中…');
-  String get otaPreparingDryRun =>
-      _pick('准备干跑', 'Preparing dry run…', 'ドライランを準備中…');
   String get otaPreparingUpgrade =>
       _pick('准备升级', 'Preparing upgrade…', 'アップグレードを準備中…');
-  String get otaDryRunPassed => _pick('干跑通过', 'Dry run passed', 'ドライラン成功');
   String get otaUnconfirmedRetry =>
       _pick('未确认(请重试)', 'Unconfirmed (retry)', '未確認（再試行）');
   String get otaUpgradeComplete =>
       _pick('升级完成', 'Upgrade complete', 'アップグレード完了');
-  String get otaDryRunFailed => _pick('干跑失败', 'Dry run failed', 'ドライラン失敗');
+
+  /// 升级成功后的收尾提示：设备在校验通过约 2s 后就复位运行新固件，链路当场作废。
+  /// 不说这一句，用户立刻回去点投屏、连不上，会以为是升级把设备刷坏了。
+  String get otaDeviceRebootingHint => _pick(
+    '电子纸设备正在重启，请稍等几秒后重新连接',
+    'The e-paper device is restarting. Please reconnect in a few seconds.',
+    '電子ペーパーを再起動しています。数秒後に再接続してください。',
+  );
   String get otaUpgradeFailed => _pick('升级失败', 'Upgrade failed', 'アップグレード失敗');
   String get otaInterrupted => _pick(
     '升级已中断：升级过程中手机切到后台或页面离开。请保持屏幕常亮后重试。',
@@ -1427,10 +1485,19 @@ class AppL10n {
     'During the upgrade, keep the e-paper device powered, keep your phone screen on, and avoid switching to the background.',
     'アップグレード中は電子ペーパーの電源を入れたまま、スマホの画面を常時点灯にし、バックグラウンドへの切り替えを避けてください。',
   );
-  String get otaDryRunTest => _pick(
-    '干跑测试（mock 固件）',
-    'Dry Run Test (mock firmware)',
-    'ドライランテスト（モックファームウェア）',
+
+  // 升级中那一屏进度条下方的两条规则（2026-08-13 两端同改）。**只在进行中出现**：
+  // 挂在「已是最新版本」下面写「意外中断可能导致设备无法使用」是没有意义的，只会跟结论文案抢注意力。
+  // ⚠️ 简中按需求原文逐字，包括 `小程序\app` 里的反斜杠（Dart 里写成 `\\`）。
+  String get otaRuleWaitPatiently => _pick(
+    '1）升级过程请耐心等待升级结果，意外中断可能导致电子纸设备无法使用',
+    '1) Please wait for the upgrade to finish. Interrupting it may leave the e-paper device unusable.',
+    '1）アップグレードが完了するまでお待ちください。中断すると電子ペーパーが使用できなくなる可能性があります。',
+  );
+  String get otaRuleRecoverHint => _pick(
+    '2）若升级失败造成设备无法连接，请尝试重新进入小程序\\app或断电重启设备',
+    '2) If a failed upgrade leaves the device unreachable, reopen the mini program / app or power-cycle the device.',
+    '2）アップグレード失敗で接続できなくなった場合は、ミニプログラム／アプリを開き直すか、デバイスの電源を入れ直してください。',
   );
   String get otaReadyToUpgrade =>
       _pick('可开始升级', 'Ready to upgrade', 'アップグレード可能');
@@ -1455,30 +1522,6 @@ class AppL10n {
   );
   String otaPackageSize(String size) =>
       _pick('升级包 $size', 'Package $size', 'パッケージ $size');
-  String otaDryRunPassedDetail(int size, int packets, int chunk) => _pick(
-    '干跑通过：$size 字节 / $packets 包 / 每包 $chunk 字节',
-    'Dry run passed: $size bytes / $packets packets / $chunk bytes each',
-    'ドライラン成功：$size バイト / $packets パケット / 各パケット $chunk バイト',
-  );
-  String otaFirmwareSizeNote(int size) => _pick(
-    '固件大小：$size 字节',
-    'Firmware size: $size bytes',
-    'ファームウェアサイズ：$size バイト',
-  );
-  String otaLocalCrc32Note(String crc) =>
-      _pick('本地 CRC32：$crc', 'Local CRC32: $crc', 'ローカル CRC32：$crc');
-  String otaChunkingNote(int packets, int chunk, int prn) => _pick(
-    '分包：$packets 包 × $chunk 字节，PRN=$prn',
-    'Chunks: $packets packets × $chunk bytes, PRN=$prn',
-    '分割：$packets パケット × $chunk バイト、PRN=$prn',
-  );
-  String otaStartFrameNote(String hex) =>
-      _pick('START 帧：$hex', 'START frame: $hex', 'START フレーム：$hex');
-  String otaFirstDataFrameNote(String hex) => _pick(
-    '首个 DATA 帧：$hex …',
-    'First DATA frame: $hex …',
-    '最初の DATA フレーム：$hex …',
-  );
   String otaDoneDetail(String done, int size, int packets) => _pick(
     '$done（$size 字节 / $packets 包）',
     '$done ($size bytes / $packets packets)',
@@ -1500,6 +1543,23 @@ class AppL10n {
     '写真を読み込めません。カメラ／アルバムの権限を確認して再試行してください。',
   );
   String get homeConnectingDevice => _pick('连接设备中', 'Connecting…', '接続中…');
+
+  // ── 低电量提醒（2026-08-21 同步小程序）────────────────────────────────
+  // 口径：**用户主动点**需要连接电子纸设备的功能按钮时，电量 ≤10% 弹一次；
+  // 自动连接的场景不弹（投屏流程内部的续连等），弹窗只会打断正在跑的流程。
+  // 两档分界：10%~4% 一段、≤3% 另一段（需求原文写「3%以下」，字面上 3% 落在两档中间的缝里，
+  // 第一档明确到 4% 为止，所以 3% 归下面那档，与小程序 CRITICAL_BATTERY_MAX 一致）。
+  String get lowBatteryTitle => _pick('电量提醒', 'Battery Notice', 'バッテリー通知');
+  String get lowBatteryMessage => _pick(
+    '目前电子纸设备电量较低，请将电子纸设备放置在光线明亮处使用，并可适当减少操作频次。',
+    'The e-paper device is running low on battery. Place it in a well-lit spot and use it less often for now.',
+    '電子ペーパーのバッテリー残量が少なくなっています。明るい場所に置いて、操作の頻度を控えめにしてください。',
+  );
+  String get lowBatteryCriticalMessage => _pick(
+    '目前电子纸设备电量低于3%，即将关机，请将电子纸设备放置在阳光充足或光线明亮的区域，进行光能充电即可恢复使用。',
+    'The e-paper device is below 3% battery and will power off soon. Place it in direct sunlight or a bright area to recharge with light and it will resume working.',
+    '電子ペーパーのバッテリー残量が3%未満で、まもなく電源が切れます。日当たりの良い場所や明るい場所に置くと、光で充電されて再び使えるようになります。',
+  );
   String get homeOfflineTitle => _pick('离线模式', 'Offline Mode', 'オフラインモード');
   String get homeOfflineMessage => _pick(
     '当前网络异常，app进入离线模式无法同步投屏记录与图库',
@@ -1520,6 +1580,27 @@ class AppL10n {
       _pick('拍摄照片并投屏', 'Take a photo and cast it', '写真を撮って投影');
   String get homeCastAlbumCardSubtitle =>
       _pick('选择照片并投屏', 'Pick a photo and cast it', '写真を選んで投影');
+
+  // ── 首页六大入口（2026-08-21 同步小程序改版）────────────────────────────
+  // 原来首页只有「拍照 / 相册」两张卡，底栏另有「AI助手」「官方图库」两格；
+  // 改版后底栏只剩「首页 / 我的」，六个入口全部收进首页 3×2 宫格。
+  // ⚠️ 前两项的**标题变了**（拍照 → 拍照投屏、相册 → 相册投屏），
+  //    但底部「选择投屏方式」弹层里那两行仍用旧的 homeCastCameraTitle/homeCastAlbumTitle，
+  //    两套别互相替换。副标题两项复用旧的，文案完全一致。
+  String get homeEntryCameraTitle =>
+      _pick('拍照投屏', 'Camera Cast', 'カメラ投影');
+  String get homeEntryAlbumTitle => _pick('相册投屏', 'Album Cast', 'アルバム投影');
+  String get homeEntryUploadsTitle =>
+      _pick('我的上传', 'My Uploads', 'マイアップロード');
+  String get homeEntryUploadsSubtitle =>
+      _pick('管理我的照片', 'Manage my photos', '写真を管理');
+  String get homeEntryAiTitle => _pick('AI创作', 'AI Create', 'AI作成');
+  String get homeEntryAiSubtitle =>
+      _pick('AI生成精美图片', 'Generate images with AI', 'AIで画像を生成');
+  String get homeEntryGallerySubtitle =>
+      _pick('海量精选美图', 'Curated wallpapers', '厳選画像が多数');
+  String get homeEntryDevicesSubtitle =>
+      _pick('管理我的设备', 'Manage my devices', 'デバイスを管理');
   String get homeBindSearchingTitle =>
       _pick(
         '正在搜索附近电子纸设备',
@@ -1598,8 +1679,9 @@ class AppL10n {
   );
   String get galConfirm => _pick('确认', 'Confirm', '確認');
   String get galDeleting => _pick('删除中', 'Deleting…', '削除中…');
-  String get galRefreshing => _pick('刷新中', 'Refreshing…', '更新中…');
-  String get galRefreshScreen => _pick('刷新屏幕', 'Refresh Screen', '画面を更新');
+  // 2026-08-17 删除：`galRefreshing` / `galRefreshScreen`（手动「刷新屏幕」0x24 的文案）。
+  // 入口 2026-08-04 页面合并时就没了（底部第一枚圆钮改成「再次投屏」），本轮随
+  // `refreshGalleryPhotoOnScreen` 一并下线。删除时删到屏显图的自动补刷屏不带文案。
 
   /// 底部第一枚圆钮：2026-08-04 由「刷新屏幕(0x24)」改为「再次投屏」（对齐小程序底栏）。
   /// 本页只展示投屏成功的照片，所以恒为「再次投屏」，没有「重新投屏」这一态。
@@ -1623,11 +1705,178 @@ class AppL10n {
   String get galRecastPreparing => _pick('准备照片中', 'Preparing photos…', '写真を準備中…');
 
   /// 记录与设备下拉都定位不到目标设备（后端两处都没回 userProductId 时的兜底）。
+  /// 再次投屏与删除共用：两条链路都要连「这些照片所属的那台设备」。
   String get galRecastNoDevice => _pick(
     '未找到这些照片所属的电子纸设备，请刷新后重试',
     'Could not find the e-paper device these photos belong to. Please refresh and retry.',
     'これらの写真が属する電子ペーパーが見つかりません。更新して再試行してください。',
   );
+  // ── 星币（2026-08-12 App 侧补齐管理页与记录页，对齐小程序 subpackages/token）──
+  // ⚠️ 购买链路 App 侧未接（IAP），页面只读，见 star_coin_page.dart 文件头。
+  String get starCoinTitle => _pick('星币管理', 'Stars', 'スターコイン');
+  String get starMyBalance => _pick('我的星币', 'My Stars', 'マイスターコイン');
+  String get starAvailable => _pick('当前可用余额', 'Available', '利用可能残高');
+  String get starTotalPurchased => _pick('总额（累计购买）', 'Purchased', '購入累計');
+  String get starTotalSpent => _pick('已消耗', 'Used', '使用済み');
+  String get starRecordsTitle =>
+      _pick('购买 & 消费记录', 'Purchases & Usage', '購入・使用履歴');
+  String get starRecordsDesc =>
+      _pick('查看所有购买和消费明细', 'All purchase and usage details', '購入・使用の明細を見る');
+  String get starPurchaseRecords => _pick('购买记录', 'Purchases', '購入履歴');
+  String get starSpendRecords => _pick('消费记录', 'Usage', '使用履歴');
+  String get starNoPurchaseRecords =>
+      _pick('还没有购买记录', 'No purchases yet', '購入履歴はまだありません');
+  String get starNoSpendRecords =>
+      _pick('还没有消费记录', 'No usage yet', '使用履歴はまだありません');
+  String get starGift => _pick('赠送', 'Bonus', 'ボーナス');
+  String get starRulesTitle =>
+      _pick('星币消耗规则', 'How stars are used', 'スターコインの消費ルール');
+  String get starRuleColService => _pick('服务类型', 'Service', 'サービス');
+
+  /// 表头就写「星币/次」（2026-08-13 两端同改）：原文「星币消耗（星币/次）」在窄列里必然
+  /// 折成两行、把括号拆开，而「消耗」二字区块标题「星币消耗规则」已经交代过。
+  String get starRuleColCost => _pick('星币/次', 'Per use', '1回あたり');
+
+  /// ⚠️ **只在 iOS 上出现**：安卓 2026-08-27 起走 PayPal（见 [starBuyEntryTitle]），
+  /// iOS 的 Apple 内购仍未接。措辞不能再写「App 端」——那会把已经能买的安卓也一起否掉。
+  String get starPurchaseUnavailable => _pick(
+    'iOS 端暂未开放星币购买，请前往微信小程序「BoltStar 智能相框」购买后在此查看余额。',
+    'Buying stars is not available on iOS yet. Purchase in the BoltStar mini program; your balance shows up here.',
+    'iOS ではスターコインを購入できません。WeChat ミニプログラムで購入すると、残高がここに反映されます。',
+  );
+
+  // ── 星币购买（2026-08-27 安卓接入 PayPal；小程序=微信支付、iOS=Apple 内购未接）──
+
+  String get starBuyEntryTitle => _pick('购买星币', 'Buy Stars', 'スターコインを購入');
+  String get starBuyEntryDesc =>
+      _pick('选择套餐，PayPal 支付', 'Choose a plan, pay with PayPal', 'プランを選んで PayPal で支払う');
+  String get starBuyTitle => _pick('确认购买', 'Confirm Purchase', '購入の確認');
+  String get starBuyChoosePackage => _pick('选择套餐', 'Choose a plan', 'プランを選択');
+  String get starBuyPayChannel => _pick('支付方式', 'Payment method', '支払い方法');
+
+  /// 套餐卡上的赠送角标。
+  String starBuyGift(int count) =>
+      _pick('赠 $count', '+$count bonus', '$count ボーナス');
+
+  /// 套餐卡底部的单价（约）。⚠️ 按含赠送总数算，见 [StarPackage.unitPrice]。
+  String starBuyUnitPrice(String price, String currency) =>
+      _pick('≈ $currency$price/星币', '≈ $currency$price/star', '≈ $currency$price/コイン');
+
+  String get starBuyTotalGain => _pick('合计获得', 'You get', '合計獲得');
+  String get starBuyAmountDue => _pick('应付金额', 'Total', 'お支払い金額');
+  String get starBuyNow => _pick('立即购买', 'Buy now', '今すぐ購入');
+  String get starBuyEmpty =>
+      _pick('暂无可购买的套餐', 'No plans available right now', '購入できるプランがありません');
+
+  /// 三段式 loading 文案：这条链路最长约 10s，中间没反馈用户会以为卡死。
+  String get starBuyStageOrder => _pick('正在下单…', 'Creating order…', '注文を作成中…');
+  String get starBuyStagePay =>
+      _pick('正在拉起支付…', 'Opening PayPal…', 'PayPal を起動中…');
+  String get starBuyStageConfirm =>
+      _pick('正在确认到账…', 'Confirming payment…', '入金を確認中…');
+
+  String get starBuyApprovingTitle =>
+      _pick('已跳转 PayPal', 'PayPal opened', 'PayPal を開きました');
+  String get starBuyApprovingDesc => _pick(
+    '请在 PayPal 完成支付，然后回到这里。星币到账后余额会自动更新。',
+    'Finish the payment in PayPal, then come back here. Your balance updates once the stars arrive.',
+    'PayPal で支払いを完了してから、この画面に戻ってください。入金後に残高が更新されます。',
+  );
+  String get starBuyApprovingDone =>
+      _pick('我已完成支付', 'I have paid', '支払いを完了しました');
+  String get starBuyApprovingGiveUp =>
+      _pick('放弃本次支付', 'Cancel this payment', 'この支払いをやめる');
+
+  /// 到账确认成功。数量取**服务端余额的增量**，不是套餐上写的数（以服务端为准）。
+  String starBuySucceeded(int gained) => _pick(
+    '购买成功，到账 $gained 星币',
+    'Purchase complete — $gained stars added',
+    '購入完了：$gained コインが追加されました',
+  );
+
+  /// 查单说已支付、但余额还没变。⚠️ 不能说成失败：钱已经付了。
+  String get starBuyPendingPaid => _pick(
+    '已收到付款，星币稍后到账',
+    'Payment received. Your stars will arrive shortly.',
+    '支払いを受け付けました。まもなく反映されます。',
+  );
+
+  /// 余额没变、查单也没说已支付。⚠️ 同样**不说失败**：可能是用户取消了，
+  /// 也可能是渠道回调慢，端上分不清，就别替后端下结论。
+  String get starBuyPendingUnknown => _pick(
+    '支付结果确认中，可稍后在购买记录里查看',
+    'Still confirming the payment. Check your purchase records later.',
+    '支払い結果を確認中です。購入履歴で後ほどご確認ください。',
+  );
+
+  String get starBuyOrderFailed =>
+      _pick('下单失败，请稍后重试', 'Could not create the order. Please try again.', '注文の作成に失敗しました。後でもう一度お試しください。');
+  String get starBuyCreatePayFailed => _pick(
+    '未能拉起 PayPal 支付，请稍后重试',
+    'Could not start the PayPal payment. Please try again.',
+    'PayPal の支払いを開始できませんでした。後でもう一度お試しください。',
+  );
+  String get starBuyLaunchFailed => _pick(
+    '打不开 PayPal 页面，请确认已安装浏览器或 PayPal App',
+    'Could not open PayPal. Make sure a browser or the PayPal app is installed.',
+    'PayPal を開けませんでした。ブラウザまたは PayPal アプリを確認してください。',
+  );
+
+  // ── 官方图库 / 我的收藏（2026-08-12 App 侧补齐该模块，对齐小程序 subpackages/gallery）──
+  String get galleryOfficialTitle =>
+      _pick('官方图库', 'Official Gallery', '公式ギャラリー');
+  String get galleryFavoritesTitle => _pick('我的收藏', 'My Favorites', 'お気に入り');
+  String get galleryFavorites => _pick('收藏', 'Favorites', 'お気に入り');
+
+  /// 分类条首项。后端只给真实分类，「全部」是端上补的（列表接口不传 categoryId 即全部）。
+  String get galleryAllCategory => _pick('全部', 'All', 'すべて');
+  String get galleryEmptyCategory =>
+      _pick('该分类下还没有图片', 'No images in this category yet.', 'このカテゴリーにはまだ画像がありません');
+  String get galleryFavoritesEmpty => _pick(
+    '还没有收藏任何官方图片',
+    'You have not saved any official images yet.',
+    'まだ公式画像をお気に入りに追加していません',
+  );
+  String galleryFavoriteCount(int count) => _pick(
+    '共收藏 $count 张官方图片',
+    '$count official images saved',
+    '公式画像を$count枚保存済み',
+  );
+  String get galleryLoading => _pick('加载中…', 'Loading…', '読み込み中…');
+  String get galleryPullMore =>
+      _pick('上拉加载更多', 'Pull up to load more', '上にスワイプして続きを読み込む');
+  String get galleryNoMore => _pick('没有更多了', 'No more items', 'これ以上ありません');
+  String get galleryFavorite => _pick('收藏', 'Save', '保存');
+  String get galleryCancelFavorite => _pick('取消收藏', 'Saved', '保存済み');
+  String get galleryFavorited => _pick('已收藏', 'Saved', '保存しました');
+  String get galleryUnfavorited => _pick('已取消收藏', 'Removed', '保存を解除しました');
+  String get galleryFavoriteFailed =>
+      _pick('操作失败，请重试', 'Action failed. Please try again.', '操作に失敗しました。再試行してください');
+  String get galleryLoadFailed =>
+      _pick('图片加载失败', 'Failed to load the image.', '画像の読み込みに失敗しました');
+  String get galleryPhotoGone => _pick(
+    '图片不存在或已下架',
+    'This image no longer exists.',
+    'この画像は存在しないか、公開が終了しました',
+  );
+  String get galleryStartCast => _pick('开始投屏', 'Start Casting', 'キャスト開始');
+  String get galleryNoBoundDevice => _pick(
+    '暂无已绑定电子纸设备，请先绑定',
+    'No paired e-paper device yet. Please pair one first.',
+    'ペアリング済みの電子ペーパーがありません。先にペアリングしてください',
+  );
+  // ── 「选择投屏设备」弹层（AI 对话页与官方图库详情页共用一份，见 device_picker_sheet.dart）──
+  // 2026-08-13 起改「先选再连」：文案不能再说「选完自动连接」，那正是本轮要去掉的行为。
+  String get devicePickerTitle =>
+      _pick('选择投屏设备', 'Choose a device', 'キャスト先を選択');
+  String get devicePickerDesc => _pick(
+    '选择要投屏的电子纸设备，点击下方按钮开始连接',
+    'Pick the e-paper device to cast to, then tap the button below to connect.',
+    'キャスト先の電子ペーパーを選び、下のボタンで接続してください',
+  );
+  String get devicePickerConfirm =>
+      _pick('连接并投屏', 'Connect and cast', '接続してキャスト');
+
   String get galSelectAll => _pick('全选', 'Select All', 'すべて選択');
   String galTotalCount(int count) =>
       _pick('共 $count 张', '$count total', '合計$count枚');
@@ -1640,14 +1889,13 @@ class AppL10n {
     '選択した$count枚の写真を削除しますか？電子ペーパーとマイアルバムの両方から削除され、復元できません。',
   );
 
-  /// 只删掉了投屏记录（这条记录没有对应的相册照片，设备侧本就无从删起）。
-  String get galDeleted => _pick('已删除', 'Deleted', '削除しました');
-
-  /// 相册账本这次没加载成功：继续删会变成「只删记录、不删设备上的图」，先拦下让用户重试。
-  String get galDeleteNeedAlbum => _pick(
-    '相册数据未加载完整，请下拉刷新后重试',
-    'Album data is incomplete. Pull to refresh and try again.',
-    'アルバムのデータが不完全です。引っ張って更新してから再試行してください。',
+  /// 选中的投屏记录里有缺索引/非法 `imgIndex` 的：设备上定位不到位置，**整批终止**。
+  /// 刻意不推算——推算只会删掉别人的图（2026-08-17：图库列表下线后记录里的索引是唯一来源）。
+  /// 取代了原来的 `galDeleteNeedAlbum`（相册账本没加载完的拦截，账本已不存在）。
+  String get galDeleteNoSlot => _pick(
+    '投屏记录未返回有效的图片索引，无法删除',
+    'This cast record has no valid image index, so it cannot be deleted.',
+    'この投映履歴には有効な画像インデックスがないため、削除できません。',
   );
 
   /// 设备与相册记录都删掉了，但来源投屏记录没删干净（照片下次进来可能还在列表里）。
@@ -1655,6 +1903,26 @@ class AppL10n {
     '照片已删除，投屏记录未全部删除，请稍后重试',
     'Photos deleted, but some cast records could not be removed. Please retry later.',
     '写真は削除しましたが、一部の投映履歴を削除できませんでした。後で再試行してください。',
+  );
+
+  /// 两半都删成功。原来这句写在 `state.dart` 的设备侧返回值里；2026-08-20 两半互不阻断后，
+  /// 「成功」是由调用方合并两半结果才得出的结论，文案跟着搬到这里。
+  String get galDeleteDone =>
+      _pick('已删除所选照片。', 'Selected photos deleted.', '選択した写真を削除しました。');
+
+  /// 2026-08-20（两半互不阻断）：设备侧没删掉，但投屏记录已经删了。
+  /// 必须把设备侧的原因报出来——只说「已删除」的话，用户不会知道相框上那张图其实还在。
+  String galDeleteRecordOnly(String reason) => _pick(
+    '投屏记录已删除，$reason',
+    'Cast records deleted. $reason',
+    '投映履歴を削除しました。$reason',
+  );
+
+  /// 2026-08-20（两半互不阻断）：设备侧与记录侧都没删成功，两边原因一起说。
+  String galDeleteBothFailed(String reason) => _pick(
+    '电子纸设备与投屏记录都未删除成功：$reason',
+    'Failed to delete from both the e-paper device and the cast records: $reason',
+    '電子ペーパーと投映履歴のどちらも削除できませんでした：$reason',
   );
   String get galEmptyTitle => _pick(
     '当前电子纸设备还没有投屏成功的照片',
@@ -1672,11 +1940,19 @@ class AppL10n {
   String get guideEmpty => _pick('暂无常见问题', 'No FAQs yet', 'よくある質問はありません');
 
   // ── 我的 ──
+  // 「常用功能」标题 2026-08-19（同步小程序 08-11）按产品要求从「我的」页去掉，
+  // 目前无消费方。留着这一条只为万一要改回来时不用重译；不要拿它当新标题复用。
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
   String get mineServiceHelp => _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
-  /// 2026-08-04：「设备照片」与「投屏管理」两张卡合并为「我的相册」（投屏成功的照片）。
+  /// 2026-08-04：「设备照片」与「投屏管理」两张卡合并为一张（投屏成功的照片）。
   /// 合并后宫格由三卡变两卡、卡片等分宽度，日语不再需要为 102 宽缩写。
-  String get mineMyGallery => _pick('我的相册', 'My Album', 'マイアルバム');
+  ///
+  /// 2026-08-24 标题由「我的相册」改成「我的上传」（同步小程序 `mine.wxml`，旧 key
+  /// `mineMyGallery` 一并改名）。与 [homeEntryUploadsTitle] 文案相同、**故意各留一份**：
+  /// 首页宫格与「我的」页那张卡是两处产品件，以后只改一处时不该互相牵连。
+  /// ⚠️ 卡片副标题的张数同日改取 `getUserInfo` 的 `imgCount`（上传口径，含投屏失败/已删），
+  /// 与标题是同一个决定——目的地仍是「我的相册」页（投屏成功记录），别再把标题改回去。
+  String get mineMyUploads => _pick('我的上传', 'My Uploads', 'マイアップロード');
   String get mineMyDevices => _pick('我的设备', 'My Devices', 'マイデバイス');
   // 英语「Cast Management」在窄卡里过长换行，缩为单词「Casting」。
   // 2026-08-04 起「我的」不再有这张卡，本条仍供投屏管理页自身（投屏结果页「投屏明细」进入）使用。
@@ -1694,6 +1970,13 @@ class AppL10n {
     loaded ? '$value devices' : '-- devices',
     loaded ? '$value台' : '--台',
   );
+
+  /// 「我的 → 星币管理」行右侧的余额（对齐小程序 `.service-value` 的「剩余 N 星币」）。
+  /// 余额还没到手时给 `--` 而不是 0：显示 0 会被当成「我的星币被清空了」。
+  String mineStarBalanceText(int? value) {
+    final amount = value?.toString() ?? '--';
+    return _pick('剩余 $amount 星币', '$amount stars left', '残り $amount スターコイン');
+  }
 
   // ── 设置 ──
   String get setPrivacyTitle => _pick('隐私政策', 'Privacy Policy', 'プライバシーポリシー');

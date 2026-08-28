@@ -1,15 +1,80 @@
-// 「我的相册」删除：跳过设备上已经没有的槽位（2026-08-10 产品口径）。
+// 「我的相册」删除：待删槽位怎么解析（2026-08-17）+ 跳过设备上已经没有的槽位（2026-08-10 产品口径）。
 // 对齐小程序 tests/album-slot-index.test.js 的同名分支。
 //
 // 场景：同一台设备被两部手机连过，另一端删掉了某张，本机记录还在 → 那个 imgIndex 在设备上
 // 已是空槽位。空槽位一起进 0x12 的掩码，固件回 0x07，**整批**删除被打回。
+import 'dart:ui' show Color;
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:BoltStar/src/device/ble/device_ble.dart';
 import 'package:BoltStar/src/device/ble/frame_protocol.dart';
 import 'package:BoltStar/src/state.dart';
 
+/// 只喂 [PhotoFrameState.resolveDeleteSlots] 关心的字段：投屏记录自己的 `imgIndex`。
+CastRecord _record(String id, {int? imageIndex}) => CastRecord(
+  id: id,
+  title: '',
+  deviceId: 'dev-1',
+  ownerUserId: '',
+  status: CastStatus.success,
+  source: ImageSourceType.album,
+  color: const Color(0xFF000000),
+  width: 0,
+  height: 0,
+  message: '',
+  createdAt: DateTime.utc(2026, 8, 17),
+  imageIndex: imageIndex,
+);
+
 void main() {
+  // 2026-08-17：图库列表下线后，待删槽位的唯一来源是**投屏记录自己的 imgIndex**
+  // （对齐小程序 album/list.js resolveDeleteTargets，待删目标由 {id, photoId, slot} 收成 {id, slot}）。
+  group('resolveDeleteSlots', () {
+    test('全部记录都有索引：按记录顺序返回，重复槽位去重', () {
+      final slots = PhotoFrameState.resolveDeleteSlots([
+        _record('a', imageIndex: 2),
+        _record('b', imageIndex: 0),
+        _record('c', imageIndex: 2),
+      ]);
+
+      expect(slots, [2, 0]);
+    });
+
+    test('槽位 0 是合法槽位，不被当成「没有索引」', () {
+      expect(PhotoFrameState.resolveDeleteSlots([_record('a', imageIndex: 0)]), [
+        0,
+      ]);
+    });
+
+    test('任意一条缺索引 → 整批终止（返回 null），绝不推算', () {
+      // 缺索引时按设备掩码/列表顺序猜位置只会删掉别人的图，宁可整批不删。
+      expect(
+        PhotoFrameState.resolveDeleteSlots([
+          _record('a', imageIndex: 1),
+          _record('b'),
+        ]),
+        isNull,
+      );
+    });
+
+    test('越界索引（IMG_MASK 只有 96 位）同样整批终止', () {
+      // indexesToMask 会静默丢掉越界位：放行就变成「记录删了、图还留在设备上」。
+      expect(
+        PhotoFrameState.resolveDeleteSlots([_record('a', imageIndex: 96)]),
+        isNull,
+      );
+      expect(
+        PhotoFrameState.resolveDeleteSlots([_record('a', imageIndex: -1)]),
+        isNull,
+      );
+    });
+
+    test('没有选中任何记录时返回 null', () {
+      expect(PhotoFrameState.resolveDeleteSlots(const []), isNull);
+    });
+  });
+
   group('splitSlotsByDeviceMask', () {
     test('掩码里没有的槽位判为 gone，不进 0x12', () {
       // 设备上只剩 1、2（另一端把 0 删了），本机选中 0、1、2 三张。
@@ -108,6 +173,58 @@ void main() {
         isFalse,
       );
       expect(FrameBleException.isSkippableDelete(null), isFalse);
+    });
+  });
+
+  // 2026-08-24（同步小程序 tests/album-delete-independent.test.js 第 ⑥/⑥'/⑦ 组）：
+  // 相册删除撞上**设备繁忙 0x0B** 时整批中止、一条数据都不删。
+  // 这里只钉判据 [FrameBleException.isBusy]——「中止」那一步在
+  // PhotoFrameState.deleteDevicePhotoSlots 里返回 blockedMessage，需要真实 BLE 会话，
+  // 单测覆盖不到（同本文件其它组的做法：只测纯逻辑）。
+  group('设备繁忙(0x0B) 的判据', () {
+    test('带结果码：认码，不看文案', () {
+      final busy = FrameBleException(
+        '电子纸设备-未知提示',
+        resultCode: FrameProtocol.busyResult,
+      );
+
+      expect(FrameBleException.isBusy(busy), isTrue);
+    });
+
+    test('没有结果码时退回文案匹配（device_ble 的集中拦截就是这种）', () {
+      expect(
+        FrameBleException.isBusy(FrameBleException(FrameProtocol.busyMessage)),
+        isTrue,
+      );
+      expect(
+        FrameBleException.isBusy(Exception('电子纸设备-${FrameProtocol.busyMessage}')),
+        isTrue,
+      );
+    });
+
+    test('端上自己的图传门闩虽然也叫 busy，但不是设备回的 0x0B', () {
+      // 「已有图传进行中」是本地串行门闩（kind 复用了 busy），归成「设备繁忙」会让因果对不上，
+      // 所以 isBusy 刻意不看 kind。
+      final localGuard = FrameBleException(
+        '已有图传进行中，请等待当前传输结束',
+        kind: FrameBleErrorKind.busy,
+      );
+
+      expect(FrameBleException.isBusy(localGuard), isFalse);
+    });
+
+    test('别的失败不能被当成繁忙（它们仍要走「两半互不阻断」照删记录）', () {
+      for (final code in [0x00, 0x04, 0x05, 0x07, 0x09, 0x0a]) {
+        expect(
+          FrameBleException.isBusy(
+            FrameBleException(FrameProtocol.resultText(code), resultCode: code),
+          ),
+          isFalse,
+          reason: '结果码 0x${code.toRadixString(16)} 不是设备繁忙',
+        );
+      }
+      expect(FrameBleException.isBusy(Exception('指令 0x12 应答超时')), isFalse);
+      expect(FrameBleException.isBusy(null), isFalse);
     });
   });
 }

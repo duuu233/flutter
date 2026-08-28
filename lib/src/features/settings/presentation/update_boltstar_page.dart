@@ -22,7 +22,7 @@ enum BoltStarUpdateStage { checking, upToDate, updateAvailable }
 /// 当前版本来自 `package_info`，最新版本 / 下载地址来自后端 `getLastVersion`。
 /// 「立即更新」用应用商店 / 系统浏览器打开下载地址后即停留在本页，
 /// 后续下载安装交给系统（对齐项目既定设计，见 pubspec 中 url_launcher 的说明）。
-/// 页面背景走 [FigmaScreen] 默认的 `bg01.png`（与其它页面统一，非 UI 稿里的过时浅蓝渐变）。
+/// 页面背景走 [FigmaScreen] 默认的 `bg02.jpg`（与其它页面统一，非 UI 稿里的过时浅蓝渐变）。
 ///
 /// [previewStage] 仅供未接入导航的演示路由（`figmaUpdateBoltStar*`）强制展示某一态，
 /// 此时用占位版本号、不发起真实请求；正常入口只传 [state]。

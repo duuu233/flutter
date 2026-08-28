@@ -14,9 +14,12 @@ import '../../../shared/avatar_upload.dart';
 import '../../../shared/permission_gate.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
+import '../../ai/ai_entry.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
+import '../../gallery/official/official_gallery_entry.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
 part 'home_main_view.dart'; // 首页主视图（已绑定 / 未绑定）
@@ -210,8 +213,8 @@ class _HomePageState extends State<HomePage> {
       }
     }
 
-    // 全ページ共通背景 bg01（小程序は首页/绑定流程とも同一 mock-bg 背景）。
-    const backgroundAsset = 'assets/images/bg01.png';
+    // 全ページ共通背景 bg02.jpg（小程序は首页/绑定流程とも同一 mock-bg 背景）。
+    const backgroundAsset = 'assets/images/bg02.jpg';
 
     // 设备列表首屏还没回来时先显示 loading：否则首帧必然先渲染一次「未绑定」绑定引导页，
     // 接口回来再跳成设备卡片（对齐小程序 home.js 的 pageLoading:true 门控）。
@@ -244,6 +247,14 @@ class _HomePageState extends State<HomePage> {
                         onShowCastSheet: _showCastMethodSheet,
                         onCamera: () => _startCast(ImageSourceType.camera),
                         onAlbum: () => _startCast(ImageSourceType.album),
+                        // 六宫格另外三项（2026-08-21 同步小程序）：
+                        // 「我的上传」= 我的相册页（与「我的」页那张卡同一个目的地）；
+                        // AI / 官方图库原来在底栏中间两格，现在从首页进，目标页一字未变。
+                        onOpenUploads: () => Navigator.of(
+                          context,
+                        ).pushNamed<void>(AppRoutes.figmaGallery),
+                        onOpenAi: () => openAiChat(context, widget.state),
+                        onOpenGallery: () => openOfficialGallery(context),
                         onOpenMine: widget.onOpenMine,
                       ))
               : _BindDeviceView(
@@ -389,8 +400,16 @@ class _HomePageState extends State<HomePage> {
     }
     if (!widget.state.isDeviceActuallyConnected(activeDevice.id)) {
       // 未连接则自动扫连再投（对齐小程序 ensureActiveDeviceConnection）；连不上提示并中止。
+      // 低电量提醒由 _ensureConnected 在连上后弹，这里不再弹第二次。
       final connected = await _ensureConnected(activeDevice.id);
       if (!connected || !mounted) {
+        return;
+      }
+    } else {
+      // 已连接这一支没走连接流程，低电量提醒在这里补
+      // （2026-08-21 同步小程序 ensureCanProject 的「已连接」分支）。
+      await showLowBatteryTipIfNeeded(context, widget.state, activeDevice.id);
+      if (!mounted) {
         return;
       }
     }
@@ -433,8 +452,8 @@ class _HomePageState extends State<HomePage> {
     if (!mounted) {
       return;
     }
-    // 投屏返回后刷新相册 / 投屏记录（真实数据同步）。
-    widget.state.refreshAlbum();
+    // 投屏返回后刷新投屏记录（真实数据同步）。
+    // 2026-08-17：图库列表接口已下线，「我的相册」铺的就是这份记录。
     widget.state.refreshCastRecords();
   }
 
@@ -461,8 +480,12 @@ class _HomePageState extends State<HomePage> {
     }
     if (!feedback.success) {
       _showFeedback(feedback.message);
+      return false;
     }
-    return feedback.success;
+    // 主动点「连接蓝牙」/投屏入口连上之后，电量 ≤10% 先提醒一次（2026-08-21 同步小程序）。
+    // 提醒不阻断后续动作，用户点掉就继续。
+    await showLowBatteryTipIfNeeded(context, widget.state, deviceId);
+    return true;
   }
 
   /// 通用提示弹层（立即绑定 / 重新连接 / 离线模式均复用）。

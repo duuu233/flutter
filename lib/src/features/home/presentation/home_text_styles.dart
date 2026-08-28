@@ -56,6 +56,21 @@ class _HomeTextStyles {
   );
 
   // .projection-name → font-size 36rpx(=18) / weight 700 / #2a2d32 / line-height 1
+  // 六宫格入口（2026-08-21）：.entry-name 28rpx/600（颜色逐项不同，由卡片 copyWith 覆盖）、
+  // .entry-desc 18rpx/#8f959d。
+  static const entryTitle = TextStyle(
+    fontSize: 14,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+  );
+
+  static const entrySubtitle = TextStyle(
+    color: Color(0xFF8F959D),
+    fontSize: 9,
+    fontWeight: FontWeight.w400,
+    height: 1.2,
+  );
+
   static const cardTitle = TextStyle(
     color: Color(0xFF2A2D32),
     fontSize: 18,

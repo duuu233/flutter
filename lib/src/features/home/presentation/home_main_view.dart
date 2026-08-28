@@ -41,6 +41,9 @@ class _HomeMainView extends StatelessWidget {
     required this.onShowCastSheet,
     required this.onCamera,
     required this.onAlbum,
+    required this.onOpenUploads,
+    required this.onOpenAi,
+    required this.onOpenGallery,
     required this.onOpenMine,
   });
 
@@ -66,9 +69,16 @@ class _HomeMainView extends StatelessWidget {
   final ValueChanged<DeviceItem> onConnectDevice;
 
   /// 点击「选择投屏方式」标题，弹出投屏方式选择层。
+  /// ⚠️ 2026-08-21 起首页不再显示这个标题（小程序同步去掉），弹层本身仍在——
+  /// 投屏结果页等处仍会用到，回调保留不删。
   final VoidCallback onShowCastSheet;
   final VoidCallback onCamera;
   final VoidCallback onAlbum;
+
+  /// 六宫格里另外四项（2026-08-21 同步小程序：底栏两格，其余入口收进首页）。
+  final VoidCallback onOpenUploads;
+  final VoidCallback onOpenAi;
+  final VoidCallback onOpenGallery;
 
   /// 点击底部「我的」Tab。
   final VoidCallback onOpenMine;
@@ -216,60 +226,102 @@ class _HomeMainView extends StatelessWidget {
     );
   }
 
-  /// 两种场景共用的底部「选择投屏方式」标题 + 拍照/相册两张入口卡。
+  /// 两种场景共用的底部六宫格入口（2026-08-21 同步小程序改版）。
+  ///
+  /// 原来这里是「选择投屏方式」小标题 + 拍照/相册两张卡；改版后：
+  /// - 小标题**去掉**（六项里已有四项与投屏无关，这句话把入口说窄了）；
+  /// - 底栏的「AI助手」「官方图库」两格取消，连同「我的上传」「我的设备」一起收进 3×2 宫格。
+  ///
+  /// ⚠️ `kAiEntryEnabled` / `kGalleryEntryEnabled` 两个灰度开关**保留**（小程序侧已删）：
+  /// App 是要过审、发版才能改的，关掉开关这一路退路不能丢。关掉时对应的卡整张不渲染，
+  /// 宫格自然回落成 5 项（3 + 2），不留空位。
   List<Widget> _castSection(BuildContext context) {
-    return [
-      Padding(
-        padding: _textInset,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onShowCastSheet,
-          child: Text(
-            AppL10n.of(context).homeCastSheetTitle,
-            style: _HomeTextStyles.sectionTitle,
-          ),
-        ),
+    final l10n = AppL10n.of(context);
+    final entries = <_HomeEntryCard>[
+      _HomeEntryCard(
+        title: l10n.homeEntryCameraTitle,
+        subtitle: l10n.homeCastCameraCardSubtitle,
+        color: const Color(0xFFEE6242),
+        iconAsset: 'assets/images/home-icon01.png',
+        arrowAsset: 'assets/images/home-icon11.png',
+        fallbackIcon: Icons.photo_camera_outlined,
+        onTap: onCamera,
       ),
-      const SizedBox(height: 8),
-      Padding(
-        padding: _cardInset,
-        // 两张卡**等分剩余宽度**，不再写死 159×155。
-        //
-        // 小程序 `.projection-card` 是 318×310rpx —— 而 rpx 是**按屏宽等比**的单位
-        // （750rpx 恒等于屏幕宽度），并不是固定像素。「1rpx = 0.5px」这个换算只在
-        // 375pt 宽的机型（iPhone 6/7/8）上成立。把 318rpx 硬写成 159 逻辑像素后：
-        //   360dp 宽的机器 → 可用宽度 360-48=312 < 两张卡 159×2=318 → **溢出 6px**。
-        // 这就是真机上宽度溢出的原因（iPhone 8 上刚好不溢出，所以不是每台都能复现）。
-        //
-        // 用 Expanded 等分 + 卡内 AspectRatio 保持 318:310 的原始宽高比，
-        // 任何屏宽下都既不溢出、比例也与设计稿一致。中缝 18rpx≈9。
-        child: Row(
+      _HomeEntryCard(
+        title: l10n.homeEntryAlbumTitle,
+        subtitle: l10n.homeCastAlbumCardSubtitle,
+        color: const Color(0xFF3E92E8),
+        iconAsset: 'assets/images/home-icon02.png',
+        arrowAsset: 'assets/images/home-icon12.png',
+        fallbackIcon: Icons.photo_library_outlined,
+        onTap: onAlbum,
+      ),
+      _HomeEntryCard(
+        title: l10n.homeEntryUploadsTitle,
+        subtitle: l10n.homeEntryUploadsSubtitle,
+        color: const Color(0xFF7B5FE8),
+        iconAsset: 'assets/images/home-icon03.png',
+        arrowAsset: 'assets/images/home-icon13.png',
+        fallbackIcon: Icons.folder_open_outlined,
+        onTap: onOpenUploads,
+      ),
+      if (kAiEntryEnabled)
+        _HomeEntryCard(
+          title: l10n.homeEntryAiTitle,
+          subtitle: l10n.homeEntryAiSubtitle,
+          color: const Color(0xFF11AE7B),
+          iconAsset: 'assets/images/home-icon04.png',
+          arrowAsset: 'assets/images/home-icon14.png',
+          fallbackIcon: Icons.auto_awesome_outlined,
+          onTap: onOpenAi,
+        ),
+      if (kGalleryEntryEnabled)
+        _HomeEntryCard(
+          title: l10n.tabGallery,
+          subtitle: l10n.homeEntryGallerySubtitle,
+          color: const Color(0xFFF0982B),
+          iconAsset: 'assets/images/home-icon05.png',
+          arrowAsset: 'assets/images/home-icon15.png',
+          fallbackIcon: Icons.collections_outlined,
+          onTap: onOpenGallery,
+        ),
+      _HomeEntryCard(
+        title: l10n.devMyDevicesTitle,
+        subtitle: l10n.homeEntryDevicesSubtitle,
+        color: const Color(0xFF05A6B1),
+        iconAsset: 'assets/images/home-icon06.png',
+        arrowAsset: 'assets/images/home-icon16.png',
+        fallbackIcon: Icons.devices_other_outlined,
+        onTap: onOpenDevices,
+      ),
+    ];
+
+    // 三列等分 + 9(=18rpx) 中缝、行距 12(=24rpx)。卡宽不写死的理由见 _HomeEntryCard：
+    // rpx 是按屏宽等比的单位，写死逻辑像素会在窄屏溢出。
+    const gap = 9.0;
+    final rows = <Widget>[];
+    for (var i = 0; i < entries.length; i += 3) {
+      final row = entries.skip(i).take(3).toList();
+      rows.add(
+        Row(
           children: [
-            Expanded(
-              child: _CastEntryCard(
-                title: AppL10n.of(context).homeCastCameraTitle,
-                subtitle: AppL10n.of(context).homeCastCameraCardSubtitle,
-                isCamera: true,
-                artAsset: 'assets/images/camera_material.png',
-                arrowAsset: 'assets/images/home-icon05.png',
-                backgroundAsset: 'assets/images/home-camera-card-bg.png',
-                onTap: onCamera,
-              ),
-            ),
-            const SizedBox(width: 9),
-            Expanded(
-              child: _CastEntryCard(
-                title: AppL10n.of(context).homeCastAlbumTitle,
-                subtitle: AppL10n.of(context).homeCastAlbumCardSubtitle,
-                isCamera: false,
-                artAsset: 'assets/images/album_material.png',
-                arrowAsset: 'assets/images/home-icon06.png',
-                backgroundAsset: 'assets/images/home-album-card-bg.png',
-                onTap: onAlbum,
-              ),
-            ),
+            for (var j = 0; j < 3; j++) ...[
+              if (j > 0) const SizedBox(width: gap),
+              // 不足三项时用空占位补齐，剩下那一两张卡才不会被拉宽
+              Expanded(child: j < row.length ? row[j] : const SizedBox.shrink()),
+            ],
           ],
         ),
+      );
+      if (i + 3 < entries.length) {
+        rows.add(const SizedBox(height: 12));
+      }
+    }
+
+    return [
+      Padding(
+        padding: _cardInset,
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: rows),
       ),
     ];
   }

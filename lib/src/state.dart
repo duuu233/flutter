@@ -13,6 +13,8 @@ import 'device/device_interaction_trace.dart';
 import 'device/frame_device_protocol.dart';
 import 'device/recently_bound_device.dart';
 import 'device/serial_match.dart';
+import 'features/ai/ai_last_session.dart';
+import 'features/ai/ai_token.dart';
 import 'features/cast/cast_upload_limit.dart';
 import 'network/api_exception.dart';
 import 'network/api_rows.dart';
@@ -31,6 +33,27 @@ enum PermissionKind { location, bluetooth, album, camera }
 enum DeviceRole { owner, user }
 
 enum ImageSourceType { camera, album }
+
+/// 「固件升级」这一行的版本比对结论（2026-08-12 同步小程序 `evaluateFirmwareUpdate`）。
+///
+/// 改动前详情页右侧显示的是**版本号本身**（`newVersionNo` 或设备当前版本）——一个是云端最新、
+/// 一个是设备当前，用户看到一个数字却无从判断该不该升级。现在给结论。
+enum FirmwareUpdateVerdict {
+  /// 设备实测版本 ≠ 云端最新版本，且升级包可用 → 「有版本可更新」。
+  update,
+
+  /// 版本相同，或后端根本没给 `newVersionNo` → 「已是最新版本」。
+  latest,
+
+  /// 版本不同但缺号/缺地址/不是 `.bin` → 对用户仍说「已是最新版本」，点进去才如实说明原因。
+  invalid,
+
+  /// 读不到设备当前固件版本（未连接 / `0x03` 失败）→ 显示 `--`。
+  ///
+  /// ⚠️ **绝不能在这里说「已是最新版本」**：那是在不知情时给用户一个可能是假的结论，
+  /// 而这恰恰是最危险的一种假值 —— 用户会因此**不去升级**。
+  unknown,
+}
 
 enum CastStatus { success, failed }
 
@@ -104,6 +127,13 @@ class UserProfile {
   /// 「我的」页优先展示它们，未下发（0）时才回退本地列表长度，对齐小程序 mine.js。
   int imgCount = 0;
   int productCount = 0;
+
+  /// 登录 / `getUserInfo` 出参新增的可用星币数（后端字段名仍是 `availableToken`，String）。
+  ///
+  /// ⚠️ **`null` 与 `0` 必须分开**：`null` = 这次响应没带这个字段（老后端灰度期），
+  /// `0` = 余额真的是 0。混为一谈的后果是二选一的错——要么白多打一次 `getUserAccount`，
+  /// 要么把 0 显示成上次的旧余额。AI 侧据此「先显示登录带回的值 → 再异步刷权威值」。
+  int? availableToken;
 }
 
 class DeviceItem {
@@ -209,8 +239,12 @@ class DeviceItem {
   int firmwareSize;
 
   /// 是否存在有效可升级包（有更新标记 + 版本号 + .bin 下载地址）。
-  bool get hasFirmwareUpdate =>
-      isUpdate == 1 &&
+  bool get hasFirmwareUpdate => isUpdate == 1 && hasValidFirmwarePackage;
+
+  /// 包本身是否可用（版本号 + 有效 `.bin` 地址），**不看后端的 `isUpdate` 标记**。
+  /// 版本比对结论（[evaluateFirmwareUpdate]）用它：设备实测版本与 `newVersionNo` 不同时，
+  /// 能不能升级取决于包在不在，而不取决于后端那个可能已过期的标记。
+  bool get hasValidFirmwarePackage =>
       newVersionNo.isNotEmpty &&
       downloadPath.isNotEmpty &&
       RegExp(r'\.bin(?:[?#]|$)', caseSensitive: false).hasMatch(downloadPath);
@@ -241,68 +275,46 @@ class DeviceItem {
   }
 }
 
-class AlbumPhoto {
-  AlbumPhoto({
-    required this.id,
-    required this.title,
-    required this.source,
-    required this.deviceId,
-    required this.ownerUserId,
-    required this.imageIndex,
-    required this.imageMaskBit,
-    required this.width,
-    required this.height,
-    required this.targetWidth,
-    required this.targetHeight,
-    required this.transferBytes,
-    required this.crc32,
-    required this.color,
-    required this.note,
-    required this.uploadedAt,
-    this.isOnDevice = true,
-    this.imageUrl,
-    this.thumbUrl,
-    this.deviceName = '',
-    this.imgBle,
-  });
-
-  final String id;
-  final String title;
-  final ImageSourceType source;
-  final String deviceId;
-  final String ownerUserId;
-
-  /// 这张图在设备上的**物理槽位索引**（后端 `imgIndex`，投屏成功时由本 App 上报）；
-  /// **-1 = 后端没有索引**，此时删除/刷屏只能回退推算（见 [_resolveDeviceImageIndex]）。
-  /// ⚠️ 0 是合法槽位（相框第一个位置），判空一律用 `>= 0` / `< 0`，绝不能用真假值。
-  final int imageIndex;
-  final int imageMaskBit;
-  final double width;
-  final double height;
-  final int targetWidth;
-  final int targetHeight;
-  final int transferBytes;
-  final int crc32;
-  final Color color;
-  final String note;
-  final DateTime uploadedAt;
-  bool isOnDevice;
-
-  /// 后端图片地址（来自 `getUserProductImgList.img`，原图）；为空时回退占位色块。
-  /// 大图预览 / 再次投屏裁剪用原图。
-  final String? imageUrl;
-
-  /// 网格缩略图地址（来自 `getUserProductImgList.imgThumb`，无则回退 `img`）。
-  /// 对齐小程序 list.wxml 的 `item.imgThumb`：列表只加载缩略图省流量/内存。
-  final String? thumbUrl;
-
-  /// 所属设备名（`getUserProductImgList.productName`）。后端逐行下发，
-  /// 不必反查设备列表——设备列表还没加载时也能正确显示。
-  final String deviceName;
-
-  /// 设备帧文件地址（`getUserProductImgList.imgBle`，.bin）；再次投屏可直传设备。
-  final String? imgBle;
+/// 版本号是否一致：去空格 + 不区分大小写；任一为空**不**视为一致
+/// （避免「未知版本」被误判成已是最新）。与小程序 `sameVersion` 同口径。
+bool sameFirmwareVersion(String a, String b) {
+  final left = a.trim().toUpperCase();
+  final right = b.trim().toUpperCase();
+  return left.isNotEmpty && right.isNotEmpty && left == right;
 }
+
+/// 「固件升级」行右侧文案与点击流程**共用**的一处判定（2026-08-12 同步小程序）。
+///
+/// 判据是**设备实际在跑的固件版本**（BLE `0x03 GET_SW_VER`，连接后由 `readDeviceInfo` 回填到
+/// [DeviceItem.firmwareVersion]）与接口 `newVersionNo` 的比较，而不是后端的 `isUpdate` 标记 ——
+/// 两处若各判各的，就会出现「详情说有版本可更新、升级页却说已是最新」，用户永远升不了级。
+///
+/// [currentVersion] 显式传入时优先（OTA 页会用当前会话 BLE 实读的那份）。
+/// 读不到设备版本时返回 [FirmwareUpdateVerdict.unknown]，调用方可退回后端 `isUpdate` 标志，
+/// 以保住「不连蓝牙也能查版本」的能力。
+FirmwareUpdateVerdict evaluateFirmwareUpdate(
+  DeviceItem device, {
+  String currentVersion = '',
+}) {
+  final current = (currentVersion.isNotEmpty ? currentVersion : device.firmwareVersion)
+      .trim();
+  if (current.isEmpty) {
+    return FirmwareUpdateVerdict.unknown;
+  }
+  final latest = device.newVersionNo.trim();
+  if (latest.isEmpty || sameFirmwareVersion(current, latest)) {
+    return FirmwareUpdateVerdict.latest;
+  }
+  return device.hasValidFirmwarePackage
+      ? FirmwareUpdateVerdict.update
+      : FirmwareUpdateVerdict.invalid;
+}
+
+// 2026-08-17 删除：`AlbumPhoto`（「我的图库」列表项，来自 `getUserProductImgList`）。
+// 端上已经没有任何页面渲染或读取图库列表——「我的相册」铺的是**投屏成功记录**（[CastRecord]），
+// 删除只认记录自己的 `imgIndex`（2026-08-10 起），再次投屏直接用记录自己的 `img`
+// （2026-07-22 起 setUserProductUpload 上传的就是原图）。图库照片的清理归后端。
+// 对齐小程序 2026-08-17 同名清理，勿再接回来。
 
 class CastRecord {
   CastRecord({
@@ -321,7 +333,6 @@ class CastRecord {
     this.command,
     this.resultCode,
     this.imageMask,
-    this.photoId,
     this.imageUrl,
     this.thumbUrl,
     this.imgBle,
@@ -343,7 +354,10 @@ class CastRecord {
   final int? command;
   final FrameProtocolResultCode? resultCode;
   final int? imageMask;
-  final String? photoId;
+
+  // 2026-08-17 删除：`photoId`（后端 `uProductImgId`，记录 ↔ 图库照片的关联键）。
+  // 它只喂过「按记录找图库原图」和「按图库照片解析设备槽位」两处，两处都已改成直接吃
+  // 记录自己的 `img` / `imgIndex`（见 [PhotoFrameState.resolveDeleteSlots]）。
 
   /// 后端投屏图片地址（来自 `getUserProductImgRecordList.img`，原图）；为空时回退占位色块。
   /// 再次投屏会下载它到本地重新裁剪（见 cast_management 的 recastImgUrl）。
@@ -383,13 +397,52 @@ class DeleteSlotSplit {
   final List<int> gone;
 }
 
+/// 「我的相册」删除**设备侧那一半**的结果（2026-08-20 两半互不阻断）。
+///
+/// 改前设备侧一失败就整批中止、后端记录一条都不删；现在产品口径改为：先发设备删除指令(0x12)，
+/// 无论成败都继续删投屏记录，两半的结果最后合并成一条提示（见 `gallery_page._confirmDelete`）。
+/// 所以这里不再用 [ActionFeedback] —— 那个只有「成功/失败」两态，表达不了「设备没删掉但记录删了」。
+class DevicePhotoDeleteOutcome {
+  const DevicePhotoDeleteOutcome({
+    this.blockedMessage = '',
+    this.deviceError = '',
+    this.refreshWarn = '',
+  });
+
+  /// **两半都不执行**时的原样提示，调用方据此 toast 后直接返回（不删记录、不刷列表、不清选中）。
+  ///
+  /// 两类来源：
+  /// - 前置条件不满足（没选照片 / 设备记录不存在 / 连不上这台设备）——端上根本没发出过 0x12，
+  ///   此时照删记录会让用户在完全没碰到设备的情况下丢掉记录。小程序侧同样保留了这道连接前置
+  ///   （`ensureConnectedDevice`）；
+  /// - **设备繁忙 0x0B**（2026-08-24 新增，协议文档口径）——指令被设备主动拒绝、根本没执行
+  ///   （规格书 v1.5 §6.6.1，刷墨水屏/写 Flash 的忙窗口约几秒），稍后重试就能真删掉，
+  ///   先把记录删掉只会白留一张幽灵图。见 [PhotoFrameState.deleteDevicePhotoSlots]。
+  final String blockedMessage;
+
+  /// 设备侧**真失败**的原因（Flash 写失败 0x04 / 传输中断 0x09 / 断连超时）：可能真的没删掉、
+  /// 也可能删了一半，仍按「两半互不阻断」继续删记录。
+  /// 空 = 设备侧成功，或按良性结果码（0x05 图片不存在 / 0x07 掩码不一致）当作已删跳过。
+  /// ⚠️ 设备忙 0x0B 不走这里，2026-08-24 起改由 [blockedMessage] 整批中止。
+  final String deviceError;
+
+  /// 删到了「屏幕当前正显示的那张」，补发的刷屏(0x24)失败：图已经删掉了，只是屏幕没切过去。
+  final String refreshWarn;
+
+  bool get blocked => blockedMessage.isNotEmpty;
+}
+
 /// 应用级演示状态容器。
 ///
 /// 页面只通过这个对象读取和触发业务动作；设备、相册、投屏记录、权限和登录态都在这里统一维护。
 /// 后续接入真实接口时，建议优先替换这些 action 方法内部实现，而不是让页面直接操作数据列表。
 class PhotoFrameState extends ChangeNotifier {
-  PhotoFrameState.seeded()
-    : _language = AppLanguage.zh,
+  /// [language] 为进程启动时的初始语种：App 端传入按手机系统语言解析出的值
+  /// （见 `SystemLanguage.resolve`），不传则保持简体中文。
+  /// 用户在「语种设置」里存过的选择由 `LanguagePreference` 读回后再经
+  /// [switchLanguage] 覆盖，优先级高于系统语言。
+  PhotoFrameState.seeded({AppLanguage? language})
+    : _language = language ?? AppLanguage.zh,
       _isLoggedIn = false,
       _currentUser = UserProfile(
         id: '',
@@ -406,10 +459,12 @@ class PhotoFrameState extends ChangeNotifier {
       },
       _devices = [],
       _selectedDeviceId = '',
-      _albumPhotos = [],
       _castRecords = [] {
     // BLE 层没有 BuildContext，用户可见错误文案（连接失败等）经此按当前语言取。
     BleController.instance.languageResolver = () => _language;
+    // 请求头 `language` 与初始语种对齐：跟随系统语言起步时，首屏那批请求
+    // （FAQ/协议/后端 retMsg）也必须按同一语种要，否则会先拿回一屏简中内容。
+    ApiSession.instance.setLanguage(_language);
   }
 
   AppLanguage _language;
@@ -424,7 +479,6 @@ class PhotoFrameState extends ChangeNotifier {
   final Map<PermissionKind, bool> _permissions;
   final List<DeviceItem> _devices;
   final DeviceBatteryCache _batteryCache = DeviceBatteryCache();
-  final List<AlbumPhoto> _albumPhotos;
   final List<CastRecord> _castRecords;
   final List<FaqArticle> _faqArticles = _seedFaqArticles();
 
@@ -445,11 +499,11 @@ class PhotoFrameState extends ChangeNotifier {
   // 成功和失败都会置 true（失败落空态，与小程序 catch 里 `setData({loading:false})` 一致）。
   // 二次进入不回退为 false：沿用旧列表静默刷新（stale-while-revalidate，同小程序）。
   bool _devicesLoaded = false;
-  bool _albumLoaded = false;
   bool _castRecordsLoaded = false;
   bool _userLoaded = false;
 
-  // 「我的」页「我的相册」卡片上的张数：**全部设备**的投屏成功记录条数（2026-08-05）。
+  // 全部设备的投屏成功记录条数（2026-08-05 起曾是「我的」页那张卡的张数口径，
+  // 2026-08-24 改取 getUserInfo 的 imgCount 后**保留备用**，见 [mineCastSuccessCount]）。
   // 单独存一份计数（而不是复用 _castRecords.length）：那份列表被图库页/投屏管理页按各自的
   // 设备与状态条件反复覆盖，长度随最后一次谁刷的而变，不能当账号级合计用。
   int _mineCastSuccessCount = 0;
@@ -459,14 +513,10 @@ class PhotoFrameState extends ChangeNotifier {
   // 渲染成「加载失败 + 重试」，而不是误导性的「暂无数据」空态
   // （空态文案只在确认成功且确实为空时出现）。成功刷新会清掉。
   bool _devicesLoadError = false;
-  bool _albumLoadError = false;
   bool _castRecordsLoadError = false;
 
   /// 设备列表首屏是否已出结果（false=仍在首次加载，页面应显示 loading 而非「未绑定」空态）。
   bool get devicesLoaded => _devicesLoaded;
-
-  /// 相册/图库首屏是否已出结果。
-  bool get albumLoaded => _albumLoaded;
 
   /// 投屏记录首屏是否已出结果。
   bool get castRecordsLoaded => _castRecordsLoaded;
@@ -474,16 +524,14 @@ class PhotoFrameState extends ChangeNotifier {
   /// 最近一次设备列表刷新是否失败（配合 [devicesLoaded]：列表为空时显示失败重试态）。
   bool get devicesLoadError => _devicesLoadError;
 
-  /// 最近一次相册刷新是否失败。
-  bool get albumLoadError => _albumLoadError;
-
   /// 最近一次投屏记录刷新是否失败。
   bool get castRecordsLoadError => _castRecordsLoadError;
 
   /// 用户资料首屏是否已出结果（「我的」页据此决定显示真实统计还是占位 `--`）。
   bool get userLoaded => _userLoaded;
 
-  /// 「我的相册」张数是否已出结果（「我的」页据此在拿到数字前显示 `--张照片`）。
+  /// 投屏成功记录条数是否已出结果。2026-08-24 起「我的」页不看它了（两张卡的
+  /// 「已出结果」都看 [userLoaded]），与 [mineCastSuccessCount] 一并保留备用。
   bool get mineCastSuccessLoaded => _mineCastSuccessLoaded;
 
   AppLanguage get language => _language;
@@ -493,28 +541,6 @@ class PhotoFrameState extends ChangeNotifier {
   UserProfile get currentUser => _currentUser;
 
   List<DeviceItem> get devices => List.unmodifiable(_devices);
-
-  List<AlbumPhoto> get myAlbum {
-    // 不再按 ownerUserId 过滤：后端 getUserProductImgList 已按 userToken 只返回本人图片，
-    // 再过滤一次纯属自伤——照片映射时写入的 ownerUserId 取自当时的 _currentUser.id，
-    // 若 refreshAlbum 与 refreshCurrentUser 并发（「我的」页就是这么调的），用户 id 由 '' 变成真实值后
-    // 全部照片都会被这个条件筛掉，图库直接空白。小程序也不做这层过滤，直接渲染后端返回的数据。
-    final items = _albumPhotos.where((photo) => photo.isOnDevice).toList();
-    // 最新在前。时间相同（后端不下发时间字段时很常见）再按 uProductImgId 倒序兜底：
-    // 它是自增主键，越大越新，且**每次刷新都一样**——Dart 的 List.sort 不稳定，
-    // 没有这层确定性兜底时相等元素的先后是任意的，刷新一次换一个样。
-    items.sort((left, right) {
-      final byTime = right.uploadedAt.compareTo(left.uploadedAt);
-      if (byTime != 0) {
-        return byTime;
-      }
-      return _albumIdRank(right).compareTo(_albumIdRank(left));
-    });
-    return items;
-  }
-
-  /// 图库排序兜底键：`uProductImgId` 转数字（非数字 id 归 0，仍是确定值）。
-  static int _albumIdRank(AlbumPhoto photo) => int.tryParse(photo.id) ?? 0;
 
   List<CastRecord> get castRecords => List.unmodifiable(_castRecords);
 
@@ -610,19 +636,22 @@ class PhotoFrameState extends ChangeNotifier {
     return '${value.year}-$month-$day $hour:$minute';
   }
 
-  /// 「我的」页「我的相册」卡片上的张数 = **全部设备**的投屏成功记录条数
-  /// （2026-08-05，由 [refreshMineCastSuccessCount] 写入；对齐小程序 mine.js
-  /// `photoCount: castSuccessCount`）。
+  /// 「我的」页「我的上传」卡片上的张数 = 用户信息接口 `GET /Client/User/getUserInfo` 的
+  /// `imgCount`（2026-08-24 起，接口文档口径；对齐小程序 mine.js
+  /// `photoCount: Number(userInfo.imgCount) || 0`）。后端算什么就显示什么。
   ///
-  /// 不再用账号级 `imgCount`（相册口径）：那个数把投屏失败的、已从设备删掉的都算在内，
-  /// 与点进「我的相册」看到的列表对不上。
-  int get minePhotoCount => _mineCastSuccessCount;
+  /// ⚠️ 这是对 2026-08-05「改用投屏成功记录条数」的**有意回退**：卡片文案已从「我的相册」
+  /// 改成「我的上传」，口径就是用户上传过的张数（含投屏失败的、已从设备删掉的），
+  /// 与点进去的成功记录列表本来就不是同一个数——别再为了对齐列表把它改回去。
+  int get minePhotoCount => _currentUser.imgCount;
 
-  /// 「我的」页的设备数：优先后端统计（getUserInfo 的 `productCount`），
-  /// 未下发（0）时回退本地列表长度——对齐小程序 mine.js。
-  int get mineDeviceCount => _currentUser.productCount > 0
-      ? _currentUser.productCount
-      : _devices.length;
+  /// 投屏成功记录条数（2026-08-05～08-24 曾是上面那张卡的口径，现**保留备用**）：
+  /// 由 [refreshMineCastSuccessCount] 写入，当前没有页面读它。
+  int get mineCastSuccessCount => _mineCastSuccessCount;
+
+  /// 「我的」页的设备数 = 用户信息接口的 `productCount`（2026-08-24 起，同上口径）。
+  /// 不再回退本地设备列表长度：两个数字都只认后端这一份，本页也因此少打一个设备列表请求。
+  int get mineDeviceCount => _currentUser.productCount;
 
   DeviceItem deviceById(String deviceId) => _findDevice(deviceId);
 
@@ -1028,6 +1057,20 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 按物理设备完整 ID 获取电量：15 秒内复用，过期后台读 0x04，并发调用共享一次读取。
   ///
+  /// 主动操作前取一次电量，供低电量提醒使用（2026-08-21 同步小程序）。
+  ///
+  /// 走的就是 [_refreshDeviceBattery] 那一套：15 秒内复用最近一次 0x04，超窗才真读，
+  /// 读失败保留旧值——所以「点一下弹一次提醒」不会变成「点一下多发一条 BLE 指令」。
+  /// 从未读到过电量时返回 null，调用方据此**不弹**（没有判据就不报警）。
+  Future<int?> batteryForActionTip(String deviceId) async {
+    await _refreshDeviceBattery(deviceId);
+    final device = _deviceByIdOrNull(deviceId);
+    if (device == null || !device.hasBatteryReading) {
+      return null;
+    }
+    return device.batteryLevel;
+  }
+
   /// 读取失败/非法值保持最近一次有效值；从未成功读取时保持未知，由页面显示 `--`。
   Future<void> _refreshDeviceBattery(
     String deviceId, {
@@ -1703,54 +1746,18 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 我的相册 / 图库列表：`/Client/UserProduct/getUserProductImgList`。
-  ///
-  /// 映射为 [AlbumPhoto]，仅在后端返回非空时替换本地列表（失败保留当前数据）。
-  /// 同时把设备一并刷新，保证 [deviceName] 能解析到后端设备名。
-  Future<ActionFeedback> refreshAlbum({String? userProductId}) async {
-    final epoch = _sessionEpoch;
-    try {
-      final data = await BoltFoxApi.getUserProductImgList({
-        'pageIndex': 1,
-        'pageSize': 100,
-        'userProductId': ?userProductId,
-      });
-      if (epoch != _sessionEpoch) {
-        // 会话代际已变（登出/换号）：丢弃这份旧会话的在途响应，防跨账号串屏。
-        return ActionFeedback(success: true, message: '');
-      }
-      final rows = extractApiRows(data);
-      // 后端为准：即使返回空也要覆盖本地（清空后相册应显示空态，不保留旧数据）。
-      final mapped = <AlbumPhoto>[];
-      for (var i = 0; i < rows.length; i++) {
-        mapped.add(_albumPhotoFromJson(rows[i], i));
-      }
-      _albumPhotos
-        ..clear()
-        ..addAll(mapped);
-      // 数据与首屏加载态同帧提交：先置 loaded 再 notify，页面不会出现「loading 已结束但列表还没写入」的空态中间帧。
-      _albumLoaded = true;
-      _albumLoadError = false;
-      notifyListeners();
-      return ActionFeedback(
-        success: true,
-        message: tr(zh: '相册已更新。', en: 'Album refreshed.', ja: 'アルバムを更新しました。'),
-      );
-    } catch (error) {
-      // 失败也结束首屏 loading（对齐小程序 catch 里的 `setData({loading:false})`；
-      // 错误提示由调用方按返回的 ActionFeedback 弹，不在这里重复弹）。
-      // 记下失败标记：图库页在列表为空时据此显示「加载失败 + 重试」而非空态。
-      _albumLoaded = true;
-      _albumLoadError = true;
-      notifyListeners();
-      return _apiFailure(error);
-    }
-  }
+  // 2026-08-17 删除：`refreshAlbum`（拉 `getUserProductImgList` 铺 `_albumPhotos`）。
+  // 「我的相册」的数据源只剩设备列表([refreshDevices])与投屏成功记录([refreshCastRecords])；
+  // 图库列表原来只喂两处（再次投屏取原图、默认设备「第一台有照片的」），两处都已改掉。
+  // 它还带过一个失败模式：与 getDevices 并列在首屏 Promise.all 里，一个用不上的接口
+  // 有权把整页打成「加载失败」。
 
   /// 查询设备一键清除状态（对齐小程序 `getUserProductClearImg`）：`true`=已清除、`false`=未清除、
   /// `null`=查询失败（接口层 showError:false 静默，下次进入/切换设备会再查）。
   ///
-  /// 设备在别处被执行过清空时（图库照片已不在设备上），图库页据此弹「请重新上传图片」提醒。
+  /// 设备在别处被执行过清空时（设备上的照片已被清掉），「我的相册」据此弹「请重新上传图片」提醒。
+  /// ⚠️ 2026-08-17 图库列表接口整体下线后，这一条仍**明确保留**：它查的是 UserProduct 侧的
+  /// 设备状态，不属于图库列表链路，也是用户唯一能感知到「设备在别处被清空过」的入口。
   Future<bool?> fetchDeviceClearImgStatus(String userProductId) async {
     if (userProductId.isEmpty) {
       return null;
@@ -1781,61 +1788,74 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 删除相册照片（支持多选）：设备优先——已连接时先删设备固件对应槽位(CMD 0x12)，
-  /// 若删到「屏幕当前正显示的图片」再刷屏(0x24)切到最近的有图槽位；设备删成功后再删后端记录，
-  /// 保证「列表 / 后端 / 设备」三处一致（对齐小程序 album/list.js confirmDeleteSelected +
-  /// refreshAfterDeleteIfNeeded）。设备删除失败即中止、不动后端，避免相框还挂着已删图片。
-  /// 未连接设备时跳过设备删除，仅删后端 + 本地软隐藏。
-  Future<ActionFeedback> deleteAlbumPhotos(Set<String> photoIds) async {
-    if (photoIds.isEmpty) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
+  /// 选中的投屏记录 → 待删设备槽位（对齐小程序 `album/list.js resolveDeleteTargets`）。
+  ///
+  /// 只认**这条投屏记录自己的 `imgIndex`**：网格本就是按投屏成功记录铺的，记录里的这份索引
+  /// 正是投屏成功时 `editUserProductImgRecord` 写进去的那个设备物理位置。
+  /// 任意一条缺索引/非法（含越界，IMG_MASK 只有 12 字节 96 位）就返回 null，由调用方**整批终止**——
+  /// 刻意不按设备掩码或列表顺序推算，也不在 0x12 报错后改删别的槽位，那只会删掉别人的图。
+  ///
+  /// ⚠️ 0 是合法槽位（相框第一个位置），判空一律用 `< 0`，绝不能用真假值。
+  /// （2026-08-10 起索引改取投屏记录这份；2026-08-17 图库列表下线后它成了唯一来源。）
+  static List<int>? resolveDeleteSlots(Iterable<CastRecord> records) {
+    final slots = <int>[];
+    for (final record in records) {
+      final slot = record.imageIndex;
+      if (slot == null || slot < 0 || slot >= 96) {
+        return null;
+      }
+      if (!slots.contains(slot)) {
+        slots.add(slot);
+      }
+    }
+    return slots.isEmpty ? null : slots;
+  }
+
+  /// 删除「我的相册」选中照片的**设备侧那一半**：删设备固件对应槽位(CMD 0x12)，
+  /// 若删到「屏幕当前正显示的图片」再刷屏(0x24)切到最近的有图槽位。
+  ///
+  /// [deviceId] = 这些记录所属设备（列表本就是按它向后端筛出来的）；
+  /// [slots] = [resolveDeleteSlots] 解析出的槽位（缺索引整批终止发生在调用方，进到这里的都合法）。
+  /// 未连接会自动扫连（对齐小程序 `ensureConnectedForAction`），连不上即中止、不动后端。
+  ///
+  /// ⚠️ 2026-08-20 口径变更（同步小程序 `album/list.js confirmDeleteSelected` 第 4 步）：
+  /// **设备侧与记录侧互不阻断**——除了「前置条件不满足」（没选照片 / 设备不存在 / 连不上）之外，
+  /// 设备侧无论成功、失败还是根本没应答，都把原因记进 [DevicePhotoDeleteOutcome.deviceError]
+  /// 返回给调用方，由调用方**照常**去删投屏记录；反过来记录接口失败也不回滚设备。
+  /// 改前是「非良性结果码直接判失败」：设备忙(0x0B)/Flash 写失败(0x04)/断连超时时整批中止，
+  /// 记录一条都不删，用户回到相册看见照片还在、再点一次还是同样的报错。
+  ///
+  /// ⚠️ 2026-08-24 例外（同步小程序同名函数，协议文档口径）：**设备繁忙 0x0B 恢复为整批中止**——
+  /// 无论撞在 0x01 掩码回读还是 0x12 删除应答上，都以 [DevicePhotoDeleteOutcome.blockedMessage]
+  /// 返回「当前电子纸设备繁忙，请稍后重试」，调用方据此**一条记录都不删、列表不刷新、选中态保留**。
+  /// 繁忙是设备回帧主动拒绝、指令根本没执行，不存在「删了一半」的中间态，天然可重试；
+  /// 而 0x04/0x09/断连超时确实可能已删掉一部分，仍走上面的「互不阻断」。
+  ///
+  /// 代价（产品已确认接受）：设备真的没删掉时记录先没了 → 相框上那张图成了「相册里看不到、
+  /// 端上也没有它 imgIndex」的幽灵图，只能靠「一键清空」清理。
+  ///
+  /// ⚠️ 2026-08-17：这里**不再删任何后端图片记录**（原先第 2 步的 `delUserProductImg` 已随
+  /// 整套「我的图库」接口下线）。端上删除 = 删设备槽位(0x12) + 删来源投屏记录
+  /// （后者由调用方 [deleteCastRecords] 做，允许部分失败），图库照片的清理归后端。
+  Future<DevicePhotoDeleteOutcome> deleteDevicePhotoSlots({
+    required String deviceId,
+    required List<int> slots,
+  }) async {
+    if (slots.isEmpty) {
+      return DevicePhotoDeleteOutcome(
+        blockedMessage: tr(
           zh: '请先选择要删除的照片。',
           en: 'Select photos to delete first.',
           ja: '削除する写真を選択してください。',
         ),
       );
     }
-    final photos = _albumPhotos
-        .where(
-          // 同 myAlbum：不按 ownerUserId 过滤（后端已按 userToken 隔离），
-          // 否则用户 id 到位的时机稍晚就会「选中了照片却提示没有可删除的照片」。
-          (photo) => photoIds.contains(photo.id) && photo.isOnDevice,
-        )
-        .toList();
-    if (photos.isEmpty) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '没有可删除的电子纸设备照片。',
-          en: 'No e-paper device photos can be deleted.',
-          ja: '削除できる電子ペーパーの写真がありません。',
-        ),
-      );
-    }
-
-    // 1) 设备优先：已连接则先读设备信息(0x01)拿到已占槽位 + 当前屏显图，把选中照片解析成设备槽位，
-    //    一条 0x12 批量删除；删到当前屏显图再刷屏(0x24)。设备删除失败即中止、不动后端。
-    // 目标设备 = 这些照片所属设备（单设备图库保证同一台）。跨设备批次会按同一掩码删错槽位(0x12)，防御拦截。
-    final targetId = photos.first.deviceId;
-    if (photos.any((photo) => photo.deviceId != targetId)) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '只能删除同一台电子纸设备的照片。',
-          en: 'You can only delete photos from a single e-paper device.',
-          ja: '同じ電子ペーパーの写真のみ削除できます。',
-        ),
-      );
-    }
     final targetMatches = _devices
-        .where((device) => device.id == targetId)
+        .where((device) => device.id == deviceId)
         .toList();
     if (targetMatches.isEmpty) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
+      return DevicePhotoDeleteOutcome(
+        blockedMessage: tr(
           zh: '电子纸设备不存在。',
           en: 'E-paper device not found.',
           ja: '電子ペーパーが見つかりません。',
@@ -1843,161 +1863,119 @@ class PhotoFrameState extends ChangeNotifier {
       );
     }
     // 未连接到「照片所属设备」则自动扫连（对齐小程序 ensureConnectedForAction），连不上中止、不动后端。
+    //
+    // ⚠️ 这道连接前置在 2026-08-20 的「两半互不阻断」里**刻意保留**（小程序侧同样保留）：
+    // 连不上设备时端上一条 0x12 都没发出去，照删记录等于用户完全没碰到设备就丢了记录。
+    // 「连不上设备时要不要也照删记录」是另一个待定的决定。
     if (!_sessionMatches(targetMatches.first)) {
-      final connectFeedback = await connectDevice(targetId);
+      final connectFeedback = await connectDevice(deviceId);
       if (!connectFeedback.success) {
-        return connectFeedback;
+        return DevicePhotoDeleteOutcome(
+          blockedMessage: connectFeedback.message,
+        );
       }
     }
     final client = BleController.instance.client;
+    if (!client.connected) {
+      return DevicePhotoDeleteOutcome(
+        blockedMessage: tr(
+          zh: '请先连接电子纸设备',
+          en: 'Please connect the e-paper device first.',
+          ja: '先に電子ペーパーを接続してください。',
+        ),
+      );
+    }
     String refreshWarn = '';
-    // 设备上**定位不到**这张照片时的标记：后端记录仍然要删掉，否则这条异常记录会**永久卡在图库**
-    //（用户反馈第 8 项：照片在设备上被删掉后，图库里那条记录再也删不掉）。
+    String deviceError = '';
+    // 设备繁忙的统一提示（与小程序 protocol.BUSY_MESSAGE 同一句中文）。
+    final busyMessage = tr(
+      zh: FrameProtocol.busyMessage,
+      en: 'The e-paper device is busy, please try again later.',
+      ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
+    );
+    // 1) 先读一次设备当前 IMG_MASK(0x01)，把待删槽位分成「设备上还在的」和「已经不在的」两拨。
     //
-    // ⚠️ 2026-08-10 起「槽位在设备上已空（另一端删过）」不再算这一类：那是本次新口径下的正常跳过，
-    //    照删记录、静默成功，不该再弹「照片在此设备异常，请删除重新上传」——话说反了，它刚被删掉。
-    //    这里只剩「记录没给 imgIndex、又推算不出位置」，那才是真的对不上、需要提示用户重传。
-    var devicePhotoAbnormal = false;
-    if (client.connected) {
-      // 1a) 先读一次设备当前 IMG_MASK(0x01)，把待删槽位分成「设备上还在的」和「已经不在的」两拨。
-      //
-      //    为什么要读：同一台设备可能被两部手机连过。另一部手机删掉了 A，设备上只剩 B、C，
-      //    而本机列表是按后端记录铺的，A 那条还在 → 相册里仍是 A/B/C 三张。这时把 A 的空槽位
-      //    一起塞进 0x12 的掩码，固件回 0x07，**整批**删除被打回，B、C 也跟着删不掉。
-      //
-      //    口径（2026-08-10 产品确认）：删除以「从我的相册里消失」为准，设备侧尽力而为——
-      //      · 槽位在设备上已空 → 跳过设备侧，后端记录照删，不影响同批其它张；
-      //      · 槽位上现在躺着另一端后传的别的图 → 仍按索引删掉，不做内容比对（产品明确接受：
-      //        索引是我们唯一的定位手段，根治要靠后端的 imgIndex 唯一性规则）；
-      //      · 设备忙 / Flash 写失败 / 传输中断 / 断连超时 → 如实中止，后端记录不动。
-      FrameDeviceInfo? info;
+    //    为什么要读：同一台设备可能被两部手机连过。另一部手机删掉了 A，设备上只剩 B、C，
+    //    而本机列表是按后端记录铺的，A 那条还在 → 相册里仍是 A/B/C 三张。这时把 A 的空槽位
+    //    一起塞进 0x12 的掩码，固件回 0x07，**整批**删除被打回，B、C 也跟着删不掉。
+    //
+    //    口径（2026-08-10 产品确认）：删除以「从我的相册里消失」为准，设备侧尽力而为——
+    //      · 槽位在设备上已空 → 跳过设备侧，来源记录照删，不影响同批其它张；
+    //      · 槽位上现在躺着另一端后传的别的图 → 仍按索引删掉，不做内容比对（产品明确接受：
+    //        索引是我们唯一的定位手段，根治要靠后端的 imgIndex 唯一性规则）；
+    //      · 回读失败（刚断连 / 应答超时）→ **不拦**，按记录里的真实 imgIndex 原样下发，
+    //        交给 0x12 的良性结果码兜底（回读只是一次辅助优化，它失败不该连记录也一起删不掉）；
+    //      · 回读回**设备繁忙 0x0B** → 2026-08-24 起**整批中止、什么都不删**：连 0x01 都被主动
+    //        拒了，紧随其后的 0x12 也必然被拒，与其先把记录删掉留幽灵图，不如让用户稍后重试。
+    FrameDeviceInfo? info;
+    try {
+      info = await client.readTransferInfo();
+    } catch (e) {
+      if (FrameBleException.isBusy(e)) {
+        debugPrint('[相册删除] 回读设备掩码(0x01)时设备繁忙，整批中止，不删除任何数据：$e');
+        return DevicePhotoDeleteOutcome(blockedMessage: busyMessage);
+      }
+      debugPrint('[相册删除] 回读设备掩码(0x01)失败，按选中槽位原样下发：$e');
+      info = null;
+    }
+    // 掩码读不到时 occupied 为 null——**一张都不能判「已不在」**，否则弱网/刚断连时会退化成
+    // 「记录全删了、图还留在设备上」。注意与「设备真的一张图都没有」区分：后者是 12 个 0 的
+    // 合法掩码，全判 gone 正是对的。
+    final occupied = info == null
+        ? null
+        : FrameProtocol.maskToIndexes(info.imgMask);
+    final split = splitSlotsByDeviceMask(slots, occupied);
+
+    // 2) 设备上还在的那些槽位交给 0x12；一张都不剩就整条指令都不发，直接交回调用方删记录。
+    if (split.onDevice.isNotEmpty) {
       try {
-        info = await client.readTransferInfo();
-      } catch (e) {
-        // 设备忙(0x0B)：设备答得上话、只是暂时在忙，原样提示稍后重试。
-        if (FrameProtocol.isBusyMessage(e.toString())) {
-          return ActionFeedback(
-            success: false,
-            message: tr(
-              zh: '当前电子纸设备繁忙，请稍后重试',
-              en: 'The e-paper device is busy, please try again later.',
-              ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
-            ),
-          );
-        }
-        // 其余回读失败（刚断连 / 应答超时）**不拦删除**：按记录里的真实 imgIndex 原样下发，
-        // 交给 0x12 的良性结果码兜底（此前这里直接判「设备删除失败」中止，掩码读不到就谁也删不掉）。
-        info = null;
-      }
-      // 掩码读不到时 occupied 为 null——**一张都不能判「已不在」**，否则弱网/刚断连时会退化成
-      // 「记录全删了、图还留在设备上」。注意与「设备真的一张图都没有」区分：后者是 12 个 0 的
-      // 合法掩码，全判 gone 正是对的。
-      final occupied = info == null
-          ? null
-          : FrameProtocol.maskToIndexes(info.imgMask);
-
-      final slotIndexes = <int>[];
-      for (final photo in photos) {
-        // 有真实索引就直接用（哪怕那一位现在躺着另一端后传的别的图，也按索引删，见上方口径）；
-        // 没有索引才回退推算，而推算依赖固件掩码——掩码读不到时这张只能算「定位不到」。
-        final slot = photo.imageIndex >= 0
-            ? photo.imageIndex
-            : (occupied == null ? -1 : _inferDeviceImageIndex(photo, occupied));
-        if (slot < 0) {
-          devicePhotoAbnormal = true;
-          continue;
-        }
-        if (!slotIndexes.contains(slot)) {
-          slotIndexes.add(slot);
-        }
-      }
-      final split = splitSlotsByDeviceMask(slotIndexes, occupied);
-
-      // 1b) 设备上还在的那些槽位交给 0x12；一张都不剩就整条指令都不发，直接去删后端记录。
-      if (split.onDevice.isNotEmpty) {
-        try {
-          final newMask = await client.deleteImage(split.onDevice);
-          // 只在删到「屏幕当前显示的图片」时才刷屏：切到删除后最近的有图槽位；
-          // 设备已无图片则不主动刷屏——固件在清空后会自动刷成空屏（无单独清屏指令）。
-          if (info != null && split.onDevice.contains(info.curImgIndex)) {
-            final remaining = FrameProtocol.maskToIndexes(newMask);
-            if (remaining.isNotEmpty) {
-              try {
-                await client.refreshScreen(remaining.first);
-              } catch (_) {
-                // 刷屏失败不抛出——设备侧已删成功，抛出会中止后端删除造成两边不一致。
-                refreshWarn = tr(
-                  zh: '已删除，但屏幕刷新失败，请稍后手动刷新屏幕。',
-                  en: 'Deleted, but screen refresh failed. Please refresh manually later.',
-                  ja: '削除しましたが画面更新に失敗しました。後で手動で更新してください。',
-                );
-              }
+        final newMask = await client.deleteImage(split.onDevice);
+        // 只在删到「屏幕当前显示的图片」时才刷屏：切到删除后最近的有图槽位；
+        // 设备已无图片则不主动刷屏——固件在清空后会自动刷成空屏（无单独清屏指令）。
+        if (info != null && split.onDevice.contains(info.curImgIndex)) {
+          final remaining = FrameProtocol.maskToIndexes(newMask);
+          if (remaining.isNotEmpty) {
+            try {
+              await client.refreshScreen(remaining.first);
+            } catch (_) {
+              // 刷屏失败不抛出——设备侧已删成功，抛出会中止记录删除造成两边不一致。
+              refreshWarn = tr(
+                zh: '已删除，但屏幕刷新失败，请稍后手动刷新屏幕。',
+                en: 'Deleted, but screen refresh failed. Please refresh manually later.',
+                ja: '削除しましたが画面更新に失敗しました。後で手動で更新してください。',
+              );
             }
           }
-        } catch (e) {
-          // 设备忙(0x0B)：设备只是暂时在忙，别归成通用「设备删除失败」，原样提示稍后重试。
-          if (FrameProtocol.isBusyMessage(e.toString())) {
-            return ActionFeedback(
-              success: false,
-              message: tr(
-                zh: '当前电子纸设备繁忙，请稍后重试',
-                en: 'The e-paper device is busy, please try again later.',
-                ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
-              ),
-            );
-          }
-          // 「图片不存在(0x05) / 掩码不一致(0x07)」：要删的图设备上本来就没有——上一步的掩码回读
-          // 与真正下发之间，另一端仍可能再删一张，所以这里还要兜一次。这类结果码按已删继续删记录。
-          // 其余（Flash 写失败 0x04、传输中断 0x09、断连/超时）仍如实中止，不动后端/本地，
-          // 避免「记录删了、图还挂在相框上」的三处不一致。
-          if (!FrameBleException.isSkippableDelete(e)) {
-            return ActionFeedback(
-              success: false,
-              message: tr(
-                zh: '电子纸设备删除失败，请检查电子纸设备连接后重试。',
-                en: 'Failed to delete from the e-paper device. Check the connection and retry.',
-                ja: '電子ペーパーからの削除に失敗しました。接続を確認して再試行してください。',
-              ),
-            );
-          }
+        }
+      } catch (e) {
+        // 「设备繁忙(0x0B)」：指令被设备主动拒绝、根本没执行 → 整批中止，什么都不删
+        //（2026-08-24 口径，见函数头注释）。必须判在下面两个分支之前：它是唯一
+        // 「中止且不动任何数据」的出口，记录接口一次都不会调。
+        if (FrameBleException.isBusy(e)) {
+          debugPrint('[相册删除] 0x12 回了设备繁忙(0x0B)，整批中止，不删除任何数据：$e');
+          return DevicePhotoDeleteOutcome(blockedMessage: busyMessage);
+        }
+        // 「图片不存在(0x05) / 掩码不一致(0x07)」：要删的图设备上本来就没有——上一步的掩码回读
+        // 与真正下发之间，另一端仍可能再删一张，所以这里还要兜一次。这类结果码按已删继续删记录。
+        if (FrameBleException.isSkippableDelete(e)) {
+          debugPrint('[相册删除] 0x12 回了「图片不存在/掩码不一致」，按设备侧已无此图继续删记录：$e');
+        } else {
+          // Flash 写失败(0x04)、传输中断(0x09)、断连/应答超时：设备侧「可能真的没删掉、
+          // 也可能删了一半」。只记下来，不中止——记录侧照删（2026-08-20 口径）。
+          deviceError = tr(
+            zh: '电子纸设备删除失败，请检查电子纸设备连接后重试。',
+            en: 'Failed to delete from the e-paper device. Check the connection and retry.',
+            ja: '電子ペーパーからの削除に失敗しました。接続を確認して再試行してください。',
+          );
+          debugPrint('[相册删除] 设备删除(0x12)失败，不影响后续记录删除：$e');
         }
       }
+    } else {
+      debugPrint('[相册删除] 选中照片在设备上都已不存在，跳过 0x12，直接删后端记录');
     }
-
-    // 2) 设备删成功（或未连接跳过）后再删后端记录。
-    try {
-      await BoltFoxApi.delUserProductImg(
-        photos.map((photo) => photo.id as Object).toList(),
-      );
-    } catch (error) {
-      return _apiFailure(error);
-    }
-
-    // 3) 本地软隐藏；设备真实掩码以下次 readDeviceInfo/刷新为准，这里不再本地模拟掩码。
-    for (final photo in photos) {
-      photo.isOnDevice = false;
-    }
-    notifyListeners();
-    // 4) 回后端对账列表/计数（对齐小程序删除后 loadPhotos）；失败则保留上面的本地软隐藏。
-    await refreshAlbum();
-    // 提示优先级与小程序一致：设备侧照片异常 > 刷屏失败 > 普通成功。
-    if (devicePhotoAbnormal) {
-      return ActionFeedback(
-        success: true,
-        warn: true,
-        message: devicePhotoAbnormalMessage,
-      );
-    }
-    return ActionFeedback(
-      success: true,
-      warn: refreshWarn.isNotEmpty,
-      message: refreshWarn.isNotEmpty
-          ? refreshWarn
-          : tr(
-              zh: '已删除所选照片。',
-              en: 'Selected photos deleted.',
-              ja: '選択した写真を削除しました。',
-            ),
+    return DevicePhotoDeleteOutcome(
+      deviceError: deviceError,
+      refreshWarn: refreshWarn,
     );
   }
 
@@ -2024,170 +2002,17 @@ class PhotoFrameState extends ChangeNotifier {
     );
   }
 
-  /// 「照片在此设备异常，请删除重新上传」——设备上定位不到这张图时的提示（需求第 8 项）。
-  /// 记录照删不误，只是告诉用户这张图在设备侧已经对不上了，需要重新投屏。
-  String get devicePhotoAbnormalMessage => tr(
-    zh: '照片在此电子纸设备异常，请删除重新上传',
-    en: 'This photo is out of sync with the e-paper device. Delete it and upload again.',
-    ja: 'この写真は電子ペーパー側と一致していません。削除して再アップロードしてください。',
-  );
-
-  /// 「刷新屏幕」：把选中的这张照片切到相框当前显示。需已连接设备；
-  /// 读设备信息 → 解析该照片槽位 → 0x24 切图。
-  ///
-  /// ⚠️ 2026-08-04 起**没有调用方**：「设备照片」页并入「我的相册」后，底部第一枚圆钮
-  /// 由「刷新屏幕」改成「再次投屏」，小程序侧同步删掉了这个入口（两端一致）。
-  /// 能力本身保留（删除后自动补刷屏仍在 [deleteAlbumPhotos] 里，走的是同一套槽位解析），
-  /// 产品确认不再需要手动刷屏入口后可连同 `galRefreshScreen` / `galRefreshing` 文案一起删除。
-  Future<ActionFeedback> refreshGalleryPhotoOnScreen(String photoId) async {
-    AlbumPhoto? photo;
-    try {
-      // 同 myAlbum：不按 ownerUserId 过滤（后端已按 userToken 隔离）。
-      photo = _albumPhotos.firstWhere((p) => p.id == photoId && p.isOnDevice);
-    } catch (_) {
-      photo = null;
-    }
-    if (photo == null) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '该照片不在电子纸设备上，无法刷新到屏幕。',
-          en: 'This photo is not on the e-paper device.',
-          ja: 'この写真は電子ペーパーにありません。',
-        ),
-      );
-    }
-    // 未连接到照片所属设备则自动扫连（对齐小程序 ensureActiveDeviceConnection），连不上中止。
-    final targetDeviceId = photo.deviceId; // photo 已判空
-    final targetMatches = _devices
-        .where((device) => device.id == targetDeviceId)
-        .toList();
-    if (targetMatches.isEmpty) {
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '电子纸设备不存在。',
-          en: 'E-paper device not found.',
-          ja: '電子ペーパーが見つかりません。',
-        ),
-      );
-    }
-    if (!_sessionMatches(targetMatches.first)) {
-      final connectFeedback = await connectDevice(targetDeviceId);
-      if (!connectFeedback.success) {
-        return connectFeedback;
-      }
-    }
-    final client = BleController.instance.client;
-    try {
-      final info = await client.readTransferInfo();
-      final occupied = FrameProtocol.maskToIndexes(info.imgMask);
-      final slot = _resolveDeviceImageIndex(photo, occupied);
-      if (slot < 0) {
-        return ActionFeedback(
-          success: false,
-          message: tr(
-            zh: '未能定位该照片在电子纸设备上的位置，请刷新图库后重试。',
-            en: 'Could not locate this photo on the e-paper device.',
-            ja: '電子ペーパー上でこの写真の位置を特定できませんでした。',
-          ),
-        );
-      }
-      await client.refreshScreen(slot);
-      return ActionFeedback(
-        success: true,
-        message: tr(
-          zh: '已切换到该照片。',
-          en: 'Switched to this photo.',
-          ja: 'この写真に切り替えました。',
-        ),
-      );
-    } catch (e) {
-      if (FrameProtocol.isBusyMessage(e.toString())) {
-        return ActionFeedback(
-          success: false,
-          message: tr(
-            zh: '当前电子纸设备繁忙，请稍后重试',
-            en: 'The e-paper device is busy, please try again later.',
-            ja: '電子ペーパーが処理中です。しばらくしてから再試行してください。',
-          ),
-        );
-      }
-      return ActionFeedback(
-        success: false,
-        message: tr(
-          zh: '刷新屏幕失败，请检查电子纸设备连接后重试。',
-          en: 'Failed to refresh the screen. Check the connection and retry.',
-          ja: '画面の更新に失敗しました。接続を確認して再試行してください。',
-        ),
-      );
-    }
-  }
-
-  /// 选中照片 → 设备固件图片槽位索引（对齐小程序 album/list.js resolveDeviceImageIndex）。
-  /// 删除图片(0x12)与刷新屏幕(0x24)共用这一处解析。
-  ///
-  /// ① **首选后端记录的真实槽位** [AlbumPhoto.imageIndex]：投屏成功时由本 App 上报的设备物理
-  ///    位置，是准确值（见 docs/图片索引-imgIndex方案.md）。
-  /// ② 没有索引时才**回退推算**（投屏成功但记账失败会产生这种记录）：固件已占用槽位 [occupied]
-  ///    按索引升序，上传时用 firstFreeIndex 从最小空闲槽位起填，即最早上传的图落在最小槽位；
-  ///    所以本设备在库照片按「上传先后」升序排（主键 uProductImgId 越小越早，取不到退回
-  ///    uploadedAt），第 N 张对应升序候选槽位里的第 N 个。直接按后端列表顺序（最新在前）去对
-  ///    会刷错图——这是「指定刷新图片不对」的旧根因。
-  ///    ⚠️ 推算前必须剔除「已被其它照片的真实索引钉住」的槽位，否则推算结果会撞上别人的位置。
-  ///
-  /// 照片不在本设备上、或定位不到返回 -1（调用方跳过，不会误删别人的图）。
-  ///
-  /// ⚠️ 删除链路（2026-08-10 起）**不走这里的 ①**：它要区分「槽位已空」与「定位不到」两种
-  /// -1，前者是正常跳过、后者才提示异常，所以自己判 [AlbumPhoto.imageIndex] 后调
-  /// [_inferDeviceImageIndex]。本方法保持原样供刷屏(0x24)使用。
-  int _resolveDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
-    // ① 有真实索引直接用，但要求该槽位在固件掩码里确实有图：记录指向空位说明设备侧早被删掉
-    //    （删除半成功等），此时跳过而不是回退推算——推算只会撞上别人的图。
-    if (photo.imageIndex >= 0) {
-      return occupied.contains(photo.imageIndex) ? photo.imageIndex : -1;
-    }
-    return _inferDeviceImageIndex(photo, occupied);
-  }
-
-  /// 上面的 ② 回退推算，单独抽出来给删除链路复用（那边的 ① 判定不同，见 [_resolveDeviceImageIndex]）。
-  int _inferDeviceImageIndex(AlbumPhoto photo, List<int> occupied) {
-    final devicePhotos = _albumPhotos
-        .where((item) => item.isOnDevice && item.deviceId == photo.deviceId)
-        .toList();
-
-    // ② 回退推算：候选槽位 = 固件已占用槽位 − 已被真实索引占用的槽位。
-    //    只看**同一台设备**的照片：跨设备的槽位号互不相干，混进来会误剔除本机的候选
-    //    （小程序取的是全部在库照片，多设备下会偏；App 按 deviceId 收窄）。
-    final claimed = devicePhotos
-        .map((item) => item.imageIndex)
-        .where((slot) => slot >= 0)
-        .toSet();
-    final candidates = occupied
-        .where((slot) => !claimed.contains(slot))
-        .toList();
-
-    // 参与排队的也只剩「同样没有索引」的照片，两边一一对应才不会错位。
-    final pending = devicePhotos.where((item) => item.imageIndex < 0).toList()
-      ..sort((a, b) {
-        final ai = int.tryParse(a.id);
-        final bi = int.tryParse(b.id);
-        if (ai != null && bi != null && ai != bi) {
-          return ai.compareTo(bi);
-        }
-        return a.uploadedAt.compareTo(b.uploadedAt);
-      });
-    final pos = pending.indexWhere((item) => item.id == photo.id);
-    if (pos < 0) {
-      return -1;
-    }
-    if (candidates.isNotEmpty) {
-      return pos < candidates.length ? candidates[pos] : -1;
-    }
-    // 候选为空：设备真无图(occupied 空)时回退到位置本身（保持旧行为）；
-    // 有图但全被真实索引钉住，说明本张在设备上没有立足之处，返回 -1 而不是硬套一个别人的槽位。
-    return occupied.isEmpty ? pos : -1;
-  }
+  // 2026-08-17 一并删除（都以图库账本 `_albumPhotos` 为输入，账本没了它们也无从成立）：
+  //   · `devicePhotoAbnormalMessage`「照片在此电子纸设备异常，请删除重新上传」——旧删除链路里
+  //     「记录没给 imgIndex、又推算不出位置」时的提示。新口径下缺索引在页面侧就整批终止了
+  //     （见 [resolveDeleteSlots]），到不了这一步。设备在别处被一键清空的提醒是另一条链路，
+  //     走 `getUserProductClearImg`（[fetchDeviceClearImgStatus]），**保留**。
+  //   · `refreshGalleryPhotoOnScreen`（手动「刷新屏幕」0x24）——2026-08-04 页面合并后就没有调用方
+  //     （底部第一枚圆钮改成了「再次投屏」），文案 `galRefreshScreen` / `galRefreshing` 同步删除。
+  //     删除时删到屏显图的**自动补刷屏**不受影响，仍在 [deleteDevicePhotoSlots] 里。
+  //   · `_resolveDeviceImageIndex` / `_inferDeviceImageIndex`（按上传先后推算槽位的回退）——
+  //     推算的输入是「同一台设备在库照片的排队顺序」，而唯一的索引来源已收敛成投屏记录自己的
+  //     `imgIndex`，缺了就整批终止，刻意不再推算。
 
   /// 投屏记录列表：`/Client/UserProduct/getUserProductImgRecordList`。
   ///
@@ -2231,7 +2056,7 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     } catch (error) {
-      // 失败也结束首屏 loading，并记失败标记（同 refreshAlbum）。
+      // 失败也结束首屏 loading，并记失败标记（对齐小程序 catch 里的 `setData({loading:false})`）。
       _castRecordsLoaded = true;
       _castRecordsLoadError = true;
       notifyListeners();
@@ -2239,7 +2064,11 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
-  /// 「我的」页「我的相册」卡片的张数：**全部设备**的投屏成功记录条数（写入 [minePhotoCount]）。
+  /// **全部设备**的投屏成功记录条数（写入 [mineCastSuccessCount]）。
+  ///
+  /// ⚠️ 2026-08-24 起「我的」页的「我的上传」张数改取 `getUserInfo` 的 `imgCount`，
+  /// 本方法**当前没有调用方**，与小程序 `api.getProjectionSuccessCount()` 一样保留备用
+  /// （口径若再变可直接复用，实现里的分页判停规则不便重写）。
   ///
   /// 与「我的相册」列表同口径（`deviceUploadState:1` + 本地按状态兜底），只是不带
   /// `userProductId`——卡片统计的是全部设备的合计，不是当前选中的那台。
@@ -2478,7 +2307,7 @@ class PhotoFrameState extends ChangeNotifier {
         ),
       );
     } catch (error) {
-      // 失败也结束首屏 loading，并记失败标记（同 refreshAlbum）。
+      // 失败也结束首屏 loading，并记失败标记（对齐小程序 catch 里的 `setData({loading:false})`）。
       _devicesLoaded = true;
       _devicesLoadError = true;
       notifyListeners();
@@ -2576,12 +2405,26 @@ class PhotoFrameState extends ChangeNotifier {
       return ActionFeedback(success: false, message: resolved.error!);
     }
     try {
-      await BoltFoxApi.addUserProduct(
+      final saved = await BoltFoxApi.addUserProduct(
         productId: resolved.productId!,
         productName: productName,
         productSerialNo: completeSerial,
       );
+      // 2026-08-12（同步小程序）：**重新绑定一台曾经解绑过的设备**时，后端会把它上次保存的
+      // 名字原样带回来（`ClientUserProductDetailApiOut.productName`）。绑定成功后的命名弹窗
+      // 要带出这个名字，而不是又给一个默认名 —— 所以这里**以后端回带的为准**，
+      // 不能让本地拼的默认名盖在它后面（小程序当初正是栽在这个覆盖顺序上）。
+      final backendName = _backendProductName(saved);
       await refreshDevices();
+      if (backendName.isNotEmpty) {
+        for (final device in devices) {
+          if (verifiedDeviceSerialMatch(device.serialNumber, completeSerial)) {
+            device.name = backendName;
+            notifyListeners();
+            break;
+          }
+        }
+      }
       return ActionFeedback(
         success: true,
         message: tr(
@@ -2593,6 +2436,22 @@ class PhotoFrameState extends ChangeNotifier {
     } catch (error) {
       return _apiFailure(error);
     }
+  }
+
+  /// 从 `addUserProduct` 出参里取后端回带的设备名（首次绑定时它就是我们刚提交的那个，
+  /// 重新绑定曾解绑过的设备时是它上次保存的旧名）。取不到返回空串。
+  String _backendProductName(dynamic data) {
+    Map<String, dynamic>? row;
+    if (data is Map) {
+      row = data.map((k, v) => MapEntry(k.toString(), v));
+    } else {
+      final rows = extractApiRows(data);
+      if (rows.isNotEmpty) {
+        row = rows.first;
+      }
+    }
+    final name = row?['productName'];
+    return name is String ? decodeDisplayText(name).trim() : '';
   }
 
   /// 解析 addUserProduct 必传的 productId（对齐小程序 `api.js` 的 `bindDevice` + `productScore`）。
@@ -2716,7 +2575,6 @@ class PhotoFrameState extends ChangeNotifier {
         unawaited(RecentlyBoundDevice.instance.clear());
       }
       _devices.removeWhere((device) => device.id == deviceId);
-      _albumPhotos.removeWhere((photo) => photo.deviceId == deviceId);
       _castRecords.removeWhere((record) => record.deviceId == deviceId);
       if (_selectedDeviceId == deviceId) {
         _selectedDeviceId = _devices.isEmpty ? '' : _devices.first.id;
@@ -2852,6 +2710,10 @@ class PhotoFrameState extends ChangeNotifier {
     //    任一蓝牙链路失败（断联 / 应答超时 / 未连接）或删完仍有残留 → 都视为设备侧未清成功。
     var deviceCleared = false;
     Object? clearError;
+    // 清空前设备上的真实张数（0x01 的 IMG_MASK 占位数），成功提示里报给用户。
+    // 2026-08-17：原先数的是图库账本 `_albumPhotos` 里这台设备的在库照片，账本已下线；
+    // 设备掩码本就是更准的那一份（另一端删过的照片不会被算进来）。
+    var clearedCount = 0;
     try {
       // 清空只依赖 0x01 的 IMG_MASK；不要附带读取固件版本 0x03。
       final info = await trace.measure(
@@ -2859,6 +2721,7 @@ class PhotoFrameState extends ChangeNotifier {
         client.readTransferInfo,
       );
       final indexes = FrameProtocol.maskToIndexes(info.imgMask);
+      clearedCount = indexes.length;
       if (indexes.isEmpty) {
         deviceCleared = true;
         trace.mark('delete-images-0x12-skipped');
@@ -2947,7 +2810,9 @@ class PhotoFrameState extends ChangeNotifier {
       return _apiFailure(error);
     }
 
-    // 3) 同步本地：设备已无图（IMG_MASK 清零 / 当前索引复位），相册对应照片标记为不在设备上。
+    // 3) 同步本地：设备已无图（IMG_MASK 清零 / 当前索引复位）。
+    //    「我的相册」渲染的是投屏成功记录，让它变空的是后端 clearUserProductImg 的级联删记录
+    //    （2026-08-10 确认），本地不再另行标记——详情页返回后各页自会重拉。
     device.imageMask = 0;
     device.currentImageIndex = 0;
     // 实时张数也要归零：imageCount 优先读 liveImageCount，不清的话详情页会一直显示
@@ -2955,13 +2820,6 @@ class PhotoFrameState extends ChangeNotifier {
     device.liveImageCount = 0;
     // 此处不再阻塞等待成功后的设备回读。确认页会先关闭 loading、提示成功并返回详情页，
     // 详情页 didPopNext 再以后台方式调用 refreshSelectedDeviceMemory（且仅读 0x01）。
-    var clearedCount = 0;
-    for (final photo in _albumPhotos.where(
-      (item) => item.deviceId == deviceId && item.isOnDevice,
-    )) {
-      photo.isOnDevice = false;
-      clearedCount += 1;
-    }
     notifyListeners();
     trace.mark('local-state-sync');
     trace.finish(success: true);
@@ -3002,6 +2860,8 @@ class PhotoFrameState extends ChangeNotifier {
     // 必须在 currentUser 被清理前按当前用户 ID 删除 AI 协议同意记录；
     // 下次登录（即使还是同一账号）也需要重新确认。
     await AiServiceConsent.clear(_currentUser.id);
+    // AI「上次停在哪一页」的记忆属于上一个用户，换账号后必须清掉（只在内存里）
+    AiLastSession.clear();
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 清空列表还不够：照片本体还在内存/磁盘两层图片缓存里（见 ImageCacheCleanup）。
@@ -3012,14 +2872,11 @@ class PhotoFrameState extends ChangeNotifier {
     unawaited(RecentlyBoundDevice.instance.clear());
     _batteryCache.clear();
     _devices.clear();
-    _albumPhotos.clear();
     _castRecords.clear();
     _selectedDeviceId = '';
     _devicesLoaded = false;
-    _albumLoaded = false;
     _castRecordsLoaded = false;
     _devicesLoadError = false;
-    _albumLoadError = false;
     _castRecordsLoadError = false;
     _userLoaded = false;
     // 「我的相册」张数跟随账号：不清会让下一个登录的账号先看到上一个人的数字
@@ -3048,24 +2905,24 @@ class PhotoFrameState extends ChangeNotifier {
       // The backend account has already been deleted; continue local cleanup.
     }
     await AiServiceConsent.clear(_currentUser.id);
+    // AI「上次停在哪一页」的记忆属于上一个用户，换账号后必须清掉（只在内存里）
+    AiLastSession.clear();
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 账号已在服务端删除，本地缓存的照片本体更不该留（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
-    // 注销后清空全部本地资产（不再按 ownerUserId 挑，见 myAlbum 注释），
+    // 注销后清空全部本地资产（不按 ownerUserId 挑：后端已按 userToken 隔离，
+    // 用户 id 到位的时机比列表回包晚，按它筛会把本人数据也筛掉），
     // 并把首屏加载态复位，下个账号进来才会重新走一次 loading 而不是直接看到上个账号的空态。
     unawaited(DeviceIdentityRegistry.instance.clear());
     unawaited(RecentlyBoundDevice.instance.clear());
     _batteryCache.clear();
-    _albumPhotos.clear();
     _castRecords.clear();
     _devices.clear();
     _selectedDeviceId = '';
     _devicesLoaded = false;
-    _albumLoaded = false;
     _castRecordsLoaded = false;
     _devicesLoadError = false;
-    _albumLoadError = false;
     _castRecordsLoadError = false;
     _userLoaded = false;
     // 「我的相册」张数跟随账号：不清会让下一个登录的账号先看到上一个人的数字
@@ -3220,7 +3077,7 @@ class PhotoFrameState extends ChangeNotifier {
   Future<void> refreshCurrentUser() async {
     if (!_isLoggedIn) {
       // 未登录不拉接口，但首屏加载态照样要结束：否则 userLoaded 永远是 false，
-      // 页面若单独依赖它（不像现在这样跟 albumLoaded 或起来用）就会永久卡在占位/loading。
+      // 页面若单独依赖它（不像现在这样跟 devicesLoaded 或起来用）就会永久卡在占位/loading。
       _userLoaded = true;
       notifyListeners();
       return;
@@ -3284,6 +3141,16 @@ class PhotoFrameState extends ChangeNotifier {
     }
     _currentUser.imgCount = _asInt(data['imgCount']);
     _currentUser.productCount = _asInt(data['productCount']);
+    // 2026-08-11（同步小程序）：登录/用户信息出参新增 `availableToken`。
+    // 缺字段就保持 null（不要 _asInt 兜成 0），页面才分得清「没下发」和「余额是 0」。
+    final availableToken = data['availableToken'];
+    if (availableToken != null && '$availableToken'.trim().isNotEmpty) {
+      final parsed = num.tryParse('$availableToken'.trim());
+      _currentUser.availableToken = parsed == null
+          ? null
+          : (parsed < 0 ? 0 : parsed.toInt());
+    }
+    AiToken.cacheBalance(_currentUser.availableToken);
   }
 
   /// 把后端设备记录映射为 [DeviceItem]；蓝牙字段给安全默认值，连接后再由 BLE 更新。
@@ -3381,17 +3248,11 @@ class PhotoFrameState extends ChangeNotifier {
 
   Color _paletteColor(int seed) => _palette[seed % _palette.length];
 
-  /// 图库排序的确定性回退基准：后端不下发时间字段时，用「本基准 - 下标秒」当排序键。
-  /// 取一个远早于任何真实业务时间的固定时刻——万一部分记录有真实时间、部分没有，
-  /// 没有时间的排在后面，而不是凭空插到最前。
-  static final DateTime _albumOrderFallbackEpoch = DateTime.utc(2000);
-
   /// 解析后端时间字段（ISO 字符串或时间戳），**解析不出来时返回 null**。
   ///
   /// 曾经还有一个回退成 `DateTime.now()` 的 `_parseDate`，已删除：那种回退值
-  /// 绝不能拿来当排序键——每次刷新都是新值，正是图库位置乱跳的根因
-  /// （见 [_albumPhotoFromJson]）。需要非空时由调用方自己 `?? DateTime.now()`，
-  /// 让「这里用了一个假时间」显式可见。
+  /// 绝不能拿来当排序键——每次刷新都是新值，正是列表位置乱跳的根因。
+  /// 需要非空时由调用方自己 `?? DateTime.now()`，让「这里用了一个假时间」显式可见。
   DateTime? _tryParseDate(dynamic value) {
     if (value is String && value.isNotEmpty) {
       return DateTime.tryParse(value);
@@ -3552,69 +3413,14 @@ class PhotoFrameState extends ChangeNotifier {
   /// ⚠️ 0 是合法槽位（相框第一个位置），所以判空只能判 null/空串，绝不能用真假值——
   /// 否则第一个位置上的照片永远删不掉、刷不到（见 docs/图片索引-imgIndex方案.md 问题 E）。
   ///
-  /// 这里**不做上限校验**：容量是真机上报的（[DeviceItem.capacity]，常量 maxImages 只是未连接
-  /// 时的回退值），拿它当上限会把大容量设备上的合法高位槽位误判成「无索引」，反而退回推算去删错图。
-  /// 越界保护在 [_resolveDeviceImageIndex]：只有出现在设备真实掩码里的槽位才会被采用。
+  /// 这里**不做容量校验**：容量是真机上报的（[DeviceItem.capacity]，常量 maxImages 只是未连接
+  /// 时的回退值），拿它当上限会把大容量设备上的合法高位槽位误判成「无索引」。
+  /// 删除链路的越界保护在 [PhotoFrameState.resolveDeleteSlots]（IMG_MASK 只有 96 位）与
+  /// [splitSlotsByDeviceMask]（只有出现在设备真实掩码里的槽位才会真的下发 0x12）。
   int _parseImgIndex(Object? value) {
     if (value == null) return -1;
     final index = int.tryParse(value.toString().trim());
     return (index == null || index < 0) ? -1 : index;
-  }
-
-  /// 把后端相册图片记录映射为 [AlbumPhoto]；BLE 相关字段给默认值。
-  ///
-  /// 字段名以后端 swagger `ClientUserProductImgApiOut` 为准：
-  /// `uProductImgId` / `img`(图片地址) / `imgBle`(设备帧 .bin) / `productName`(设备名) /
-  /// `userProductId` / `deviceId` / `imgIndex`(设备物理槽位)。该接口**不下发任何时间字段**，
-  /// 故 [AlbumPhoto.uploadedAt] 只用于本地排序，不要在 UI 上当成真实上传时间展示。
-  /// 原实现读的 `imgName` / `createTime` 等键后端根本不存在——标题永远是「照片」、
-  /// imgBle 整个丢掉（图库照片没法再次投屏）。
-  AlbumPhoto _albumPhotoFromJson(Map<String, dynamic> data, int index) {
-    final id =
-        (data['uProductImgId'] ?? data['uproductImgId'] ?? _nextId('photo'))
-            .toString();
-    final deviceId = (data['userProductId'] ?? '').toString();
-    final deviceName = (data['productName'] ?? '').toString();
-    final url = (data['img'] ?? '').toString();
-    // 缩略图优先取后端新字段 imgThumb，旧数据回退 img（对齐小程序 normalizePhoto 的 imgThumb）。
-    final thumb = (data['imgThumb'] ?? data['img'] ?? '').toString();
-    final imgBle = (data['imgBle'] ?? '').toString();
-    return AlbumPhoto(
-      id: id,
-      // 小程序 normalizePhoto 的 title 取 productName，没有则「照片 N」。
-      title: deviceName.isNotEmpty ? deviceName : '照片 ${index + 1}',
-      source: ImageSourceType.album,
-      deviceId: deviceId,
-      deviceName: deviceName,
-      ownerUserId: _currentUser.id,
-      // 设备物理槽位（后端 String，可能缺失）：图库删除/刷新屏幕按它定位，无索引为 -1。
-      imageIndex: _parseImgIndex(data['imgIndex']),
-      imageMaskBit: 0,
-      width: 0,
-      height: 0,
-      targetWidth: 0,
-      targetHeight: 0,
-      transferBytes: 0,
-      crc32: 0,
-      color: _paletteColor(index),
-      note: '',
-      // 排序键。优先用后端真实时间（`upTime` 最近修改 / `joinTime` 添加时间，
-      // 对齐小程序 normalizePhoto 的 `upTime ?? joinTime`）；接口没下发时间字段时
-      // 回退到「固定基准 - 下标秒」，保持后端返回的原序。
-      //
-      // 🔑 **绝不能再用 `DateTime.now()`**（2026-07-19 修「下拉刷新后图片随机换位」）：
-      // 旧写法是 `DateTime.now().subtract(Duration(microseconds: index))`，而 now()
-      // 是在映射循环里逐行读的。本意是「每行比上一行早 1µs」，可单次迭代的真实耗时
-      // 往往就超过 1µs 且有抖动 —— 于是相邻两行的键可能相等（Dart 的 List.sort
-      // 不稳定，相等元素顺序任意）甚至递增（直接与后端顺序相反）。抖动每次刷新都不同，
-      // 表现就是「每次下拉刷新部分图片随机调换位置」。
-      uploadedAt:
-          _firstParsableDate([data['upTime'], data['joinTime']]) ??
-          _albumOrderFallbackEpoch.subtract(Duration(seconds: index)),
-      imageUrl: url.isEmpty ? null : url,
-      thumbUrl: thumb.isEmpty ? null : thumb,
-      imgBle: imgBle.isEmpty ? null : imgBle,
-    );
   }
 
   /// 把后端投屏记录映射为 [CastRecord]。
@@ -3638,14 +3444,8 @@ class PhotoFrameState extends ChangeNotifier {
     final status = _castStatusFromJson(data);
     // 设备槽位（后端 String，可能缺失）：-1 表无索引，CastRecord 用 null 表达。
     final slot = _parseImgIndex(data['imgIndex']);
-    // 这条记录对应的相册照片主键。2026-08-04「我的相册」靠它把记录关联回 [AlbumPhoto]：
-    // 设备槽位解析(imageIndex 账本)、删相册记录、取原图都按它走。
-    // 后端两种大小写都出现过（对齐小程序 records.js resolveAlbumOriginalUrl 的两个键）。
-    final photoId = (data['uProductImgId'] ?? data['uproductImgId'] ?? '')
-        .toString();
     return CastRecord(
       id: id,
-      photoId: photoId.isEmpty ? null : photoId,
       title: deviceName.isNotEmpty ? deviceName : '投屏记录',
       deviceId: deviceId,
       deviceName: deviceName,
@@ -3715,6 +3515,7 @@ class PhotoFrameState extends ChangeNotifier {
     unawaited(BleController.instance.disconnect());
     // 登录态失效与主动退出同等处理；先捕获当前用户 ID，再异步清掉其协议缓存。
     unawaited(AiServiceConsent.clear(_currentUser.id));
+    AiLastSession.clear();
     ApiSession.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 与 logout 同等对待：会话已失效，上个账号的照片不该留在本机（见 ImageCacheCleanup）。
@@ -3723,14 +3524,11 @@ class PhotoFrameState extends ChangeNotifier {
     unawaited(RecentlyBoundDevice.instance.clear());
     _batteryCache.clear();
     _devices.clear();
-    _albumPhotos.clear();
     _castRecords.clear();
     _selectedDeviceId = '';
     _devicesLoaded = false;
-    _albumLoaded = false;
     _castRecordsLoaded = false;
     _devicesLoadError = false;
-    _albumLoadError = false;
     _castRecordsLoadError = false;
     _userLoaded = false;
     // 「我的相册」张数跟随账号：不清会让下一个登录的账号先看到上一个人的数字

@@ -6,8 +6,8 @@ import '../l10n/app_l10n.dart';
 ///
 /// 用法是**三分支互斥链**，loading 分支必须排他优先、写在最前：
 /// ```dart
-/// if (!state.albumLoaded) const PageLoading()
-/// else if (photos.isEmpty) ...页内空态
+/// if (!state.castRecordsLoaded) const PageLoading()
+/// else if (records.isEmpty) ...页内空态
 /// else ...列表
 /// ```
 /// 不要写成「空态 if」和「loading 遮罩 if」两条独立分支——那样首帧会同时命中空态。
@@ -43,7 +43,7 @@ class PageLoading extends StatelessWidget {
           Text(
             label ?? AppL10n.of(context).loading,
             // .page-loading__text → 26rpx(=13) / #8b9098。
-            // 原来写的是**白色**文字 —— 而页面背景 bg01 是浅色的，等于隐形。
+            // 原来写的是**白色**文字 —— 而页面背景（bg02.jpg）是浅色的，等于隐形。
             style: const TextStyle(
               color: Color(0xFF8B9098),
               fontSize: 13,

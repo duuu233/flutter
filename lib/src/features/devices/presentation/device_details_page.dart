@@ -7,6 +7,7 @@ import '../../../device/ble_controller.dart';
 import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/permission_gate.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
@@ -34,6 +35,62 @@ String _resolutionText(DeviceItem device, bool connected) {
     return '${device.screenWidth}*${device.screenHeight}';
   }
   return '--';
+}
+
+/// 当前会话 BLE 实读的固件版本（`0x03 GET_SW_VER`）。
+///
+/// 未连接一律空串：这一行讲的是**设备此刻在跑的版本**，而 [DeviceItem.firmwareVersion] 在 App 侧
+/// 是**粘性**的（断开后不清，见 `state.dart` `applyDeviceInfo`），直接读它会把上一次连接留下的
+/// 版本当成「现在的版本」显示出来——小程序侧断开时会把这个字段清掉，两端由这里对齐。
+/// 已连接时优先用当前会话实读的那份，取不到再退回记录里的值（同 OTA 页 `currentVersion` 的口径）。
+String _liveFirmwareVersion(DeviceItem device, bool connected) {
+  if (!connected) {
+    return '';
+  }
+  final live =
+      BleController.instance.sessionMatchesSerial(
+        device.serialNumber,
+        screenCode: device.screenType.code,
+      )
+      ? (BleController.instance.info?.firmwareVersion ?? '')
+      : '';
+  return (live.isNotEmpty ? live : device.firmwareVersion).trim();
+}
+
+/// 「固件升级」行右侧文案（2026-08-20 同步小程序）：**只展示设备当前在跑的固件版本号**。
+///
+/// 改动前显示的是比对结论文案（`有版本可更新` / `已是最新版本`）——用户看不到设备在跑哪个版本，
+/// 报障时也说不出版本号。现在结论改由箭头旁的红点表达（见 [_hasFirmwareUpdate]）。
+///
+/// 读不到（未连接 / `0x03` 失败）时回落 `--`，与本页设备ID、最大照片数量同一套占位约定；
+/// **绝不拿接口的 `newVersionNo` 顶上**：那是云端最新版本号，显示出来就是一个假的「当前版本」。
+String _firmwareVersionText(DeviceItem device, bool connected) {
+  final version = _liveFirmwareVersion(device, connected);
+  return version.isEmpty ? '--' : version;
+}
+
+/// 「固件升级」行箭头旁的红点：**已连接**且检测到有新版本才亮（2026-08-20 同步小程序）。
+///
+/// 未连接一律不亮：那时右边就是 `--`，没有任何版本依据，挂个红色角标等于无凭据地报警，
+/// 与本页其它 `--` 行自相矛盾。用户想查版本，点这一行照样能查（`startOtaFlow` 会重新拉
+/// 详情接口 + 退回后端 `isUpdate`，「不连蓝牙也能查版本」的能力没丢），只是不再由红点催。
+///
+/// 已连接后判定与点击流程 **完全同源**（[evaluateFirmwareUpdate] + unknown 退回
+/// [DeviceItem.hasFirmwareUpdate]，与 `startOtaFlow` 的 `canUpgradeNow` 一字不差），
+/// 否则会出现「红点亮着、点进去弹已是最新版本」的自相矛盾。
+/// `invalid`（版本不同但缺号/缺地址/非 `.bin`）**不亮**：点进去只会弹原因说明、根本升不了级。
+bool _hasFirmwareUpdate(DeviceItem device, bool connected) {
+  if (!connected) {
+    return false;
+  }
+  final verdict = evaluateFirmwareUpdate(
+    device,
+    currentVersion: _liveFirmwareVersion(device, connected),
+  );
+  if (verdict == FirmwareUpdateVerdict.unknown) {
+    return device.hasFirmwareUpdate;
+  }
+  return verdict == FirmwareUpdateVerdict.update;
 }
 
 /// 设备详情页：查看单个设备信息并进入 投屏 / 连接·断开 / 轮播设置 / 清空 / 删除 等操作。
@@ -205,6 +262,13 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
     if (!feedback.success) {
       _snack(context, feedback.message);
+      return;
+    }
+    // 主动点「连接」连上之后，电量 ≤10% 先提醒一次
+    // （2026-08-27 补齐 08-21 那轮遗留的入口，对齐小程序 ensureConnectedForAction）。
+    // 只在**连接**方向弹：断开不需要电量做判断，弹了也没有可操作的下一步。
+    if (!wasConnected) {
+      await showLowBatteryTipIfNeeded(context, state, device.id);
     }
   }
 
@@ -228,8 +292,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
     if (!feedback.success) {
       _snack(context, feedback.message);
+      return false;
     }
-    return feedback.success;
+    // 主动点「投屏」自动扫连上之后，电量 ≤10% 先提醒一次（与设备列表页 _ensureConnected 同一套）。
+    await showLowBatteryTipIfNeeded(context, state, deviceId);
+    return true;
   }
 
   /// 拍照 / 相册选择面板：走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款）。
@@ -243,6 +310,12 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     if (!state.isDeviceActuallyConnected(device.id)) {
       final connected = await _ensureConnected(context, device.id);
       if (!connected || !context.mounted) {
+        return;
+      }
+    } else {
+      // 已连接这一支没走连接流程，低电量提醒在这里补（对齐首页 _startCast 的同名分支）。
+      await showLowBatteryTipIfNeeded(context, state, device.id);
+      if (!context.mounted) {
         return;
       }
     }
@@ -277,7 +350,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
         ),
       ),
     );
-    state.refreshAlbum();
+    // 2026-08-17：图库列表接口已下线，投屏后只需重拉投屏记录。
     state.refreshCastRecords();
   }
 }
@@ -332,9 +405,10 @@ class DeviceDetailsBody extends StatelessWidget {
         !device.carouselEnabled) {
       return l10n.devCarouselDisabled;
     }
-    return device.playbackMode == FramePlaybackMode.random
-        ? l10n.devCarouselRandom
-        : l10n.devCarouselSequential;
+    // 2026-08-21 同步小程序：开着一律「已开启」，不再显示「顺序轮播/随机轮播」——
+    // 这一行只回答「开没开」，把顺序/随机这个二选一摆在概览行上反而看不出开关状态，
+    // 具体模式进轮播设置页看（devCarouselSequential/devCarouselRandom 仍由那一页使用）。
+    return l10n.devCarouselEnabled;
   }
 
   static String _batteryAsset(int level) {
@@ -368,7 +442,7 @@ class DeviceDetailsBody extends StatelessWidget {
                 width: 46,
                 height: 46,
                 child: Image.asset(
-                  'assets/images/home-icon02.png',
+                  'assets/images/home-device-thumb.png',
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(
                     Icons.photo_library_outlined,
@@ -584,13 +658,14 @@ class DeviceDetailsBody extends StatelessWidget {
                 iconAsset: 'assets/images/device-detail-icon04.png',
                 fallbackIcon: Icons.system_update_alt_rounded,
                 label: AppL10n.of(context).devOtaUpgrade,
-                value: device.hasFirmwareUpdate
-                    ? AppL10n.of(
-                        context,
-                      ).devFirmwareNewVersion(device.newVersionNo)
-                    : (device.firmwareVersion.isEmpty
-                          ? '-'
-                          : device.firmwareVersion),
+                // 2026-08-20（两端同改）：右侧回到**设备当前在跑的版本号**（`0x03 GET_SW_VER`），
+                // 「有没有新版本」改由箭头旁的一颗红点表达——原来那两句结论文案
+                //（有版本可更新 / 已是最新版本）占着右侧，用户反而看不到自己在跑哪个版本、
+                // 报障时也说不出版本号。读不到（未连接 / 0x03 失败）时给 `--`，与本页设备ID、
+                // 最大照片数量同一套占位约定，绝不拿云端的 `newVersionNo` 冒充当前版本。
+                // 未连接时整行就是 `--` 且红点不亮：没有版本依据就不报警（见 [_hasFirmwareUpdate]）。
+                value: _firmwareVersionText(device, connected),
+                showDot: _hasFirmwareUpdate(device, connected),
                 showChevron: true,
                 onTap: onOtaUpgrade,
               ),
@@ -687,6 +762,7 @@ class _DetailRow extends StatelessWidget {
     this.iconWidget,
     this.labelColor = const Color(0xFF33373D),
     this.labelWeight = FontWeight.w600,
+    this.showDot = false,
     this.showChevron = false,
     this.onTap,
   });
@@ -700,6 +776,10 @@ class _DetailRow extends StatelessWidget {
   final String value;
   final Color labelColor;
   final FontWeight labelWeight;
+
+  /// 取值与箭头之间的红点（目前只有「固件升级」行用：检测到新版本时亮）。
+  /// 纯提示、不承载点击——整行本来就可点。
+  final bool showDot;
   final bool showChevron;
   final VoidCallback? onTap;
 
@@ -758,8 +838,23 @@ class _DetailRow extends StatelessWidget {
                 ),
               ),
             ),
-            if (showChevron) ...[
+            // 新版本红点（2026-08-20，对齐小程序 `.firmware-dot`）：14rpx 圆点 ≈ 7dp、#FF3B30。
+            // 小程序那边 `.row-right` 的 gap 是 16rpx(8dp)，对「贴着箭头」来说太散，用
+            // `margin-right:-8rpx` 往箭头收一半——Flutter 没有负 margin，等价写法是把红点与
+            // 箭头之间的间距直接给成 4，取值与红点之间仍是 8。
+            if (showDot) ...[
               const SizedBox(width: 8),
+              Container(
+                width: 7,
+                height: 7,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFF3B30),
+                  shape: BoxShape.circle,
+                ),
+              ),
+            ],
+            if (showChevron) ...[
+              SizedBox(width: showDot ? 4 : 8),
               const Icon(
                 Icons.chevron_right_rounded,
                 color: Color(0xFF777E88),
@@ -775,9 +870,11 @@ class _DetailRow extends StatelessWidget {
 
 /// 「屏幕尺寸」行图标：相框 + 底座 + 顶部橙色双向标注箭头。
 ///
-/// 1:1 复刻小程序 `assets/images/device-detail-screen-size.svg`（48×48 视图盒）。
-/// Flutter 侧没有 SVG 依赖，也不值得为一枚图标引入 flutter_svg，故按同一组坐标绘制
-///（同 `_FrameLogoPainter` 的做法），按 20/48 缩放到行内 20×20。
+/// 1:1 复刻**小程序仓库**里的 `photo-album/assets/images/device-detail-screen-size.svg`
+///（48×48 视图盒）。Flutter 侧没有 SVG 依赖，也不值得为一枚图标引入 flutter_svg，
+/// 故按同一组坐标绘制（同 `_FrameLogoPainter` 的做法），按 20/48 缩放到行内 20×20。
+/// ⚠️ 本仓一度也拷了一份同名 SVG，因为**从来没有代码引用**（用的就是本类），
+/// 2026-08-27 随其它孤儿素材一并删除——要对坐标请回小程序那份看。
 class _ScreenSizeGlyph extends StatelessWidget {
   const _ScreenSizeGlyph();
 

@@ -23,7 +23,9 @@ import '../features/devices/presentation/delete_device_flow.dart';
 import '../features/devices/presentation/device_clear_flow.dart';
 import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
+import '../features/gallery/official/official_gallery_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
+import '../features/star/presentation/star_coin_page.dart';
 import '../features/guide/presentation/guide_page.dart';
 import '../features/settings/presentation/ai_service_agreement_page.dart';
 import '../features/settings/presentation/language_settings_page.dart';
@@ -122,6 +124,11 @@ class AppRoutes {
   static const figmaModifyPassword = '/figma/modify-password';
   static const figmaRegister = '/figma/register';
   static const figmaGallery = '/figma/gallery';
+
+  /// 官方图库（公共图库，非「我的相册」）与星币管理 —— 2026-08-12 App 侧补齐这两个模块。
+  /// 收藏列表与图片详情不给名字：它们要带参数，一律用 [AppPageRoute] push。
+  static const officialGallery = '/gallery/official';
+  static const starCoin = '/star-coin';
   static const figmaCastManagement = '/figma/cast/management';
   static const figmaBindDeviceSearching = '/figma/bind-device/searching';
   static const figmaBindDeviceFound = '/figma/bind-device/found';
@@ -196,6 +203,12 @@ class AppRoutes {
         break;
       case AppRoutes.figmaGallery:
         builder = (_) => GalleryPage(state: state);
+        break;
+      case AppRoutes.officialGallery:
+        builder = (_) => OfficialGalleryPage(state: state);
+        break;
+      case AppRoutes.starCoin:
+        builder = (_) => const StarCoinPage();
         break;
       case AppRoutes.figmaCastManagement:
         builder = (_) => CastManagementFigmaPage(state: state);

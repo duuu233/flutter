@@ -8,6 +8,7 @@ import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/low_battery_tip.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import 'my_devices_page.dart';
@@ -292,7 +293,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
         ),
       ),
     );
-    state.refreshAlbum();
+    // 2026-08-17：图库列表接口已下线，投屏后只需重拉投屏记录。
     state.refreshCastRecords();
   }
 
@@ -315,8 +316,11 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
     }
     if (!feedback.success) {
       _showMessage(context, feedback.message);
+      return false;
     }
-    return feedback.success;
+    // 主动点「连接」/「投屏」连上之后，电量 ≤10% 先提醒一次（2026-08-21 同步小程序）。
+    await showLowBatteryTipIfNeeded(context, widget.state, deviceId);
+    return true;
   }
 
   /// 拍照 / 相册选择面板：走共用卡片式弹层（对齐小程序 `.media-sheet` / 首页同款）。
