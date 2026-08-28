@@ -100,6 +100,26 @@ class NativeDeviceApi {
     return DevicePermissionStatus.fromMap(result);
   }
 
+  /// 把本地文件保存进系统相册。成功 true；失败 false（权限被拒 / 写入失败 / 通道未实现）。
+  ///
+  /// Android 走 MediaStore 写 `Pictures/BoltStar`（Q 起免权限，Q 以下会先申请
+  /// WRITE_EXTERNAL_STORAGE 再自动补上这次保存）；iOS 走 Photos 的 **addOnly** 授权。
+  /// 失败一律吞成 false 由调用方提示：这是「保存」这一步的失败，不该把整条链路炸掉。
+  static Future<bool> saveImageToGallery(String path, {String? name}) async {
+    if (path.isEmpty) {
+      return false;
+    }
+    try {
+      final ok = await _channel.invokeMethod<bool>('saveImageToGallery', {
+        'path': path,
+        if (name != null && name.isNotEmpty) 'name': name,
+      });
+      return ok ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static Future<GallerySelection?> openGallery() async {
     final result = await _channel.invokeMapMethod<String, dynamic>(
       'openGallery',

@@ -169,12 +169,17 @@ class AiI18n {
   };
 
   /// 一键生图自动拼接的 message 文案（文档 §5.3.2：img_style 触发生图时 message 仍必填）。
+  ///
+  /// ⚠️ 这句是**用户气泡里显示的那行字**，必须与浮层上点的那个标签一致
+  /// （[AppL10n.aiStyleLabel]）：2026-08-28 之前点「漫画」发出去的却是「生成图片-卡通」，
+  /// 因为标签与 key 反着绑（见 `aiStyleLabel` 的说明）。现在 anime=漫画、cartoon=卡通，
+  /// 三处（标签 / 本文案 / `img_style`）同一口径。
   static const Map<String, Map<AppLanguage, String>> _genMessages = {
     'cartoon': {
       AppLanguage.zh: '生成图片-卡通',
       AppLanguage.zhHant: '生成圖片-卡通',
       AppLanguage.en: 'Generate image - Cartoon',
-      AppLanguage.ja: '画像を生成-漫画',
+      AppLanguage.ja: '画像を生成-カートゥーン',
     },
     'landscape': {
       AppLanguage.zh: '生成图片-风景',
@@ -189,10 +194,11 @@ class AiI18n {
       AppLanguage.ja: '画像を生成-人物',
     },
     'anime': {
-      AppLanguage.zh: '生成图片-动漫',
-      AppLanguage.zhHant: '生成圖片-動漫',
-      AppLanguage.en: 'Generate image - Anime',
-      AppLanguage.ja: '画像を生成-アニメ',
+      // 需求 15.2：这一档在界面上叫「漫画」，发出去的内容也必须是「漫画」。
+      AppLanguage.zh: '生成图片-漫画',
+      AppLanguage.zhHant: '生成圖片-漫畫',
+      AppLanguage.en: 'Generate image - Comic',
+      AppLanguage.ja: '画像を生成-漫画',
     },
   };
 
@@ -214,9 +220,9 @@ class AiI18n {
     return text.isEmpty ? t('error.31001') : text;
   }
 
-  /// 一键生图按当前语种拼 message（如「生成图片-卡通」）。
+  /// 一键生图按当前语种拼 message（如「生成图片-漫画」）。
   String genMessage(String styleKey) {
-    final map = _genMessages[styleKey] ?? _genMessages['cartoon']!;
+    final map = _genMessages[styleKey] ?? _genMessages['anime']!;
     return map[language] ?? map[AppLanguage.zh]!;
   }
 

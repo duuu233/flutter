@@ -249,6 +249,13 @@ class StarCoinApi {
   }
 }
 
+/// 售价的货币符号（星币管理页的套餐卡、确认购买页共用）。
+///
+/// ⚠️ **待后端确认**：套餐的 `amount` 现在是小程序那套人民币价，而 PayPal 侧要 `currency_code`。
+/// 若后端对 PayPal 单独换算成美元（或另给一档美元价），这里连同 [StarPackage.price] 的口径
+/// 一起改，别只改符号——那会变成「写着 $、扣的是 ¥」。
+const String kStarCurrencySymbol = '¥';
+
 /// `addOrder` / `setCreatePay` / `getPayQuery` 的 `payType`（swagger `ClientOrderAddApiIn.payType`）。
 ///
 /// ⚠️ **按端分工，不是三端同一套**（产品口径 2026-08-27）：

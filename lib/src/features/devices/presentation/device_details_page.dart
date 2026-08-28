@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
@@ -137,8 +139,29 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     super.initState();
     // 打开即重读一次真机内存/索引（对齐小程序 detail.js onShow→loadDetail→readDeviceInfo，Bug13）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      state.refreshConnectedDeviceInfo(widget.deviceId);
+      unawaited(_refreshDetail());
     });
+  }
+
+  /// 进页面/返回本页时刷新这一屏要用的两份数据（对齐小程序 `detail.js loadDetail`）。
+  ///
+  /// ① BLE 侧：内存/索引（0x01）；
+  /// ② 云端侧：`getUserProductDetail` 的 `isUpdate` / `newVersionNo` / `downloadPath`。
+  ///
+  /// ⚠️ **② 是 2026-08-28 补的**：「固件升级」行的版本号与红点早就画好了，但没有人在本页拉过
+  /// 云端版本字段——`newVersionNo` 一直是空串，[evaluateFirmwareUpdate] 于是恒判「已是最新」，
+  /// **红点永远不亮**，要等用户点进 OTA 页才第一次比对。小程序在 `onShow` 里就拉了，
+  /// 这就是那条「详情页没同步最新改动」的实际缺口。
+  ///
+  /// 顺序不能反：② 要把设备当前版本（①/0x03 读到的）作为 `productVersionNo` 发给后端，
+  /// 后端拿它比对才算得出 `isUpdate`（见 [PhotoFrameState.fetchDeviceFirmwareInfo]）。
+  /// 两步都是**静默 best-effort**：失败不弹错——本页主要信息不依赖它，红点不亮而已。
+  Future<void> _refreshDetail() async {
+    await state.refreshConnectedDeviceInfo(widget.deviceId);
+    if (!mounted) {
+      return;
+    }
+    await state.fetchDeviceFirmwareInfo(widget.deviceId);
   }
 
   @override
@@ -156,10 +179,11 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     super.dispose();
   }
 
-  // 从被覆盖页（投屏预览/清空/删除确认等）返回时再读一次内存（对齐小程序 onShow）。
+  // 从被覆盖页（投屏预览/清空/删除确认等）返回时再刷一次（对齐小程序 onShow）。
+  // 从 OTA 页回来尤其要刷：刚升完级，版本号与红点都得跟着变。
   @override
   void didPopNext() {
-    state.refreshConnectedDeviceInfo(widget.deviceId);
+    unawaited(_refreshDetail());
   }
 
   @override

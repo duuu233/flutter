@@ -753,6 +753,7 @@ class AiStreamEvent {
     this.stage = '',
     this.message = '',
     this.orientation = '',
+    this.mode = '',
     this.code,
     this.detail = '',
   });
@@ -767,6 +768,8 @@ class AiStreamEvent {
       stage: json['stage']?.toString() ?? '',
       message: json['message']?.toString() ?? '',
       orientation: json['orientation']?.toString() ?? '',
+      // `mode` 事件的取值。同时认塞在 `content` 里的写法（对齐小程序取值方式）。
+      mode: (json['mode'] ?? json['content'] ?? '').toString(),
       code: json['code'] == null ? null : int.tryParse('${json['code']}'),
       detail:
           json['detail']?.toString() ??
@@ -784,6 +787,10 @@ class AiStreamEvent {
   /// 服务端下发的进度文案（2026-08-07 新增）。有就直接显示，不必再自己维护 stage→文案 映射。
   final String message;
   final String orientation;
+
+  /// 仅 `mode` 事件带（服务端 2026-08-07 新增）：`image` = 这一轮出图、`text` = 纯文字。
+  /// 空串 = 没收到（老部署不推这个事件），调用方按「未知」兜底。
+  final String mode;
 
   /// 仅 `error` 事件带。
   final int? code;

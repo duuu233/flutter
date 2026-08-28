@@ -608,22 +608,36 @@ class _ServiceRow extends StatelessWidget {
               },
             ),
             const SizedBox(width: 14),
-            Expanded(child: Text(title, style: _MineTextStyles.rowTitle)),
-            if (value != null)
-              // 与小程序同款取舍：数值**过长时省略**（余额位数多、英文「stars left」更长），
-              // 而不是把标题或右侧箭头顶出行外。左右留白 24rpx/16rpx(=12/8)。
-              Flexible(
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 12, right: 8),
-                  child: Text(
-                    value!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: _MineTextStyles.rowValue,
-                  ),
-                ),
+            // 标题与数值同处一个 Expanded 里（2026-08-28 修「星币管理行的箭头没和上下对齐」）：
+            // 原来是外层 Row 直接放 `Expanded(标题) + Flexible(数值) + 箭头`，两个 flex 子节点
+            // 各分到一半余宽，而 Flexible 是 loose——数值只占自己那点宽，**没用完的那半**
+            // 不会还给标题，Row 的 MainAxisAlignment.start 把它甩到最后，箭头因此被顶得
+            // 离右边缘还差二三十像素，与没有数值的「操作指南 / 设置」两行对不齐。
+            // 改成：外层只有一个 Expanded 吃满余宽，箭头必然贴在右内边距上（三行同一条线）；
+            // 标题与数值在内层 Row 里 spaceBetween 分居两端，多余空隙落在两者之间。
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Flexible(child: Text(title, style: _MineTextStyles.rowTitle)),
+                  if (value != null)
+                    // 与小程序同款取舍：数值**过长时省略**（余额位数多、英文「stars left」更长），
+                    // 而不是把标题或右侧箭头顶出行外。左右留白 24rpx/16rpx(=12/8)。
+                    Flexible(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12, right: 8),
+                        child: Text(
+                          value!,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.right,
+                          style: _MineTextStyles.rowValue,
+                        ),
+                      ),
+                    ),
+                ],
               ),
+            ),
             const Text(
               '›',
               style: TextStyle(

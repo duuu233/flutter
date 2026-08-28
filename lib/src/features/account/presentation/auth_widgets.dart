@@ -322,6 +322,12 @@ class AuthAgreementRow extends StatelessWidget {
     required this.privacyPolicyText,
   });
 
+  /// 各可点元素上下各撑出的**点击热区**（视觉不占位，见 [build] 注释）。
+  ///
+  /// 调用页要把本行前后的间距**各减去这么多**，行的视觉位置才与加热区之前一致
+  /// （登录页/注册页两处都已这么写）。
+  static const double hitPadding = 12;
+
   final bool agreed;
   final VoidCallback onChanged;
   final VoidCallback onUserAgreement;
@@ -331,10 +337,30 @@ class AuthAgreementRow extends StatelessWidget {
   final String andText;
   final String privacyPolicyText;
 
+  /// 上下补热区的可点文字：四段文案的点击高度统一为 `12 + 字高 + 12`。
+  Widget _tappable(String text, TextStyle style, VoidCallback onTap) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: hitPadding),
+        child: Text(text, style: style),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // Wrap 而非 Row：EN 文案 "I have read and agree to ..." 在 ≤375dp 宽屏上
     // 会超出一行，Row 直接横向溢出，Wrap 允许换行居中。
+    //
+    // 2026-08-28「勾选老点不中」：视觉是 16 的小圆点，热区却也只有 16×16（约 2.5mm），
+    // 而且这一行贴在屏幕最下方、离系统手势区很近，指头稍偏就落空。
+    // 对齐小程序 `.login-agreement__check-group` 的 86rpx(=43) 热区做法：**视觉不变、热区放大**——
+    // 圆点撑到 32×40，四段文案各自上下补 [hitPadding]，整行连成一条 40 高的可点带。
+    // 小程序靠负 margin 抵消热区占位，Flutter 的 Padding 不收负值，这里改为：
+    //   ① 圆点右侧的 8 顶掉原来的 7 间距（圆点相对整行只右移约 4，肉眼看不出来）；
+    //   ② 纵向多出的 2×12 由调用页把本行前后的间距各减 12 抵消（见 [hitPadding]）。
     return Wrap(
       alignment: WrapAlignment.center,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -342,39 +368,49 @@ class AuthAgreementRow extends StatelessWidget {
         GestureDetector(
           behavior: HitTestBehavior.opaque,
           onTap: onChanged,
-          child: Container(
-            width: 16,
-            height: 16,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: agreed ? const Color(0xFFEB5F1B) : Colors.transparent,
-              border: Border.all(
-                color: agreed
-                    ? const Color(0xFFEB5F1B)
-                    : const Color(0xFF8C9092),
-              ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: hitPadding,
             ),
-            child: agreed
-                ? const Icon(Icons.check_rounded, size: 12, color: Colors.white)
-                : null,
+            child: Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: agreed ? const Color(0xFFEB5F1B) : Colors.transparent,
+                border: Border.all(
+                  color: agreed
+                      ? const Color(0xFFEB5F1B)
+                      : const Color(0xFF8C9092),
+                ),
+              ),
+              child: agreed
+                  ? const Icon(
+                      Icons.check_rounded,
+                      size: 12,
+                      color: Colors.white,
+                    )
+                  : null,
+            ),
           ),
         ),
-        const SizedBox(width: 7),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onChanged,
-          child: Text(prefixText, style: AuthTextStyles.agreement),
+        _tappable(prefixText, AuthTextStyles.agreement, onChanged),
+        _tappable(
+          userAgreementText,
+          AuthTextStyles.agreementLink,
+          onUserAgreement,
         ),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onUserAgreement,
-          child: Text(userAgreementText, style: AuthTextStyles.agreementLink),
+        // 「和」不可点：夹在两个链接中间，点它跳哪边都是猜的。热区照补，
+        // 否则这一小段会在 40 高的可点带上留一个洞。
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: hitPadding),
+          child: Text(andText, style: AuthTextStyles.agreement),
         ),
-        Text(andText, style: AuthTextStyles.agreement),
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onPrivacyPolicy,
-          child: Text(privacyPolicyText, style: AuthTextStyles.agreementLink),
+        _tappable(
+          privacyPolicyText,
+          AuthTextStyles.agreementLink,
+          onPrivacyPolicy,
         ),
       ],
     );

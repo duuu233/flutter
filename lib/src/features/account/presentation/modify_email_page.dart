@@ -103,7 +103,11 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: l10n.accConfirmModify, onPressed: _confirm),
+      // 提交中置灰（与遮罩同一轮补齐）：遮罩已挡住误触，按钮同时变灰才对得上。
+      bottom: FigmaPrimaryButton(
+        label: l10n.accConfirmModify,
+        onPressed: _submitting ? null : _confirm,
+      ),
     );
   }
 
@@ -157,11 +161,20 @@ class _ModifyEmailPageState extends State<ModifyEmailPage> {
       return;
     }
     setState(() => _submitting = true);
-    final feedback = await widget.state.changeBoundEmail(
-      email: _newEmailController.text,
-      emailCode: _codeController.text,
-      password: password,
-    );
+    // 全局 loading 遮罩（2026-08-28 需求 14）：这一步是一次真实网络往返，
+    // 而本页的确认按钮既没有转圈也不置灰，慢网下点完毫无反馈、用户只会反复点。
+    // 与「获取验证码」同款处理（同页上方），`try/finally` 收口保证异常路径也关得掉。
+    AppLoadingDialog.show(context, AppL10n.of(context).saving);
+    final ActionFeedback feedback;
+    try {
+      feedback = await widget.state.changeBoundEmail(
+        email: _newEmailController.text,
+        emailCode: _codeController.text,
+        password: password,
+      );
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
       return;
     }

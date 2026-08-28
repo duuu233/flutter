@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:BoltStar/src/network/api_client.dart';
+import 'package:BoltStar/src/network/api_config.dart';
 import 'package:BoltStar/src/network/api_session.dart';
 import 'package:BoltStar/src/network/boltfox_api.dart';
 import 'package:BoltStar/src/state.dart';
@@ -50,7 +51,7 @@ void main() {
     ApiClient.instance.httpClient = http.Client();
   });
 
-  test('提交到 App 专用接口，body 只带 code，且不带登录态', () async {
+  test('提交到 App 专用接口，body 带 code + 终端三件套，且不带登录态', () async {
     useClient((_) async => okLogin());
 
     await BoltFoxApi.weChatMobileLogin(code: 'wx-code-1');
@@ -60,13 +61,21 @@ void main() {
     expect(request.method, 'POST');
     // 小程序手机号一键登录接口（setWechatAppLogin）不能用于移动应用 OAuth。
     expect(request.url.path, '/Client/User/setWechatAuthorizLogin');
-    expect(jsonDecode(request.body), {'code': 'wx-code-1'});
-    // device / language / terminal 走公共参数（swagger DTO 注释：通过 headers 传递）。
+
+    final body = jsonDecode(request.body) as Map<String, dynamic>;
+    expect(body['code'], 'wx-code-1');
+    // 2026-08-28：`terminal` 也写进 body。DTO 注释说走 headers，但实测后端按 body 认端 ——
+    // 安卓真机微信登录，后台记录的终端却是苹果（body 里没有这个字段 → 落到 DTO 默认值）。
+    // 取值口径：1=安卓 / 2=苹果（ApiConfig.terminal），测试跑在 Linux/桌面上按安卓兜底。
+    expect(body['terminal'], ApiConfig.terminal);
+    expect(body['language'], isA<int>());
+    // header / query 两份公共参数照旧（后端若真按 header 认，这份也还在）。
     expect(request.headers['terminal'], isNotEmpty);
     expect(request.headers['language'], isNotEmpty);
-    // 未登录接口：不带 userToken（header 与 query 都不带）。
+    // 未登录接口：不带 userToken（header、query 与 body 都不带）。
     expect(request.headers.containsKey('userToken'), isFalse);
     expect(request.url.queryParameters.containsKey('userToken'), isFalse);
+    expect(body.containsKey('userToken'), isFalse);
   });
 
   test('超时不重试：一次业务调用只发一次请求', () async {

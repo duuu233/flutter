@@ -102,9 +102,15 @@ void main() {
       'assets/images/device-list-icon0',
       'assets/images/ai-orientation-',
     ];
-    // 故意保留的无引用素材：当前一张都没有（bg01.png 2026-08-27 已删）。
-    // 再往里加必须写明理由与认领它的注释在哪，否则下一轮没人知道能不能删。
-    const parked = <String>[];
+    // 故意保留的无引用素材。加进来必须写明理由与认领它的注释在哪，否则下一轮没人知道能不能删。
+    const parked = <String>[
+      // 2026-08-28 需求 18：首页设备卡的卡面底图换成了小程序那套「毛玻璃 + 投影」
+      //（`home_widgets.dart` 的 `_CardGlass`，认领注释就在它和上方 `_kCardW` 那段），
+      // 这张 726×376 的烘焙卡面图随之无人引用。**先留着**：玻璃观感还没真机确认，
+      // 要退回旧卡面只需把 `_CardGlass` 换回 `Image.asset` 那几行。
+      // 真机确认后请删掉它（383 KB）并同步撤掉本条。
+      'assets/images/home-bg03.png',
+    ];
 
     final unused = assetFiles.where((path) {
       if (liveRefs.contains(path)) return false;

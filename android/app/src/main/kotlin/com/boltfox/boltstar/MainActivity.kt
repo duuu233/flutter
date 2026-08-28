@@ -22,6 +22,12 @@ import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private companion object {
+        // 「保存到相册」在 Q 以下补申请 WRITE_EXTERNAL_STORAGE 用的请求码。
+        // 与 requestRuntimePermissions 那套（4101/4102/4104）分开，互不干扰。
+        const val SAVE_IMAGE_PERMISSION_CODE = 4301
+    }
+
     private val channelName = "com.boltfox.boltstar/device_api"
     private var pendingPermissionResult: MethodChannel.Result? = null
     private var pendingGalleryResult: MethodChannel.Result? = null
@@ -56,6 +62,8 @@ class MainActivity : FlutterActivity() {
                 4104,
             )
             "openGallery" -> openGallery(result)
+            // 把本地文件存进系统相册（AI 生成图的「下载」，2026-08-28）。
+            "saveImageToGallery" -> saveImageToGallery(call, result)
             "decodeImageRgba" -> decodeImageRgba(call, result)
             // 屏幕是否处于亮屏可交互状态：Flutter 的 paused 分不清「切出 App」和
             // 「息屏未切出」，两者的 BLE 空闲宽限时长不同（15 分钟 vs 30 分钟）。
@@ -143,9 +151,131 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == SAVE_IMAGE_PERMISSION_CODE) {
+            val pending = pendingSaveImage
+            pendingSaveImage = null
+            if (pending == null) {
+                return
+            }
+            val granted = grantResults.isNotEmpty() &&
+                grantResults[0] == PackageManager.PERMISSION_GRANTED
+            if (granted) {
+                writeImageToGallery(java.io.File(pending.path), pending.name, pending.result)
+            } else {
+                pending.result.error("permission_denied", "存储权限未授予", null)
+            }
+            return
+        }
         if (requestCode == permissionRequestCode) {
             pendingPermissionResult?.success(buildStatus())
             pendingPermissionResult = null
+        }
+    }
+
+    // ── 保存到系统相册 ─────────────────────────────────────────────
+    //
+    // AI 生成图的「下载」原来只把文件落在应用缓存目录（用户在相册里根本找不到）。
+    // 这里统一走 MediaStore 写进 `Pictures/BoltStar`：
+    //   · Android 10(Q) 起是分区存储，MediaStore 写公共相册**不需要任何权限**；
+    //   · Q 以下要 WRITE_EXTERNAL_STORAGE，没有就先申请，授权后自动把这次保存补上
+    //     （见 pendingSaveImage / onRequestPermissionsResult）。
+    private data class PendingSaveImage(
+        val path: String,
+        val name: String,
+        val result: MethodChannel.Result,
+    )
+
+    private var pendingSaveImage: PendingSaveImage? = null
+
+    private fun saveImageToGallery(call: MethodCall, result: MethodChannel.Result) {
+        val path = call.argument<String>("path")
+        if (path.isNullOrEmpty()) {
+            result.error("bad_args", "path 必填", null)
+            return
+        }
+        val file = java.io.File(path)
+        if (!file.exists()) {
+            result.error("not_found", "文件不存在: $path", null)
+            return
+        }
+        val name = call.argument<String>("name")
+            ?.takeIf { it.isNotBlank() }
+            ?: "BoltStar_${System.currentTimeMillis()}.jpg"
+
+        // Q 以下才需要旧的存储权限（清单里那条也写了 maxSdkVersion="28"）。
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            !isGranted(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        ) {
+            if (pendingSaveImage != null) {
+                result.error("busy", "Another save request is running.", null)
+                return
+            }
+            pendingSaveImage = PendingSaveImage(path, name, result)
+            requestPermissions(
+                arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),
+                SAVE_IMAGE_PERMISSION_CODE,
+            )
+            return
+        }
+        writeImageToGallery(file, name, result)
+    }
+
+    // 真正落盘。IO 放后台线程，结果回主线程返回（与 decodeImageRgba 同一套写法）。
+    private fun writeImageToGallery(
+        file: java.io.File,
+        name: String,
+        result: MethodChannel.Result,
+    ) {
+        Thread {
+            val error = try {
+                insertImage(file, name)
+                null
+            } catch (e: Exception) {
+                e
+            }
+            runOnUiThread {
+                if (error == null) {
+                    result.success(true)
+                } else {
+                    result.error("save_failed", error.message ?: "写入相册失败", null)
+                }
+            }
+        }.start()
+    }
+
+    private fun insertImage(file: java.io.File, name: String) {
+        val values = android.content.ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, name)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.DATE_ADDED, System.currentTimeMillis() / 1000)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // 单独归到 Pictures/BoltStar，别和用户自己的照片混在一起。
+                put(MediaStore.Images.Media.RELATIVE_PATH, "Pictures/BoltStar")
+                // 写完再放出来：写一半就可见的话，相册里会闪出一张残图。
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+        val resolver = contentResolver
+        val uri = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            ?: throw java.io.IOException("MediaStore 未返回 uri")
+        try {
+            resolver.openOutputStream(uri)?.use { output ->
+                file.inputStream().use { input -> input.copyTo(output) }
+            } ?: throw java.io.IOException("无法打开输出流")
+        } catch (e: Exception) {
+            // 失败要把这条空记录删掉，否则相册里留一张 0 字节的坏图。
+            runCatching { resolver.delete(uri, null, null) }
+            throw e
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            resolver.update(
+                uri,
+                android.content.ContentValues().apply {
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
+                },
+                null,
+                null,
+            )
         }
     }
 

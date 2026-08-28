@@ -471,7 +471,9 @@ class _RegisterPageState extends State<RegisterPage> {
               privacyPolicyText: l10n.accPrivacyPolicyLink,
             ),
           ),
-          const SizedBox(height: 16),
+          // 16 - AuthAgreementRow.hitPadding：协议行上下各撑了 12 的点击热区（视觉不占位），
+          // 这里把它扣回去，行的视觉位置与加热区之前一致（登录页同款处理）。
+          const SizedBox(height: 16 - AuthAgreementRow.hitPadding),
         ],
       ),
     );

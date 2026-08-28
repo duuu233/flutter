@@ -376,6 +376,13 @@ class AppL10n {
     'WeChat authorization failed, please try again later',
     'WeChat認証に失敗しました。後ほど再試行してください',
   );
+
+  /// 微信登录进行中的全屏 loading 文案（2026-08-28）。
+  ///
+  /// 对齐小程序 `pages/login` 的 `login-transition` 全屏过渡层：微信登录中途要切到微信
+  /// 客户端再跳回来，回来时链路还没走完（code 换 userToken），必须有一层明确的「登录中」
+  /// 盖住整页——原来只在微信图标里转个小圈，回到 App 时看着就像什么都没发生。
+  String get accWechatLoggingIn => _pick('登录中…', 'Signing in…', 'ログイン中…');
   String get accEmailHint => _pick('请输入邮箱', 'Enter email', 'メールアドレスを入力');
   String get accEmailInvalid => _pick(
     '请输入正确的邮箱地址',
@@ -783,9 +790,43 @@ class AppL10n {
   String get aiStopGenerating => _pick('停止生成', 'Stop', '生成を停止');
   String get aiHoldToTalk => _pick('按住 说话', 'Hold to talk', '長押しで話す');
 
-  /// App 侧无录音/转写依赖（小程序那边是「同声传译」插件未开通），两端都只给占位提示。
-  String get aiVoicePending =>
-      _pick('语音转文字待接入', 'Voice input is not available yet.', '音声入力は未対応です');
+  // ── 按住说话（2026-08-28 接入端上语音识别，见 `features/ai/ai_voice_input.dart`）──
+
+  /// 「按住说话」条上的字（小程序 `.voice-hold` 的三态文案）：
+  /// 没按住 = [aiHoldToTalk]，按住 = 这句，滑进取消区 = [aiVoiceBarCancel]。
+  String get aiVoiceBarRelease => _pick('松开发送', 'Release to send', '離して送信');
+  String get aiVoiceBarCancel => _pick('松开取消', 'Release to cancel', '離して取消');
+
+  /// 录音动效层上的提示（小程序 `.voice-tip`）。
+  String get aiVoiceTip => _pick(
+    '上滑取消 · 松开直接发送',
+    'Slide up to cancel · release to send',
+    '上にスワイプで取消 · 離して送信',
+  );
+  String get aiVoiceTipCancel =>
+      _pick('松开手指，取消发送', 'Release to cancel', '指を離すと取り消します');
+
+  /// 识别不出任何文字（说太轻/环境太吵/一开口就松手）。
+  String get aiVoiceNoSpeech =>
+      _pick('没听清，请再说一次', 'Didn\'t catch that — try again', '聞き取れませんでした。もう一度どうぞ');
+
+  /// 这台机器没有可用的系统语音识别服务。
+  ///
+  /// ⚠️ 最常见的是**安卓国行无 GMS 的机型**（华为、部分小米/OV）：系统压根没装识别服务。
+  /// 措辞只说结果、不解释技术原因，也不许诺「以后会有」。
+  String get aiVoiceUnavailable => _pick(
+    '当前设备不支持语音输入，请用键盘输入',
+    'Voice input is not available on this device. Please type instead.',
+    'この端末では音声入力を利用できません。キーボードで入力してください',
+  );
+
+  /// 麦克风 / 语音识别授权被拒时的引导框。
+  String get aiVoiceMicDeniedTitle => _pick('需要麦克风权限', 'Microphone needed', 'マイクの許可が必要です');
+  String get aiVoiceMicDeniedMessage => _pick(
+    '请在系统设置中允许使用麦克风与语音识别后，再按住说话。',
+    'Allow microphone and speech recognition in Settings, then hold to talk.',
+    '設定でマイクと音声認識を許可してから、長押しして話してください。',
+  );
   String get aiAlbum => _pick('相册', 'Album', 'アルバム');
   String get aiCamera => _pick('拍照', 'Camera', '撮影');
   String get aiGenerateImage => _pick('一键生图', 'Generate', '一発生成');
@@ -836,12 +877,17 @@ class AppL10n {
   String get aiDelete => _pick('删除', 'Delete', '削除');
   String get aiDeleted => _pick('已删除', 'Deleted', '削除しました');
 
-  /// ⚠️ 与小程序的差异：小程序保存进系统相册；Flutter 无内置相册写入能力（需额外插件），
-  /// 本轮只落到应用缓存目录，文案如实说明。
-  String get aiDownloaded => _pick(
-    '图片已下载到应用缓存（保存到系统相册待接入插件）',
-    'Image saved to app cache (system gallery support pending).',
-    'アプリのキャッシュに保存しました（システムアルバム保存は未対応）',
+  /// 2026-08-28：真的存进系统相册了（Android=MediaStore `Pictures/BoltStar`、
+  /// iOS=Photos addOnly 授权，见 [NativeDeviceApi.saveImageToGallery]），
+  /// 文案随之从「已下载到应用缓存（保存到系统相册待接入插件）」改成如实的这句。
+  String get aiDownloaded =>
+      _pick('图片已保存到相册', 'Saved to your photos', '写真に保存しました');
+
+  /// 下载成功但写相册失败（权限被拒最常见）。
+  String get aiDownloadFailed => _pick(
+    '保存到相册失败，请在系统设置里允许访问相册后重试',
+    'Could not save to your photos. Allow photo access in Settings and try again.',
+    '写真に保存できませんでした。設定で写真へのアクセスを許可してから再試行してください',
   );
   String get aiImageExpired => _pick(
     '图片下载失败（生成图 24 小时后过期）',
@@ -951,18 +997,26 @@ class AppL10n {
   String aiMsgCount(int count) =>
       _pick('$count 条消息', '$count messages', '$count 件');
 
-  /// 一键生图风格标签：key = cartoon / landscape / portrait / anime（需求文案：漫画/风景/肖像/动漫）。
+  /// 一键生图风格标签。展示顺序见 `_kStyleKeys`：**漫画 / 肖像 / 风景 / 卡通**。
+  ///
+  /// ⚠️ **2026-08-28：`anime` 与 `cartoon` 的绑定按小程序纠正过**（小程序 `chat.js`
+  /// STYLE_OPTIONS 上方注释记着同一次修正）：后端的 `anime` 出的是**漫画**风、
+  /// `cartoon` 出的是**卡通**风，而 App 这边原来把「漫画」绑到 `cartoon`、「动漫」绑到 `anime`，
+  /// 正好互为对方 —— 点「漫画」发出去的是「生成图片-卡通」、出的也是卡通图。
+  /// 改绑后：标签、自动拼的 message（[AiI18n.genMessage]）、`img_style` 三者一致。
   String aiStyleLabel(String key) {
     switch (key) {
       case 'landscape':
         return _pick('风景', 'Scenery', '風景');
       case 'portrait':
-        return _pick('肖像', 'Portrait', '人物');
-      case 'anime':
-        return _pick('动漫', 'Anime', 'アニメ');
+        // 需求 16：与小程序 STYLE_OPTIONS 逐字一致（小程序这一格写的是「人物」，不是「肖像」）。
+        return _pick('人物', 'Portrait', '人物');
       case 'cartoon':
+        // 需求 15.1：原来这一格叫「动漫」，改叫「卡通」（与小程序末位一致）。
+        return _pick('卡通', 'Cartoon', 'カートゥーン');
+      case 'anime':
       default:
-        return _pick('漫画', 'Cartoon', '漫画');
+        return _pick('漫画', 'Comic', '漫画');
     }
   }
 
@@ -1285,7 +1339,9 @@ class AppL10n {
   /// 行文案与取值口径必须成对，改一个要改另一个（值见 device_details_page.dart）。
   String get devMaxPhotoCount =>
       _pick('最大照片数量', 'Max Photos', '最大写真枚数', '最大照片數量');
-  String get devOtaUpgrade => _pick('OTA升级', 'Firmware Update', 'OTAアップデート');
+  /// 设备详情里那一行。2026-08-28 中文由「OTA升级」改为「固件升级」，与小程序
+  /// `detail.wxml` 的行文案一字一致（英/日本来就是 Firmware Update / ファームウェア更新口径）。
+  String get devOtaUpgrade => _pick('固件升级', 'Firmware Update', 'ファームウェア更新');
   String devFirmwareNewVersion(String version) => _pick(
     '发现新版本 $version',
     'New version $version available',
@@ -1747,12 +1803,29 @@ class AppL10n {
 
   // ── 星币购买（2026-08-27 安卓接入 PayPal；小程序=微信支付、iOS=Apple 内购未接）──
 
+  /// 星币管理页的套餐区标题（小程序 `.token-section-title`「套餐购买」）。
+  String get starPackagesTitle => _pick('套餐购买', 'Buy stars', 'コインを購入');
+
+  /// 套餐卡上的赠送角标（小程序「赠送 N 星币」）。
+  String starPackageGift(int count) =>
+      _pick('赠送 $count', '+$count bonus', 'ボーナス $count');
+
   String get starBuyEntryTitle => _pick('购买星币', 'Buy Stars', 'スターコインを購入');
   String get starBuyEntryDesc =>
       _pick('选择套餐，PayPal 支付', 'Choose a plan, pay with PayPal', 'プランを選んで PayPal で支払う');
   String get starBuyTitle => _pick('确认购买', 'Confirm Purchase', '購入の確認');
   String get starBuyChoosePackage => _pick('选择套餐', 'Choose a plan', 'プランを選択');
-  String get starBuyPayChannel => _pick('支付方式', 'Payment method', '支払い方法');
+  String get starBuyPayChannel =>
+      _pick('选择支付方式', 'Choose a payment method', 'お支払い方法を選択');
+
+  /// iOS 的确认购买页：**不画支付方式**（Apple 内购未接），改用这句说明 + 置灰的按钮。
+  /// 与 [starPurchaseUnavailable] 的差别：那句是「这一端买不了」的入口级提示，
+  /// 这句是站在确认页上解释「为什么这颗按钮按不动」。
+  String get starBuyApplePending => _pick(
+    'Apple 内购接入中，暂时无法在 iOS 完成支付。可前往微信小程序「BoltStar 智能相框」购买，余额在这里查看。',
+    'Apple in-app purchase is not connected yet, so payment cannot be completed on iOS. Buy in the BoltStar mini program; your balance shows up here.',
+    'Apple のアプリ内課金は未対応のため、iOS では支払いを完了できません。WeChat ミニプログラムで購入すると、残高がここに反映されます。',
+  );
 
   /// 套餐卡上的赠送角标。
   String starBuyGift(int count) =>

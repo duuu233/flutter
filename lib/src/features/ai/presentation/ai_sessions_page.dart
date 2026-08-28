@@ -661,12 +661,24 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     );
   }
 
-  /// 一条会话：卡片与删除按钮同处一条「轨道」上一起位移，删除按钮排在卡片右侧的轨道外，
-  /// 由外层 [ClipRect] 裁掉 —— 没左滑就看不见它。
+  /// 一条会话：卡片与删除按钮同处一条「轨道」上一起位移，删除按钮从轨道右侧滑进来，
+  /// 露出多少由外层 [ClipRect] 决定 —— 没左滑时它整块在轨道外，看不见。
   ///
   /// ⚠️ 别改成「删除按钮垫在卡片下面」：卡片是半透明毛玻璃（白 0.74），垫在底下的红色会直接
   /// 透出来，等于没滑就露出删除按钮（小程序 2026-07-31 踩过这个坑）。
   /// 代价是卡片那层很淡的投影也被裁掉，接受（0.07 透明度，肉眼几乎无差）。
+  ///
+  /// ⚠️⚠️ **2026-08-28 修「会话删不掉」**：这里原来是
+  /// `OverflowBox(maxWidth: 卡片宽 + 8 + 80) → Row[卡片, 间距, 删除按钮]`，整条 Row 再一起
+  /// `Transform.translate` 左移。画面完全正确，但**删除按钮一次也点不中**：
+  /// Flutter 的命中测试到 [RenderBox.hitTest] 就会先判 `size.contains(position)`，
+  /// 而 OverflowBox 自己的 size 只有卡片那么宽，删除按钮整块落在它的 size 之外 ——
+  /// 溢出的部分**只画不接事件**。左滑能滑开、按钮看得见、点下去毫无反应，正是用户报的现象
+  /// （长按卡片那条兜底路径没坏，所以不是接口的问题）。
+  ///
+  /// 改法：换成 `Stack` + `Positioned`，删除按钮按 `left = 卡片宽 + 间距 + 位移` 摆放。
+  /// 它随位移一起进出轨道（视觉与原来逐像素一致），但**位移多少就有多少落在 Stack 自己的
+  /// size 之内**，那一段就能正常命中；轨道外的部分照旧由 [ClipRect] 裁掉。
   Widget _buildSwipeRow(_SessionRow row) {
     final dragging = _draggingId == row.sessionId;
     final offset = dragging
@@ -687,38 +699,42 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
                     ? Duration.zero
                     : const Duration(milliseconds: 260),
                 curve: Curves.easeOut,
-                builder: (context, value, child) =>
-                    Transform.translate(offset: Offset(value, 0), child: child),
-                child: OverflowBox(
-                  alignment: Alignment.centerLeft,
-                  minWidth: 0,
-                  maxWidth: cardWidth + _kDeleteGap + _kDeleteWidth,
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: cardWidth,
-                        // 左滑手势挂在**卡片**上，不再罩住整条轨道（2026-08-10 需求 6）：
-                        // 罩住轨道时，手指落在已滑开的删除按钮上也会被当成新一轮滑动 ——
-                        // 点按时那一两像素的抖动就把卡片吸附回去，表现就是「删除按钮点不动」。
-                        // 只接横向拖动：纵向滚动仍归 ListView（手势竞技场按主轴分派）。
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onHorizontalDragStart: (_) => _onSwipeStart(row),
-                          onHorizontalDragUpdate: _onSwipeUpdate,
-                          onHorizontalDragEnd: (details) =>
-                              _onSwipeEnd(details, row),
-                          onHorizontalDragCancel: _onSwipeCancel,
-                          child: _buildCard(row),
-                        ),
+                builder: (context, value, child) => Stack(
+                  // 裁剪交给外层 ClipRect：这里若也裁，Stack 会在自己的 size 上再切一刀，
+                  // 效果一样但多一层，且 clipBehavior 不影响命中测试（那由 size 决定）。
+                  clipBehavior: Clip.none,
+                  children: [
+                    // 卡片：左滑手势挂在**卡片**上，不罩整条轨道（2026-08-10 需求 6）——
+                    // 罩住轨道时，手指落在已滑开的删除按钮上也会被当成新一轮滑动，
+                    // 点按时那一两像素的抖动就把卡片吸回去，表现同样是「点不动」。
+                    // 只接横向拖动：纵向滚动仍归 ListView（手势竞技场按主轴分派）。
+                    Positioned(
+                      left: value,
+                      top: 0,
+                      bottom: 0,
+                      width: cardWidth,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: (_) => _onSwipeStart(row),
+                        onHorizontalDragUpdate: _onSwipeUpdate,
+                        onHorizontalDragEnd: (details) =>
+                            _onSwipeEnd(details, row),
+                        onHorizontalDragCancel: _onSwipeCancel,
+                        child: _buildCard(row),
                       ),
-                      const SizedBox(width: _kDeleteGap),
-                      SizedBox(
-                        width: _kDeleteWidth,
-                        child: _buildDeleteButton(row),
-                      ),
-                    ],
-                  ),
+                    ),
+                    // 删除按钮：位移为 0 时整块停在轨道右侧之外（left = 轨道宽 + 间距），
+                    // 左滑多少就露出多少。
+                    Positioned(
+                      left: cardWidth + _kDeleteGap + value,
+                      top: 0,
+                      bottom: 0,
+                      width: _kDeleteWidth,
+                      child: _buildDeleteButton(row),
+                    ),
+                  ],
                 ),
+                // child 不再复用（两个子节点都依赖 value），传 null 即可。
               ),
             ),
           );

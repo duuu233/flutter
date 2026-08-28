@@ -87,12 +87,79 @@ final class DeviceApiHandler: NSObject {
       requestCamera(result)
     case "openGallery":
       openGallery(result)
+    case "saveImageToGallery":
+      saveImageToGallery(call, result: result)
     case "decodeImageRgba":
       decodeImageRgba(call, result: result)
     case "openBluetoothSettings", "openAppSettings":
       openAppSettings(result)
     default:
       result(FlutterMethodNotImplemented)
+    }
+  }
+
+  // MARK: - 保存到系统相册
+
+  /// 把本地文件写进系统相册（AI 生成图的「下载」，2026-08-28；对齐 Android 的
+  /// `saveImageToGallery` → MediaStore）。
+  ///
+  /// 权限用 **addOnly**（iOS 14+）：只往相册里加照片，不读用户已有的照片 ——
+  /// 系统弹窗的措辞也随之从「访问所有照片」变成「添加照片」，用户更容易点同意。
+  /// iOS 14 以下没有 addOnly，只能退回整库读写授权。
+  /// Info.plist 里对应的是 `NSPhotoLibraryAddUsageDescription`（与选图用的
+  /// `NSPhotoLibraryUsageDescription` 是两条，缺了会在请求授权时直接崩）。
+  private func saveImageToGallery(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let args = call.arguments as? [String: Any]
+    let path = (args?["path"] as? String) ?? ""
+    guard !path.isEmpty, FileManager.default.fileExists(atPath: path) else {
+      result(FlutterError(code: "not_found", message: "文件不存在", details: path))
+      return
+    }
+    let url = URL(fileURLWithPath: path)
+
+    func finish(_ success: Bool, _ error: Error?) {
+      DispatchQueue.main.async {
+        if success {
+          result(true)
+        } else {
+          result(FlutterError(
+            code: "save_failed",
+            message: error?.localizedDescription ?? "写入相册失败",
+            details: nil
+          ))
+        }
+      }
+    }
+
+    func performSave() {
+      PHPhotoLibrary.shared().performChanges({
+        PHAssetChangeRequest.creationRequestForAssetFromImage(atFileURL: url)
+      }, completionHandler: finish)
+    }
+
+    func denied() {
+      DispatchQueue.main.async {
+        result(FlutterError(code: "permission_denied", message: "相册权限未授予", details: nil))
+      }
+    }
+
+    if #available(iOS 14, *) {
+      PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+        // .limited 也能加照片（受限访问只限制「读」）。
+        if status == .authorized || status == .limited {
+          performSave()
+        } else {
+          denied()
+        }
+      }
+    } else {
+      PHPhotoLibrary.requestAuthorization { status in
+        if status == .authorized {
+          performSave()
+        } else {
+          denied()
+        }
+      }
     }
   }
 

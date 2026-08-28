@@ -523,17 +523,21 @@ class FrameBleClient {
   /// 返回真即**立刻停扫并返回**，不再苦等满 timeout——把「连接前扫描」从雷打不动 timeout 压到扫到即走
   /// （通常 <1s），对齐小程序 `bluetooth.discoverDevices` 的 `until`。未命中仍等满 timeout，给设备现身留足
   /// 时间；不传则行为完全不变（绑定/调试整窗扫描照旧）。自身异常按「未命中」处理。
+  /// [pendingAllowedNames]：**还在路上**的白名单（产品列表接口）。传了它就表示
+  /// 「先用 [allowedNames] 这份已知名单开扫，等接口回来再补齐」——扫描不必等一次网络往返
+  /// （见 [BleController.scan] 的说明）。接口回来后会重算所有已收录设备的放行判定，
+  /// 因新名单才够格的设备会**追溯性地**出现在列表里并触发一次 [onUpdate]/[until]。
+  /// 失败/为空/与现有名单相同都当无事发生；扫描已收网后回来的结果直接丢弃。
   static Future<List<ScanResult>> scan({
     Duration timeout = const Duration(seconds: 8),
     List<String>? allowedNames,
+    Future<List<String>>? pendingAllowedNames,
     void Function(List<ScanResult> devices)? onUpdate,
     bool Function(List<ScanResult> devices)? until,
   }) async {
     // 白名单归一化（去空、大写）；为空表示放开过滤（allowAll）。
-    final allow = (allowedNames ?? const <String>[])
-        .map((s) => s.trim().toUpperCase())
-        .where((s) => s.isNotEmpty)
-        .toList();
+    // 非 final：[pendingAllowedNames] 回来后原地换掉，下面的 isAllowed 闭包读的就是新名单。
+    var allow = _normalizeAllowedNames(allowedNames);
 
     /// 这台设备是否该出现在结果里。
     ///
@@ -653,6 +657,57 @@ class FrameBleClient {
       }
     });
 
+    // 产品列表白名单晚到时的补丁：重算放行判定，把追溯放行的设备推给页面。
+    // 放在这里而不是 await 在扫描之前，是本轮提速的关键（见方法头 [pendingAllowedNames]）。
+    if (pendingAllowedNames != null) {
+      unawaited(
+        pendingAllowedNames
+            .then((names) {
+              if (done.isCompleted) {
+                return; // 本轮已收网，名单再换也没有意义
+              }
+              final next = _normalizeAllowedNames(names);
+              if (next.isEmpty || _sameAllowedNames(next, allow)) {
+                return; // 拉失败/与兜底名单等价：继续用现在这份
+              }
+              allow = next;
+              var changed = false;
+              for (final entry in found.entries) {
+                final now = isAllowed(entry.value);
+                if (allowed[entry.key] != now) {
+                  allowed[entry.key] = now;
+                  changed = true;
+                }
+              }
+              if (!changed) {
+                return;
+              }
+              final current = visible();
+              if (current.isEmpty) {
+                return;
+              }
+              if (onUpdate != null) {
+                try {
+                  onUpdate(current);
+                } catch (_) {
+                  // 页面回调自身异常不能中断扫描
+                }
+              }
+              if (until != null && !done.isCompleted) {
+                try {
+                  if (until(current)) {
+                    finish();
+                  }
+                } catch (_) {
+                  // 匹配器异常不能中断扫描，继续等待自然超时
+                }
+              }
+            })
+            // 白名单拉取失败不该冒泡成未捕获异常，更不该影响这一轮扫描。
+            .catchError((Object _) {}),
+      );
+    }
+
     Timer? window;
     try {
       // 首次安装必现的「第一次连不上、再点一次就好」就断在这里：权限对话框
@@ -694,6 +749,16 @@ class FrameBleClient {
     }
     return visible();
   }
+
+  /// 广播名白名单归一化：去空白、大写、丢空串（比对用包含匹配，见 [scan] 的 isAllowed）。
+  static List<String> _normalizeAllowedNames(List<String>? names) => (names ?? const <String>[])
+      .map((s) => s.trim().toUpperCase())
+      .where((s) => s.isNotEmpty)
+      .toList();
+
+  /// 两份归一化后的白名单是否等价（顺序无关）。相同就不必重算全表判定。
+  static bool _sameAllowedNames(List<String> a, List<String> b) =>
+      a.length == b.length && a.toSet().containsAll(b);
 
   /// 当前在途扫描的「收网」回调；无在途扫描时为 null。见 [scan] / [stopScan]。
   static void Function()? _activeScanStop;

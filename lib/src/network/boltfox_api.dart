@@ -1,5 +1,7 @@
 import 'api_client.dart';
+import 'api_config.dart';
 import 'api_rows.dart';
+import 'api_session.dart';
 import 'crypto_util.dart';
 
 /// BoltFox 业务接口（App 版），对齐小程序端 `utils/api.js`。
@@ -167,8 +169,12 @@ class BoltFoxApi {
   /// [code] 来自移动端微信 SDK 的 `snsapi_userinfo` 授权回调。AppSecret、code 换
   /// access_token 以及用户身份合并都必须在服务端完成；客户端只接收业务 userToken
   /// 与用于请求鉴权的 jwtToken。
-  /// DTO 里的 device / language / terminal 三个字段注释均为「通过 headers 传递」，
-  /// 由 [ApiClient] 作为公共参数注入（Android=1 / iOS=2 / 小程序=3），body 只发 code。
+  /// DTO 里的 device / language / terminal 三个字段注释虽写「通过 headers 传递」，
+  /// 但 2026-08-28 实测**后端按 body 认端**：安卓真机微信登录，后台记录的终端却是苹果——
+  /// header 与 `/Client/` query 里的 `terminal=1` 都被无视，只有 body 里没有这个字段，
+  /// 于是落到 DTO 的默认值。所以这里把三个公共参数**也写进 body**（它们本就是 DTO 声明的字段）：
+  /// 后端若真按 header 绑定，body 里这份同值副本无害；按 body 绑定则正好补上。
+  /// 取值口径与 [ApiConfig.terminal] / [ApiSession] 同源，不另立一套。
   ///
   /// **关闭全部自动重试**（超时与连接中断都不重试）：微信的一次性 code 只能成功消费一次，
   /// 服务端换过一次后重发同一个 code 必然被微信判 40163，用户看到的是登录失败。
@@ -188,9 +194,16 @@ class BoltFoxApi {
   static const String _weChatMobileLoginPath =
       '/Client/User/setWechatAuthorizLogin';
 
-  static Map<String, dynamic> _weChatMobileLoginBody(String code) => {
-    'code': code,
-  };
+  static Map<String, dynamic> _weChatMobileLoginBody(String code) {
+    final session = ApiSession.instance;
+    return {
+      'code': code,
+      // 1=安卓客户端 / 2=苹果客户端 / 3=小程序（小程序走的是另一条 setWechatAppLogin）。
+      'terminal': ApiConfig.terminal,
+      'language': session.languageCode,
+      if (session.device.isNotEmpty) 'device': session.device,
+    };
+  }
 
   /// ⚠️ 临时排查设施（2026-08-05）：后端要按客户端实际发出的参数复现 406，
   /// 于是把这次请求的现场（方法 / URL / 公共参数 / body）交给 UI 弹到 toast 上。

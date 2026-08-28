@@ -488,26 +488,29 @@ class _GreetingTitle extends StatelessWidget {
   ) => const Text('BoltStar', style: _HomeTextStyles.brand);
 }
 
-/// `home-bg03.png` 的几何（rpx，量自 PNG alpha 通道，非目测）：
-/// 画布 726×376，其中**卡面实体** 654×304，四周是烘焙进图的投影——
-/// 左 36 / 右 36 / 上 28 / 下 44。注意投影**偏下、上下不对称**，
-/// 所以整幅在卡面盒子里不能居中，得按 28:44 的比例往上偏。
+/// 设备卡的几何，逐项取自小程序 `home.wxss`（rpx ÷ 2 = dp）：
+/// `.device-swiper` 高 372rpx、`.device-carousel` 654×298rpx、圆角 24px。
 ///
-/// 旧的 `home-bg01.png`(卡面) + `home-bg02.png`(投影) 两层叠加已被这一张替代：
-/// `home-bg03.png` 自带投影和 40rpx 圆角，因此既不需要 ClipRRect，也不需要第二层图。
-/// （那两张图 2026-08-21 清理孤儿素材时已删；与页面背景 `bg01/bg02` 是不同的两组文件，别混。）
+/// ⚠️ **2026-08-28：卡面底图 `home-bg03.png` 换成玻璃层**（需求 18）。
+/// 原来整张卡面（白底 + 圆角 + 投影）都烘焙在那张 726×376 的 PNG 里，投影还上下不对称
+/// （上 28 / 下 44），所以旧代码得靠 `_kArtW/_kArtH/_kCardAlignY` 一组系数把整幅往上偏着放。
+/// 那张图是配**旧的暖白页面背景**画的；2026-08-21 全站背景换成浅蓝墙面后，卡面与墙面
+/// 对不上，观感就是「设备卡的背景没了/不对」。
+/// 小程序那边同一时期把卡片背景图整条注释掉了（`home.wxml` 的 `.device-carousel-bg`），
+/// 改用 `.carousel-glass`：**只有毛玻璃 + 投影 + 24 圆角，不铺底色**（连那层渐变也注释了），
+/// 背景换成什么墙面都自动融进去。这里照抄它，随之不再需要那组偏移系数。
 const double _kCardW = 654;
-const double _kCardH = 304;
-const double _kArtW = 726;
-const double _kArtH = 376;
+const double _kCardH = 298;
 
-/// 卡面在整幅中的垂直对齐系数：上下投影 28:44 → Alignment.y ≈ -0.222。
-/// 轮播视口内「卡面 vs 视口」和卡片内「整幅 vs 卡面盒」两处都用它，
-/// 因为两者是同一个 28:44 比例的两种表述。
-const double _kCardAlignY = (28 - 44) / (28 + 44);
+/// 轮播视口高（小程序 `.device-swiper` 的 372rpx）：比卡面高，留给投影与上下呼吸。
+const double _kViewportH = 372;
+
+/// 卡片圆角（小程序 `.device-carousel` / `.carousel-glass` 的 `border-radius: 24px`，
+/// 注意那里写的是 **px 不是 rpx**，所以就是 24）。
+const double _kCardRadius = 24;
 
 /// 已连接设备卡片（小程序 `.device-carousel`）：
-/// 卡片底图 `home-bg03.png`（726×376rpx，含投影）+ 左侧圆环 `home-icon02.png` +
+/// 玻璃卡面（[_CardGlass]）+ 左侧圆环 `home-device-thumb.png` +
 /// 右侧设备信息（名称 / 蓝牙连接状态 / 电量）。
 class _DeviceCarousel extends StatefulWidget {
   const _DeviceCarousel({
@@ -609,10 +612,9 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
         // 原来是 SizedBox(height: 186) 配一个随宽度缩放的 AspectRatio，两者不同步——
         // 375pt 下只余 0.5px 侥幸不裁，414pt 宽的机器投影已被裁掉约 8.5px。
         AspectRatio(
-          aspectRatio: _kCardW / _kArtH,
+          aspectRatio: _kCardW / _kViewportH,
           child: PageView.builder(
-            // 背景图的左右投影会超出卡面盒子；PageView 默认的
-            // Clip.hardEdge 会在视口边缘把这部分裁掉。
+            // 卡片投影会溢出卡面盒子；PageView 默认的 Clip.hardEdge 会在视口边缘把它裁掉。
             clipBehavior: Clip.none,
             controller: _controller,
             itemCount: widget.devices.length == 1 ? 1 : null,
@@ -628,9 +630,9 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
               widget.onChanged(widget.devices[index]);
             },
             itemBuilder: (context, page) => Align(
-              // 卡面盒子 = 卡面实体（654×304），投影由卡片内部往外溢出。
-              // 在视口里按 28:44 偏上放，给下方更厚的投影留出空间。
-              alignment: const Alignment(0, _kCardAlignY),
+              // 卡面盒子 = 654×298，投影（0 4 16）由玻璃层往外溢出，上下对称留白即可
+              //（旧的 28:44 偏移是配那张烘焙投影的 PNG 的，图撤了系数也一并撤）。
+              alignment: Alignment.center,
               child: AspectRatio(
                 aspectRatio: _kCardW / _kCardH,
                 child: _ConnectedDeviceCard(
@@ -647,6 +649,47 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
         const SizedBox(height: 20),
         _CarouselDots(count: widget.devices.length, activeIndex: _index),
       ],
+    );
+  }
+}
+
+/// 设备卡的玻璃底（小程序 `.carousel-glass`）。
+///
+/// 逐项对照：`box-shadow: 0 4px 16px rgba(60,53,16,0.12)` → [BoxShadow]（同值直用，
+/// 全站其它卡片也是这么换算的）；`backdrop-filter: blur(10.55px)` → [ImageFilter.blur]，
+/// CSS 的模糊半径约等于 2σ，所以 sigma 取 10.55/2。
+///
+/// ⚠️ **不铺底色**：小程序把 `.carousel-glass` 里那行 `background: linear-gradient(...)`
+/// 注释掉了，只留模糊与投影 —— 卡面因此是「把墙面糊一层」，换任何背景图都自动协调。
+/// [BackdropFilter] 需要一个会参与绘制的子节点才生效，所以给一层全透明的 [ColoredBox]。
+///
+/// ⚠️ 模糊是逐帧重算的，压在横滑的 [PageView] 里有成本。这是与小程序对齐的做法，
+/// 卡片只有一张、面积也不大，实测再看；要退回纯色卡面的话只需把 BackdropFilter 换成
+/// 一层半透明白（视觉会略「实」一点）。
+class _CardGlass extends StatelessWidget {
+  const _CardGlass();
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(_kCardRadius);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x1F3C3510), // rgba(60, 53, 16, 0.12)
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 5.275, sigmaY: 5.275),
+          child: const ColoredBox(color: Color(0x00FFFFFF)),
+        ),
+      ),
     );
   }
 }
@@ -671,20 +714,8 @@ class _ConnectedDeviceCard extends StatelessWidget {
       clipBehavior: Clip.none,
       fit: StackFit.expand,
       children: [
-        // 整幅底图（含投影）按比例往卡面盒子外溢出：横向各 (726-654)/2、
-        // 纵向按 28:44 分配。用 Fractionally 而非写死的 -18px，是为了在任何
-        // 屏宽下溢出量都随卡片一起缩放——固定 px 在宽屏上会和图对不上。
-        // 盒子比例已等于图的比例，BoxFit.fill 此处等价于 cover/contain。
-        // 不用 FilterQuality.high（三次立方采样）：底图本就接近显示尺寸，
-        // 视觉无差异，但轮播滑动时每帧重采样的 GPU 成本显著更高。
-        Positioned.fill(
-          child: FractionallySizedBox(
-            widthFactor: _kArtW / _kCardW,
-            heightFactor: _kArtH / _kCardH,
-            alignment: const Alignment(0, _kCardAlignY),
-            child: Image.asset('assets/images/home-bg03.png', fit: BoxFit.fill),
-          ),
-        ),
+        // 玻璃卡面（小程序 `.carousel-glass`）：投影 + 毛玻璃 + 24 圆角，**不铺底色**。
+        const Positioned.fill(child: _CardGlass()),
         // 整卡点击（非按钮区域）进设备列表：透明手势层，压在内容之下、背景之上。
         // 上方的连接按钮(opaque)会拦截落在自己身上的点击，不会漏到这层。
         Positioned.fill(

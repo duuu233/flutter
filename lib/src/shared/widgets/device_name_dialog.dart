@@ -217,17 +217,37 @@ class _DeviceNameDialogState extends State<_DeviceNameDialog> {
                           fontSize: 15,
                           height: 1.2,
                         ),
-                        decoration: InputDecoration(
-                          isCollapsed: true,
-                          border: InputBorder.none,
-                          counterText: '',
-                          hintText: l10n.devNameHint,
-                          hintStyle: const TextStyle(
-                            color: Color(0xFF98A0AB),
-                            fontSize: 15,
-                            height: 1.2,
-                          ),
-                        ),
+                        // ⚠️ 全套 border/filled 都要显式关掉（2026-08-28 修「输入框很丑」）：
+                        // 全局 `AppTheme.inputDecorationTheme` 给了 `filled: true` 的白底
+                        // 和 `focusedBorder`（18 圆角 + 1.2 描边）。只写 `border: none`
+                        // 盖不住它们——`enabledBorder`/`focusedBorder` 为 null 时才回落到 `border`，
+                        // 而主题里两者都有值。表现就是浅蓝色胶囊里又套了一块白色圆角块，
+                        // 且本框 autofocus，一打开就带上一圈圆角对不齐的描边。
+                        // 同 `AuthPillTextField` 的写法，与小程序 `.name-field__input`
+                        //（无边框、无底色，底色由外层 .name-field 给）一致。
+                        decoration:
+                            const InputDecoration(
+                              isCollapsed: true,
+                              filled: false,
+                              fillColor: Colors.transparent,
+                              hoverColor: Colors.transparent,
+                              counterText: '',
+                              border: InputBorder.none,
+                              enabledBorder: InputBorder.none,
+                              focusedBorder: InputBorder.none,
+                              disabledBorder: InputBorder.none,
+                              errorBorder: InputBorder.none,
+                              focusedErrorBorder: InputBorder.none,
+                            ).copyWith(
+                              hintText: l10n.devNameHint,
+                              // 占位色对齐小程序 `.name-field__placeholder` 的 #a9b1bc
+                              // （原来用的是右侧计数的 #98a0ab，比稿子深一档）。
+                              hintStyle: const TextStyle(
+                                color: Color(0xFFA9B1BC),
+                                fontSize: 15,
+                                height: 1.2,
+                              ),
+                            ),
                       ),
                     ),
                     const SizedBox(width: 9),
@@ -242,7 +262,8 @@ class _DeviceNameDialogState extends State<_DeviceNameDialog> {
                   ],
                 ),
               ),
-              const SizedBox(height: 16),
+              // 小程序 `.name-dialog__actions` 的 margin-top 30rpx = 15。
+              const SizedBox(height: 15),
               Row(
                 children: [
                   Expanded(

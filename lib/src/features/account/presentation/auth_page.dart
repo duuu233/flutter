@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../state.dart';
 import '../data/email_history.dart';
 import '../data/wechat_authorization_client.dart';
@@ -228,6 +229,12 @@ class _AuthPageState extends State<AuthPage>
       _submitting = true;
       _weChatSubmitting = true;
     });
+    // 全屏系统 loading（2026-08-28 需求 2/3，对齐小程序 `login-transition`）：
+    // 这条链路要切出去到微信客户端、授权完再跳回来，回来后还要拿 code 换 userToken。
+    // 原来只有微信图标里转个小圈——跳回 App 时它被压在页面里几乎看不见，观感是「点了没反应」。
+    // 改为盖住整页的 loading：既是进度指示，也顺带挡住这期间的一切误触。
+    // ⚠️ loading 挂在 root navigator 且 canPop:false，务必 finally 收口（页面被卸载时也要关）。
+    AppLoadingDialog.show(context, AppL10n.of(context).accWechatLoggingIn);
     try {
       final code = await _weChatAuthorizationClient.authorize();
       final feedback = await widget.state.loginWithWeChatCode(code);
@@ -297,6 +304,9 @@ class _AuthPageState extends State<AuthPage>
         );
       }
     } finally {
+      // 不用 `if (mounted)` 门控：页面在 await 期间被卸载（登录成功后根节点换成主壳层）
+      // 时若跳过 hide，蒙层会永久滞留、整个 App 假死（见 [AppLoadingDialog.hide] 注释）。
+      AppLoadingDialog.hide(context);
       if (mounted) {
         setState(() {
           _submitting = false;
@@ -492,10 +502,11 @@ class _AuthCanvas extends StatelessWidget {
           Center(
             child: _WeChatLoginButton(
               onPressed: submitting ? null : onWeChatLogin,
-              loading: weChatSubmitting,
             ),
           ),
-          const SizedBox(height: 20),
+          // 20 - AuthAgreementRow.hitPadding：协议行上下各撑了 12 的点击热区（视觉不占位），
+          // 这里把它扣回去，行的视觉位置与加热区之前一致。
+          const SizedBox(height: 20 - AuthAgreementRow.hitPadding),
           Center(
             child: AuthAgreementRow(
               agreed: agreed,
@@ -508,7 +519,8 @@ class _AuthCanvas extends StatelessWidget {
               privacyPolicyText: AppL10n.of(context).accPrivacyPolicyLink,
             ),
           ),
-          const SizedBox(height: 16),
+          // 同上：16 - 12。
+          const SizedBox(height: 16 - AuthAgreementRow.hitPadding),
         ],
       ),
     );
@@ -548,11 +560,14 @@ class _TitleGroup extends StatelessWidget {
 }
 
 /// 微信授权登录圆形入口：作为次要入口置于页面底部。
+///
+/// ⚠️ **不画 loading**（2026-08-28 需求 3）：登录中的反馈由盖住整页的
+/// [AppLoadingDialog] 承担（见 [_AuthPageState._loginWithWeChat]）。图标里那颗小转圈
+/// 没有中间的 loading 框托着，跳回 App 时看着很怪；这里只保留「按不动 + 变淡」的禁用态。
 class _WeChatLoginButton extends StatelessWidget {
-  const _WeChatLoginButton({required this.onPressed, required this.loading});
+  const _WeChatLoginButton({required this.onPressed});
 
   final VoidCallback? onPressed;
-  final bool loading;
 
   @override
   Widget build(BuildContext context) {
@@ -572,25 +587,14 @@ class _WeChatLoginButton extends StatelessWidget {
             onTap: onPressed,
             customBorder: const CircleBorder(),
             child: Center(
-              child: loading
-                  ? const SizedBox.square(
-                      dimension: 22,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        color: Colors.white,
-                      ),
-                    )
-                  : Image.asset(
-                      'assets/images/login-wx-icon.png',
-                      width: 30,
-                      height: 30,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => const Icon(
-                        Icons.wechat,
-                        size: 30,
-                        color: Colors.white,
-                      ),
-                    ),
+              child: Image.asset(
+                'assets/images/login-wx-icon.png',
+                width: 30,
+                height: 30,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) =>
+                    const Icon(Icons.wechat, size: 30, color: Colors.white),
+              ),
             ),
           ),
         ),

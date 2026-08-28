@@ -1,5 +1,8 @@
 import 'dart:async';
 import 'dart:io';
+// 设备卡的毛玻璃底用它（`_CardGlass`）。`show` 收窄到一个符号：dart:ui 里还有
+// Image / TextStyle / Color 等同名类型，整个导进来会与 material 打架。
+import 'dart:ui' show ImageFilter;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 // home_main_view.dart 里的 _CollapsibleGap 自带一个 RenderBox（可压缩留白，

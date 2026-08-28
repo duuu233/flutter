@@ -73,6 +73,15 @@ dependencies:
   # App 直接用原生裁剪器：手势更跟手、自带旋转/网格/回弹，还能锁定宽高比并直接导出 JPEG。
   # ⚠️ Android 需要在 AndroidManifest.xml 注册 UCropActivity（已加）。
   image_cropper: ^12.2.1
+  # AI 聊天「按住说话」的端上语音识别（iOS SFSpeechRecognizer / Android SpeechRecognizer）。
+  # 口径见接口文档 v1.0.3 §5.1.3：识别在**手机本地**做，拿到文字直接走 POST /chat，
+  # 音频不出手机、**后端零改动**（小程序那边同理，用微信「同声传译」插件在端上转文字）。
+  # ⚠️ 版本写成区间而不是 `^x`：`listen()` 的参数在 6.6 起才收进 `SpeechListenOptions`
+  # （旧的 partialResults/cancelOnError 具名参数 7.0 已移除），下限钉在 6.6.0 才两边都能编；
+  # 上限到 8.0 之前跟随 pub.dev 最新即可。
+  # ⚠️ 安卓还需要清单里的 RECORD_AUDIO + `<queries>` 里的 RecognitionService（都已加），
+  #   iOS 需要 NSMicrophoneUsageDescription + NSSpeechRecognitionUsageDescription（已加）。
+  speech_to_text: '>=6.6.0 <8.0.0'
   # 程序化图片处理（**不参与交互**）：只用于两件事——
   #   ① 工具栏「旋转」按钮的即时 90° 旋转（走原生裁剪器要开一整个页面，太重）；
   #   ② 用户没做任何编辑时，投屏前按设备比例做一次 aspectFill 中心裁切。

@@ -446,22 +446,45 @@ class BleController extends ChangeNotifier {
   /// （对齐小程序 `bluetooth.js cachedBroadcastIds`）。
   List<String>? _cachedBroadcastIds;
 
-  /// 取允许的 broadcastId 白名单：优先产品列表接口返回的（带缓存）；拉不到/为空退回内置兜底。
-  Future<List<String>> _loadAllowedBroadcastIds() async {
+  /// 在途的白名单请求：多路扫描并发时共用同一次网络往返，不各打一遍。
+  Future<List<String>>? _broadcastIdsRequest;
+
+  /// **同步**取当前已知的白名单：缓存命中就是产品列表那份，否则内置兜底。
+  ///
+  /// 2026-08-28「搜设备要等几秒」的一半原因就在这里：原来每次扫描都先
+  /// `await` 一次产品列表接口才起扫，弱网下这一步就是几秒（超时还会静默重试两次，
+  /// 最坏 ~30s），而且接口返回空表时不写缓存 —— **每一次**扫描都要重付这笔。
+  /// 现在扫描立刻用已知名单开跑，产品列表另走 [_refreshBroadcastIds] 在后台补。
+  List<String> _knownBroadcastIds() {
+    final cached = _cachedBroadcastIds;
+    return cached != null && cached.isNotEmpty ? cached : _fallbackBroadcastIds;
+  }
+
+  /// 后台刷新产品列表白名单，交给 [FrameBleClient.scan] 的 `pendingAllowedNames` 收口。
+  ///
+  /// 已有缓存返回 null（不必刷）；拉取失败/为空返回空表（当作没刷到，继续用兜底名单）。
+  /// 失败不写缓存，下次扫描会再试一次 —— 与原实现同口径，只是不再堵在起扫前面。
+  Future<List<String>>? _refreshBroadcastIds() {
     final cached = _cachedBroadcastIds;
     if (cached != null && cached.isNotEmpty) {
-      return cached;
+      return null;
     }
-    try {
-      final ids = await BoltFoxApi.getProductBroadcastIds();
-      if (ids.isNotEmpty) {
-        _cachedBroadcastIds = ids;
-        return ids;
-      }
-    } catch (_) {
-      // 拉产品列表失败（未登录/网络异常）：退回内置广播名，扫描照常进行。
+    final inflight = _broadcastIdsRequest;
+    if (inflight != null) {
+      return inflight;
     }
-    return _fallbackBroadcastIds;
+    final request = BoltFoxApi.getProductBroadcastIds()
+        .then((ids) {
+          if (ids.isNotEmpty) {
+            _cachedBroadcastIds = ids;
+          }
+          return ids;
+        })
+        // 拉产品列表失败（未登录/网络异常）：扫描继续用内置广播名兜底。
+        .catchError((Object _) => const <String>[])
+        .whenComplete(() => _broadcastIdsRequest = null);
+    _broadcastIdsRequest = request;
+    return request;
   }
 
   /// 扫描附近设备（去重 + 按信号强度排序）。
@@ -502,13 +525,11 @@ class BleController extends ChangeNotifier {
     notifyListeners();
     Future<List<ScanResult>>? run;
     try {
-      final allowedNames = allowAll ? null : await _loadAllowedBroadcastIds();
-      if (generation != _scanGeneration) {
-        return const <ScanResult>[];
-      }
+      // 白名单不再 await：先用已知名单开扫，产品列表在后台补（见 [_knownBroadcastIds]）。
       run = FrameBleClient.scan(
         timeout: timeout,
-        allowedNames: allowedNames,
+        allowedNames: allowAll ? null : _knownBroadcastIds(),
+        pendingAllowedNames: allowAll ? null : _refreshBroadcastIds(),
         onUpdate: (list) {
           if (generation != _scanGeneration) {
             return;

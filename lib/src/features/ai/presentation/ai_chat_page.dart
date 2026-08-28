@@ -2,11 +2,15 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDownEvent, PointerMoveEvent, PointerUpEvent;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HapticFeedback;
 import 'package:http/http.dart' as http;
 
 import '../../../network/boltfox_api.dart';
 import '../../../network/boltstar_ai_api.dart';
+import '../../../native_device_api.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/ai_service_consent.dart';
 import '../../../shared/l10n/app_l10n.dart';
@@ -23,6 +27,7 @@ import '../ai_i18n.dart';
 import '../ai_image_compress.dart';
 import '../ai_last_session.dart';
 import '../ai_token.dart';
+import '../ai_voice_input.dart';
 import 'ai_sessions_page.dart';
 import 'ai_visuals.dart';
 
@@ -66,11 +71,15 @@ import 'ai_visuals.dart';
 /// [FigmaScreenBackground]，没有跟着小程序换成 AI 那张 OSS 全屏图。
 ///
 /// ## 与小程序有意的差异（无对应端能力 / 平台机制不同）
-/// - **语音输入**：小程序已接微信「同声传译」插件（按住说话、松手直发，动效盖住整个输入区）。
-///   App 侧没有录音 + 语音转写能力（微信插件是小程序独有；App 要接得额外引入录音插件 +
-///   第三方 STT 服务），本轮**不擅自加依赖**，按住仍只给同语义的占位提示。
-/// - **保存到系统相册**：Flutter 无内置相册写入能力（需 gal / image_gallery_saver 之类插件），
-///   「下载」先落到应用缓存目录并如实提示。
+/// - **语音输入**：2026-08-28 已接（[AiVoiceInput]）。交互与小程序同款（按住说话、上滑取消、
+///   松手直发、录音期间不显示识别文字），只是识别引擎不同：小程序用微信「同声传译」插件，
+///   App 用**系统自带的语音识别**（`speech_to_text` → iOS SFSpeechRecognizer /
+///   Android SpeechRecognizer）。两端都是**端上转文字、接口不参与**。
+///   🔶 由此带来两点差异：① App 支持日语（微信那个插件没有）；
+///   ② **安卓国行无 GMS 的机型没有系统识别服务**，按住时如实提示「本机不支持」，
+///   而不是让人按了没反应（覆盖率不够时的下一步见 `ai_voice_input.dart` 文件头）。
+/// - **保存到系统相册**：2026-08-28 已接原生通道（[NativeDeviceApi.saveImageToGallery]：
+///   Android→MediaStore `Pictures/BoltStar`、iOS→Photos addOnly 授权）。
 /// - **「停止生成」浮标**：小程序是 `position: fixed` 悬浮在输入区上方、会盖住正在打出来的最后两行
 ///   （2026-07-27 靠底部留白解决）；App 这颗是 Column 里的正常一行，不存在遮挡，无需对应处理。
 /// - **页面栈**：小程序有 10 层硬上限，所以会话列表页跳聊天页带一套「栈快满就降级就地换会话」的
@@ -215,9 +224,19 @@ const int _kSessionTitleMax = 20;
 // Token 余额本地模拟（支付体系未接）2026-08-10 提取到 `features/ai/ai_token.dart`：
 // 会话列表页顶部也要显示同一份余额（需求 1.1），常量再复制一份必然会漂。
 
-/// 一键生图风格（需求文案：漫画/风景/肖像/动漫；API 值：cartoon/landscape/portrait/anime）。
-/// 顺序与小程序 `STYLE_OPTIONS` 一致（漫画 / 人物 / 风景 / 卡通）。
-const List<String> _kStyleKeys = ['cartoon', 'portrait', 'landscape', 'anime'];
+/// 一键生图风格。**顺序与绑定都逐项对齐小程序 `STYLE_OPTIONS`**：
+/// 漫画(anime) / 人物(portrait) / 风景(landscape) / 卡通(cartoon)。
+///
+/// ⚠️ 2026-08-28 修：这里原来写的是 `['cartoon', 'portrait', 'landscape', 'anime']`，
+/// 即「漫画」绑 `cartoon`、末位「动漫」绑 `anime` —— 与小程序**正好互换**，于是同一个标签
+/// 在两端出的是不同风格的图，点「漫画」发出去的还是「生成图片-卡通」。
+/// 小程序侧同样的错早前已修（见 `chat.js` STYLE_OPTIONS 上方注释），这次把 App 对齐过来。
+/// 文案见 [AppL10n.aiStyleLabel]，自动拼的 message 见 [AiI18n.genMessage]，三处同一口径。
+const List<String> _kStyleKeys = ['anime', 'portrait', 'landscape', 'cartoon'];
+
+/// 按住说话：手指相对起手点上滑超过这么多逻辑像素即进入「松开取消」态
+/// （小程序 `VOICE_CANCEL_DY` 同款交互，仿微信）。
+const double _kVoiceCancelDy = 60;
 
 /// 图片比例（需求：竖向/横向/方形；API `img_orientation` 必传，只认这三个值）。
 const List<String> _kOrientationKeys = ['vertical', 'horizontal', 'square'];
@@ -378,6 +397,10 @@ class _StreamState {
   /// 已经吐出过预描述/图/文字 —— 决定中断时是保留已上屏的部分还是换失败卡。
   bool hasContent = false;
 
+  /// 服务端 `mode` 事件定的这一轮走向：`image` = 生图（出渐变占位盒）、`text` = 纯文字、
+  /// `''` = 还没收到（老部署不推这个事件，各处按「未知」兜底走 progress 那条路）。
+  String mode = '';
+
   /// 服务端最新推到的里程碑，只增不减（重复/乱序推也不会让进度倒退）。
   int target = 0;
 
@@ -445,6 +468,26 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   bool _submitting = false;
   bool _banned = false;
   bool _voiceMode = false;
+
+  /// 正在录音（按住说话）。见 [_beginVoice] / [_endVoice]。
+  bool _recording = false;
+
+  /// 手指已滑进「松开取消」区（浮层变红，松手丢弃）。
+  bool _voiceCancel = false;
+
+  /// 本次按下的起手点（全局坐标）。上滑距离按它算。
+  Offset? _voiceStart;
+
+  /// 起手起到一半被 [_beginVoice] 判定为「起不来」（不支持/无权限/正在发送）时置 true，
+  /// 后续的 move/up 事件直接忽略，不再重复弹提示。
+  bool _voiceRejected = false;
+
+  /// 手指还按在「按住说话」上。
+  ///
+  /// ⚠️ 这个标记是给 [_beginVoice] 里的 await 用的：首次按下要先 `initialize()`
+  /// （会弹系统麦克风授权框），用户完全可能在那期间就松手了。不检查的话，
+  /// 授权回来后才 `listen()`，而抬手事件早已过去 —— 麦克风会一直开到 60s 超时。
+  bool _voiceHolding = false;
 
   /// 两个上拉浮层（比例 / 一键生图风格）。视觉稿里四个工具入口是**常驻**的，
   /// 原来那个「＋ 展开工具面板」的 `_showTools` 随之取消。
@@ -542,6 +585,10 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     }
     appRouteObserver.unsubscribe(this);
     _stopGenerate(silent: true);
+    // 页面走了还按着说话（返回手势/被 pop）：丢掉这一轮，别让隐藏页继续占着麦克风。
+    if (_recording) {
+      unawaited(AiVoiceInput.instance.cancel());
+    }
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     _input.dispose();
@@ -703,9 +750,18 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
               ? (isImage ? _MsgKind.image : _MsgKind.text)
               : _MsgKind.rich,
           content: isImage ? '' : row.content,
-          // 用户图片消息：serverId 已记在消息本身上，images[0] 就别再记一遍，
-          // 否则删这条会对同一个 message_id 打两次 DELETE
-          images: isImage ? [_AiImage(url: row.content)] : null,
+          // 用户图片消息：**message 与 images[0] 都记上同一个 serverId**。
+          //
+          // ⚠️ 2026-08-28 修「用户自己发的照片删不掉」（两端同款 bug）：原来这里只把 id 记在
+          // 消息本身上、`images[0]` 留空，理由是「免得删整条时对同一个 message_id 打两次 DELETE」。
+          // 但用户图片气泡下面那条常驻操作条走的是 [_deleteBubbleImage]，它只认
+          // `image.serverId` —— 拿到空值就**只删本地、不调接口**，重进会话照旧躺在那儿。
+          // （AI 回复的图 id 记在 image 上，所以那边一直是好的，正是用户观察到的差别。）
+          // 现在两处都记，重复由 [_deleteMessage] 去重收口 —— 数据模型如实反映
+          // 「这条用户图片消息就是这一个 message_id」，比靠约定记在哪一处稳。
+          images: isImage
+              ? [_AiImage(url: row.content, serverId: row.id)]
+              : null,
         ),
       );
     }
@@ -1207,12 +1263,25 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
 
   // ── 流式回复（SSE） ───────────────────────────────────────
   //
-  // 事件顺序（生图场景）：
-  //   pre_text ×2 → progress(5/5/15/30/45) → progress(50) → progress(80/85/90) → image
-  //   → text（逐条）→ progress(100) → done
+  // 事件顺序（服务端 2026-08-07 起新增 init / heartbeat / **mode**）：
+  //   生图：  init → pre_text「星宝努力思考中」→ heartbeat → mode:"image" → pre_text(换成真文案)
+  //          → progress(5/15/30/45/50/80/85/90) → image → text（逐条）→ progress(100) → done
+  //   纯文字：init → pre_text「星宝努力思考中」→ heartbeat → mode:"text" → pre_text:""
+  //          → text（逐条）→ done
+  //
+  // ⚠️ **渐变占位盒（生图进度条）的显形时机由 mode 决定，不是 pre_text**
+  //    （2026-08-28 补齐，对齐小程序 `chat.js beginStream` 上方那段注释）。
+  //    两条路开头一模一样（都有那句「星宝努力思考中」），服务端要到 mode 事件才知道走哪条。
+  //    本页原来是 pre_text 一到就把占位盒亮出来 —— 于是**纯文字对话也会先闪一个生图占位盒
+  //    再收掉**，正是用户报的「纯文字对话不该有加载图片的 loading」。
+  //    现在 pre_text 只管写文案，mode:"image" 才唤出占位盒 + 起进度。
+  //    mode:"text" 之后紧跟的 pre_text:"" 是服务端来擦「思考中」那句的，擦完气泡若空了
+  //    要把三点动画放回去，别晾出一个空白气泡。
   // ⚠️ image 排在 progress 90(uploaded) **之后**，不是 50% —— 50 那级只是「初稿完成」，
   //    图还没下载上传完、URL 拿不到。占位盒因此几乎会挂满整个生成过程。
-  // 纯文字场景只有 text + done，没有进度事件，界面表现与非流式一致（加载图 → 打字机）。
+  //
+  // 兼容没有 mode 的老部署：progress 事件照旧能把占位盒唤出来（见 case 'progress'），
+  // 只是显形时机从 pre_text 推迟到第一条 progress —— 两者本来就前后脚，观感无差。
 
   _StreamState _beginStream(int holderId) {
     final stream = _StreamState(holderId);
@@ -1231,44 +1300,81 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     }
 
     switch (event.type) {
+      // 开流握手 / 心跳：都不带要渲染的内容（init = 服务端已受理，heartbeat = 长等待期间
+      // 用来续命连接的空包）。界面继续挂着三点动画即可 —— 显式列出来，免得以后有人以为漏处理。
+      case 'init':
+      case 'heartbeat':
+        break;
+
+      // 这一轮走生图还是纯文字。**渐变占位盒只认这个事件**（理由见本段上方注释）。
+      case 'mode':
+        {
+          final mode = event.mode.trim().toLowerCase();
+          if (mode != 'image' && mode != 'text') {
+            break; // 未知取值：当没收到，让 progress 那条兜底路照旧生效
+          }
+          stream.mode = mode;
+          if (mode == 'image') {
+            // 占位盒显形并起步到 5%：这两件事原来挂在 pre_text 上，现在挪到这儿。
+            _markStreamStarted(index, showProgress: true);
+            _applyProgress(
+              stream.target == 0 ? 5 : stream.target,
+              stage: 'starting',
+            );
+            _stickToBottom(force: true, animate: true);
+          }
+        }
+
       // 预描述。服务端会推**两条**：先秒回一句占位的「星宝努力思考创作中」顶掉空等，
-      // 约 3s 后 LLM 出结果，再推真正的「正在为您绘制…」。
-      // 前端不用分辨是哪一条，直接覆盖即可 —— 所以这里没有「只写第一次」的判断，别加。
+      // 之后按 mode 分两种走向 —— 生图是替换成真正的「正在为您绘制…」，纯文字是推一条**空串**
+      // 把它擦掉。前端不用分辨是哪一条，直接覆盖即可 —— 所以这里没有「只写第一次」的判断，别加。
       case 'pre_text':
         {
           final content = event.content.trim();
           if (content.isEmpty) {
+            // 空串 = 擦掉预描述（mode:"text" 之后紧跟的那条）。擦完气泡里可能什么都不剩，
+            // 正文还在路上，这时候要把三点动画放回去，别晾出一个空白气泡。
+            final message = _messages[index];
+            if (message.preText.isEmpty) {
+              return;
+            }
+            final emptied =
+                message.content.isEmpty &&
+                !message.streaming &&
+                message.images.isEmpty;
+            if (emptied) {
+              // 屏上又什么都不剩了：这时候断线该走「失败卡 + 可重试」，而不是
+              // 「保留已生成内容」那条（那条不给重试入口，见 _dispatchChat 的 catch）。
+              stream.hasContent = false;
+            }
+            setState(() {
+              _messages[index]
+                ..preText = ''
+                ..loading = emptied || message.loading;
+            });
             return;
           }
           // 第一条是「凭空多出一块内容」，必须强制贴底；后一条只是就地换字，
           // 这时候还硬拽用户回底部，正在上翻看历史的人会被打断。
           final first = _messages[index].preText.isEmpty;
           stream.hasContent = true;
-          setState(() {
-            _messages[index]
-              ..loading = false
-              ..streaming = true
-              ..preText = content;
-          });
-          _applyProgress(
-            stream.target == 0 ? 5 : stream.target,
-            stage: 'starting',
-          );
+          // 只收三点动画；占位盒交给 mode:"image"（纯文字这一轮永远不该出现它）。
+          _markStreamStarted(index, showProgress: false);
+          setState(() => _messages[index].preText = content);
           _stickToBottom(force: first, animate: true);
         }
 
       case 'progress':
+        // mode 已经定了走纯文字：迟到/多余的 progress 不能把占位盒翻出来。
+        if (stream.mode == 'text') {
+          break;
+        }
         // ⚠️ `stream.target < 100` 这个闸不能省：读数走到 100 时占位盒已经收起、真图已经上屏，
         // 这时候服务端再补推一条 progress（重复/迟到的都可能），不挡就会把占位盒重新翻出来
         // 盖在真图上。[_applyProgress] 那边只挡了「进度倒退」，挡不住这里的显形。
-        if (stream.target < 100 &&
-            (!_messages[index].streaming || _messages[index].loading)) {
-          setState(() {
-            _messages[index]
-              ..loading = false
-              ..streaming = true;
-          });
-        }
+        //
+        // 这一行同时是**没有 mode 的老部署**的兜底：进度一来照样把占位盒唤出来。
+        _markStreamStarted(index, showProgress: stream.target < 100);
         _applyProgress(
           (event.progress ?? 0).round(),
           stage: event.stage,
@@ -1313,6 +1419,28 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       default:
         break; // 文档未列出的事件类型：忽略，别让未知事件把这一轮搞挂
     }
+  }
+
+  /// 收起三点动画 /（按需）让渐变占位盒显形，对齐小程序 `showProgress` 的同名动作。
+  ///
+  /// [showProgress] 为 false 时**只**收三点动画，绝不碰 `streaming` —— 纯文字那一轮
+  /// 靠的就是这一点：pre_text 到了先把三点收掉，占位盒留给 `mode:"image"` 去开。
+  /// 只在真要改时才 setState：一次生图有十来条 progress 事件，每条都无脑再写一遍纯属白刷渲染。
+  void _markStreamStarted(int index, {required bool showProgress}) {
+    final message = _messages[index];
+    final needLoadingOff = message.loading;
+    final needStreamingOn = showProgress && !message.streaming;
+    if (!needLoadingOff && !needStreamingOn) {
+      return;
+    }
+    setState(() {
+      if (needLoadingOff) {
+        _messages[index].loading = false;
+      }
+      if (needStreamingOn) {
+        _messages[index].streaming = true;
+      }
+    });
   }
 
   /// 收到服务端的里程碑：只记成**目标值**，不直接上屏 —— 上屏交给 [_pumpProgress] 一步步爬过去。
@@ -1618,6 +1746,22 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     });
   }
 
+  /// 点空白处：**收键盘** + 收浮层。
+  ///
+  /// ⚠️ 2026-08-28 补的是前半句。小程序不用管这件事 —— 微信原生输入框点外面会自己收起；
+  /// Flutter 的 [TextField] 不会，焦点一直留着，键盘就一直杵在那儿挡住半屏聊天记录，
+  /// 想收只能按系统返回键（iOS 连返回键都没有）。
+  ///
+  /// 只在真的有焦点时 unfocus：没焦点时白调一次也会让 [FocusManager] 走一遍焦点变更。
+  /// ⚠️ 输入框自己的 onTap 仍走 [_closeTools] —— 点输入框是要**唤起**键盘，不是收。
+  void _dismissKeyboardAndTools() {
+    final focus = FocusManager.instance.primaryFocus;
+    if (focus != null && focus.hasFocus) {
+      focus.unfocus();
+    }
+    _closeTools();
+  }
+
   /// 欢迎页灵感词：只填入输入草稿，**不自动发送**，避免误触就直接建会话 / 触发生图计费。
   void _useSuggestion(String prompt) {
     _closeTools();
@@ -1745,9 +1889,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   }
 
   /// 选中风格即发（浮层副标题已写明「选择后立即发送」）：按语种自动拼 message
-  ///（如「生成图片-卡通」），img_style 触发生图（文档 §5.3.2）。
+  ///（如「生成图片-漫画」），img_style 触发生图（文档 §5.3.2）。
+  ///
+  /// 需求 15.3「发送完要关掉这个弹层」：**发之前就收**（[_closeTools]，两个上拉浮层一起收）。
+  /// 不放在发送之后 —— 发送这一步可能先弹服务协议确认 / 星币不足弹窗，浮层还开着的话
+  /// 会隔着弹窗露在下面；而且失败路径下它同样该收起来。
   Future<void> _onStyleTap(String key) async {
-    setState(() => _showStylePicker = false);
+    _closeTools();
     // 同样过一遍同步闸（见 [_guardedSend]）：这条路径也要先建会话，连点样式一样会重复发。
     await _guardedSend(() => _sendChat(_ai.genMessage(key), styleKey: key));
   }
@@ -1833,13 +1981,18 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   Future<void> _deleteMessage(_AiMessage message) async {
     // 历史消息带服务端 id 走接口删除；本轮新产生的消息接口未回 id，仅本地移除
     //（重进会话会重新出现，待后端在 /chat 响应中带回 message_id 后可彻底删除）
-    final serverIds = <String>[
+    //
+    // ⚠️ **Set 去重**（2026-08-28）：用户图片消息的 id 在 message 与 images[0] 上各记了一份
+    //（见 [_buildHistoryMessages] 的说明），不去重就会对同一个 message_id 打两次 DELETE，
+    // 第二次多半回「消息不存在」，把一次成功的删除报成失败。
+    // Set 字面量是 LinkedHashSet，插入顺序保持不变（文字行仍排在图片行前面）。
+    final serverIds = <String>{
       if (message.serverId != null && message.serverId!.isNotEmpty)
         message.serverId!,
       for (final image in message.images)
         if (image.serverId != null && image.serverId!.isNotEmpty)
           image.serverId!,
-    ];
+    };
     try {
       for (final serverId in serverIds) {
         await _api.deleteMessage(_sessionId, serverId);
@@ -1910,15 +2063,34 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     }
   }
 
+  /// 「下载」：拉到本地临时文件 → **存进系统相册**（2026-08-28 需求 17）。
+  ///
+  /// 原来只写到应用缓存目录就完事，提示语还得如实写「保存到系统相册待接入插件」——
+  /// 用户在相册里找不到图，等于没下载成。现在补了原生通道
+  /// （[NativeDeviceApi.saveImageToGallery]：Android→MediaStore、iOS→Photos addOnly），
+  /// 三种收尾各自给话：拉不到图 / 拉到了但写相册失败（多半是权限被拒）/ 成功。
   Future<void> _downloadImage(String url) async {
     AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
-    final path = await _downloadToFile(url);
-    AppLoadingDialog.hide(context);
+    String? path;
+    var saved = false;
+    try {
+      path = await _downloadToFile(url);
+      if (path != null) {
+        saved = await NativeDeviceApi.saveImageToGallery(path);
+      }
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
       return;
     }
     final l10n = AppL10n.of(context);
-    AppToast.show(context, path == null ? l10n.aiImageExpired : l10n.aiDownloaded);
+    AppToast.show(
+      context,
+      path == null
+          ? l10n.aiImageExpired
+          : (saved ? l10n.aiDownloaded : l10n.aiDownloadFailed),
+    );
   }
 
   /// 投屏：已连接活动设备 → 直接进投屏预览；未连接 → 弹已绑定设备列表，选中后连接再进。
@@ -2083,7 +2255,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     final title = _sessionId.isEmpty ? '' : _sessionTitle;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: _closeTools, // 点导航行空白处也收起浮层
+      onTap: _dismissKeyboardAndTools, // 点导航行空白处同样收键盘 + 收浮层
       child: SizedBox(
         height: 44,
         child: Stack(
@@ -2177,9 +2349,10 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   Widget _buildMessages() {
     final showWelcome = _messages.isEmpty && !_historyLoading;
     return GestureDetector(
-      // 点消息区任意位置收起 ＋ 工具栏（见 _closeTools）。只吃点击，拖动仍归 ListView。
+      // 点消息区任意位置：收键盘 + 收浮层（见 [_dismissKeyboardAndTools]）。
+      // 只吃点击，拖动仍归 ListView。
       behavior: HitTestBehavior.opaque,
-      onTap: _closeTools,
+      onTap: _dismissKeyboardAndTools,
       child: Stack(
         children: [
           Positioned.fill(
@@ -2976,34 +3149,45 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
         _kInputCardMargin,
         9,
       ),
-      child: Container(
-        padding: const EdgeInsets.fromLTRB(
-          _kInputCardPadding,
-          9,
-          _kInputCardPadding,
-          10,
-        ),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.84),
-          borderRadius: BorderRadius.circular(21),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.94)),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x295B482D),
-              blurRadius: 22,
-              offset: Offset(0, 10),
+      // 录音动效**盖住整个输入区**（含工具栏与卡片自己的内边距），对齐小程序 `.voice-cover`
+      //（`position: absolute; inset: 0` 挂在 `.input-area` 上 + 同款 42rpx 圆角）。
+      // 所以 Stack 包在**卡片外面**：包在里面只能盖住内容区，四周会露出一圈卡片底。
+      child: Stack(
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(
+              _kInputCardPadding,
+              9,
+              _kInputCardPadding,
+              10,
             ),
-          ],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            if (_pending.isNotEmpty) _buildPendingStrip(),
-            _buildQuickTools(),
-            const SizedBox(height: 8),
-            _buildInputLine(),
-          ],
-        ),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.84),
+              borderRadius: BorderRadius.circular(21),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.94)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x295B482D),
+                  blurRadius: 22,
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_pending.isNotEmpty) _buildPendingStrip(),
+                _buildQuickTools(),
+                const SizedBox(height: 8),
+                _buildInputLine(),
+              ],
+            ),
+          ),
+          // ⚠️ 必须 IgnorePointer（小程序那边是 `pointer-events: none`）：它是在手指按下
+          // **之后**才出现的，绝不能把后续的 move/up 从下面那条「按住说话」的 Listener 手里抢走。
+          if (_recording)
+            Positioned.fill(child: _VoiceCover(cancel: _voiceCancel)),
+        ],
       ),
     );
   }
@@ -3207,25 +3391,49 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
         children: [
           Expanded(
             child: _voiceMode
-                ? GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    // ⚠️ App 侧没有录音 + 语音转写能力：小程序那套「按住说话、松手直发、
-                    // 动效盖住整个输入区」靠的是微信「同声传译」插件（小程序独有）。
-                    // App 要做得引入录音插件 + 第三方 STT 服务，本轮不擅自加依赖，
-                    // 仍只给同语义的占位提示（详见文件头「与小程序有意的差异」）。
-                    onLongPress: () =>
-                        AppToast.show(context, l10n.aiVoicePending),
-                    onTap: () => AppToast.show(context, l10n.aiVoicePending),
+                // 「按住说话」条。用 [Listener] 收原始指针事件而不是 GestureDetector：
+                // 需要的是「按下即录、抬起即发」，而 tap 系手势一移动就被判成取消，
+                // 上滑取消这套手势用 tap 根本表达不了。本条不在可滚动区里，
+                // 不进手势竞技场也不会跟谁抢。
+                ? Listener(
+                    onPointerDown: _onVoicePointerDown,
+                    onPointerMove: _onVoicePointerMove,
+                    onPointerUp: _onVoicePointerUp,
+                    onPointerCancel: (_) {
+                      _voiceStart = null;
+                      _voiceHolding = false;
+                      _voiceRejected = false;
+                      unawaited(_endVoice(cancel: true));
+                    },
                     child: Container(
                       height: 34,
                       alignment: Alignment.center,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF2EEE9),
+                        // 小程序 `.voice-hold`：常态米底 #f2eee9 + #555 字；
+                        // 按住时整条转 90° 橙色渐变 + 白字（`.voice-hold--recording`）。
+                        color: _recording ? null : const Color(0xFFF2EEE9),
+                        gradient: _recording
+                            ? const LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: [Color(0xFFFF6C2A), Color(0xFFFF884A)],
+                              )
+                            : null,
                         borderRadius: BorderRadius.circular(999),
                       ),
                       child: Text(
-                        l10n.aiHoldToTalk,
-                        style: const TextStyle(color: kAiText, fontSize: 14),
+                        // 三态文案与小程序逐字一致：按住 说话 / 松开发送 / 松开取消
+                        _recording
+                            ? (_voiceCancel
+                                  ? l10n.aiVoiceBarCancel
+                                  : l10n.aiVoiceBarRelease)
+                            : l10n.aiHoldToTalk,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _recording ? Colors.white : kAiText,
+                          fontSize: 14,
+                        ),
                       ),
                     ),
                   )
@@ -3295,11 +3503,209 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   }
 
   void _toggleVoiceMode() {
+    // 切走时把在途录音丢掉：留着的话隐藏的输入条还占着麦克风。
+    if (_voiceMode && _recording) {
+      unawaited(_endVoice(cancel: true));
+    }
     setState(() {
       _voiceMode = !_voiceMode;
       _showOrientationPicker = false;
       _showStylePicker = false;
     });
+  }
+
+  // ── 按住说话（2026-08-28 接入，见 `features/ai/ai_voice_input.dart`）─────
+  //
+  // 交互照小程序 `chat.js` 的 onVoice* 一套（仿微信，需求文档 §5.1.2「松手直接发送」）：
+  //   按住 → 开始录音 + 震一下 + 弹居中浮层；
+  //   按住不放上滑超过 [_kVoiceCancelDy] → 转「松开取消」，浮层变红；
+  //   松手 → 在取消区就安静丢弃，否则把识别结果**直接发出去**。
+  //
+  // ⚠️ **录音期间一个字都不上屏**（2026-07-27 需求 4.3，两端同口径）：不显示中间识别结果，
+  //    松手后结果直接变成一条已发送的用户消息（参考 DeepSeek），而不是回填输入框再让用户点发送。
+
+  void _onVoicePointerDown(PointerDownEvent event) {
+    _voiceStart = event.position;
+    _voiceRejected = false;
+    _voiceHolding = true;
+    unawaited(_beginVoice());
+  }
+
+  void _onVoicePointerMove(PointerMoveEvent event) {
+    final start = _voiceStart;
+    if (!_recording || start == null) {
+      return;
+    }
+    // 上滑为正：起手点 y 减去当前 y。
+    final cancel = start.dy - event.position.dy > _kVoiceCancelDy;
+    if (cancel != _voiceCancel) {
+      setState(() => _voiceCancel = cancel);
+    }
+  }
+
+  void _onVoicePointerUp(PointerUpEvent event) {
+    _voiceStart = null;
+    _voiceHolding = false;
+    if (_voiceRejected) {
+      _voiceRejected = false;
+      return;
+    }
+    unawaited(_endVoice(cancel: _voiceCancel));
+  }
+
+  /// 起手：确认能录 → 开始监听。返回是否真的起来了。
+  Future<void> _beginVoice() async {
+    // 与发送按钮同一批闸：上一条正卡在「建会话」空窗时不该再录一句叠上来。
+    if (_recording || _sending || _submitting || _banned) {
+      _voiceRejected = true;
+      return;
+    }
+    final voice = AiVoiceInput.instance;
+    final l10n = AppL10n.of(context);
+    // 首次按下才去 initialize（它会拉起系统授权弹窗）——不能在进页面时偷偷弹权限。
+    final ready = await voice.ensureReady();
+    if (!mounted) {
+      return;
+    }
+    // 授权框还开着的时候用户就松手了：这一轮作废，别在抬手之后才把麦克风打开。
+    if (!_voiceHolding) {
+      return;
+    }
+    if (!ready) {
+      _voiceRejected = true;
+      // 无 GMS 的安卓国行机最常见：系统压根没有识别服务，如实说，别让人反复按。
+      AppToast.show(context, l10n.aiVoiceUnavailable);
+      return;
+    }
+    if (voice.permissionDenied) {
+      _voiceRejected = true;
+      await _showVoicePermissionGuide();
+      return;
+    }
+    // 起手震一下（与投屏预览页长按拖拽同一套反馈）。
+    unawaited(HapticFeedback.lightImpact());
+    setState(() {
+      _recording = true;
+      _voiceCancel = false;
+    });
+    final started = await voice.start(
+      language: AppL10n.languageOf(context),
+    );
+    if (!mounted) {
+      return;
+    }
+    // listen() 期间松手（起手到真正开录之间还有一次平台往返）：立刻按松手处理，
+    // 否则录音会一直开到 60s 上限，而用户以为自己已经取消了。
+    if (!_voiceHolding) {
+      await _endVoice(cancel: !started || _voiceCancel);
+      return;
+    }
+    if (!started) {
+      setState(() {
+        _recording = false;
+        _voiceCancel = false;
+      });
+      _voiceRejected = true;
+      AppToast.show(context, l10n.aiVoiceUnavailable);
+    }
+  }
+
+  /// 松手 / 取消：收浮层，再决定发不发。
+  Future<void> _endVoice({required bool cancel}) async {
+    if (!_recording) {
+      return;
+    }
+    final voice = AiVoiceInput.instance;
+    setState(() {
+      _recording = false;
+      _voiceCancel = false;
+    });
+    if (cancel) {
+      await voice.cancel(); // 上滑取消：安静丢弃，不发不填
+      return;
+    }
+    final text = await voice.stop();
+    if (!mounted) {
+      return;
+    }
+    if (voice.permissionDenied) {
+      await _showVoicePermissionGuide();
+      return;
+    }
+    if (text.isEmpty) {
+      AppToast.show(context, AppL10n.of(context).aiVoiceNoSpeech);
+      return;
+    }
+    await _sendVoiceText(text);
+  }
+
+  Future<void> _showVoicePermissionGuide() async {
+    final l10n = AppL10n.of(context);
+    final go = await showAppConfirmDialog(
+      context,
+      title: l10n.aiVoiceMicDeniedTitle,
+      message: l10n.aiVoiceMicDeniedMessage,
+      icon: Icons.mic_off_rounded,
+      confirmLabel: l10n.bindGoSettings,
+    );
+    if (go != true) {
+      return;
+    }
+    try {
+      await NativeDeviceApi.openAppSettings();
+    } catch (_) {
+      // 打不开系统设置不阻断（如通道未实现），用户可手动去设置。
+    }
+  }
+
+  /// 识别结果**直接发送**（不经过输入框）。
+  ///
+  /// 顺序与 [_onSendTap] 逐条一致：服务协议 → 图片上传中 → 星币闸 → 建会话 → 发。
+  /// 任何一步没发出去都把文字**回填输入框** —— 语音内容重说一遍的代价比重打一遍高得多
+  /// （小程序 `sendVoiceText` 同款约定）。
+  Future<void> _sendVoiceText(String text) async {
+    void restore() {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _input.text = text;
+        _input.selection = TextSelection.collapsed(offset: text.length);
+      });
+    }
+
+    final passed = await _guardedSend(() async {
+      if (!await _ensureAiServiceConsent(sendAttempt: true) || !mounted) {
+        restore();
+        return;
+      }
+      if (_pending.any((item) => item.uploading)) {
+        AppToast.show(context, AppL10n.of(context).aiImageUploading);
+        restore();
+        return;
+      }
+      final images = [
+        for (final item in _pending)
+          if (item.url.isNotEmpty) _AiImage(url: item.url, pad: item.pad),
+      ];
+      // 星币校验排在建会话之前，理由同 [_onSendTap]。
+      if (!await _guardAiDialogue() || !mounted) {
+        restore();
+        return;
+      }
+      if (_sessionId.isEmpty) {
+        await _createSession();
+        if (!mounted || _sessionId.isEmpty) {
+          restore();
+          return;
+        }
+      }
+      setState(() => _pending.clear());
+      await _sendChat(text, images: images, dialogueChecked: true);
+    });
+    if (!passed) {
+      restore(); // 被同步闸挡下（上一条还在发）：文字别丢
+    }
   }
 
   /// 发送图标（2026-08-10 需求 4 的「除去阴影后上下居中 + 放大」）。
@@ -3780,6 +4186,132 @@ class _AiBubbleImageState extends State<_AiBubbleImage> {
         ),
       ),
     );
+  }
+}
+
+/// 录音动效层（小程序 `.voice-cover`）：盖住整个输入区的白面板 + 七根跳动的波形条 + 一句提示。
+///
+/// 逐项对齐 `chat.wxss`：
+/// - 面板：`rgba(255,255,255,.98)` / 圆角 42rpx / 内边距 20-32rpx / 元素间距 13rpx；
+///   取消态整块转 `#fdecec`。
+/// - 波形：7 根，宽 8rpx、圆角全圆、间距 9rpx，容器高 52rpx；
+///   高度在 20↔50rpx 之间来回（0.9s / ease-in-out），**逐根延迟 0.12s** 形成波浪；
+///   常态 `#ef641e`、取消态 `#d64541`。
+/// - 提示：24rpx `#8b8681`，取消态 `#d64541`。
+///
+/// ⚠️ 自己带 Ticker（[SingleTickerProviderStateMixin]）而不是挂在页面 State 上：
+/// 它只在录音时被 build，动画随之自然起停，页面不必为一个短暂动效常驻一支 Ticker。
+class _VoiceCover extends StatelessWidget {
+  const _VoiceCover({required this.cancel});
+
+  /// 手指是否已滑进「松开取消」区。
+  final bool cancel;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    return IgnorePointer(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        decoration: BoxDecoration(
+          color: cancel ? const Color(0xFFFDECEC) : const Color(0xFAFFFFFF),
+          // 与输入卡同款圆角，盖上去边到边严丝合缝
+          borderRadius: BorderRadius.circular(21),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _VoiceWave(
+              color: cancel ? const Color(0xFFD64541) : const Color(0xFFEF641E),
+            ),
+            const SizedBox(height: 6.5),
+            Text(
+              cancel ? l10n.aiVoiceTipCancel : l10n.aiVoiceTip,
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: cancel
+                    ? const Color(0xFFD64541)
+                    : const Color(0xFF8B8681),
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 七根跳动的波形条（小程序 `.voice-wave` + `@keyframes voiceWave`）。
+class _VoiceWave extends StatefulWidget {
+  const _VoiceWave({required this.color});
+
+  final Color color;
+
+  @override
+  State<_VoiceWave> createState() => _VoiceWaveState();
+}
+
+class _VoiceWaveState extends State<_VoiceWave>
+    with SingleTickerProviderStateMixin {
+  static const int _bars = 7;
+  static const double _barWidth = 4; // 8rpx
+  static const double _gap = 4.5; // 9rpx
+  static const double _minHeight = 10; // 20rpx
+  static const double _maxHeight = 25; // 50rpx
+  static const double _boxHeight = 26; // 52rpx
+
+  /// 一个完整周期 0.9s；每根比前一根晚 0.12s 起跳（= 周期的 2/15）。
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _boxHeight,
+      child: AnimatedBuilder(
+        animation: _controller,
+        builder: (context, child) => Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            for (var i = 0; i < _bars; i++) ...[
+              if (i > 0) const SizedBox(width: _gap),
+              SizedBox(
+                width: _barWidth,
+                height: _heightAt(i),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: widget.color,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 第 i 根此刻的高度。CSS 那条 keyframes 是「0%/100% 最矮、50% 最高」的来回，
+  /// 等价于把相位套进一个 0→1→0 的三角波，再用 easeInOut 把两端的速度压下来。
+  double _heightAt(int index) {
+    final phase = (_controller.value + index * 0.12 / 0.9) % 1.0;
+    final triangle = phase <= 0.5 ? phase * 2 : (1 - phase) * 2;
+    final eased = Curves.easeInOut.transform(triangle);
+    return _minHeight + (_maxHeight - _minHeight) * eased;
   }
 }
 

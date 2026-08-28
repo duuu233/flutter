@@ -103,7 +103,11 @@ class _ModifyPasswordState extends State<ModifyPassword> {
           ),
         ],
       ),
-      bottom: FigmaPrimaryButton(label: l10n.accConfirmButton, onPressed: _confirm),
+      // 提交中置灰（与遮罩同一轮补齐）：遮罩已挡住误触，按钮同时变灰才对得上。
+      bottom: FigmaPrimaryButton(
+        label: l10n.accConfirmButton,
+        onPressed: _submitting ? null : _confirm,
+      ),
     );
   }
 
@@ -168,11 +172,22 @@ class _ModifyPasswordState extends State<ModifyPassword> {
       return;
     }
     setState(() => _submitting = true);
-    // 已登录改密走 changePassword（userToken 定位账号，无邮箱字段）。
-    final feedback = await widget.state.changePasswordLoggedIn(
-      password: _newPasswordController.text,
-      emailCode: _codeController.text,
-    );
+    // 全局 loading 遮罩（2026-08-28 需求 14）：这一步是一次真实网络往返，
+    // 而本页的确认按钮既没有转圈也不置灰，慢网下点完毫无反馈、用户只会反复点。
+    // 与「获取验证码」同款处理（同页上方），`try/finally` 收口保证异常路径也关得掉。
+    AppLoadingDialog.show(context, AppL10n.of(context).saving);
+    final ActionFeedback feedback;
+    try {
+      // 已登录改密走 changePassword（userToken 定位账号，无邮箱字段）。
+      feedback = await widget.state.changePasswordLoggedIn(
+        password: _newPasswordController.text,
+        emailCode: _codeController.text,
+      );
+    } finally {
+      // hide 不做 mounted 门控：遮罩在 root navigator 且 canPop:false，
+      // 页面在 await 期间被卸载时跳过它，整个 App 会被永久盖住（见 AppLoadingDialog.hide）。
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
       return;
     }
