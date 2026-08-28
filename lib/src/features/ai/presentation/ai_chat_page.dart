@@ -71,11 +71,12 @@ import 'ai_visuals.dart';
 /// ## 与小程序有意的差异（无对应端能力 / 平台机制不同）
 /// - **语音输入**：2026-08-28 已接（[AiVoiceInput]）。交互与小程序同款（按住说话、上滑取消、
 ///   松手直发、录音期间不显示识别文字），只是识别引擎不同：小程序用微信「同声传译」插件，
-///   App 用**系统自带的语音识别**（`speech_to_text` → iOS SFSpeechRecognizer /
-///   Android SpeechRecognizer）。两端都是**端上转文字、接口不参与**。
+///   App 首选**系统自带的语音识别**（`speech_to_text` → iOS SFSpeechRecognizer /
+///   Android SpeechRecognizer），同样是端上转文字、接口不参与。
 ///   🔶 由此带来两点差异：① App 支持日语（微信那个插件没有）；
-///   ② **安卓国行无 GMS 的机型没有系统识别服务**，按住时如实提示「本机不支持」，
-///   而不是让人按了没反应（覆盖率不够时的下一步见 `ai_voice_input.dart` 文件头）。
+///   ② **安卓国行无 GMS 的机型没有系统识别服务**，这些机器 2026-08-29 起自动落到备胎
+///   「录音上传后端 ASR」（`POST /speech/recognize`），按住说话照常可用，只是松手后
+///   多一个「识别中…」的等待（见 [_transcribing] 与 `ai_voice_input.dart` 文件头）。
 /// - **保存到系统相册**：2026-08-28 已接原生通道（[NativeDeviceApi.saveImageToGallery]：
 ///   Android→MediaStore `Pictures/BoltStar`、iOS→Photos addOnly 授权）。
 /// - **「停止生成」浮标**：小程序是 `position: fixed` 悬浮在输入区上方、会盖住正在打出来的最后两行
@@ -505,6 +506,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   /// 正在录音（按住说话）。见 [_beginVoice] / [_endVoice]。
   bool _recording = false;
 
+  /// 松手之后、文字回来之前（**仅安卓备胎链路**：录音要上传后端转文字，
+  /// 见 [AiVoiceInput.remote]）。
+  ///
+  /// 端上识别是瞬时出结果的，不进这个态（多晃一下反而闪）。这段时间浮层不收，
+  /// 只把文案换成「识别中…」——不然松手后会有一两秒既没浮层也没消息的空白，像卡住了。
+  bool _transcribing = false;
+
   /// 手指已滑进「松开取消」区（浮层变红，松手丢弃）。
   bool _voiceCancel = false;
 
@@ -625,7 +633,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     // 页面走了还按着说话（返回手势/被 pop）：丢掉这一轮，别让隐藏页继续占着麦克风。
     _voiceLimitTimer?.cancel();
     _voiceLimitTimer = null;
-    if (_recording) {
+    if (_recording || _transcribing) {
       unawaited(AiVoiceInput.instance.cancel());
     }
     _scroll.removeListener(_onScroll);
@@ -3305,8 +3313,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
           ),
           // ⚠️ 必须 IgnorePointer（小程序那边是 `pointer-events: none`）：它是在手指按下
           // **之后**才出现的，绝不能把后续的 move/up 从下面那条「按住说话」的 Listener 手里抢走。
-          if (_recording)
-            Positioned.fill(child: _VoiceCover(cancel: _voiceCancel)),
+          if (_recording || _transcribing)
+            Positioned.fill(
+              child: _VoiceCover(
+                cancel: _voiceCancel,
+                transcribing: _transcribing,
+              ),
+            ),
         ],
       ),
     );
@@ -3684,13 +3697,14 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   /// 起手：确认能录 → 开始监听。返回是否真的起来了。
   Future<void> _beginVoice() async {
     // 与发送按钮同一批闸：上一条正卡在「建会话」空窗时不该再录一句叠上来。
-    if (_recording || _sending || _submitting || _banned) {
+    // `_transcribing` 一并挡住：上一段还在上传转写，这时再按只会两段互相抢麦克风。
+    if (_recording || _transcribing || _sending || _submitting || _banned) {
       _voiceRejected = true;
       return;
     }
     final voice = AiVoiceInput.instance;
     final l10n = AppL10n.of(context);
-    // 首次按下才去 initialize（它会拉起系统授权弹窗）——不能在进页面时偷偷弹权限。
+    // 首次按下才去 ensureReady（它会拉起系统授权弹窗）——不能在进页面时偷偷弹权限。
     final ready = await voice.ensureReady();
     if (!mounted) {
       return;
@@ -3699,15 +3713,15 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     if (!_voiceHolding) {
       return;
     }
-    if (!ready) {
-      _voiceRejected = true;
-      // 无 GMS 的安卓国行机最常见：系统压根没有识别服务，如实说，别让人反复按。
-      AppToast.show(context, l10n.aiVoiceUnavailable);
-      return;
-    }
+    // ⚠️ 顺序不能反：「授权被拒」也会让 ensureReady 返回 false，先判它才能弹对提示。
     if (voice.permissionDenied) {
       _voiceRejected = true;
       await _showVoicePermissionGuide();
+      return;
+    }
+    if (!ready) {
+      _voiceRejected = true;
+      AppToast.show(context, _voiceUnavailableText(l10n, voice));
       return;
     }
     // 起手震一下（与投屏预览页长按拖拽同一套反馈）。
@@ -3737,7 +3751,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
         _voiceCancel = false;
       });
       _voiceRejected = true;
-      AppToast.show(context, l10n.aiVoiceUnavailable);
+      AppToast.show(context, _voiceUnavailableText(l10n, voice));
       return;
     }
     // 录满上限自动收尾。引擎那边 `listenFor` 到点也会停，但那只停了识别 ——
@@ -3773,17 +3787,32 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       _voiceCancel = false;
     });
     if (cancel) {
-      await voice.cancel(); // 上滑取消：安静丢弃，不发不填
+      await voice.cancel(); // 上滑取消：安静丢弃，不发不上传
       return;
     }
-    final text = await voice.stop();
+    // 走安卓备胎（录音上传）时这一步要传给后端转文字（可能一两秒），浮层不收、只换文案；
+    // 端上识别是瞬时出结果的，不进这个态。
+    if (voice.remote) {
+      setState(() => _transcribing = true);
+    }
+    final result = await voice.stop();
     if (!mounted) {
       return;
+    }
+    if (_transcribing) {
+      setState(() => _transcribing = false);
     }
     if (voice.permissionDenied) {
       await _showVoicePermissionGuide();
       return;
     }
+    // 转写失败（网络/服务异常）走错误码文案，**不能**混进下面那句「没听清」——
+    // 那会让用户对着一个根本发不出去的请求反复重录。
+    if (result.failed) {
+      await AiI18n.of(context).handleError(context, result.error!);
+      return;
+    }
+    final text = result.text;
     if (text.isEmpty) {
       // 一个字都没识别到：这句比「已达上限」更该说，两条提示不叠着弹。
       AppToast.show(context, AppL10n.of(context).aiVoiceNoSpeech);
@@ -3793,6 +3822,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       AppToast.show(context, AppL10n.of(context).aiVoiceMaxDuration);
     }
     await _sendVoiceText(text);
+  }
+
+  /// 「起不来」的提示按选中的链路分：走备胎（安卓录音上传）时是录音起不来
+  /// （麦克风被占 / 初始化失败，重试有用）；走端上识别时是这台机器没有识别服务
+  /// （重试没用，得引导去用输入法的语音输入）。
+  String _voiceUnavailableText(AppL10n l10n, AiVoiceInput voice) {
+    return voice.remote ? l10n.aiVoiceRecordFailed : l10n.aiVoiceUnavailable;
   }
 
   Future<void> _showVoicePermissionGuide() async {
@@ -4358,19 +4394,24 @@ class _AiBubbleImageState extends State<_AiBubbleImage> {
 /// ⚠️ 自己带 Ticker（[SingleTickerProviderStateMixin]）而不是挂在页面 State 上：
 /// 它只在录音时被 build，动画随之自然起停，页面不必为一个短暂动效常驻一支 Ticker。
 class _VoiceCover extends StatelessWidget {
-  const _VoiceCover({required this.cancel});
+  const _VoiceCover({required this.cancel, this.transcribing = false});
 
   /// 手指是否已滑进「松开取消」区。
   final bool cancel;
 
+  /// 已松手、正在把录音传给后端转文字（**仅安卓备胎链路**，见 [_AiChatPageState._transcribing]）。
+  /// 此时手指已经抬起，取消态无从谈起，所以一律按常态配色。
+  final bool transcribing;
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
+    final cancelling = cancel && !transcribing;
     return IgnorePointer(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         decoration: BoxDecoration(
-          color: cancel ? const Color(0xFFFDECEC) : const Color(0xFAFFFFFF),
+          color: cancelling ? const Color(0xFFFDECEC) : const Color(0xFAFFFFFF),
           // 与输入卡同款圆角，盖上去边到边严丝合缝
           borderRadius: BorderRadius.circular(21),
         ),
@@ -4378,17 +4419,23 @@ class _VoiceCover extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
+            // 转写期间波形继续跳：这一段等的是网络，用静止的波形表示「还在忙」
+            // 反而像卡死了（文案已经说清楚在做什么）。
             _VoiceWave(
-              color: cancel ? const Color(0xFFD64541) : const Color(0xFFEF641E),
+              color: cancelling
+                  ? const Color(0xFFD64541)
+                  : const Color(0xFFEF641E),
             ),
             const SizedBox(height: 6.5),
             Text(
-              cancel ? l10n.aiVoiceTipCancel : l10n.aiVoiceTip,
+              transcribing
+                  ? l10n.aiVoiceTranscribing
+                  : (cancel ? l10n.aiVoiceTipCancel : l10n.aiVoiceTip),
               textAlign: TextAlign.center,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: cancel
+                color: cancelling
                     ? const Color(0xFFD64541)
                     : const Color(0xFF8B8681),
                 fontSize: 12,

@@ -29,6 +29,20 @@ class AiI18n {
       AppLanguage.en: 'Chat history has expired and been cleared.',
       AppLanguage.ja: 'チャット履歴の有効期限が切れ、自動的に消去されました。',
     },
+    // 20001 / 20002 目前只由 `POST /speech/recognize`（安卓「按住说话」，2026-08-29）
+    // 产出，所以文案直接按音频口径写。其它接口没有用到这两个码。
+    'error.20001': {
+      AppLanguage.zh: '没有录到声音，请再说一次',
+      AppLanguage.zhHant: '沒有錄到聲音，請再說一次',
+      AppLanguage.en: 'No audio was captured — please try again.',
+      AppLanguage.ja: '音声を取得できませんでした。もう一度お試しください',
+    },
+    'error.20002': {
+      AppLanguage.zh: '录音时长超限，请控制在 1 分钟内',
+      AppLanguage.zhHant: '錄音時長超限，請控制在 1 分鐘內',
+      AppLanguage.en: 'Recording is too long — please keep it under 1 minute.',
+      AppLanguage.ja: '録音が長すぎます。1分以内にしてください',
+    },
     'error.20003': {
       AppLanguage.zh: '缺少用户标识',
       AppLanguage.zhHant: '缺少用戶標識',

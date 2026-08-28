@@ -30,6 +30,11 @@ class MainActivity : FlutterActivity() {
 
     private val channelName = "com.boltfox.boltstar/device_api"
     private var pendingPermissionResult: MethodChannel.Result? = null
+
+    // AI 聊天「按住说话」的录音端（安卓走「录音上传后端 ASR」，见 VoiceRecorder.kt）。
+    // 它自带一条通道 + 自己的麦克风授权请求码，麦克风权限**不进 buildStatus** ——
+    // 那张表是 iOS AppDelegate.swift 逐字段对齐的，安卓单方面加字段会让两端对不上。
+    private var voiceRecorder: VoiceRecorder? = null
     private var pendingGalleryResult: MethodChannel.Result? = null
     private var permissionRequestCode = 4000
 
@@ -41,6 +46,14 @@ class MainActivity : FlutterActivity() {
         // ⚠️ 临时：安卓原生连接 A/B 对照实验。定版选定一种实现后整条注册与 BleNativeProbe.kt
         // 一并删除（清单见 docs/history/2026-07/2026-07-30-安卓原生连接AB对比.md「拆除清单」）。
         BleNativeProbe.register(flutterEngine, this)
+        voiceRecorder = VoiceRecorder.register(flutterEngine, this)
+    }
+
+    override fun onDestroy() {
+        // 正按着说话时被系统回收：不释放的话 AudioRecord 会一直占着麦克风。
+        voiceRecorder?.release()
+        voiceRecorder = null
+        super.onDestroy()
     }
 
     private fun handleMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -151,6 +164,9 @@ class MainActivity : FlutterActivity() {
         grantResults: IntArray,
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (voiceRecorder?.onPermissionResult(requestCode, grantResults) == true) {
+            return
+        }
         if (requestCode == SAVE_IMAGE_PERMISSION_CODE) {
             val pending = pendingSaveImage
             pendingSaveImage = null

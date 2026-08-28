@@ -23,6 +23,12 @@ import 'api_session.dart';
 /// 之所以一直没炸出来，只是因为 `features/ai/ai_entry.dart` 的 `kAiEntryEnabled = false`
 /// 把入口整体屏蔽着。开放入口前这条必须在真机上验一次。
 ///
+/// ## 语音转文字（2026-08-29，仅安卓、且仅作备胎）
+/// `POST /speech/recognize`（[recognizeSpeech]，文档 `assets/BoltStar-语音识别接口文档.md`）
+/// 与上面这些接口同域名、同鉴权、同 `{success, code, data}` 结构，所以放在本文件里，
+/// 而不是另起一层。小程序（微信同声传译）与 iOS（系统识别）都在端上转文字，不走它；
+/// 安卓也是先试系统识别，没有识别服务的机型才落到这条（见 `features/ai/ai_voice_input.dart`）。
+///
 /// ## 流式（SSE）
 /// 2026-08-07 起 `/chat` 走 SSE（[chatStream]），服务地址整体切到流式版部署 [baseUrl]。
 /// 此前这里写着「小程序 `wx.request` 不支持 SSE，所以 App 也先不上」—— **该结论已作废**：
@@ -138,7 +144,7 @@ class BoltStarAiApi {
   ///
   /// 返回的 [AiCall] 带 [AiCall.abort]，供「停止生成」中断在途请求：
   /// `http.Client.close()` 对 IOClient 是 `force: true`，在途请求会立即断开。
-  AiCall<Map<String, dynamic>> _request({
+  static AiCall<Map<String, dynamic>> _request({
     required String path,
     String method = 'POST',
     Map<String, dynamic>? body,
@@ -222,7 +228,7 @@ class BoltStarAiApi {
     });
   }
 
-  Future<Map<String, dynamic>> _await({
+  static Future<Map<String, dynamic>> _await({
     required String path,
     String method = 'POST',
     Map<String, dynamic>? body,
@@ -230,6 +236,42 @@ class BoltStarAiApi {
   }) {
     return _request(path: path, method: method, body: body, timeout: timeout)
         .future;
+  }
+
+  // ── 语音转文字（安卓专用）───────────────────────────────
+
+  /// 上传录音等**上传 + 上传后的处理**都算在内的超时。
+  ///
+  /// 1 分钟的 16 kHz 单声道 WAV 约 1.9 MB，base64 后约 2.6 MB；弱网下光上传就可能十几秒，
+  /// 再加豆包 ASR 本身的处理，[defaultTimeout] 那 15 秒明显不够，而 [generateTimeout]
+  /// 的 600 秒又太宽（识别是「一次请求即返回」，真卡住时让用户干等十分钟没有意义）。
+  static const Duration speechTimeout = Duration(seconds: 60);
+
+  /// `POST /speech/recognize` — 录音转文字（豆包 ASR 极速版，一次请求即返回，无需轮询）。
+  ///
+  /// 文档：`assets/BoltStar-语音识别接口文档.md`（2026-08-29）。**仅安卓端调用，且是备胎**：
+  /// 小程序用微信同声传译插件、iOS 用系统语音识别，都在端上转文字、不走这条；
+  /// 安卓也只有在系统没有识别服务时才落到这里（判定见 `features/ai/ai_voice_input.dart`）。
+  ///
+  /// [audioBase64] 是音频文件的 base64（不带 `data:` 前缀）；[format] 只接受
+  /// `wav` / `mp3` / `ogg`——安卓侧固定传 wav（见 `VoiceRecorder.kt`，MediaRecorder 默认的
+  /// m4a/aac/amr 一个都不被支持）。时长上限 60 秒，超了后端回 20002。
+  ///
+  /// 没有 `user_id` 参数：这条接口只做转写，不落在任何会话上，所以做成静态方法。
+  /// 返回识别出的文字（后端识别为空时返回空串，由调用方提示「没听清」）。
+  static Future<String> recognizeSpeech({
+    required String audioBase64,
+    String format = 'wav',
+  }) async {
+    final body = await _await(
+      path: '/speech/recognize',
+      body: {'audio': audioBase64, 'format': format},
+      timeout: speechTimeout,
+    );
+    // 与 /session/new 同样的两种形态都吃：文档写的是 data.text，
+    // 万一这个部署也把包装层拍平（data 直接是字符串）就取 data 自己。
+    final text = _unwrap<String>(body, 'text', (value) => value is String);
+    return (text ?? '').trim();
   }
 
   // ── 会话 ─────────────────────────────────────────────────

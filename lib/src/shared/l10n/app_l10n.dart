@@ -814,13 +814,28 @@ class AppL10n {
     '最長 1 分に達したため、自動送信しました',
   );
 
+  /// 松手之后、文字回来之前的浮层文案（**仅安卓备胎链路**：录音要上传后端转文字）。
+  /// 端上识别是瞬时出结果的，走那条路时不会显示这句。
+  String get aiVoiceTranscribing =>
+      _pick('识别中…', 'Transcribing…', '認識中…');
+
+  /// 录音起不来（**仅安卓备胎链路**）：麦克风被别的应用占着 / AudioRecord 初始化失败。
+  /// 与 [aiVoiceUnavailable] 分开：这一条重试有用，那一条重试没用。
+  String get aiVoiceRecordFailed => _pick(
+    '录音启动失败，请重试',
+    'Couldn\'t start recording — please try again',
+    '録音を開始できませんでした。もう一度お試しください',
+  );
+
   /// 识别不出任何文字（说太轻/环境太吵/一开口就松手）。
   String get aiVoiceNoSpeech =>
       _pick('没听清，请再说一次', 'Didn\'t catch that — try again', '聞き取れませんでした。もう一度どうぞ');
 
   /// 这台机器没有可用的系统语音识别服务。
   ///
-  /// ⚠️ 最常见的是**安卓国行无 GMS 的机型**（华为、部分小米/OV）：系统压根没装识别服务。
+  /// ⚠️ 2026-08-29 起**基本只剩 iOS 会用到**：安卓没有系统识别服务时会自动落到
+  /// 「录音上传后端 ASR」的备胎（见 `features/ai/ai_voice_input.dart`），
+  /// 那条路起不来时给的是 [aiVoiceRecordFailed]，不是这一句。
   /// 措辞只说结果、不解释技术原因，也不许诺「以后会有」。
   String get aiVoiceUnavailable => _pick(
     '本机未提供系统语音识别，可用键盘上的语音输入',

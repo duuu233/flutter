@@ -6,7 +6,9 @@
          所以只在 Q 以下声明（maxSdkVersion="28"），不给新系统平添一条敏感权限。 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>
     <uses-permission android:name="android.permission.CAMERA"/>
-    <!-- AI 聊天「按住说话」：端上语音识别要录音（speech_to_text → SpeechRecognizer）。 -->
+    <!-- AI 聊天「按住说话」要录音。安卓先用系统语音识别（speech_to_text →
+         SpeechRecognizer），这台机器没有识别服务时才落备胎：AudioRecord 采集 WAV →
+         上传 POST /speech/recognize 转文字（见 VoiceRecorder.kt）。两条路都要这条权限。 -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
