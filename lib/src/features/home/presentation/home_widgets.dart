@@ -1151,12 +1151,18 @@ class _HomeEntryCard extends StatelessWidget {
     required this.color,
     required this.iconAsset,
     required this.arrowAsset,
+    required this.titleFontSize,
     required this.fallbackIcon,
     required this.onTap,
   });
 
   final String title;
   final String subtitle;
+
+  /// 标题字号：由 [_HomeMainView._entryTitleFontSize] 按**六张卡里最长的标题**统一算好传进来。
+  /// ⚠️ 不要在这里读 [_HomeTextStyles.entryTitle] 的字号 —— 那是基准值，不是最终值；
+  /// 各卡自己决定字号就会缩出六个不同大小。
+  final double titleFontSize;
 
   /// 每张卡的主色：标题文字色，与箭头徽标同色系（取自素材）。
   final Color color;
@@ -1217,6 +1223,7 @@ class _HomeEntryCard extends StatelessWidget {
                             overflow: TextOverflow.ellipsis,
                             style: _HomeTextStyles.entryTitle.copyWith(
                               color: color,
+                              fontSize: titleFontSize,
                             ),
                           ),
                           const SizedBox(height: 4),

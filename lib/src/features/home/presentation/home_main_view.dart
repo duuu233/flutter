@@ -226,6 +226,60 @@ class _HomeMainView extends StatelessWidget {
     );
   }
 
+  /// 六宫格三列之间的中缝（小程序 18rpx）。
+  static const double _entryGridGap = 9;
+
+  /// 六张宫格卡标题的**共用字号**：按六条标题里最长的那条算，保证
+  /// **六张一样大、且一条都不被截成「...」**。
+  ///
+  /// ⚠️ 2026-08-31 需求：英文版好几张卡的标题显示成「Camera Ca...」。
+  /// 成因是标题写死 [_HomeTextStyles.entryTitle] 的字号 + `TextOverflow.ellipsis`，
+  /// 而三列等分的卡宽在 360~375dp 上只给标题留 57~62 —— 英文词比中文长得多，必然截断。
+  ///
+  /// 两种改法里选了「算共用字号」而不是「每张卡各自 FittedBox 缩放」：后者六张卡会缩出
+  /// 六个不同大小（长标题缩得多、短的不缩），正是 AI 工具栏那条反馈过的毛病。
+  ///
+  /// ⚠️ **不用 [LayoutBuilder] 量宽度**：首页内容外面套着
+  /// `SingleChildScrollView + ConstrainedBox + IntrinsicHeight`（见 [_CollapsibleGap]），
+  /// LayoutBuilder 量不出固有高度，放进去会在布局期直接抛错。
+  /// 好在这里的卡宽是**确定可算**的：屏宽 − 左右各 24 的页内缩 − 两条 9 的中缝，再三等分。
+  ///
+  /// 中/繁/日词短、放得下 → 比例为 1，字号仍是基准值，与改动前逐像素相同；只有英文会真的缩。
+  double _entryTitleFontSize(BuildContext context, List<String> titles) {
+    final base = _HomeTextStyles.entryTitle.fontSize ?? 13;
+    final media = MediaQuery.of(context);
+    // 横向安全区在竖屏恒为 0，带上只是为了异形屏/横屏时不算错。
+    final rowWidth =
+        media.size.width - media.padding.horizontal - _cardInset.horizontal;
+    final cardWidth = (rowWidth - _entryGridGap * 2) / 3;
+    // 卡内留给标题的宽度 = 卡宽 − 左内边距 10 − 右内边距 6 − 右侧箭头徽标 25
+    //（三个数与 [_HomeEntryCard] 的 Padding / SizedBox 一一对应，那边改了这里要跟着改）。
+    final available = cardWidth - 10 - 6 - 25;
+    if (available <= 0) {
+      return base;
+    }
+
+    var scale = 1.0;
+    final direction = Directionality.of(context);
+    for (final title in titles) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: title,
+          style: _HomeTextStyles.entryTitle.copyWith(fontSize: base),
+        ),
+        maxLines: 1,
+        textDirection: direction,
+      )..layout();
+      if (painter.width > 0) {
+        final fit = available / painter.width;
+        if (fit < scale) {
+          scale = fit;
+        }
+      }
+    }
+    return base * (scale > 1 ? 1 : scale);
+  }
+
   /// 两种场景共用的底部六宫格入口（2026-08-21 同步小程序改版）。
   ///
   /// 原来这里是「选择投屏方式」小标题 + 拍照/相册两张卡；改版后：
@@ -237,6 +291,16 @@ class _HomeMainView extends StatelessWidget {
   /// 宫格自然回落成 5 项（3 + 2），不留空位。
   List<Widget> _castSection(BuildContext context) {
     final l10n = AppL10n.of(context);
+    // 六张卡的标题**共用一个字号**，按最长的那条算（见 [_entryTitleFontSize]）。
+    // 必须在建卡之前先算：每张卡都要拿到同一个值。
+    final titleFontSize = _entryTitleFontSize(context, <String>[
+      l10n.homeEntryCameraTitle,
+      l10n.homeEntryAlbumTitle,
+      l10n.homeEntryUploadsTitle,
+      if (kAiEntryEnabled) l10n.homeEntryAiTitle,
+      if (kGalleryEntryEnabled) l10n.tabGallery,
+      l10n.devMyDevicesTitle,
+    ]);
     final entries = <_HomeEntryCard>[
       _HomeEntryCard(
         title: l10n.homeEntryCameraTitle,
@@ -244,6 +308,7 @@ class _HomeMainView extends StatelessWidget {
         color: const Color(0xFFEE6242),
         iconAsset: 'assets/images/home-icon01.png',
         arrowAsset: 'assets/images/home-icon11.png',
+        titleFontSize: titleFontSize,
         fallbackIcon: Icons.photo_camera_outlined,
         onTap: onCamera,
       ),
@@ -253,6 +318,7 @@ class _HomeMainView extends StatelessWidget {
         color: const Color(0xFF3E92E8),
         iconAsset: 'assets/images/home-icon02.png',
         arrowAsset: 'assets/images/home-icon12.png',
+        titleFontSize: titleFontSize,
         fallbackIcon: Icons.photo_library_outlined,
         onTap: onAlbum,
       ),
@@ -262,6 +328,7 @@ class _HomeMainView extends StatelessWidget {
         color: const Color(0xFF7B5FE8),
         iconAsset: 'assets/images/home-icon03.png',
         arrowAsset: 'assets/images/home-icon13.png',
+        titleFontSize: titleFontSize,
         fallbackIcon: Icons.folder_open_outlined,
         onTap: onOpenUploads,
       ),
@@ -272,7 +339,8 @@ class _HomeMainView extends StatelessWidget {
           color: const Color(0xFF11AE7B),
           iconAsset: 'assets/images/home-icon04.png',
           arrowAsset: 'assets/images/home-icon14.png',
-          fallbackIcon: Icons.auto_awesome_outlined,
+          titleFontSize: titleFontSize,
+        fallbackIcon: Icons.auto_awesome_outlined,
           onTap: onOpenAi,
         ),
       if (kGalleryEntryEnabled)
@@ -282,7 +350,8 @@ class _HomeMainView extends StatelessWidget {
           color: const Color(0xFFF0982B),
           iconAsset: 'assets/images/home-icon05.png',
           arrowAsset: 'assets/images/home-icon15.png',
-          fallbackIcon: Icons.collections_outlined,
+          titleFontSize: titleFontSize,
+        fallbackIcon: Icons.collections_outlined,
           onTap: onOpenGallery,
         ),
       _HomeEntryCard(
@@ -291,6 +360,7 @@ class _HomeMainView extends StatelessWidget {
         color: const Color(0xFF05A6B1),
         iconAsset: 'assets/images/home-icon06.png',
         arrowAsset: 'assets/images/home-icon16.png',
+        titleFontSize: titleFontSize,
         fallbackIcon: Icons.devices_other_outlined,
         onTap: onOpenDevices,
       ),
@@ -298,7 +368,7 @@ class _HomeMainView extends StatelessWidget {
 
     // 三列等分 + 9(=18rpx) 中缝、行距 12(=24rpx)。卡宽不写死的理由见 _HomeEntryCard：
     // rpx 是按屏宽等比的单位，写死逻辑像素会在窄屏溢出。
-    const gap = 9.0;
+    const gap = _entryGridGap;
     final rows = <Widget>[];
     for (var i = 0; i < entries.length; i += 3) {
       final row = entries.skip(i).take(3).toList();
