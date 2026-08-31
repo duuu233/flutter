@@ -1190,21 +1190,34 @@ class _HomeEntryCard extends StatelessWidget {
   /// 各卡自己决定字号就会缩出六个不同大小。
   final double titleFontSize;
 
-  /// 卡内**留给文案的横向开销**：卡宽减掉它，剩下的才是标题/副标题能用的宽度。
-  /// [_HomeMainView._entryTitleFontSize] 按它反推共用字号 ——
-  /// **改下面 build 里的 Padding / 箭头 SizedBox，必须同步改这个数**。
+  /// 卡内左右内边距（下面 build 里的 `EdgeInsets.only(left: 10, right: 6)`）。
+  static const double _padLeft = 10;
+  static const double _padRight = 6;
+
+  /// 右侧箭头徽标**实际占掉的视觉宽度**。
   ///
-  /// 逐项：左内边距 10 + 右内边距 6 + 箭头槽位 25
-  ///       − 箭头视觉右移 5 − 箭头素材四周透明留白 3 = 33
-  ///
-  /// ⚠️ 后两项是「**布局上占位、视觉上不占位**」的量，2026-08-31 之前漏算了，
-  /// 结果算出来的可用宽度比实际窄 8px，共用字号被压小一档 ——
-  /// 表现就是 "My Devices" / "My Uploads" 右边明明还空着一条却不肯变大。
+  /// 画布是 25，但要减掉两处「**布局上占位、视觉上不占位**」的量：
   ///   · `Transform.translate(offset: Offset(5, 0))`：Transform **不影响布局**，
-  ///     Row 照旧按 25 给箭头留位，箭头却画到了右边 5px 外，那 5px 是空的；
+  ///     Row 照旧按 25 给它留位，箭头却画到了右边 5px 外，那 5px 是空的；
   ///   · 徽标素材 90×90 里白圆盘只占中间约 62，四周是透明阴影留白，
   ///     25 的画布显示出来的圆盘约 17，两侧各约 4 是透明的（保守只认 3）。
-  static const double titleHorizontalReserve = 10 + 6 + 25 - 5 - 3;
+  /// 漏算这 8px 会让可用宽度算窄一档、字号平白变小。
+  static const double _arrowVisualWidth = 25 - 5 - 3;
+
+  /// **标题**能用的横向开销（卡宽减掉它 = 标题可用宽度）。
+  ///
+  /// ⚠️ 2026-08-31 改版：箭头徽标由「跨标题+副标题整体居中」改成**只与副标题居中**，
+  /// 于是**标题独占整个内容宽**，不再和箭头分。释放出来的正好是 [_arrowVisualWidth]，
+  /// 目的就是让 "My Devices" / "My Uploads" 这类英文标题**完整显示、不出省略号**。
+  ///
+  /// [_HomeMainView._entryTitleFontSize] 按它反推六张卡的共用字号 ——
+  /// **改下面 build 里的 Padding，必须同步改这里**。
+  static const double titleHorizontalReserve = _padLeft + _padRight;
+
+  /// **副标题**能用的横向开销：它才是和箭头并排的那一行。
+  /// 目前只用于说明布局意图（副标题不参与字号计算，它固定 9px、最多两行）。
+  static const double subtitleHorizontalReserve =
+      _padLeft + _padRight + _arrowVisualWidth;
 
   /// 每张卡的主色：标题文字色，与箭头徽标同色系（取自素材）。
   final Color color;
@@ -1250,37 +1263,37 @@ class _HomeEntryCard extends StatelessWidget {
                         Icon(fallbackIcon, color: color, size: 30),
                   ),
                 ),
-                const SizedBox(height: 10),
+                // ⚠️ 10 → 6（2026-08-31）：入口图标素材四周自带一圈透明留白，
+                // 视觉上的间隙比这个数看起来更宽，收掉 4 也不显拥挤；
+                // 同时把高度让给「标题独占一行 + 副标题两行」的新版式。
+                const SizedBox(height: 6),
+                // ⚠️ 2026-08-31 改版：标题**独占整个内容宽**，不再与箭头并排。
+                // 原来是 `Row[ Expanded(Column[标题, 副标题]), 箭头 ]`，箭头跨两行居中，
+                // 标题因此白白让出箭头那一块宽度 —— 英文标题（My Devices / My Uploads）
+                // 于是被截成省略号。现在箭头下沉到副标题那一行、与**副标题**居中对齐。
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: _HomeTextStyles.entryTitle.copyWith(
+                    color: color,
+                    fontSize: titleFontSize,
+                  ),
+                ),
+                const SizedBox(height: 4),
                 Row(
+                  // 与副标题居中：副标题是 1 行还是 2 行，箭头都落在它的垂直中线上。
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: _HomeTextStyles.entryTitle.copyWith(
-                              color: color,
-                              fontSize: titleFontSize,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            subtitle,
-                            // ⚠️ 2026-08-31 需求：小标题**最多两行**，超出才省略号。
-                            // 原来写死一行，英文副标题（"Generate images with AI" 这类）
-                            // 几乎必被截成半句，等于没说。
-                            // 卡高够：206:220 的比例下 360dp 上约 105，
-                            // 图标 33 + 10 + 标题 ~16 + 4 + 两行副标题 ~22 ≈ 85，还余 20。
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: _HomeTextStyles.entrySubtitle,
-                          ),
-                        ],
+                      child: Text(
+                        subtitle,
+                        // ⚠️ 2026-08-31 需求：小标题**最多两行**，超出才省略号。
+                        // 原来写死一行，英文副标题（"Generate images with AI" 这类）
+                        // 几乎必被截成半句，等于没说。
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: _HomeTextStyles.entrySubtitle,
                       ),
                     ),
                     // 徽标素材 90×90 里白圆盘只占中间约 62，四周是透明阴影留白，
