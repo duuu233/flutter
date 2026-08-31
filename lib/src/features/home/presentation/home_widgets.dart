@@ -509,6 +509,18 @@ const double _kViewportH = 372;
 /// 注意那里写的是 **px 不是 rpx**，所以就是 24）。
 const double _kCardRadius = 24;
 
+/// 相邻两张设备卡之间的间距。
+///
+/// ⚠️ 为什么需要它：轮播是 `viewportFraction: 1.0`（每页 = 视口宽），本来相邻页整张都在
+/// 屏幕外；但 [PageView] 这里特意开了 `clipBehavior: Clip.none`（否则卡片投影会在视口
+/// 边缘被裁掉），于是上一张/下一张的边缘会**画进两侧各 24 的页边距里**——能看见是对的，
+/// 但两张卡就此紧紧贴在一起，中间一条缝都没有。
+///
+/// 解法是给每一页左右各内缩一半：卡片之间就空出这么宽，相邻那张仍露出
+/// `24 − _kCardPeekGap/2` 的边。代价是卡面宽度少了 [_kCardPeekGap]（327 宽上约 3.7%），
+/// 换掉「贴在一起」值得。
+const double _kCardPeekGap = 12;
+
 /// 卡内「左侧圆环图标」与「右侧设备信息」之间的**保底间距**。
 ///
 /// ⚠️ 这条必须写死、不能再交给 `MainAxisAlignment.spaceAround` 去摊：
@@ -637,17 +649,24 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
               setState(() => _index = index);
               widget.onChanged(widget.devices[index]);
             },
-            itemBuilder: (context, page) => Align(
-              // 卡面盒子 = 654×298，投影（0 4 16）由玻璃层往外溢出，上下对称留白即可
-              //（旧的 28:44 偏移是配那张烘焙投影的 PNG 的，图撤了系数也一并撤）。
-              alignment: Alignment.center,
-              child: AspectRatio(
-                aspectRatio: _kCardW / _kCardH,
-                child: _ConnectedDeviceCard(
-                  device: widget.devices[page % widget.devices.length],
-                  onOpenDevices: widget.onOpenDevices,
-                  onConnect: () => widget.onConnectDevice(
-                    widget.devices[page % widget.devices.length],
+            itemBuilder: (context, page) => Padding(
+              // 左右各内缩半条 [_kCardPeekGap]：相邻两张卡之间空出一条缝，
+              // 不然 `clipBehavior: Clip.none` 让邻页画进页边距后会与本页贴死。
+              padding: const EdgeInsets.symmetric(
+                horizontal: _kCardPeekGap / 2,
+              ),
+              child: Align(
+                // 卡面盒子 = 654×298，投影（0 4 16）由玻璃层往外溢出，上下对称留白即可
+                //（旧的 28:44 偏移是配那张烘焙投影的 PNG 的，图撤了系数也一并撤）。
+                alignment: Alignment.center,
+                child: AspectRatio(
+                  aspectRatio: _kCardW / _kCardH,
+                  child: _ConnectedDeviceCard(
+                    device: widget.devices[page % widget.devices.length],
+                    onOpenDevices: widget.onOpenDevices,
+                    onConnect: () => widget.onConnectDevice(
+                      widget.devices[page % widget.devices.length],
+                    ),
                   ),
                 ),
               ),
