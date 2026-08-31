@@ -1756,7 +1756,11 @@ class AppL10n {
   //    但底部「选择投屏方式」弹层里那两行仍用旧的 homeCastCameraTitle/homeCastAlbumTitle，
   //    两套别互相替换。副标题两项复用旧的，文案完全一致。
   String get homeEntryCameraTitle =>
-      _pick('拍照投屏', 'Camera Cast', 'カメラ投影');
+      // ⚠️ 英文只用 `Camera` 一个词（2026-08-31 需求）：六宫格三列等分，
+      // 卡内留给标题的宽度在 360~375dp 上只有 57~62，`Camera Cast` 是六条里最长的一条，
+      // 它一个人把**六张卡的共用字号**（见 _HomeMainView._entryTitleFontSize）压下去一档。
+      // 中/日不动——那两种语言本来就放得下。
+      _pick('拍照投屏', 'Camera', 'カメラ投影');
   String get homeEntryAlbumTitle => _pick('相册投屏', 'Album Cast', 'アルバム投影');
   String get homeEntryUploadsTitle =>
       _pick('我的上传', 'My Uploads', 'マイアップロード');
