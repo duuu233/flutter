@@ -1190,6 +1190,22 @@ class _HomeEntryCard extends StatelessWidget {
   /// 各卡自己决定字号就会缩出六个不同大小。
   final double titleFontSize;
 
+  /// 卡内**留给文案的横向开销**：卡宽减掉它，剩下的才是标题/副标题能用的宽度。
+  /// [_HomeMainView._entryTitleFontSize] 按它反推共用字号 ——
+  /// **改下面 build 里的 Padding / 箭头 SizedBox，必须同步改这个数**。
+  ///
+  /// 逐项：左内边距 10 + 右内边距 6 + 箭头槽位 25
+  ///       − 箭头视觉右移 5 − 箭头素材四周透明留白 3 = 33
+  ///
+  /// ⚠️ 后两项是「**布局上占位、视觉上不占位**」的量，2026-08-31 之前漏算了，
+  /// 结果算出来的可用宽度比实际窄 8px，共用字号被压小一档 ——
+  /// 表现就是 "My Devices" / "My Uploads" 右边明明还空着一条却不肯变大。
+  ///   · `Transform.translate(offset: Offset(5, 0))`：Transform **不影响布局**，
+  ///     Row 照旧按 25 给箭头留位，箭头却画到了右边 5px 外，那 5px 是空的；
+  ///   · 徽标素材 90×90 里白圆盘只占中间约 62，四周是透明阴影留白，
+  ///     25 的画布显示出来的圆盘约 17，两侧各约 4 是透明的（保守只认 3）。
+  static const double titleHorizontalReserve = 10 + 6 + 25 - 5 - 3;
+
   /// 每张卡的主色：标题文字色，与箭头徽标同色系（取自素材）。
   final Color color;
   final String iconAsset;

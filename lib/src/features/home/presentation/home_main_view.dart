@@ -277,9 +277,11 @@ class _HomeMainView extends StatelessWidget {
     final rowWidth =
         media.size.width - media.padding.horizontal - _cardInset.horizontal;
     final cardWidth = (rowWidth - _entryGridGap * 2) / 3;
-    // 卡内留给标题的宽度 = 卡宽 − 左内边距 10 − 右内边距 6 − 右侧箭头徽标 25
-    //（三个数与 [_HomeEntryCard] 的 Padding / SizedBox 一一对应，那边改了这里要跟着改）。
-    final available = cardWidth - 10 - 6 - 25;
+    // 卡内留给标题的宽度 = 卡宽 − 卡内横向开销。
+    // ⚠️ 那个开销**不是简单的「内边距 + 箭头」**：箭头有两处「布局占位、视觉不占位」的量
+    // （Transform 右移 5 + 素材四周的透明留白），漏算会让字号平白小一档。
+    // 逐项拆解写在 [_HomeEntryCard.titleHorizontalReserve] 上，改卡片布局时改那一处。
+    final available = cardWidth - _HomeEntryCard.titleHorizontalReserve;
     if (available <= 0) {
       return base;
     }
