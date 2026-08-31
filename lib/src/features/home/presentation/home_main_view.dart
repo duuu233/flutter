@@ -160,13 +160,38 @@ class _HomeMainView extends StatelessWidget {
             onConnectDevice: onConnectDevice,
           ),
         ),
-        const Spacer(),
+        // ⚠️ **模块间距要保底，不能全交给 [Spacer]**（2026-08-31 修「六宫格贴着指示点」）。
+        //
+        // 原来这里是 `Spacer()` … 六宫格 … `Spacer()`，两个等权 —— 富余高度对半分。
+        // 问题是这一屏在**安卓常见的 360×760 上本来就几乎没有富余**：
+        // 内容约 594，可用高度约 623（还要再扣手势条），对半分下来上下各只剩十来 px，
+        // 六宫格于是紧贴着轮播指示点。小程序那边这一段是**固定的**
+        //（`.bound-home .entry-grid { margin-top: 40rpx }`），压根不参与分配。
+        //
+        // 现在：两处各给一个保底值（[_kDotsToGridGap] / [_kGridToTabGap]），
+        // 富余高度再按 2:1 优先补给上面那段 —— 屏幕越高，两组内容分得越开，
+        // 而不是把空档平摊到六宫格下面那块本来就不缺的地方。
+        // 矮屏上保底值可能让内容略高于视口，交给外层的 SingleChildScrollView 滚一点点，
+        // 这比「挤在一起」好（那层滚动本来就是为这种情况准备的）。
+        const SizedBox(height: _kDotsToGridGap),
+        const Spacer(flex: 2),
         ..._castSection(context),
-        // 末尾的 Spacer 吃掉剩余高度：Tab 栏已移到滚动区外，这里留白的观感与之前一致。
-        const Spacer(),
+        const SizedBox(height: _kGridToTabGap),
+        // 还有富余就落在最后（Tab 栏已在滚动区外，这里只是内容与它之间的呼吸）。
+        const Spacer(flex: 1),
       ],
     );
   }
+
+  /// 轮播指示点 → 六宫格的**保底**间距。
+  ///
+  /// 参照小程序 `.bound-home .entry-grid` 的 `margin-top: 40rpx`（=20）再放宽一档：
+  /// App 这边指示点上方还有 12 的间隔，两组内容之间需要更明确的断层才分得开。
+  /// 嫌松/嫌紧改这一个数即可。
+  static const double _kDotsToGridGap = 28;
+
+  /// 六宫格 → 底部 Tab 栏的**保底**间距：别让卡片贴着 Tab 栏。
+  static const double _kGridToTabGap = 16;
 
   /// 「首页-未绑定设备」布局。
   ///

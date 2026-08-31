@@ -673,7 +673,11 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        // ⚠️ 20 → 12（2026-08-31 调间距）：指示点是**轮播的一部分**，该贴着卡片。
+        // 小程序 `.carousel-dots` 的 `margin-top: 30rpx` 本来就是注释掉的（=0），
+        // 靠 swiper 视口比卡面高出来的那截（372−298=74rpx）自然垫开。
+        // App 这边给到 20，结果指示点离卡远、离下面的六宫格近，两组内容黏在一起分不清。
+        const SizedBox(height: 12),
         _CarouselDots(count: widget.devices.length, activeIndex: _index),
       ],
     );
