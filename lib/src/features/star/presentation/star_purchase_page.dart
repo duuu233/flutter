@@ -21,15 +21,20 @@ import 'star_card.dart';
 /// 画一行点不动的「Apple 内购」比不画更让人困惑。iOS 上改为一句说明 + 置灰的按钮，
 /// 页面本身照常可进、金额照常看得见（需求 7：页面和交互先有，支付后接）。
 ///
-/// ⚠️ **页面状态机的关键一环是「跳出去再回来」**：跳 PayPal 之后 App 进后台，
-/// 用户授权完自己切回来（`return_url` 是**后端的回调地址**，付成功这一跳端上收不到，
-/// 见 [StarPurchase] 文件头）。所以本页监听 [AppLifecycleState.resumed] 自动开始确认到账，
-/// 另给一颗「我已完成支付」手动兜底 —— 有些机型/浏览器回前台不发 resumed，
-/// 只靠生命周期会永远停在等待态。
+/// ⚠️ **页面状态机的关键一环是「跳出去再回来」**：跳 PayPal 之后 App 进后台。
+/// 本页监听 [AppLifecycleState.resumed] 自动开始确认，另给一颗「我已完成支付」手动兜底 ——
+/// 有些机型/浏览器回前台不发 resumed，只靠生命周期会永远停在等待态。
 ///
-/// ✅ **取消这一半是精确的**（2026-08-31）：用户点取消时 PayPal 会跳
-/// [StarPurchase.cancelReturnUrl] 这条深链把 App 弹回来，所以 [_confirm] 开头先问一句
-/// [StarPurchase.consumeCanceled]，读到就直接「已取消支付」，不走那条等「付成功」的轮询。
+/// ✅ **回来之后按三种情形分流**（2026-08-31 定稿，见 [_confirm]）：
+/// 1. **取消**（[StarPurchase.consumeCanceled]）→ 当场「已取消支付」，不走轮询；
+/// 2. **授权成功回跳**（[StarPurchase.consumeReturn]）→ 先把 `token`/`PayerID` 转给后端
+///    （[StarPurchase.notifyReturn] → `getPayPalNotify`，**后端据此 capture 扣款**），
+///    再照常轮询余额确认；
+/// 3. **没有回跳**（用户自己切回来 / 深链没生效）→ 直接走余额轮询兜底。
+///
+/// ⚠️ 第 2 种情形里，`getPayPalNotify` 说「成功」也**不直接报购买成功** ——
+/// 到账判据始终是服务端余额变多（[StarPurchase] 文件头那条铁律）。它的作用是触发 capture
+/// 并让轮询几乎必定在第一轮就命中；它的 message 只在最终没确认到账时兜底展示。
 class StarPurchasePage extends StatefulWidget {
   const StarPurchasePage({super.key, required this.package});
 
@@ -150,7 +155,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     // 期间没有别的东西会触发重建。
     _confirming = true;
 
-    // 用户在 PayPal 点了取消 → 深链已经把 App 弹回来并留下标记（见 [StarPurchase.consumeCanceled]）。
+    // ① 用户在 PayPal 点了取消 → 深链已经把 App 弹回来并留下标记。
     // 钱一定没付，不必再等 9.4s 轮询把它熬成一句准确但无用的「支付结果确认中」。
     if (await StarPurchase.consumeCanceled()) {
       if (!mounted) {
@@ -172,7 +177,16 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     // 到账轮询最长 9.4s，同样走全局蒙层（需求 8）。
     AppLoadingDialog.show(context, l10n.starBuyStageConfirm);
     final StarPurchaseResult result;
+    StarPayNotify? notify;
     try {
+      // ② 授权成功回跳：把 PayPal 带回来的 token/PayerID 原样转给后端，
+      // **后端据此 capture 扣款并入账**。没有这一跳（用户自己切回来）就跳过，直接轮询。
+      final returned = await StarPurchase.consumeReturn();
+      if (returned != null) {
+        notify = await StarPurchase.notifyReturn(returned);
+      }
+      // ③ 无论有没有回跳，结论一律由**服务端余额**给（文件头铁律）。
+      // 走过 ② 的话，capture 已经触发，这轮轮询通常第一次就命中。
       result = await StarPurchase.confirm(
         pending,
         baselineBalance: _baseline,
@@ -218,7 +232,16 @@ class _StarPurchasePageState extends State<StarPurchasePage>
 
     // 余额没变、查单也没说已支付：可能用户取消了，也可能回调慢。**不说失败**，
     // 留在本页——真是取消的话用户多半想换一档再买，弹回上一页反而多一次跳转。
-    await showAppNoticeDialog(context, title: l10n.starBuyPendingUnknown);
+    //
+    // ⚠️ 唯一的例外：`getPayPalNotify` 明确回了一句原因（后端说这单没成、附了 exceptionMsg
+    // 或 retMsg）。那是**服务端的结论**，比端上这句笼统的「结果确认中」有用得多，
+    // 优先展示它。拿不到原因时仍旧用兜底文案，绝不自己编一句「支付失败」。
+    final reason = notify?.message.trim() ?? '';
+    await showAppNoticeDialog(
+      context,
+      title: l10n.starBuyPendingUnknown,
+      message: reason.isEmpty ? null : reason,
+    );
   }
 
   /// 放弃本次支付：只丢掉端上的等待态，**不动后端那张单**。

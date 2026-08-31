@@ -251,21 +251,30 @@ void main() {
     });
   });
 
-  // ── PayPal 取消回跳（2026-08-31）────────────────────────────────────
+  // ── PayPal 支付回跳（2026-08-31 定稿）────────────────────────────────
   //
-  // `setCreatePay` 新增入参 `payPalCancelUrl`，端上传一条自定义 scheme 深链；
-  // 用户在 PayPal 点取消 → 浏览器跳这条 url → 安卓清单里 PayPalCancelActivity 的
-  // intent-filter 接住 → App 被弹回前台并留下「已取消」标记。
-  group('取消回跳地址', () {
-    test('默认是 App 的自定义 scheme 深链', () {
-      expect(StarPurchase.cancelReturnUrl, 'boltstar://pay/paypal/cancel');
+  // `setCreatePay` 的两个入参 payPalReturnUrl / payPalCancelUrl 都由端上传，传的是
+  // **https 中转页**；中转页再用 boltstar:// 把 App 拉起来。两组地址职责不同，别混用。
+  group('回跳地址', () {
+    test('交给 PayPal 的必须是 https（中转页），不能是自定义 scheme', () {
+      // ⚠️ 这条钉的是方案本身：PayPal 对 return_url 按 URI 校验，非 http(s) 收不收没有保证；
+      // 而且 Chrome 会拦掉「服务端 302 直跳自定义 scheme」这种非用户手势外跳
+      //（表现是停在空白页、什么都不发生且不报错）。所以中间那个 https 页不能省。
+      for (final url in [StarPurchase.returnUrl, StarPurchase.cancelUrl]) {
+        expect(Uri.parse(url).scheme, 'https', reason: url);
+      }
     });
 
-    // ⚠️ 这条地址**写在两个地方**：Dart 常量与安卓清单的 intent-filter。
-    // 只改一处的表现极其难查 —— setCreatePay 照常成功、PayPal 照常跳，只是那一跳
-    // 谁也接不住，用户点了取消却停在浏览器里，回到 App 后又被当成「结果确认中」。
+    test('中转页拉起 App 用的是自定义 scheme 深链', () {
+      expect(StarPurchase.appReturnLink, 'boltstar://pay/paypal/return');
+      expect(StarPurchase.appCancelLink, 'boltstar://pay/paypal/cancel');
+    });
+
+    // ⚠️ 这两条深链**写在两个地方**：Dart 常量与安卓清单的 intent-filter。
+    // 只改一处的表现极其难查 —— setCreatePay 照常成功、PayPal 照常跳、中转页也照常跳，
+    // 只是那一跳谁也接不住，用户停在中转页上，回到 App 后又被当成「结果确认中」。
     // 所以这里直接拿清单来比，别指望下一个人记得改两处。
-    test('与 AndroidManifest 里 PayPalCancelActivity 的 intent-filter 逐字一致', () {
+    test('与 AndroidManifest 里 PayPalRedirectActivity 的 intent-filter 逐字一致', () {
       final manifest = File('android/app/src/main/AndroidManifest.xml');
       expect(
         manifest.existsSync(),
@@ -273,16 +282,56 @@ void main() {
         reason: '测试须从项目根目录跑（flutter test）',
       );
       final xml = manifest.readAsStringSync();
-      final uri = Uri.parse(StarPurchase.cancelReturnUrl);
 
-      // <data android:scheme="boltstar" android:host="pay" android:path="/paypal/cancel"/>
-      expect(xml, contains('android:scheme="${uri.scheme}"'));
-      expect(xml, contains('android:host="${uri.host}"'));
-      expect(xml, contains('android:path="${uri.path}"'));
+      for (final link in [
+        StarPurchase.appReturnLink,
+        StarPurchase.appCancelLink,
+      ]) {
+        final uri = Uri.parse(link);
+        // <data android:scheme="boltstar" android:host="pay" android:path="/paypal/xxx"/>
+        expect(xml, contains('android:scheme="${uri.scheme}"'), reason: link);
+        expect(xml, contains('android:host="${uri.host}"'), reason: link);
+        expect(xml, contains('android:path="${uri.path}"'), reason: link);
+      }
 
       // 接收器本身与浏览器发起外跳所必需的 BROWSABLE，一并钉住。
-      expect(xml, contains('android:name=".PayPalCancelActivity"'));
+      expect(xml, contains('android:name=".PayPalRedirectActivity"'));
       expect(xml, contains('android.intent.category.BROWSABLE'));
+    });
+  });
+
+  // getPayPalNotify 的出参结构后端只说了「和其它接口一样」（retCode/retMsg/retData 那层壳），
+  // retData 具体长什么样没给 —— 端上三种常见形状都认，一种都没命中时以「接口 200」为准。
+  // ⚠️ 认错的表现是「付成功了却提示结果确认中」，不报错、很难查，所以逐种钉住。
+  group('回跳通知出参归一', () {
+    test('裸布尔', () {
+      expect(StarPayNotify.fromRetData(true).paid, isTrue);
+      expect(StarPayNotify.fromRetData(false).paid, isFalse);
+    });
+
+    test('与 getPayQuery 同形时沿用「只认 payState==1」的口径', () {
+      expect(StarPayNotify.fromRetData(const {'payState': 1}).paid, isTrue);
+      expect(StarPayNotify.fromRetData(const {'payState': 0}).paid, isFalse);
+      expect(StarPayNotify.fromRetData(const {'payState': '1'}).paid, isTrue);
+    });
+
+    test('语义化布尔字段', () {
+      expect(StarPayNotify.fromRetData(const {'paid': false}).paid, isFalse);
+      expect(StarPayNotify.fromRetData(const {'success': true}).paid, isTrue);
+    });
+
+    test('retData 为 null / 认不出的形状 → 以「接口 200」为准', () {
+      expect(StarPayNotify.fromRetData(null).paid, isTrue);
+      expect(StarPayNotify.fromRetData(const {'foo': 'bar'}).paid, isTrue);
+    });
+
+    test('exceptionMsg 留给页面兜底展示', () {
+      final notify = StarPayNotify.fromRetData(const {
+        'payState': 0,
+        'exceptionMsg': 'INSTRUMENT_DECLINED',
+      });
+      expect(notify.paid, isFalse);
+      expect(notify.message, 'INSTRUMENT_DECLINED');
     });
   });
 }

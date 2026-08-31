@@ -184,22 +184,49 @@ BoltStar 当前使用三套不同的远端服务：
    表现是最坏的那种：**页面写着 ¥、PayPal 扣的是 \$**。已改为取
    `StarPackage.currencySymbol`，后端没给才退回 `kStarCurrencySymbol`（`¥`）。
 
-⚠️ 仍未定：`payPalCancelUrl` 后端期望收 App 的自定义 scheme 还是一个网页地址
-（swagger 只写「payPal支付取消跳转地址」，没有格式约束）。
+✅ **回跳口径已定稿（2026-08-31，成功与取消两条都有）**。
 
-✅ **回跳口径已定（2026-08-31），但两半不对称**：
-- **付成功没有精确回跳**：`return_url` 是**后端自己的回调地址** —— 用户点
-  Continue to Review Order 后 PayPal 打的是后端，端上收不到这一跳，所以仍靠
-  `AppLifecycleState.resumed` + 「我已完成支付」手动兜底，回来后轮询余额。
-- **取消有精确回跳**：`setCreatePay` 新增入参 **`payPalCancelUrl`**，端上传
-  `boltstar://pay/paypal/cancel`（`StarPurchase.cancelReturnUrl`）。用户点取消 → 浏览器跳深链
-  → 安卓 `PayPalCancelActivity` 接住、记一次性标记并把 App 提回前台 → 确认购买页在
-  `resumed` 时经 `NativeDeviceApi.consumePayPalCancel()` 读走 → 当场提示「已取消支付」，
-  **不再走那条等「付成功」的 9.4s 轮询**。
-  ⚠️ 深链地址写在 Dart 常量与 `AndroidManifest.xml` 两处，`test/star_purchase_test.dart`
-  有一条测试拿清单来比对，防止只改一处。
-  ⚠️ **PayPal 收不收非 http(s) 的 cancel_url 仍需沙箱实测**：若 `setCreatePay` 直接失败，
-  用 `--dart-define=PAYPAL_CANCEL_URL=https://…` 换回 https（只是退回「用户自己切回来」）。
+`setCreatePay` 的两个入参 **`payPalReturnUrl` / `payPalCancelUrl` 都由端上传**，传的是我们自己的
+**https 中转页**，中转页再用 `boltstar://` 把 App 拉起来：
+
+```
+授权成功：PayPal --302--> https 中转页?token=..&PayerID=..
+          --JS--> boltstar://pay/paypal/return?token=..&PayerID=..
+          --> 安卓 PayPalRedirectActivity（记一次性标记 + 把 App 原任务提回前台）
+          --> 确认购买页 resumed 时经 StarPurchase.consumeReturn() 读走
+          --> GET /Client/Pay/getPayPalNotify?token=..&PayerID=..（**后端据此 capture 扣款、入账**）
+          --> 照旧轮询余额确认到账
+
+用户取消：PayPal --302--> https 中转页 --JS--> boltstar://pay/paypal/cancel
+          --> StarPurchase.consumeCanceled() --> 当场提示「已取消支付」，不走轮询
+```
+
+⚠️ **中间那个 https 页不能省**（别改成让 PayPal 直接 302 到 `boltstar://`）：
+① PayPal 对 `return_url` 按 URI 校验，非 http(s) 收不收没有保证，拒了的话 `setCreatePay`
+当场就失败、连授权页都拿不到；② 更要命的是 **Chrome 会拦掉「服务端 302 直跳自定义 scheme」**
+这种非用户手势的外跳 —— 表现是用户停在空白页、什么都不发生且**不报错**。
+中转页里的跳转属于页面内导航，绕开了这条限制，安卓还能用 `intent://` 写法，
+拉不起 App 时页面还能给一句「请返回 App 查看」的兜底。
+
+⚠️ **两组地址职责不同，别混用**：`StarPurchase.returnUrl` / `cancelUrl` 是**交给 PayPal 的**
+（https，可用 `--dart-define=PAYPAL_RETURN_URL= / PAYPAL_CANCEL_URL=` 覆盖，**中转页域名待定**，
+默认先指向 `badmin.boltfox.cn`）；`StarPurchase.appReturnLink` / `appCancelLink` 是**中转页拉起
+App 用的**深链，PayPal 不认识它，且必须与 `AndroidManifest.xml` 里 `PayPalRedirectActivity`
+的 intent-filter 逐字一致 —— `test/star_purchase_test.dart` 有一条测试拿清单来比对，防止只改一处。
+
+⚠️ **`getPayPalNotify` 不是查询、是触发扣款**：底层两个重试开关都关掉了
+（超时/连接中断重试都可能重复 capture 同一单，与微信登录那条同一套理由；
+为此给 `ApiClient.getJson` 补了这两个参数 —— **「GET」不等于「幂等」**）。
+它的出参后端只说了「和其它接口一样」（`retCode/retMsg/retData` 那层壳），
+`retData` 具体结构没给，端上三种形状都认、认不出以「接口 200」为准（`StarPayNotify.fromRetData`）。
+
+⚠️ **仍待后端确认的链路风险：capture 是被 App 调 `getPayPalNotify` 触发的**，
+用户点了同意却**没跳回 App**（关掉浏览器 / 中转页没拉起 App / 进程被回收）时扣款不会发生，
+表现是「用户以为付了、余额一直不变」。端上补不了这一段，需要后端加 **webhook 兜底**
+（PayPal 推 `CHECKOUT.ORDER.APPROVED`，后端自己 capture，不依赖用户跳不跳回来）。
+
+⚠️ 回跳只是把等待缩短，**永远不是付款成功的凭据**：到账判据始终是「服务端余额变多」，
+`AppLifecycleState.resumed` + 「我已完成支付」+ 9.4s 退避轮询这套兜底一条都不能撤。
 
 AI 模块用到的两个只读/校验接口：
 

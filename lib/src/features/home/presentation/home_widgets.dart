@@ -1255,7 +1255,12 @@ class _HomeEntryCard extends StatelessWidget {
                           const SizedBox(height: 4),
                           Text(
                             subtitle,
-                            maxLines: 1,
+                            // ⚠️ 2026-08-31 需求：小标题**最多两行**，超出才省略号。
+                            // 原来写死一行，英文副标题（"Generate images with AI" 这类）
+                            // 几乎必被截成半句，等于没说。
+                            // 卡高够：206:220 的比例下 360dp 上约 105，
+                            // 图标 33 + 10 + 标题 ~16 + 4 + 两行副标题 ~22 ≈ 85，还余 20。
+                            maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: _HomeTextStyles.entrySubtitle,
                           ),

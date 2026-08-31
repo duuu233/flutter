@@ -166,10 +166,18 @@ class ApiClient {
     return buffer.toString();
   }
 
+  /// [retryOnTimeout] / [retryOnConnectionError]：语义与 [postJson] 的同名参数完全一致，
+  /// 详见那边的说明。
+  ///
+  /// ⚠️ GET 默认两个都重试是对的 —— 绝大多数 GET 是幂等查询。但**「GET」不等于「幂等」**：
+  /// 后端偶尔会把有副作用的动作放在 GET 上（如 `getPayPalNotify` —— 它拿 PayPal 回跳带回来的
+  /// token 去 **capture 扣款**）。那类接口两个开关都要传 false，否则弱网重试可能重复扣款。
   Future<dynamic> getJson(
     String path, {
     Map<String, dynamic>? query,
     bool auth = true,
+    bool retryOnTimeout = true,
+    bool retryOnConnectionError = true,
   }) async {
     // /Client/ 公共 query 参数（terminal/language/device/userToken）+ 业务 query，对齐小程序。
     final uri = _uri(path, {..._clientQuery(path, auth: auth), ...?query});
@@ -180,6 +188,8 @@ class ApiClient {
       () => _http
           .get(uri, headers: _headers(auth: auth))
           .timeout(ApiConfig.timeout),
+      retryOnTimeout: retryOnTimeout,
+      retryOnConnectionError: retryOnConnectionError,
     );
   }
 

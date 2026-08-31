@@ -378,12 +378,62 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
 
   void _onProgress(OtaProgress p) {
     if (!mounted) return;
+    // ⚠️ **不要把 `p.message` 渲染到界面上**（2026-08-31 修「文案不跟语种走」）：
+    // 那是协议层写死的中文诊断文案（`ota_ble.dart` 里 11 处，形如
+    // 「传输中：1234/56789 字节（12/345 包）」「握手中（MTU 247）」），
+    // 英/日/繁用户看到的就是一行中文。字节数/包序这类细节只在排查时有用 ——
+    // 留在日志里，界面按阶段取本地化文案。
+    debugPrint('[OTA] ${p.phase} ${p.percent}% ${p.message}');
+    final l10n = AppL10n.of(context);
     setState(() {
       _phase = p.phase;
       _progress = p.percent.clamp(0, 100) / 100.0;
-      _progressText = p.message;
-      _statusTitle = _stageTitle(AppL10n.of(context));
+      _progressText = _progressNote(l10n);
+      _statusTitle = _stageTitle(l10n);
     });
+  }
+
+  /// 协议阶段 → 进度条下方那一行说明。与 [_stageTitle] 同一套 phase 口径，
+  /// 只是标题分三段（下载/传输/升级）、这一行更细一档，好让用户知道卡在哪一步。
+  String _progressNote(AppL10n l10n) {
+    switch (_phase) {
+      case 'preparing':
+      case 'prepared':
+        return l10n.otaNotePreparing;
+      case 'connecting':
+        return l10n.otaNoteConnecting;
+      case 'starting':
+        return l10n.otaNoteHandshaking;
+      case 'header':
+        return l10n.otaNoteHeader;
+      case 'transferring':
+        return l10n.otaNoteTransferring;
+      case 'retry':
+        return l10n.otaNoteRetrying;
+      case 'verifying':
+        return l10n.otaNoteVerifying;
+      case 'done':
+        return l10n.otaNoteDone;
+      default:
+        // 还没收到任何进度回调：不画这一行（大标题和百分比已经说明状态了）。
+        return '';
+    }
+  }
+
+  /// 协议层抛出的失败原因（[OtaException.message]）**是中文诊断文案** ——
+  /// 散落在 `ota_ble.dart` 二十来处 throw 里，还带着 MTU / 包序 / 特征 UUID
+  /// 这类只有排查时才有用的细节。
+  ///
+  /// 全量翻译不划算、也不该做（那些话本来就是给我们自己看的），所以按语种分流：
+  /// **中文用户原样看到细节**（报障时能直接念给我们），其余语种退回一句
+  /// [AppL10n.otaGenericFailure]，细节仍旧进 debugPrint 一份都不少。
+  String _failureDetail(AppL10n l10n, String raw) {
+    if (raw.isEmpty) {
+      return l10n.otaGenericFailure;
+    }
+    final chinese =
+        l10n.language == AppLanguage.zh || l10n.language == AppLanguage.zhHant;
+    return chinese ? raw : l10n.otaGenericFailure;
   }
 
   /// 协议阶段 → 进行中那屏的大标题，与小程序 `ota.js` 的 `STAGE_TITLE` **逐值一致**：
@@ -596,7 +646,7 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
         _statusDesc = aborted
             ? l10n.otaInterrupted
             : error is OtaException
-            ? error.message
+            ? _failureDetail(l10n, error.message)
             : l10n.otaGenericFailure;
       });
     }

@@ -431,9 +431,12 @@ class BoltFoxApi {
 
   /// 创建支付（2026-08-27 新增，安卓 PayPal 走这条）。
   ///
-  /// 业务入参 `orderNo` + `payType` + `payPalCancelUrl`（**2026-08-31 后端新增**：用户在
-  /// PayPal 点取消后浏览器要跳的地址，端上传 App 的自定义 scheme 深链，见
-  /// `star_purchase.dart` 的 `StarPurchase.cancelReturnUrl`）；
+  /// 业务入参 `orderNo` + `payType` + **`payPalReturnUrl` / `payPalCancelUrl`**
+  /// （2026-08-31 后端新增：用户授权成功 / 取消后 PayPal 要把浏览器跳去的地址，两个都由端上传）。
+  ///
+  /// ⚠️ 这两个传的是我们自己的 **https 中转页**，不是 App 的自定义 scheme ——
+  /// 理由见 `star_purchase.dart` 的 [StarPurchase.returnUrl]。
+  ///
   /// 其余四个（device/language/terminal/userToken）由 [ApiClient] 经 header + query 注入。
   ///
   /// 出参 `ClientCreatePayApiOut` 是**三个渠道共用的一个壳**，
@@ -446,6 +449,7 @@ class BoltFoxApi {
   static Future<dynamic> setCreatePay({
     required String orderNo,
     required int payType,
+    String? payPalReturnUrl,
     String? payPalCancelUrl,
   }) {
     return _http.postJson(
@@ -453,14 +457,47 @@ class BoltFoxApi {
       body: {
         'orderNo': orderNo,
         'payType': payType,
-        // 空值不传：这个字段决定「用户点取消后浏览器跳哪」，传空串等于让 PayPal
+        // 空值不传：这两个字段决定「用户授权/取消后浏览器跳哪」，传空串等于让 PayPal
         // 拿一个非法地址去建单（整条 setCreatePay 可能直接失败）。宁可不带，
         // 退回「用户自己切回 App」那条老路。
+        if (payPalReturnUrl != null && payPalReturnUrl.isNotEmpty)
+          'payPalReturnUrl': payPalReturnUrl,
         if (payPalCancelUrl != null && payPalCancelUrl.isNotEmpty)
           'payPalCancelUrl': payPalCancelUrl,
       },
       // 超时不重试：重试等于对同一订单重复创建支付单，PayPal 侧会多出一张授权单。
       retryOnTimeout: false,
+    );
+  }
+
+  /// **PayPal 授权成功回跳后的结果通知**（2026-08-31 新增）。
+  ///
+  /// 用户在 PayPal 点 Continue to Review Order 之后，PayPal 会把浏览器重定向到
+  /// 我们传上去的 `payPalReturnUrl`，并带上两个参数；端上接住后**原样**转发给这条接口，
+  /// **后端拿它去做 capture（真正扣款）并入账**，再把结果回给端上。
+  ///
+  /// ⚠️ **参数名照抄 PayPal，不许改**：`token`（小写，PayPal 侧的订单号）与
+  /// `PayerID`（大写 P、大写 ID，付款人标识）。后端就按这两个名字收。
+  ///
+  /// ⚠️ **这一步不是「查询」，是「触发扣款」** —— 它有副作用，所以：
+  /// 关掉超时重试（重复 capture 同一单，轻则报错重则重复扣款），
+  /// 且只在**确实收到回跳**时调一次（见 `StarPurchase.consumeReturn` 的 consume 语义）。
+  ///
+  /// ⚠️ 由此带来一个链路风险：用户点了同意却**没跳回 App**（关掉浏览器 / 深链没生效 /
+  /// App 被系统回收）时这条接口不会被调，capture 也就不会发生。端上补不了，
+  /// 需要后端有 webhook 兜底（已提醒，待确认）。
+  static Future<dynamic> getPayPalNotify({
+    required String token,
+    required String payerId,
+  }) {
+    return _http.getJson(
+      '/Client/Pay/getPayPalNotify',
+      query: {'token': token, 'PayerID': payerId},
+      // 两个重试开关都关：这条 GET **有副作用**（capture 扣款）。
+      // 超时 ≠ 请求未送达；连接中断也可能是「请求已发出、响应途中断」，
+      // 两种情况重试都可能重复 capture 同一单。与微信登录那条同一套理由。
+      retryOnTimeout: false,
+      retryOnConnectionError: false,
     );
   }
 

@@ -1,5 +1,6 @@
 import 'dart:io' show Platform;
 
+import '../../network/api_exception.dart';
 import '../../network/boltfox_api.dart';
 
 /// 星币（原「Token」，2026-08-12 全站改称；后端字段名仍是 `availableToken` 等）的数据层。
@@ -218,22 +219,55 @@ class StarCoinApi {
 
   /// 创建支付（`POST /Client/Pay/setCreatePay`）→ [StarPayCreation]。
   ///
-  /// [payPalCancelUrl]：用户在 PayPal 点取消后浏览器跳的地址（2026-08-31 后端新增入参）。
-  /// 端上传 App 的自定义 scheme 深链，取值见 `star_purchase.dart` 的 `StarPurchase.cancelReturnUrl`
+  /// [payPalReturnUrl] / [payPalCancelUrl]：用户授权成功 / 取消后 PayPal 把浏览器跳去的地址
+  /// （2026-08-31 后端新增的两个入参，都由端上传）。
+  /// ⚠️ 传的是我们自己的 **https 中转页**，不是 App 的 scheme —— 取值与理由见
+  /// `star_purchase.dart` 的 `StarPurchase.returnUrl` / `cancelUrl`
   /// （本文件被 star_purchase.dart 依赖，反向 import 只为一句注释不值当）。
   static Future<StarPayCreation> createPay({
     required String orderNo,
     required int payType,
+    String? payPalReturnUrl,
     String? payPalCancelUrl,
   }) async {
     final data = await BoltFoxApi.setCreatePay(
       orderNo: orderNo,
       payType: payType,
+      payPalReturnUrl: payPalReturnUrl,
       payPalCancelUrl: payPalCancelUrl,
     );
     return StarPayCreation.fromJson(
       data is Map ? data.cast<String, dynamic>() : const {},
     );
+  }
+
+  /// PayPal 授权成功回跳后的结果通知（`GET /Client/Pay/getPayPalNotify`）→ [StarPayNotify]。
+  ///
+  /// 把 PayPal 回跳带回来的 [token] / [payerId] **原样**转给后端，
+  /// **后端拿它去 capture（真正扣款）并入账**，再把结果回给端上。
+  ///
+  /// ⚠️ 这一步**有副作用**，与 [queryPay] 那种只读查询不是一回事：
+  /// 只在确实收到回跳时调一次（consume 语义由原生侧保证），底层也关掉了两个重试开关。
+  ///
+  /// ⚠️ 失败**不抛异常**、返回 [StarPayNotify.failed]：这条只是「把结论说得更准」的加速路径，
+  /// 真正的到账判据始终是**服务端余额变多**（见 `StarPurchase.confirm`）。
+  /// 一次网络抖动就把整条确认链路炸掉、或者据此谎报「支付失败」，都比慢几秒糟糕得多。
+  static Future<StarPayNotify> notifyPayPalReturn({
+    required String token,
+    required String payerId,
+  }) async {
+    try {
+      final data = await BoltFoxApi.getPayPalNotify(
+        token: token,
+        payerId: payerId,
+      );
+      return StarPayNotify.fromRetData(data);
+    } on ApiException catch (error) {
+      // retCode 非 200：后端明确说了这单没成，把它的原话留给页面兜底展示。
+      return StarPayNotify(paid: false, message: error.message);
+    } catch (_) {
+      return const StarPayNotify(paid: false, message: '');
+    }
   }
 
   /// 查支付侧订单（`GET /Client/Pay/getPayQuery`）。
@@ -464,6 +498,56 @@ class StarPayCreation {
   /// 渠道侧异常信息。`retCode=200` 但这个字段有值的情况后端未明确，
   /// 端上按「有 approveUrl 就走、没有就报错」判定，异常信息只进日志与错误详情。
   final String exceptionMsg;
+}
+
+/// `getPayPalNotify` 的结果。
+///
+/// ⚠️ **后端只说了「出参改成和其它接口一样」（即 `retCode/retMsg/retData` 那层壳），
+/// `retData` 的具体结构没给**。所以这里对 `retData` 三种常见形状都认，一种都没命中时
+/// 以「接口 200」为准（后端把请求收下且没报错 = 它认为这单处理成功了）。
+/// 后端定死结构后可以把没用的分支删掉。
+class StarPayNotify {
+  const StarPayNotify({required this.paid, required this.message});
+
+  /// 接口层失败 / 后端明确说没成。
+  static const StarPayNotify failed = StarPayNotify(paid: false, message: '');
+
+  factory StarPayNotify.fromRetData(Object? data) {
+    // ① 裸布尔：retData = true / false
+    if (data is bool) {
+      return StarPayNotify(paid: data, message: '');
+    }
+    if (data is Map) {
+      final map = data.cast<String, dynamic>();
+      final message = StarCoinApi._toText(map['exceptionMsg']);
+      // ② 与 getPayQuery 同形：{payState, payNo, exceptionMsg}，沿用「只认 1」的口径
+      if (map.containsKey('payState')) {
+        return StarPayNotify(
+          paid: StarCoinApi._toInt(map['payState']) == 1,
+          message: message,
+        );
+      }
+      // ③ 语义化布尔字段
+      for (final key in const ['paid', 'success', 'result']) {
+        final value = map[key];
+        if (value is bool) {
+          return StarPayNotify(paid: value, message: message);
+        }
+      }
+      return StarPayNotify(paid: true, message: message);
+    }
+    // retData 为 null / 其它：接口 200 即视为成功（见类注释）。
+    return const StarPayNotify(paid: true, message: '');
+  }
+
+  /// 后端认为这单**已支付成功**。
+  ///
+  /// ⚠️ 即便为 true 也**不直接据此报「购买成功」**：仍然要等服务端余额变多。
+  /// 它的作用是「知道 capture 已经触发过」，让确认轮询几乎必定在第一轮就命中。
+  final bool paid;
+
+  /// 后端给的说明（`exceptionMsg` 或 `retMsg`）。只在最终没能确认到账时兜底展示。
+  final String message;
 }
 
 /// 查单结果（`getPayQuery`）。

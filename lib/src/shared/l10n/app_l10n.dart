@@ -1644,6 +1644,43 @@ class AppL10n {
   String get otaStageUpgrading =>
       _pick('固件升级中', 'Updating firmware…', 'ファームウェアを更新中…');
 
+  // ── 进度条下方那一行说明（progress-note）───────────────────────────────
+  //
+  // ⚠️ 2026-08-31 修「部分文案不跟语种走」：这一行原来直接渲染
+  // `OtaProgress.message` —— 那是**协议层写死的中文诊断文案**（`ota_ble.dart` 里 11 处，
+  // 形如「传输中：1234/56789 字节（12/345 包）」「握手中（MTU 247）」），
+  // 英/日/繁用户看到的就是一行中文。
+  //
+  // 现在改成按 [OtaProgress.phase] 取下面这组文案（映射见 `_progressNote`），
+  // 与大标题的三段切换同一套口径。字节数/包序这类只有排查时才有用的细节仍进 debugPrint，
+  // 界面上由那个 36px 的大百分比承担进度表达。
+
+  String get otaNotePreparing =>
+      _pick('正在准备固件包…', 'Preparing the firmware package…', 'ファームウェアを準備中…');
+  String get otaNoteConnecting => _pick(
+    '正在连接升级服务…',
+    'Connecting to the update service…',
+    'アップデートサービスに接続中…',
+  );
+  String get otaNoteHandshaking =>
+      _pick('正在与设备握手…', 'Handshaking with the device…', 'デバイスとハンドシェイク中…');
+  String get otaNoteHeader =>
+      _pick('正在校验头信息…', 'Verifying the header…', 'ヘッダーを検証中…');
+  String get otaNoteTransferring =>
+      _pick('正在传输固件数据…', 'Transferring firmware data…', 'ファームウェアを転送中…');
+  String get otaNoteRetrying =>
+      _pick('正在重传…', 'Resending…', '再送信中…');
+  String get otaNoteVerifying => _pick(
+    '设备正在校验固件…',
+    'The device is verifying the firmware…',
+    'デバイスがファームウェアを検証中…',
+  );
+  String get otaNoteDone => _pick(
+    '校验通过，设备即将重启',
+    'Verified — the device will restart shortly.',
+    '検証完了。まもなく再起動します。',
+  );
+
   String get otaSuccessTitle =>
       _pick('升级成功', 'Upgrade complete', 'アップグレード完了');
   String get otaSuccessDesc => _pick(

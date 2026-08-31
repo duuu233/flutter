@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<title>已取消支付</title>
+<style>
+  html,body{margin:0;height:100%}
+  body{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    padding:24px;box-sizing:border-box;text-align:center;
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:#2a2d32;background:#f2f5fc;
+  }
+  .spin{width:34px;height:34px;margin-bottom:18px;border-radius:50%;
+    border:3px solid #e6ebf2;border-top-color:#ff6421;animation:r 1s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  .tip{color:#828a95;font-size:14px}
+  .btn{display:none;margin-top:22px;padding:13px 34px;border:0;border-radius:999px;
+    color:#fff;font-size:16px;font-weight:700;
+    background:linear-gradient(90deg,#ff8338,#ff621f);box-shadow:0 9px 18px rgba(255,98,31,.22)}
+  .btn.show{display:inline-block}
+</style>
+</head>
+<body>
+  <div class="spin" id="spin"></div>
+  <div id="title">正在返回 App…</div>
+  <div class="tip" id="tip">本次支付已取消，正在返回…</div>
+  <button class="btn" id="btn" type="button">返回 App</button>
+
+<script>
+(function () {
+  // 用户在 PayPal 点「Cancel and return」后，浏览器被 302 到本页。
+  // 本页**唯一的职责**就是把 App 拉起来，让它当场提示「已取消支付」。
+  //
+  // ⚠️ 与 return.html 的唯一差别只有 APP_PATH 和几句文案 —— 逻辑保持一致，
+  //    改一个记得看另一个。这条路上没有 token/PayerID，也不需要调任何接口。
+  var APP_PATH = 'pay/paypal/cancel';
+  var SCHEME   = 'boltstar';
+  var PACKAGE  = 'com.boltfox.boltstar';
+
+  var query  = window.location.search || '';
+  var deep   = SCHEME + '://' + APP_PATH + query;
+  // 安卓 Chrome 用 intent:// 成功率最高；browser_fallback_url 指回本页的 #manual，
+  // 拉不起来时不会跳去应用商店，而是回到本页显示手动按钮（#manual 不会再自动跳，不成环）。
+  var fallback = window.location.origin + window.location.pathname + query + '#manual';
+  var intent = 'intent://' + APP_PATH + query +
+               '#Intent;scheme=' + SCHEME +
+               ';package=' + PACKAGE +
+               ';S.browser_fallback_url=' + encodeURIComponent(fallback) +
+               ';end';
+
+  var isAndroid = /android/i.test(navigator.userAgent);
+  var btn = document.getElementById('btn');
+
+  function manual() {
+    // 手动点击属于**用户手势**，浏览器对外跳的限制最松，成功率比自动跳高得多。
+    window.location.href = deep;
+  }
+  btn.addEventListener('click', manual);
+
+  function giveUp(text) {
+    document.getElementById('spin').style.display = 'none';
+    document.getElementById('title').textContent = '已取消支付';
+    document.getElementById('tip').textContent = text;
+    btn.className = 'btn show';
+  }
+
+  // 从 fallback 回来的：别再自动跳一次（会和刚才那次抢），直接给手动按钮。
+  if (window.location.hash === '#manual') {
+    giveUp('请点击下方按钮返回 App');
+    return;
+  }
+
+  window.location.href = isAndroid ? intent : deep;
+
+  // 2.5 秒还停在本页 = 没拉起来，给一个手动出口。
+  // 取消这条没有金额风险，措辞可以直说。
+  setTimeout(function () {
+    giveUp('如果没有自动返回，请点击下方按钮');
+  }, 2500);
+})();
+</script>
+</body>
+</html>

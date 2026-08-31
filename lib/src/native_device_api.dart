@@ -229,19 +229,21 @@ class NativeDeviceApi {
     } catch (_) {}
   }
 
-  // ── PayPal 取消回跳（安卓，2026-08-31）──────────────────────────
+  // ── PayPal 支付回跳（安卓，2026-08-31）──────────────────────────
   //
-  // 用户在 PayPal 点「Cancel and return」→ 浏览器跳 boltstar://pay/paypal/cancel
-  // → 原生 PayPalCancelActivity 记一个一次性标记并把 App 提回前台。
+  // PayPal 302 → 我们的 **https 中转页** → 中转页用 JS 跳
+  // `boltstar://pay/paypal/return|cancel` → 原生 PayPalRedirectActivity 记一次性标记
+  // 并把 App 提回前台。（中间为什么要垫一个 https 页，见那边的类注释。）
+  //
+  // 下面三个方法的异常一律吞掉：**iOS 没有这条通道**（也不走 PayPal），
+  // 而这些只是把提示说准/少等几秒的旁路信号，拿不到就退回余额轮询判定，
+  // 不该把确认流程炸掉。
 
   /// 读走并清掉「用户在 PayPal 点了取消」这一次信号；没有信号返回 false。
   ///
   /// **consume 语义**：一次取消只该被判定一次，读到就清。确认购买页在每次
   /// `resumed` 时问一句，读到 true 直接说「已取消支付」，不再走那条等「付成功」
   /// 的 9.4s 余额轮询。
-  ///
-  /// 异常一律吞成 false：**iOS 没有这条通道**（也不走 PayPal），而这只是一条
-  /// 用来把提示说准的旁路信号，拿不到就退回原来的轮询判定，不该把确认流程炸掉。
   static Future<bool> consumePayPalCancel() async {
     try {
       final canceled = await _channel.invokeMethod<bool>('consumePayPalCancel');
@@ -249,5 +251,34 @@ class NativeDeviceApi {
     } catch (_) {
       return false;
     }
+  }
+
+  /// 读走并清掉「授权成功回跳」，返回 PayPal 带回来的 `{token, PayerID}`；
+  /// 没有这一跳返回 null。
+  ///
+  /// ⚠️ **两个键名照抄 PayPal**（`token` 小写、`PayerID` 大写 P 大写 ID）：
+  /// 调用方要把它们**原样**转发给 `GET /Client/Pay/getPayPalNotify`，后端拿去 capture。
+  /// 端上全程不加工、不改名。
+  ///
+  /// ⚠️ 返回非 null 但两个值为空串是**可能**的（中转页丢了 query）：那时「回跳发生过」
+  /// 这条信息仍然有用（说明用户是授权完回来的，不是自己切回来的），调用方据此
+  /// 退回查单/轮询兜底即可，别把它当成没回跳。
+  static Future<Map<String, String>?> consumePayPalReturn() async {
+    try {
+      final data = await _channel.invokeMapMethod<String, String>(
+        'consumePayPalReturn',
+      );
+      return data;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 清空可能残留的回跳标记。**每次发起新支付前调**：App 进程被系统回收时，
+  /// 回跳会把标记置在一个没人来读的新进程里，不清掉的话下一单刚跳出去就会被旧标记误判。
+  static Future<void> clearPayPalRedirect() async {
+    try {
+      await _channel.invokeMethod<void>('clearPayPalRedirect');
+    } catch (_) {}
   }
 }

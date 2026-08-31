@@ -60,16 +60,18 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
-        <!-- PayPal「取消支付」的回跳接收器（2026-08-31）。后端 setCreatePay 新增入参
-             payPalCancelUrl，端上传 boltstar://pay/paypal/cancel；用户在 PayPal 点
-             「Cancel and return」时浏览器跳到这里，这是端上唯一确凿的「用户主动取消」信号
-             （approve 之后的回调是 PayPal 打到**后端**的，端上收不到，故只有取消这一半）。
+        <!-- PayPal 支付回跳的接收器（2026-08-31）。**成功与取消两条都走它**，按 path 区分。
+             链路：PayPal 302 → 我们的 **https 中转页** → 中转页用 JS 跳 boltstar:// → 本 Activity。
+             ⚠️ 中间必须垫一个 https 页，不能让 PayPal 直接 302 到 boltstar://：
+             ① PayPal 对 return_url 按 URI 校验，非 http(s) 收不收没有保证；
+             ② Chrome 会拦掉「服务端 302 直跳自定义 scheme」这种非用户手势外跳，
+                表现是停在空白页、什么都不发生且不报错。
              ⚠️ 这条 intent-filter 不能直接挂到 MainActivity 上：它带 taskAffinity=""，
              外跳 intent 会新建任务、再造一个 MainActivity（表现是 App 重启、确认购买页丢失）。
-             理由与解法见 PayPalCancelActivity.kt 的类注释。
+             详见 PayPalRedirectActivity.kt 的类注释。
              透明 + noHistory + 不进最近任务：用户全程看不见这个空壳页。 -->
         <activity
-            android:name=".PayPalCancelActivity"
+            android:name=".PayPalRedirectActivity"
             android:exported="true"
             android:noHistory="true"
             android:excludeFromRecents="true"
@@ -78,8 +80,12 @@
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
-                <!-- BROWSABLE 必需：这一跳是浏览器/PayPal App 发起的，缺了它浏览器不认这个 scheme。 -->
+                <!-- BROWSABLE 必需：这一跳是浏览器/中转页发起的，缺了它浏览器不认这个 scheme。 -->
                 <category android:name="android.intent.category.BROWSABLE"/>
+                <!-- 授权成功：中转页会把 PayPal 给的 ?token=..&PayerID=.. 原样带过来。
+                     ⚠️ android:path 是**精确匹配 path 本身**，query 不参与匹配，所以带参数也命中。 -->
+                <data android:scheme="boltstar" android:host="pay" android:path="/paypal/return"/>
+                <!-- 用户点 Cancel and return -->
                 <data android:scheme="boltstar" android:host="pay" android:path="/paypal/cancel"/>
             </intent-filter>
         </activity>

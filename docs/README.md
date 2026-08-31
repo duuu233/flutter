@@ -18,6 +18,7 @@
 | 查看 App/小程序差异 | [`integration/APP_VS_MINIPROGRAM.md`](integration/APP_VS_MINIPROGRAM.md) |
 | 打包发版 | [`runbooks/BUILD_RELEASE.md`](runbooks/BUILD_RELEASE.md) |
 | iOS BLE 性能排查 | [`runbooks/IOS_BLE_PERFORMANCE.md`](runbooks/IOS_BLE_PERFORMANCE.md) |
+| PayPal 回跳中转页部署与联调 | [`runbooks/PAYPAL_REDIRECT.md`](runbooks/PAYPAL_REDIRECT.md) |
 
 ## 2. 长期知识
 
@@ -44,6 +45,7 @@
 | --- | --- |
 | [`runbooks/BUILD_RELEASE.md`](runbooks/BUILD_RELEASE.md) | Android/iOS 构建、签名、占位符与发布检查 |
 | [`runbooks/IOS_BLE_PERFORMANCE.md`](runbooks/IOS_BLE_PERFORMANCE.md) | 正式包自检、RTT、吞吐、日志与 iOS BLE 判定流程 |
+| [`runbooks/PAYPAL_REDIRECT.md`](runbooks/PAYPAL_REDIRECT.md) | PayPal 支付回跳的 https 中转页（源码在 `deploy/paypal/`）：为什么不能让 PayPal 直接 302 到自定义 scheme、部署五个注意点（⚠️ 最容易踩的是 SPA 的 catch-all 把页面吃掉）、五步联调（含「不点回跳」那条兜底测试）、卡住时的对照表。⚠️ 记着一条待后端确认的链路风险：**capture 是 App 调 `getPayPalNotify` 才触发的**，用户不跳回 App 就不扣款也不入账，端上补不了，需要后端 webhook 兜底 |
 
 ### Content
 
