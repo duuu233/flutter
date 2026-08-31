@@ -359,7 +359,8 @@ class _PackageCard extends StatelessWidget {
                     textBaseline: TextBaseline.alphabetic,
                     children: [
                       Text(
-                        kStarCurrencySymbol,
+                        // 后端按商品下发的币种符号（见 StarPackage.currencySymbol），不写死
+                        package.currencySymbol,
                         style: TextStyle(
                           color: accent,
                           fontSize: 14,
@@ -388,7 +389,7 @@ class _PackageCard extends StatelessWidget {
                     // 单价按含赠送总数算，见 StarPackage.unitPrice
                     l10n.starBuyUnitPrice(
                       package.unitPrice,
-                      kStarCurrencySymbol,
+                      package.currencySymbol,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

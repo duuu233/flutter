@@ -431,8 +431,12 @@ class BoltFoxApi {
 
   /// 创建支付（2026-08-27 新增，安卓 PayPal 走这条）。
   ///
-  /// 入参只有 `orderNo` + `payType`，其余四个（device/language/terminal/userToken）
-  /// 由 [ApiClient] 经 header + query 注入。出参 `ClientCreatePayApiOut` 是**三个渠道共用的一个壳**，
+  /// 业务入参 `orderNo` + `payType` + `payPalCancelUrl`（**2026-08-31 后端新增**：用户在
+  /// PayPal 点取消后浏览器要跳的地址，端上传 App 的自定义 scheme 深链，见
+  /// `star_purchase.dart` 的 `StarPurchase.cancelReturnUrl`）；
+  /// 其余四个（device/language/terminal/userToken）由 [ApiClient] 经 header + query 注入。
+  ///
+  /// 出参 `ClientCreatePayApiOut` 是**三个渠道共用的一个壳**，
   /// 按 `payType` 只有对应那几个字段有值：
   /// - PayPal：`payPalApproveUrl`(用户授权跳转地址) / `payPalOrderId`
   /// - 微信：`wxPayAppId` / `wxPayPartnerId` / `wxPayPrepayId` / `wxPayNonceStr` /
@@ -442,10 +446,19 @@ class BoltFoxApi {
   static Future<dynamic> setCreatePay({
     required String orderNo,
     required int payType,
+    String? payPalCancelUrl,
   }) {
     return _http.postJson(
       '/Client/Pay/setCreatePay',
-      body: {'orderNo': orderNo, 'payType': payType},
+      body: {
+        'orderNo': orderNo,
+        'payType': payType,
+        // 空值不传：这个字段决定「用户点取消后浏览器跳哪」，传空串等于让 PayPal
+        // 拿一个非法地址去建单（整条 setCreatePay 可能直接失败）。宁可不带，
+        // 退回「用户自己切回 App」那条老路。
+        if (payPalCancelUrl != null && payPalCancelUrl.isNotEmpty)
+          'payPalCancelUrl': payPalCancelUrl,
+      },
       // 超时不重试：重试等于对同一订单重复创建支付单，PayPal 侧会多出一张授权单。
       retryOnTimeout: false,
     );

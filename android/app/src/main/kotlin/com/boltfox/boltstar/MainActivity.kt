@@ -131,6 +131,11 @@ class MainActivity : FlutterActivity() {
                 )
                 result.success(null)
             }
+            // PayPal 取消回跳：读走并清掉「用户在 PayPal 点了取消」这一次信号
+            // （由 PayPalCancelActivity 置上，见那边的类注释）。Dart 侧在确认购买页
+            // 每次 resumed 时问一句，读到 true 就直接说「已取消支付」，不必再等 9.4s
+            // 的余额轮询 —— 那条轮询等的是「付成功」，取消是等不出结果的。
+            "consumePayPalCancel" -> result.success(PayPalRedirect.consumeCanceled())
             else -> result.notImplemented()
         }
     }

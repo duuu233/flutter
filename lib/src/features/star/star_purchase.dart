@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../native_device_api.dart';
 import 'star_coin_api.dart';
 
 /// 星币购买链路的编排（**安卓 = PayPal**，2026-08-27 接入）。
@@ -24,12 +25,37 @@ import 'star_coin_api.dart';
 /// ⚠️ 这意味着到账要经过「PayPal 回调 → 后端 capture → 入账」两跳，比小程序的微信回调更长；
 /// [confirmDelays] 那 9.4s 是照搬小程序的节奏，**联调时要实测**，常态兜不住就把尾巴加长。
 ///
-/// ⚠️ **仍未决**（见 `docs/history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
-/// **`return_url` 配的是什么** —— 能配成 App 的自定义 scheme 才谈得上精确回跳；
-/// 当前按「用户自己切回 App」处理（页面监听 `AppLifecycleState.resumed`），
-/// 另给一颗「我已完成支付」的手动按钮兜底。
+/// ✅ **回跳口径（2026-08-31 定，两半不对称）**：
+/// - **付成功这一半没有精确回跳**：`return_url` 是**后端自己的回调地址** —— 用户点
+///   Continue to Review Order 之后 PayPal 打的是后端，端上根本收不到这一跳。所以仍旧
+///   靠「用户自己切回 App」（页面监听 `AppLifecycleState.resumed`），另给一颗
+///   「我已完成支付」的手动按钮兜底，回来后照旧轮询余额。
+/// - **取消这一半有精确回跳**：`setCreatePay` 新增入参 `payPalCancelUrl`，端上传
+///   [cancelReturnUrl] 这条自定义 scheme 深链。用户点取消会被直接弹回 App，
+///   原生 `PayPalCancelActivity` 收下并记标记，页面经 [consumeCanceled] 读走，
+///   当场说「已取消支付」——不必再把人晾在 9.4s 轮询里熬出一句「结果确认中」。
 class StarPurchase {
   const StarPurchase._();
+
+  /// 用户在 PayPal 点「Cancel and return」后，PayPal 让浏览器跳的地址
+  /// （`setCreatePay` 的入参 `payPalCancelUrl`，2026-08-31 后端新增）。
+  ///
+  /// 这是端上**唯一一个确凿的负向信号**：cancel_url 只有「没付成」才会被跳到，
+  /// 与「余额没变」那种分不清是取消还是回调慢的情形不是一回事，所以读到它就敢把话说死
+  /// 成「已取消支付」。（注意这不违背本文件头那条铁律 —— 铁律管的是**不许把跳回来当成功**，
+  /// 这里下的是失败结论，且依据是 PayPal 自己跳的这条 url，不是「用户回来了」。）
+  ///
+  /// ⚠️ 与安卓清单里 `PayPalCancelActivity` 的 intent-filter **必须逐字一致**
+  /// （scheme=boltstar / host=pay / path=/paypal/cancel），改一处就要改两处。
+  ///
+  /// ⚠️ **PayPal 收不收非 http(s) 的 cancel_url，需沙箱实测**：若表现为 `setCreatePay`
+  /// 直接失败 / 拿不到 approveUrl，用
+  /// `--dart-define=PAYPAL_CANCEL_URL=https://…` 换个 https 地址即可 —— 那只是退回
+  /// 「用户自己切回来」的老路，链路其余部分照常。
+  static const String cancelReturnUrl = String.fromEnvironment(
+    'PAYPAL_CANCEL_URL',
+    defaultValue: 'boltstar://pay/paypal/cancel',
+  );
 
   /// 支付回来后等服务端「发货」（渠道回调 → 加星币）的轮询节奏，与小程序 `CONFIRM_DELAYS` 一致。
   ///
@@ -74,6 +100,11 @@ class StarPurchase {
       );
     }
 
+    // 丢掉可能残留的旧取消标记：App 进程被回收时深链会把标记置在一个没人来读的新进程里
+    // （见 PayPalCancelActivity 的类注释）。不先清掉的话，这一单刚跳出去、用户一切回来
+    // 就会被上一单的旧标记判成「已取消」。
+    await NativeDeviceApi.consumePayPalCancel();
+
     onStage?.call(StarPurchaseStage.order);
     final order = await StarCoinApi.createOrder(
       package: package,
@@ -88,6 +119,9 @@ class StarPurchase {
     final creation = await StarCoinApi.createPay(
       orderNo: order.orderNo,
       payType: payType,
+      // 只对 PayPal 有意义（字段名就带 PayPal）。将来 iOS 接内购复用这条链路时，
+      // 别把一个 PayPal 专用的回跳地址塞给苹果那条单。
+      payPalCancelUrl: payType == StarPayType.paypal ? cancelReturnUrl : null,
     );
     debugPrint(
       '[PayPal] setCreatePay 返回 payPalOrderId=${creation.payPalOrderId.isEmpty ? '(空)' : creation.payPalOrderId} '
@@ -141,6 +175,17 @@ class StarPurchase {
       payPalOrderId: creation.payPalOrderId,
     );
   }
+
+  /// 读走「用户在 PayPal 点了取消」这一次信号（安卓深链，见 [cancelReturnUrl]）。
+  ///
+  /// 页面在每次 `resumed`、以及手动点「我已完成支付」时**先问这一句**：读到 true 就是
+  /// 用户自己取消的，当场说「已取消支付」，[confirm] 那条轮询压根不用跑。
+  ///
+  /// 读不到返回 false（iOS 没这条通道、通道异常、或者用户没走深链而是自己切回来的），
+  /// 调用方退回 [confirm] 的余额判定 —— 也就是说这条信号**只用来把提示说得更准**，
+  /// 缺了它一切照旧。
+  static Future<bool> consumeCanceled() =>
+      NativeDeviceApi.consumePayPalCancel();
 
   /// ⑤ 以**服务端余额**为准确认到账。用户从 PayPal 回到 App 后调。
   ///

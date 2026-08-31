@@ -80,7 +80,7 @@ BoltStar 当前使用三套不同的远端服务：
 | 星币消耗规则 | `GET /Client/Order/getAiConfigList` | `getAiConfigList` → `StarCoinApi.fetchRules`（`retData` 是**裸数组**，顺序原样保留） |
 | 星币套餐 | `GET /Client/Order/getGoodsList` | `getGoodsList` → `StarCoinApi.fetchPackages`（2026-08-27 新接） |
 | 建单 | `POST /Client/Order/addOrder` | `addOrder` → `StarCoinApi.createOrder`。入参 `goodsId`+`payType`，**出参 `orderNo` 是后面两步的钥匙** |
-| 创建支付 | `POST /Client/Pay/setCreatePay` | `setCreatePay` → `StarCoinApi.createPay`。安卓取 `payPalApproveUrl` 跳授权；出参是三渠道共用壳 |
+| 创建支付 | `POST /Client/Pay/setCreatePay` | `setCreatePay` → `StarCoinApi.createPay`。安卓取 `payPalApproveUrl` 跳授权；出参是三渠道共用壳。⚠️ **2026-08-31 新增入参 `payPalCancelUrl`**（取消后浏览器跳的地址，端上传深链 `boltstar://pay/paypal/cancel`） |
 | 查支付侧订单 | `GET /Client/Pay/getPayQuery` | `getPayQuery` → `StarCoinApi.queryPay`。⚠️ `payState` 枚举后端未给，端上只认 **1=已支付** |
 | 官方图库分类/列表/详情 | `GET /Client/Product/{getImgCategory,getProductImgList,getProductImgDetail}` | 同名方法 → `OfficialGalleryApi` |
 | 图片收藏/取消、收藏列表 | `POST /Client/Product/setImgCollected`、`GET /Client/Product/getProductImgCollectionList` | 同上。⚠️ 收藏切换返回的布尔语义未定，端上按**取反当前态**推新状态 |
@@ -155,7 +155,7 @@ BoltStar 当前使用三套不同的远端服务：
 
 1. `GET /Client/Order/getGoodsList` 取套餐；
 2. `POST /Client/Order/addOrder`（`goodsId` + `payType=3`）→ 拿 **`orderNo`**；
-3. `POST /Client/Pay/setCreatePay`（`orderNo` + `payType=3`）→ 拿 `payPalApproveUrl`；
+3. `POST /Client/Pay/setCreatePay`（`orderNo` + `payType=3` + `payPalCancelUrl`）→ 拿 `payPalApproveUrl`；
    入参里的 `device`/`language`/`terminal`/`userToken` 由 [ApiClient] 经 header + query 注入，
    业务层只传前两个；
 4. `url_launcher` 以 `LaunchMode.externalApplication` 跳授权（**不用内嵌 WebView**：
@@ -174,14 +174,32 @@ BoltStar 当前使用三套不同的远端服务：
 ⚠️ 代价是到账要走「PayPal 回调 → 后端 capture → 入账」**两跳**，比小程序的微信回调更长，
 而 `StarPurchase.confirmDelays` 的 9.4s 是照搬小程序的，**联调必须实测**。
 
-⚠️ **仍待后端确认**（见 `../history/2026-08/2026-08-27-安卓PayPal支付对接.md`）：
-1. **`setCreatePay` 的 `retData` 是哪种形状**——接口文档写的是 `payPalApproveUrl` /
-   `payPalOrderId`，后端给的样例却是 PayPal 原始返回（`id` / `status` / `links[]`）。
-   端上**两种都认**（映射过的字段优先），认错的表现是「接口 200 却提示未能拉起支付」。
-2. **`return_url` 配的是什么**——能配成 App 自定义 scheme 才谈得上精确回跳，当前按「用户自己
-   切回来」处理。
-3. **套餐 `amount` 对 PayPal 是什么币种**——现在按人民币展示（`_kCurrencySymbol`），
-   若 PayPal 侧收美元，符号与价格口径要一起改。
+✅ **2026-08-31 直接核了线上 swagger（`https://api.boltfox.cn/v2/api-docs`），两条旧 TODO 有了答案**：
+1. **`setCreatePay` 的出参形状**——swagger 的 `支付创建接口输出参数` 就是**映射过的那套**
+   （`payPalApproveUrl` / `payPalOrderId` / `exceptionMsg` + 微信 8 个 + 支付宝 1 个），
+   **没有** PayPal 原始的 `id` / `status` / `links[]`。端上仍保留「原始返回」那条兜底分支
+   （后端曾给过那种样例，留着无害），但以映射字段优先。
+2. **币种**——`ClientGoodsApiOut` 一直有 **`currencySymbol`**（描述「币种符号$,¥」），
+   也就是**币种由后端按商品下发**。端上原来写死 `¥` 是错的，PayPal 侧若收美元，
+   表现是最坏的那种：**页面写着 ¥、PayPal 扣的是 \$**。已改为取
+   `StarPackage.currencySymbol`，后端没给才退回 `kStarCurrencySymbol`（`¥`）。
+
+⚠️ 仍未定：`payPalCancelUrl` 后端期望收 App 的自定义 scheme 还是一个网页地址
+（swagger 只写「payPal支付取消跳转地址」，没有格式约束）。
+
+✅ **回跳口径已定（2026-08-31），但两半不对称**：
+- **付成功没有精确回跳**：`return_url` 是**后端自己的回调地址** —— 用户点
+  Continue to Review Order 后 PayPal 打的是后端，端上收不到这一跳，所以仍靠
+  `AppLifecycleState.resumed` + 「我已完成支付」手动兜底，回来后轮询余额。
+- **取消有精确回跳**：`setCreatePay` 新增入参 **`payPalCancelUrl`**，端上传
+  `boltstar://pay/paypal/cancel`（`StarPurchase.cancelReturnUrl`）。用户点取消 → 浏览器跳深链
+  → 安卓 `PayPalCancelActivity` 接住、记一次性标记并把 App 提回前台 → 确认购买页在
+  `resumed` 时经 `NativeDeviceApi.consumePayPalCancel()` 读走 → 当场提示「已取消支付」，
+  **不再走那条等「付成功」的 9.4s 轮询**。
+  ⚠️ 深链地址写在 Dart 常量与 `AndroidManifest.xml` 两处，`test/star_purchase_test.dart`
+  有一条测试拿清单来比对，防止只改一处。
+  ⚠️ **PayPal 收不收非 http(s) 的 cancel_url 仍需沙箱实测**：若 `setCreatePay` 直接失败，
+  用 `--dart-define=PAYPAL_CANCEL_URL=https://…` 换回 https（只是退回「用户自己切回来」）。
 
 AI 模块用到的两个只读/校验接口：
 

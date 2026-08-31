@@ -228,4 +228,26 @@ class NativeDeviceApi {
       });
     } catch (_) {}
   }
+
+  // ── PayPal 取消回跳（安卓，2026-08-31）──────────────────────────
+  //
+  // 用户在 PayPal 点「Cancel and return」→ 浏览器跳 boltstar://pay/paypal/cancel
+  // → 原生 PayPalCancelActivity 记一个一次性标记并把 App 提回前台。
+
+  /// 读走并清掉「用户在 PayPal 点了取消」这一次信号；没有信号返回 false。
+  ///
+  /// **consume 语义**：一次取消只该被判定一次，读到就清。确认购买页在每次
+  /// `resumed` 时问一句，读到 true 直接说「已取消支付」，不再走那条等「付成功」
+  /// 的 9.4s 余额轮询。
+  ///
+  /// 异常一律吞成 false：**iOS 没有这条通道**（也不走 PayPal），而这只是一条
+  /// 用来把提示说准的旁路信号，拿不到就退回原来的轮询判定，不该把确认流程炸掉。
+  static Future<bool> consumePayPalCancel() async {
+    try {
+      final canceled = await _channel.invokeMethod<bool>('consumePayPalCancel');
+      return canceled ?? false;
+    } catch (_) {
+      return false;
+    }
+  }
 }

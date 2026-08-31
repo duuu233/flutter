@@ -21,9 +21,14 @@ import 'star_card.dart';
 /// 页面本身照常可进、金额照常看得见（需求 7：页面和交互先有，支付后接）。
 ///
 /// ⚠️ **页面状态机的关键一环是「跳出去再回来」**：跳 PayPal 之后 App 进后台，
-/// 用户授权完自己切回来（后端 `return_url` 目前不是 App 的 scheme，见 [StarPurchase] 文件头）。
-/// 所以本页监听 [AppLifecycleState.resumed] 自动开始确认到账，另给一颗「我已完成支付」
-/// 手动兜底 —— 有些机型/浏览器回前台不发 resumed，只靠生命周期会永远停在等待态。
+/// 用户授权完自己切回来（`return_url` 是**后端的回调地址**，付成功这一跳端上收不到，
+/// 见 [StarPurchase] 文件头）。所以本页监听 [AppLifecycleState.resumed] 自动开始确认到账，
+/// 另给一颗「我已完成支付」手动兜底 —— 有些机型/浏览器回前台不发 resumed，
+/// 只靠生命周期会永远停在等待态。
+///
+/// ✅ **取消这一半是精确的**（2026-08-31）：用户点取消时 PayPal 会跳
+/// [StarPurchase.cancelReturnUrl] 这条深链把 App 弹回来，所以 [_confirm] 开头先问一句
+/// [StarPurchase.consumeCanceled]，读到就直接「已取消支付」，不走那条等「付成功」的轮询。
 class StarPurchasePage extends StatefulWidget {
   const StarPurchasePage({super.key, required this.package});
 
@@ -68,8 +73,9 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     if (state != AppLifecycleState.resumed) {
       return;
     }
-    // 从 PayPal 回到 App：自动开始确认到账。用户是「付完了」还是「取消了」端上分不清，
-    // 一律走同一条确认链路，由**服务端余额**下结论。
+    // 从 PayPal 回到 App：一律走同一条确认链路。[_confirm] 会先问一句「是不是点了取消」
+    // （深链留下的确凿信号），没有取消信号时才由**服务端余额**给「付没付成」下结论 ——
+    // 「跳回来了」本身永远不算成功。
     if (_pending != null && !_confirming) {
       _confirm();
     }
@@ -140,8 +146,30 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       return;
     }
     final l10n = AppL10n.of(context);
+    // 先占住重入闸再去问原生（resumed 可能连发两次）。这里**故意不 setState**：
+    // 取消的情形下根本不该闪一下「正在确认到账…」，而这一问只是一次 MethodChannel
+    // 往返，期间没有别的东西会触发重建。
+    _confirming = true;
+
+    // 用户在 PayPal 点了取消 → 深链已经把 App 弹回来并留下标记（见 [StarPurchase.consumeCanceled]）。
+    // 钱一定没付，不必再等 9.4s 轮询把它熬成一句准确但无用的「支付结果确认中」。
+    if (await StarPurchase.consumeCanceled()) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _confirming = false;
+        _stageText = null;
+        // 与「放弃本次支付」同样只丢端上的等待态，不动后端那张单（见 [_giveUp]）。
+        _pending = null;
+      });
+      await showAppNoticeDialog(context, title: l10n.starBuyCanceled);
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
     setState(() {
-      _confirming = true;
       _stageText = l10n.starBuyStageConfirm;
     });
 
@@ -404,7 +432,8 @@ class _SummaryCard extends StatelessWidget {
               const Spacer(),
               const SizedBox(width: 12),
               Text(
-                '$kStarCurrencySymbol${package.price.toStringAsFixed(2)}',
+                // 符号取后端按商品下发的 currencySymbol，别写死 —— 见 StarPackage.currencySymbol
+                '${package.currencySymbol}${package.price.toStringAsFixed(2)}',
                 style: const TextStyle(
                   color: Color(0xFFF2621F),
                   fontSize: 21,

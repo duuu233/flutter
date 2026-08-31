@@ -60,6 +60,29 @@
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
         </activity>
+        <!-- PayPal「取消支付」的回跳接收器（2026-08-31）。后端 setCreatePay 新增入参
+             payPalCancelUrl，端上传 boltstar://pay/paypal/cancel；用户在 PayPal 点
+             「Cancel and return」时浏览器跳到这里，这是端上唯一确凿的「用户主动取消」信号
+             （approve 之后的回调是 PayPal 打到**后端**的，端上收不到，故只有取消这一半）。
+             ⚠️ 这条 intent-filter 不能直接挂到 MainActivity 上：它带 taskAffinity=""，
+             外跳 intent 会新建任务、再造一个 MainActivity（表现是 App 重启、确认购买页丢失）。
+             理由与解法见 PayPalCancelActivity.kt 的类注释。
+             透明 + noHistory + 不进最近任务：用户全程看不见这个空壳页。 -->
+        <activity
+            android:name=".PayPalCancelActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <!-- BROWSABLE 必需：这一跳是浏览器/PayPal App 发起的，缺了它浏览器不认这个 scheme。 -->
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="boltstar" android:host="pay" android:path="/paypal/cancel"/>
+            </intent-filter>
+        </activity>
         <!-- 投屏预览页的原生裁剪器（image_cropper 插件，Android 侧用 Yalantis uCrop）。
              必须在这里注册它的 Activity，否则点「裁剪」会直接崩（ActivityNotFoundException）。 -->
         <activity

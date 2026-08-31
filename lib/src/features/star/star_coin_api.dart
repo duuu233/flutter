@@ -211,13 +211,19 @@ class StarCoinApi {
   }
 
   /// 创建支付（`POST /Client/Pay/setCreatePay`）→ [StarPayCreation]。
+  ///
+  /// [payPalCancelUrl]：用户在 PayPal 点取消后浏览器跳的地址（2026-08-31 后端新增入参）。
+  /// 端上传 App 的自定义 scheme 深链，取值见 `star_purchase.dart` 的 `StarPurchase.cancelReturnUrl`
+  /// （本文件被 star_purchase.dart 依赖，反向 import 只为一句注释不值当）。
   static Future<StarPayCreation> createPay({
     required String orderNo,
     required int payType,
+    String? payPalCancelUrl,
   }) async {
     final data = await BoltFoxApi.setCreatePay(
       orderNo: orderNo,
       payType: payType,
+      payPalCancelUrl: payPalCancelUrl,
     );
     return StarPayCreation.fromJson(
       data is Map ? data.cast<String, dynamic>() : const {},
@@ -249,11 +255,14 @@ class StarCoinApi {
   }
 }
 
-/// 售价的货币符号（星币管理页的套餐卡、确认购买页共用）。
+/// 售价货币符号的**兜底默认值**。
 ///
-/// ⚠️ **待后端确认**：套餐的 `amount` 现在是小程序那套人民币价，而 PayPal 侧要 `currency_code`。
-/// 若后端对 PayPal 单独换算成美元（或另给一档美元价），这里连同 [StarPackage.price] 的口径
-/// 一起改，别只改符号——那会变成「写着 $、扣的是 ¥」。
+/// ✅ 2026-08-31 核 swagger：`ClientGoodsApiOut` 本来就有 **`currencySymbol`**（描述「币种符号$,¥」），
+/// 币种由**后端按商品下发**，端上不该写死 —— 见 [StarPackage.currencySymbol]。
+/// 这个常量只在后端没给（空串）时顶上，免得价钱前面空一块。
+///
+/// ⚠️ 别再拿它当「就是人民币」的依据：PayPal 侧若收美元，后端会把 `currencySymbol` 给成 `$`，
+/// 而写死 `¥` 的表现正是最坏的那种——**页面写着 ¥、PayPal 扣的是 $**。
 const String kStarCurrencySymbol = '¥';
 
 /// `addOrder` / `setCreatePay` / `getPayQuery` 的 `payType`（swagger `ClientOrderAddApiIn.payType`）。
@@ -291,6 +300,7 @@ class StarPackage {
     required this.tokens,
     required this.gift,
     required this.price,
+    required this.currencySymbol,
     required this.wxProductId,
     required this.appleProductId,
   });
@@ -302,6 +312,13 @@ class StarPackage {
       tokens: StarCoinApi._toInt(json['num']),
       gift: StarCoinApi._toInt(json['giveNum']),
       price: StarCoinApi._toDouble(json['amount']),
+      // 币种符号由后端按商品下发（swagger `ClientGoodsApiOut.currencySymbol`，「币种符号$,¥」）。
+      // 后端没给才退回 [kStarCurrencySymbol]：符号跟着钱走，端上写死就会出现
+      // 「页面写着 ¥、PayPal 扣的是 $」。
+      currencySymbol: StarCoinApi._firstNonEmpty([
+        StarCoinApi._toText(json['currencySymbol']),
+        kStarCurrencySymbol,
+      ]),
       // 两个渠道商品 id 端上都不直接拿去调支付（微信侧由服务端签进 signData；
       // PayPal 侧订单也由服务端建），留着是为了排查「这档在这一端配没配」。
       wxProductId: StarCoinApi._toText(json['wxProductId']),
@@ -318,8 +335,12 @@ class StarPackage {
   /// 赠送星币数。
   final int gift;
 
-  /// 售价。⚠️ 币种由后端决定（PayPal 侧是否换算成美元仍待后端确认，见文档 TODO）。
+  /// 售价。币种见 [currencySymbol]，两者必须一起用，别把数字单拎出去配别的符号。
   final double price;
+
+  /// 售价的货币符号（后端 `ClientGoodsApiOut.currencySymbol`，如 `¥` / `$`）。
+  /// 后端没给时是 [kStarCurrencySymbol]。
+  final String currencySymbol;
 
   final String wxProductId;
   final String appleProductId;
@@ -329,6 +350,7 @@ class StarPackage {
 
   /// 单价（约）。⚠️ 按**含赠送**总数算：否则赠送多的档位单价反而显得更贵，
   /// 与「越买越划算」的排序相悖。不用后端的 `unitPrice`（integer 且不含赠送，会显示成 0）。
+  /// ⚠️ 展示时的货币符号取 [currencySymbol]，别另配一个。
   String get unitPrice {
     final total = totalTokens;
     if (total <= 0) {

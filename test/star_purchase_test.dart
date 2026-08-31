@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:BoltStar/src/features/star/star_coin_api.dart';
@@ -50,6 +52,36 @@ void main() {
         'amount': 90,
       });
       expect(package.unitPrice, '0.36');
+    });
+
+    // 2026-08-31 核 swagger 发现的：`ClientGoodsApiOut` 一直有 `currencySymbol`
+    // （描述「币种符号$,¥」），端上却写死了 ¥。PayPal 侧若收美元，表现就是最坏的那种：
+    // **页面写着 ¥、PayPal 扣的是 $**。这两条钉住「符号跟着后端走」。
+    test('币种符号取后端下发的 currencySymbol', () {
+      final package = StarPackage.fromJson(const {
+        'goodsId': 7,
+        'num': 200,
+        'amount': 12.99,
+        'currencySymbol': r'$',
+      });
+      expect(package.currencySymbol, r'$');
+    });
+
+    test('后端没给币种符号时才退回 ¥', () {
+      expect(
+        StarPackage.fromJson(const {'goodsId': 7, 'num': 200, 'amount': 90})
+            .currencySymbol,
+        kStarCurrencySymbol,
+      );
+      expect(
+        StarPackage.fromJson(const {
+          'goodsId': 7,
+          'num': 200,
+          'amount': 90,
+          'currencySymbol': '',
+        }).currencySymbol,
+        '¥',
+      );
     });
 
     test('总数为 0 时不做除法（后端脏数据不该把页面炸成 NaN/Infinity）', () {
@@ -216,6 +248,41 @@ void main() {
         (sum, d) => sum + d.inMilliseconds,
       );
       expect(total, 9400);
+    });
+  });
+
+  // ── PayPal 取消回跳（2026-08-31）────────────────────────────────────
+  //
+  // `setCreatePay` 新增入参 `payPalCancelUrl`，端上传一条自定义 scheme 深链；
+  // 用户在 PayPal 点取消 → 浏览器跳这条 url → 安卓清单里 PayPalCancelActivity 的
+  // intent-filter 接住 → App 被弹回前台并留下「已取消」标记。
+  group('取消回跳地址', () {
+    test('默认是 App 的自定义 scheme 深链', () {
+      expect(StarPurchase.cancelReturnUrl, 'boltstar://pay/paypal/cancel');
+    });
+
+    // ⚠️ 这条地址**写在两个地方**：Dart 常量与安卓清单的 intent-filter。
+    // 只改一处的表现极其难查 —— setCreatePay 照常成功、PayPal 照常跳，只是那一跳
+    // 谁也接不住，用户点了取消却停在浏览器里，回到 App 后又被当成「结果确认中」。
+    // 所以这里直接拿清单来比，别指望下一个人记得改两处。
+    test('与 AndroidManifest 里 PayPalCancelActivity 的 intent-filter 逐字一致', () {
+      final manifest = File('android/app/src/main/AndroidManifest.xml');
+      expect(
+        manifest.existsSync(),
+        isTrue,
+        reason: '测试须从项目根目录跑（flutter test）',
+      );
+      final xml = manifest.readAsStringSync();
+      final uri = Uri.parse(StarPurchase.cancelReturnUrl);
+
+      // <data android:scheme="boltstar" android:host="pay" android:path="/paypal/cancel"/>
+      expect(xml, contains('android:scheme="${uri.scheme}"'));
+      expect(xml, contains('android:host="${uri.host}"'));
+      expect(xml, contains('android:path="${uri.path}"'));
+
+      // 接收器本身与浏览器发起外跳所必需的 BROWSABLE，一并钉住。
+      expect(xml, contains('android:name=".PayPalCancelActivity"'));
+      expect(xml, contains('android.intent.category.BROWSABLE'));
     });
   });
 }

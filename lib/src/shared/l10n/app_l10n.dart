@@ -1883,6 +1883,12 @@ class AppL10n {
   String get starBuyApprovingGiveUp =>
       _pick('放弃本次支付', 'Cancel this payment', 'この支払いをやめる');
 
+  /// 用户在 PayPal 点了取消，经 `boltstar://pay/paypal/cancel` 深链弹回 App。
+  /// ⚠️ 这是这条链路上**唯一一句敢说死的负向结论**：cancel_url 只有没付成才会被跳到。
+  /// 与 [starBuyPendingUnknown]（余额没变、分不清取消还是回调慢）不是一回事，别合并。
+  String get starBuyCanceled =>
+      _pick('已取消支付', 'Payment canceled', '支払いをキャンセルしました');
+
   /// 到账确认成功。数量取**服务端余额的增量**，不是套餐上写的数（以服务端为准）。
   String starBuySucceeded(int gained) => _pick(
     '购买成功，到账 $gained 星币',
