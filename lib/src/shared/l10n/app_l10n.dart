@@ -776,6 +776,12 @@ class AppL10n {
   ];
   /// 2026-08-10 需求 8：输入框默认文案改为「按住说话或输入您的想法...」
   /// —— 右侧那颗麦克风按钮是语音入口，提示语要把两条路都说出来。
+  /// 发送后、消息真正上屏前那段空窗的蒙层文案（见 `_AiChatPageState._prepareSend`）。
+  ///
+  /// ⚠️ 别复用 [accSendingCode]：那句是「发送验证码」的，两处语义不同，
+  /// 将来任一处改文案都会误伤另一处。
+  String get aiSending => _pick('发送中…', 'Sending…', '送信中…');
+
   String get aiInputHint => _pick(
     '按住说话或输入您的想法...',
     'Hold to talk, or type your idea…',

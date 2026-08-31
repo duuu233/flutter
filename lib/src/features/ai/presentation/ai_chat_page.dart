@@ -270,29 +270,46 @@ const Map<String, String> _kOrientationIcons = <String, String>{
 String _orientationActiveIcon(String key) =>
     'assets/images/ai-orientation-$key-active.png';
 
-/// 输入卡常驻四工具（相册 / 拍照 / 比例 / 一键生图）的宽度比例，
-/// 对应小程序 `.quick-tools` 的 `grid-template-columns: 1fr 1fr 1.35fr 1.75fr`。
-/// ⚠️ 两个上拉浮层是按这组比例**算出**自己该贴哪一格的（见 `_buildPopover`），
-/// 改比例必须两处一起看。
-const List<int> _kToolFlex = <int>[100, 100, 135, 175];
+/// 输入卡常驻四工具（相册 / 拍照 / 比例 / 一键生图）的宽度比例。
+///
+/// ⚠️ **2026-08-31 由 100:100:135:175 改成下面这组**，修「英文版四个字太小」。
+/// 原值照抄小程序 `.quick-tools` 的 `grid-template-columns: 1fr 1fr 1.35fr 1.75fr`，
+/// 那是按**中文**量的（相册/拍照/竖版/一键生图，2~4 个汉字）。英文词长完全不同：
+/// 375dp 上前两格只给文字留 27px，而 "Camera" 在 12px 下要 41px —— 由于四格共用同一个
+/// 缩放（见 [_AiChatPageState._resolveToolFontSizes]），最窄那格把**四个格子一起**
+/// 拖到了约 8px，小到看不清。
+///
+/// 新比例是按「四个英文词各自实际需要多少宽度」倒推的：前两格取二者中更宽的
+/// （Album/Camera 是同级入口，宽度不同看着别扭，所以取齐），比例格要额外留一枚箭头，
+/// 一键生图那格反而有富余、匀了一点出来。改完 375dp 上约 11.7px、360dp 上约 10.5px。
+///
+/// ⚠️ 中文/日文照旧放得下（汉字词短），共用缩放为 1、字号仍是 [_kToolFontSize]。
+/// ⚠️ 两个上拉浮层是按这组比例**实算**自己该贴哪一格的（见 `_buildPopover`，
+/// 它读的是同一个常量），所以改数值不必再改浮层，但要一起回归看一眼。
+const List<int> _kToolFlex = <int>[114, 114, 140, 142];
 const double _kToolGap = 4;
 const double _kToolHeight = 29;
 const Color _kToolText = Color(0xFF6F6F6F);
 
-/// 工具胶囊里文字的基准字号（小程序 25rpx≈12.5；2026-08-28 收到 12）。
+/// 工具胶囊里文字的**基准/上限**字号（小程序 25rpx≈12.5；2026-08-28 收到 12）。
 ///
-/// ⚠️ 真正解决「英文太大放不下」的不是这个数，是 [_buildToolLabel] 的 `BoxFit.scaleDown`：
-/// 四个语种的词长差得远（相册/Album、一键生图/Generate），写死任何一个字号都会顾此失彼。
+/// ⚠️ 这不是最终字号：最终值由 [_AiChatPageState._resolveToolFontSizes] 按格宽算出来 ——
+/// 前三格**共用**一个（保证一样大），一键生图在此基础上大一号。
+/// 中文/日文放得下时缩放为 1，最终就等于这个数；英文会按最窄那格等比缩。
+/// 嫌小**先看 [_kToolFlex] 的分配**，那才是瓶颈；调大这个数只会让缩放比例更小、于事无补。
 const double _kToolFontSize = 12;
 
 /// 胶囊左右内边距：文字不要贴着圆角边（小程序那边靠 grid 的余量带出同样的呼吸感）。
-const double _kToolPadding = 8;
+/// ⚠️ 2026-08-31 由 8 收到 6：四个格子的「非文字开销」（内边距 + 图标 + 间距 + 箭头）
+/// 加起来超过可用宽度的一半，是英文字号上不去的另一半原因。收 2 换来每格多 4px 给文字。
+const double _kToolPadding = 6;
 
 /// 胶囊里图标的边长、图标与文字之间的间距、比例格右侧那枚箭头的边长。
 /// 抽成常量是因为 `_resolveToolFontSizes` 要拿它们**算每格能给文字多少宽度**，
 /// 写死在各个 builder 里就没法算了。
 const double _kToolIconSize = 13.5;
-const double _kToolIconGap = 4.5;
+/// ⚠️ 2026-08-31 由 4.5 收到 4：同 [_kToolPadding]，给文字腾地方。
+const double _kToolIconGap = 4;
 const double _kToolChevronSize = 11;
 
 /// 一键生图那格的图标外框（魔杖/关闭切换时宽度不变，见 `_buildGenerateButton`）。
@@ -1036,6 +1053,41 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     return true;
   }
 
+  /// 发送前那段**发不出任何可见反馈**的准备工作：星币校验 + （首条消息才有的）建会话。
+  /// 通过返回 true；被拦下（余额不足 / 建会话失败）返回 false，调用方直接收手。
+  ///
+  /// ⚠️ **这一段要罩全局蒙层**（2026-08-31 需求）：在「新对话」空态发第一条消息时，
+  /// 它必须先 `POST /session/new`，慢的时候要一两秒；而这期间界面**什么都没变** ——
+  /// 输入框还是原样、消息也还没上屏，用户根本分不清「发出去了」还是「点空了」，
+  /// 于是反复点。原来只把发送按钮置灰（[_submitting]），那个变化太轻、按钮又在角落里。
+  ///
+  /// ⚠️ 蒙层**到这一段为止**，不罩 [_sendChat]：那一步一进去就把用户气泡和 loading 气泡
+  /// 追加到列表里了，界面自己会说话，再压一层蒙层反而挡住刚上屏的消息。
+  ///
+  /// ⚠️ 两个顺序都不能反，理由沿用原处：
+  /// ① **星币校验排在建会话之前**（2026-08-12 同步小程序）——反过来的话，余额见底的用户
+  ///    每点一次发送就在服务端多留一条空的「新对话」，每个用户上限 20 条，几次就占满；
+  /// ② 调用方要**先建会话、再清输入框**——建会话可能失败（网络异常 / 20013 会话已达上限），
+  ///    先清的话用户打的字和选的图就白没了。
+  Future<bool> _prepareSend() async {
+    AppLoadingDialog.show(context, AppL10n.of(context).aiSending);
+    try {
+      if (!await _guardAiDialogue() || !mounted) {
+        return false;
+      }
+      if (_sessionId.isEmpty) {
+        await _createSession();
+        if (!mounted || _sessionId.isEmpty) {
+          // 错误提示已由 _createSession 弹出；草稿原样留着，用户可直接重发
+          return false;
+        }
+      }
+      return true;
+    } finally {
+      AppLoadingDialog.hide(context);
+    }
+  }
+
   Future<void> _onSendTap() async {
     if (_sending || _submitting || _banned) {
       return;
@@ -1064,20 +1116,10 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
         for (final item in _pending)
           if (item.url.isNotEmpty) _AiImage(url: item.url, pad: item.pad),
       ];
-      // 星币校验排在**建会话之前**（2026-08-12 同步小程序需求）：确定发得出去，才值得去占一条会话。
-      // 反过来的话，余额见底的用户每点一次发送就在服务端多留一条空的「新对话」——
-      // 每个用户上限 20 条，几次就占满了，还得自己去列表里删。
+      // 星币校验 + 建会话（带全局蒙层），顺序与理由见 [_prepareSend]。
       // 拦下时草稿与待发图原样保留（这里还没清），下面 [_sendChat] 就不必再查一遍。
-      if (!await _guardAiDialogue() || !mounted) {
+      if (!await _prepareSend()) {
         return;
-      }
-      // 先把会话建出来，**再清输入框**。顺序不能反：建会话可能失败（网络异常 / 20013 会话已达上限），
-      // 先清的话用户打的字和选的图就白没了 —— 而「首次发送才建会话」之后，每轮新对话的第一条都走这。
-      if (_sessionId.isEmpty) {
-        await _createSession();
-        if (!mounted || _sessionId.isEmpty) {
-          return; // 错误提示已由 _createSession 弹出；草稿原样留着，用户可直接重发
-        }
       }
       setState(() {
         _input.clear();
@@ -3740,6 +3782,19 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
                       ),
                       decoration: InputDecoration(
                         isDense: true,
+                        // ⚠️ **必须显式关掉 filled**（2026-08-31 修「输入框左右发灰」）：
+                        // 全局 `AppTheme.inputDecorationTheme` 给了
+                        // `filled: true` + `fillColor: 白 0.72`（那是给表单页的圆角输入框用的）。
+                        // 不关的话，TextField 会在输入行**中间自己画一块 72% 白**，
+                        // 而输入行本身只有 34% 白（对齐小程序 `.input-line`），
+                        // 于是左边 12px 和右边靠圆钮那一带明显偏灰、中间偏白 ——
+                        // 而且边框是 InputBorder.none，那块填充是**直角矩形**，
+                        // 扣在 999 圆角的胶囊里更扎眼。
+                        // hoverColor 一并置透明：InputDecorator 的悬浮层同理会盖一层。
+                        // 与 `auth_widgets.dart` 的胶囊输入框同一套写法（那边早就踩过）。
+                        filled: false,
+                        fillColor: Colors.transparent,
+                        hoverColor: Colors.transparent,
                         contentPadding: const EdgeInsets.symmetric(vertical: 10),
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
@@ -4122,17 +4177,12 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
         for (final item in _pending)
           if (item.url.isNotEmpty) _AiImage(url: item.url, pad: item.pad),
       ];
-      // 星币校验排在建会话之前，理由同 [_onSendTap]。
-      if (!await _guardAiDialogue() || !mounted) {
+      // 星币校验 + 建会话（带全局蒙层），顺序与理由见 [_prepareSend]。
+      // ⚠️ 拦下时要 restore()：语音这条路上「用户打的字」是识别结果，
+      // 不回填输入框的话，用户刚说的那句话就凭空没了、还得重说一遍。
+      if (!await _prepareSend()) {
         restore();
         return;
-      }
-      if (_sessionId.isEmpty) {
-        await _createSession();
-        if (!mounted || _sessionId.isEmpty) {
-          restore();
-          return;
-        }
       }
       setState(() => _pending.clear());
       await _sendChat(text, images: images, dialogueChecked: true);
