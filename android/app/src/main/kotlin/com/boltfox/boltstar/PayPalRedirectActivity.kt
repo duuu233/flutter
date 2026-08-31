@@ -18,7 +18,11 @@ import android.os.Bundle
  *   → 本 Activity
  * ```
  *
- * ⚠️ **为什么中间要垫一个 https 页，而不是让 PayPal 直接 302 到 boltstar://**：
+ * ⚠️ **为什么中间要垫一个 https 页，而不是让 PayPal 直接 302 到自定义 scheme**：
+ *（⚠️ 踩过的坑：**Kotlin 的块注释可以嵌套**。原文这里写的是 “boltstar 冒号双斜杠” 紧跟
+ *  两个星号做加粗，那串字符里恰好含有「斜杠+星号」——等于在注释中间又开了一层嵌套注释，
+ *  本段的结束标记只关掉了内层，外层一路开到文件末尾，编译期报 Unclosed comment，
+ *  并连带把 PayPalRedirect 报成 Unresolved reference。注释里别让斜杠和星号相邻。）
  * ① PayPal 对 return_url 按 URI 校验，非 http(s) 收不收没有保证，拒了的话 `setCreatePay`
  *    当场失败、连授权页都拿不到；② 更要命的是 Chrome 会拦掉「**服务端 302** 直跳自定义
  *    scheme」这种非用户手势的外跳 —— 表现是用户停在空白页、什么都不发生且不报错。
