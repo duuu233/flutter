@@ -135,17 +135,31 @@ class AppLoadingDialog {
   /// 偶现闪退的一类根源）。
   static Route<void>? _route;
 
+  /// 当前 loading 的文案。做成可监听的，是为了**多阶段流程能原地换字**：
+  /// 例如星币购买是「正在下单… → 正在拉起支付…」两段，若靠 hide + show 换文案，
+  /// 会看到蒙层一闪；这里改成只通知这一个 Text 重建。
+  static final ValueNotifier<String?> _text = ValueNotifier<String?>(null);
+
+  /// 换掉当前 loading 的文案。loading 不在展示时什么都不做（不会凭空弹一个）。
+  static void update(String text) {
+    if (_route == null) {
+      return;
+    }
+    _text.value = text;
+  }
+
   static void show(BuildContext context, [String? text]) {
     if (_route != null) {
       return; // 已有 loading 在展示（约定成对调用，不该发生），不重复叠加。
     }
+    _text.value = text;
     final route = DialogRoute<void>(
       context: context,
       barrierDismissible: false,
       // 默认的 barrier 是 black54（54% 纯黑），整屏压成一片黑、把中间的转圈图标闷在里面。
       // 改成很淡的一层：既能挡住误触，又不至于糊掉页面。
       barrierColor: Colors.black.withValues(alpha: 0.18),
-      builder: (_) => _LoadingBox(text: text),
+      builder: (_) => const _LoadingBox(),
     );
     _route = route;
     Navigator.of(context, rootNavigator: true).push(route).whenComplete(() {
@@ -178,10 +192,7 @@ class AppLoadingDialog {
 }
 
 class _LoadingBox extends StatelessWidget {
-  const _LoadingBox({required this.text});
-
-  /// 加载文案；null 时在 build 里按当前语言取默认「加载中…」。
-  final String? text;
+  const _LoadingBox();
 
   @override
   Widget build(BuildContext context) {
@@ -214,15 +225,20 @@ class _LoadingBox extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                Text(
-                  text ?? AppL10n.of(context).loading,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 14,
-                    height: 1.4,
-                    fontWeight: FontWeight.w400,
-                    decoration: TextDecoration.none,
+                // 只有这一个 Text 订阅文案：多阶段流程调 [AppLoadingDialog.update]
+                // 换字时不重建路由，蒙层不闪（见 _text 的说明）。
+                ValueListenableBuilder<String?>(
+                  valueListenable: AppLoadingDialog._text,
+                  builder: (context, text, _) => Text(
+                    text ?? AppL10n.of(context).loading,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      height: 1.4,
+                      fontWeight: FontWeight.w400,
+                      decoration: TextDecoration.none,
+                    ),
                   ),
                 ),
               ],

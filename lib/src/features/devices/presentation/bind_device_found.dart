@@ -158,6 +158,13 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
           const SizedBox(height: 12),
           Expanded(
             child: SingleChildScrollView(
+              // ⚠️ 底部留白（2026-08-31）：列表滚到底时，最后一张设备卡会**紧贴**下方
+              // 「立即绑定」按钮——[FigmaScreen] 的 bottom 槽上内边距只有 8，
+              // 加上卡片自带的投影，看起来就是压在按钮上。这里给滚动内容补 16，
+              // 让最后一张能滚到按钮上方留出一指的空档。
+              // ⚠️ 补在**滚动内容**上而不是 Expanded 外面：补在外面会把可视区整体抬高，
+              // 列表短的时候上方会莫名多出一截空白。
+              padding: const EdgeInsets.only(bottom: 16),
               child: Column(
                 children: [
                   for (var i = 0; i < entries.length; i++) ...[

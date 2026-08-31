@@ -168,7 +168,13 @@ class StarCoinApi {
                 money: _toDouble(item['amount']),
                 // 「场景」那一行：description 只是个数量时不再重复画一遍（右边已经写着数量）
                 scene: _isQuantityOnlyDescription(description) ? '' : description,
+                // ⚠️ 数值 + 「已转文字」两个都留着（swagger `ClientUserAccountTradeApiOut`
+                // 同时给了 payType/payTypeMsg、orderState/orderStateMsg）：
+                // **后端忽略 language 参数，两个 Msg 恒为中文**，英/日/繁用户会直接看到
+                // 「已完成」「微信支付」。展示一律走 AppL10n 的本地化，原文只作兜底。
+                payType: _toInt(item['payType']),
                 channel: _toText(item['payTypeMsg']),
+                orderState: _toInt(item['orderState']),
                 status: _toText(item['orderStateMsg']),
               );
             },
@@ -549,7 +555,9 @@ class StarRecord {
     required this.gift,
     required this.money,
     required this.scene,
+    required this.payType,
     required this.channel,
+    required this.orderState,
     required this.status,
   });
 
@@ -558,7 +566,20 @@ class StarRecord {
   final int gift;
   final double money;
   final String scene;
+
+  /// 支付方式的**数值**（swagger：1=微信支付 2=IOS内购 3=payPal），展示走
+  /// `AppL10n.starPayChannel`。
+  final int payType;
+
+  /// 支付方式的后端「已转文字」。⚠️ 恒为中文（后端忽略 language），仅作兜底。
   final String channel;
+
+  /// 订单状态的**数值**（swagger `orderState`，⚠️ **枚举后端未给**）。
+  /// 因此本地化实际按 [status] 的中文原文查表，这个数值先留着，后端给出枚举后改按它判。
+  final int orderState;
+
+  /// 订单状态的后端「已转文字」，如「已完成」。⚠️ 恒为中文，展示走
+  /// `AppL10n.starRecordStatus`，这里只作兜底。
   final String status;
 }
 

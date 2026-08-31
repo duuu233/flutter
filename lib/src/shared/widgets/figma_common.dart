@@ -338,6 +338,7 @@ class FigmaPrimaryButton extends StatelessWidget {
     this.onPressed,
     this.height = 56,
     this.loading = false,
+    this.fontSize,
   });
 
   final String label;
@@ -345,7 +346,14 @@ class FigmaPrimaryButton extends StatelessWidget {
   final double height;
 
   /// 提交中：显示白色转圈代替文字（调用方一般同时把 onPressed 置 null 防重复提交）。
+  ///
+  /// ⚠️ 长流程（要跳出 App、要轮询的那种）别用这个，改用全局
+  /// `AppLoadingDialog`：按钮上的小转圈既盖不住页面其它可点元素，也说不清「在等什么」。
   final bool loading;
+
+  /// 覆盖标签字号（默认走 [FigmaTextStyles.primaryButton] 的 17）。
+  /// 一行放两颗按钮、或英文标签特别长的页面可以调小一档。
+  final double? fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -391,10 +399,22 @@ class FigmaPrimaryButton extends StatelessWidget {
                         color: Colors.white,
                       ),
                     )
-                  : Text(
-                      label,
-                      style: FigmaTextStyles.primaryButton.copyWith(
-                        color: enabled ? Colors.white : const Color(0x992A2B2B),
+                  // 左右各留 14 再 scaleDown：英文标签（"Cancel this payment" 这种）
+                  // 在半宽按钮里放不下时**整体缩小**而不是被裁掉半个词；放得下则一像素不动。
+                  : Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          label,
+                          maxLines: 1,
+                          style: FigmaTextStyles.primaryButton.copyWith(
+                            color: enabled
+                                ? Colors.white
+                                : const Color(0x992A2B2B),
+                            fontSize: fontSize,
+                          ),
+                        ),
                       ),
                     ),
             ),
@@ -411,11 +431,15 @@ class FigmaSecondaryButton extends StatelessWidget {
     required this.label,
     this.onPressed,
     this.height = 56,
+    this.fontSize,
   });
 
   final String label;
   final VoidCallback? onPressed;
   final double height;
+
+  /// 覆盖标签字号（默认走 [FigmaTextStyles.secondaryButton]）。与主按钮同理。
+  final double? fontSize;
 
   @override
   Widget build(BuildContext context) {
@@ -436,7 +460,20 @@ class FigmaSecondaryButton extends StatelessWidget {
             borderRadius: radius,
             onTap: onPressed,
             child: Center(
-              child: Text(label, style: FigmaTextStyles.secondaryButton),
+              // 与主按钮同一套：放不下整体缩小，不裁词（见 FigmaPrimaryButton）。
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    style: FigmaTextStyles.secondaryButton.copyWith(
+                      fontSize: fontSize,
+                    ),
+                  ),
+                ),
+              ),
             ),
           ),
         ),

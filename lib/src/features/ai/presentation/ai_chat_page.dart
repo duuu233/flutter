@@ -278,6 +278,16 @@ const double _kToolFontSize = 12;
 /// 胶囊左右内边距：文字不要贴着圆角边（小程序那边靠 grid 的余量带出同样的呼吸感）。
 const double _kToolPadding = 8;
 
+/// 胶囊里图标的边长、图标与文字之间的间距、比例格右侧那枚箭头的边长。
+/// 抽成常量是因为 `_resolveToolFontSizes` 要拿它们**算每格能给文字多少宽度**，
+/// 写死在各个 builder 里就没法算了。
+const double _kToolIconSize = 13.5;
+const double _kToolIconGap = 4.5;
+const double _kToolChevronSize = 11;
+
+/// 一键生图那格的图标外框（魔杖/关闭切换时宽度不变，见 `_buildGenerateButton`）。
+const double _kToolGenerateIconSize = 18;
+
 /// 输入卡的外边距与内边距。浮层要按输入卡的**内容区**对齐，所以两边共用这两个值。
 const double _kInputCardMargin = 16;
 const double _kInputCardPadding = 10;
@@ -3329,42 +3339,139 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   /// 后两格文字更长，等分会挤成两行。
   Widget _buildQuickTools() {
     final l10n = AppL10n.of(context);
-    return Row(
-      children: [
-        Expanded(
-          flex: _kToolFlex[0],
-          child: _buildQuickTool(
-            icon: 'assets/images/ai-album-outline.png',
-            label: l10n.aiAlbum,
-            onTap: () => _pickImages(camera: false),
-          ),
-        ),
-        const SizedBox(width: _kToolGap),
-        Expanded(
-          flex: _kToolFlex[1],
-          child: _buildQuickTool(
-            icon: 'assets/images/ai-camera-outline.png',
-            label: l10n.aiCamera,
-            onTap: () => _pickImages(camera: true),
-          ),
-        ),
-        const SizedBox(width: _kToolGap),
-        Expanded(flex: _kToolFlex[2], child: _buildOrientationButton()),
-        const SizedBox(width: _kToolGap),
-        Expanded(flex: _kToolFlex[3], child: _buildGenerateButton()),
-      ],
+    // ⚠️ 必须先量宽度再决定字号（2026-08-31 需求 6），理由见 [_resolveToolFontSizes]。
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final font = _resolveToolFontSizes(constraints.maxWidth, l10n);
+        return Row(
+          children: [
+            Expanded(
+              flex: _kToolFlex[0],
+              child: _buildQuickTool(
+                icon: 'assets/images/ai-album-outline.png',
+                label: l10n.aiAlbum,
+                fontSize: font.compact,
+                onTap: () => _pickImages(camera: false),
+              ),
+            ),
+            const SizedBox(width: _kToolGap),
+            Expanded(
+              flex: _kToolFlex[1],
+              child: _buildQuickTool(
+                icon: 'assets/images/ai-camera-outline.png',
+                label: l10n.aiCamera,
+                fontSize: font.compact,
+                onTap: () => _pickImages(camera: true),
+              ),
+            ),
+            const SizedBox(width: _kToolGap),
+            Expanded(
+              flex: _kToolFlex[2],
+              child: _buildOrientationButton(font.compact),
+            ),
+            const SizedBox(width: _kToolGap),
+            Expanded(
+              flex: _kToolFlex[3],
+              child: _buildGenerateButton(font.generate),
+            ),
+          ],
+        );
+      },
     );
+  }
+
+  /// 量一段文字在给定字号下的宽度（单行、不换行）。
+  double _measureToolLabel(String text, double fontSize, FontWeight? weight) {
+    final painter = TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(fontSize: fontSize, fontWeight: weight),
+      ),
+      maxLines: 1,
+      textDirection: Directionality.of(context),
+    )..layout();
+    return painter.width;
+  }
+
+  /// 四个工具胶囊的字号：**前三个（相册/拍照/比例）共用一个**，一键生图大一号。
+  ///
+  /// ⚠️ 这是 2026-08-31 需求 6 的正解，只调 [_kToolFontSize] 是修不好的。
+  /// 原来四个格子各自套 `FittedBox(scaleDown)` **独立缩放**：格宽按 1:1:1.35:1.75 分死，
+  /// 而四个词长短不一（Album/Camera/Portrait/Generate），于是每格缩出不同比例——
+  /// 英文下实测约 9.8 / 7.9 / 8.9 / 12，四个字号全不一样，看着就像做坏了。
+  ///
+  /// 现在改成：先按格宽算出每格**能给文字多少宽度**，量出三个词在基准字号下的实际宽度，
+  /// 取三者里最紧的那个比例作为**共用缩放**，三个词于是必然同号。
+  /// 一键生图按「共用字号 + 1」给（需求原话「大一号就行」），它那格最宽通常放得下；
+  /// 万一放不下再按自己的可用宽度收回来，绝不撑破。
+  ///
+  /// ⚠️ 中文/日文词短，三格都放得下 → 缩放为 1，字号仍是 [_kToolFontSize]，
+  /// 与改动前逐像素相同，只有英文那版会真的缩。
+  ({double compact, double generate}) _resolveToolFontSizes(
+    double totalWidth,
+    AppL10n l10n,
+  ) {
+    if (!totalWidth.isFinite || totalWidth <= 0) {
+      return (compact: _kToolFontSize, generate: _kToolFontSize);
+    }
+    final flexTotal = _kToolFlex.reduce((a, b) => a + b);
+    final usable = totalWidth - _kToolGap * (_kToolFlex.length - 1);
+    double cellWidth(int i) => usable * _kToolFlex[i] / flexTotal;
+
+    // 每格留给文字的宽度 = 格宽 − 左右内边距 − 图标 − 图标与文字的间距
+    //（比例格右侧还多一枚箭头和一个间距）。
+    const double plainOverhead =
+        _kToolPadding * 2 + _kToolIconSize + _kToolIconGap;
+    final available = <double>[
+      cellWidth(0) - plainOverhead,
+      cellWidth(1) - plainOverhead,
+      cellWidth(2) - plainOverhead - _kToolIconGap - _kToolChevronSize,
+    ];
+    final labels = <String>[
+      l10n.aiAlbum,
+      l10n.aiCamera,
+      l10n.aiOrientationLabel(_orientation),
+    ];
+
+    var scale = 1.0;
+    for (var i = 0; i < labels.length; i++) {
+      final width = _measureToolLabel(labels[i], _kToolFontSize, null);
+      if (width > 0 && available[i] > 0) {
+        final fit = available[i] / width;
+        if (fit < scale) {
+          scale = fit;
+        }
+      }
+    }
+    final compact = _kToolFontSize * (scale > 1 ? 1 : scale);
+
+    // 「大一号」：比前三个大 1pt。放不下就按自己那格的可用宽度收回来。
+    final generateAvailable = cellWidth(3) -
+        _kToolPadding * 2 -
+        _kToolGenerateIconSize -
+        _kToolIconGap;
+    var generate = compact + 1;
+    final generateWidth =
+        _measureToolLabel(l10n.aiGenerateImage, generate, FontWeight.w500);
+    if (generateWidth > generateAvailable && generateWidth > 0) {
+      generate = generate * (generateAvailable / generateWidth);
+    }
+    // 收回来之后也不该比前三个还小——那就不叫「大一号」了。
+    return (compact: compact, generate: generate < compact ? compact : generate);
   }
 
   /// 工具胶囊里的文字。
   ///
-  /// `BoxFit.scaleDown` 是这里的关键：**放不下就整体缩小，而不是截成省略号**。
-  /// 原来是 `Flexible + ellipsis`，中文正好、英文就被截成「Gener…」——四个格子宽度是按
-  /// 1:1:1.35:1.75 分死的，靠字号一刀切不可能同时照顾四个语种。scaleDown 只在放不下时
-  /// 才缩，中文那版一个像素都不会变。
+  /// [fontSize] 由 [_resolveToolFontSizes] 按格宽统一算好传进来 —— **前三格必然同号**，
+  /// 一键生图大一号。不要在这里读 [_kToolFontSize]：那是基准值，不是最终值。
+  ///
+  /// 外面仍留 `BoxFit.scaleDown` 作**兜底**（系统大字号、异形屏等量算之外的情况）：
+  /// 字号已按可用宽度算过，正常情况下它不会触发，一个像素都不会缩。
+  /// 早年这里是 `Flexible + ellipsis`，英文会被截成「Gener…」，故一直不用省略号。
   Widget _buildToolLabel(
     String text, {
     required Color color,
+    required double fontSize,
     FontWeight? weight,
   }) {
     return Flexible(
@@ -3376,7 +3483,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
           maxLines: 1,
           style: TextStyle(
             color: color,
-            fontSize: _kToolFontSize,
+            fontSize: fontSize,
             fontWeight: weight,
           ),
         ),
@@ -3388,6 +3495,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   Widget _buildQuickTool({
     required String icon,
     required String label,
+    required double fontSize,
     required VoidCallback onTap,
   }) {
     return GestureDetector(
@@ -3404,9 +3512,9 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AiIcon(icon, size: 13.5),
-            const SizedBox(width: 4.5),
-            _buildToolLabel(label, color: _kToolText),
+            AiIcon(icon, size: _kToolIconSize),
+            const SizedBox(width: _kToolIconGap),
+            _buildToolLabel(label, color: _kToolText, fontSize: fontSize),
           ],
         ),
       ),
@@ -3414,7 +3522,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   }
 
   /// 比例按钮：显示当前比例，点开/收起比例浮层。展开时整颗按钮转橙描边态。
-  Widget _buildOrientationButton() {
+  Widget _buildOrientationButton(double fontSize) {
     final active = _showOrientationPicker;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -3436,15 +3544,16 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
           children: [
             AiIcon(
               _orientationActiveIcon(_orientation),
-              size: 13.5,
+              size: _kToolIconSize,
               opacity: 0.75,
             ),
-            const SizedBox(width: 4.5),
+            const SizedBox(width: _kToolIconGap),
             _buildToolLabel(
               AppL10n.of(context).aiOrientationLabel(_orientation),
               color: active ? kAiOrange : _kToolText,
+              fontSize: fontSize,
             ),
-            const SizedBox(width: 4.5),
+            const SizedBox(width: _kToolIconGap),
             // 箭头/关闭都用等大的方图：切换时按钮里的内容宽度不变，
             // 也不会像 ›/× 那样因字形基线不同而整体偏上偏左。
             // 2026-07-31 由 17 收到 11（小程序 34rpx → 22rpx）：原尺寸压过了左边的比例图标。
@@ -3452,7 +3561,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
               active
                   ? 'assets/images/ai-close-orange.png'
                   : 'assets/images/ai-chevron-right.png',
-              size: 11,
+              size: _kToolChevronSize,
             ),
           ],
         ),
@@ -3461,7 +3570,7 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   }
 
   /// 一键生图按钮：默认是橙色渐变实心，展开风格浮层时转成白底橙描边。
-  Widget _buildGenerateButton() {
+  Widget _buildGenerateButton(double fontSize) {
     final active = _showStylePicker;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -3494,18 +3603,22 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
             // 外层固定 18，魔杖/关闭切换不改宽度；× 的图源四周留白多（笔画只占 64%），
             // 所以关闭态把图放大到 18，才和魔杖看着一样大。
             SizedBox(
-              width: 18,
-              height: 18,
+              width: _kToolGenerateIconSize,
+              height: _kToolGenerateIconSize,
               child: Center(
                 child: active
-                    ? const AiIcon('assets/images/ai-close-orange.png', size: 18)
+                    ? const AiIcon(
+                        'assets/images/ai-close-orange.png',
+                        size: _kToolGenerateIconSize,
+                      )
                     : const AiIcon('assets/images/ai-magic-white.png', size: 14.5),
               ),
             ),
-            const SizedBox(width: 4.5),
+            const SizedBox(width: _kToolIconGap),
             _buildToolLabel(
               AppL10n.of(context).aiGenerateImage,
               color: active ? kAiOrange : Colors.white,
+              fontSize: fontSize,
               weight: FontWeight.w500,
             ),
           ],

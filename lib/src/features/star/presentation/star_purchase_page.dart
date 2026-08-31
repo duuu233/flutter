@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../network/api_exception.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_dialog.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../star_coin_api.dart';
 import '../star_purchase.dart';
@@ -43,9 +44,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     with WidgetsBindingObserver {
   /// 建单/拉起支付进行中（按钮转圈、不许再点）。
   bool _busy = false;
-
-  /// 当前阶段文案（null = 不显示）。这条链路最长约 10s，中间没反馈用户会以为卡死。
-  String? _stageText;
 
   /// 已拉起、等用户在 PayPal 侧完成授权的那一单。非 null = 页面处于「等待授权」态。
   StarPendingPayment? _pending;
@@ -90,33 +88,33 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     }
     final package = widget.package;
     final l10n = AppL10n.of(context);
-    setState(() {
-      _busy = true;
-      _stageText = l10n.starBuyStageOrder;
-    });
+    setState(() => _busy = true);
 
-    // 基线读失败不阻断购买（只是事后少一个增量数字），也不弹错。
-    _baseline = await StarPurchase.readBaselineBalance();
-    if (!mounted) {
-      return;
-    }
-
+    // 需求 8（2026-08-31）：**全局蒙层 loading，不在按钮上转圈**。
+    // 这条链路是「读余额基线 → 建单 → 创建支付 → 跳出 App」，最长约 10s 且中途会离开
+    // 本页；按钮上的小转圈既盖不住页面其它可点元素（用户能接着点返回/换档），
+    // 也说不清此刻在等什么。阶段文案改由蒙层承担（[AppLoadingDialog.update] 原地换字，不闪）。
+    AppLoadingDialog.show(context, l10n.starBuyStageOrder);
     try {
+      // 基线读失败不阻断购买（只是事后少一个增量数字），也不弹错。
+      _baseline = await StarPurchase.readBaselineBalance();
+      if (!mounted) {
+        return;
+      }
       final pending = await StarPurchase.start(
         package: package,
         payType: StarPayType.forCurrentPlatform,
         onStage: (stage) {
-          if (!mounted) {
-            return;
+          final text = switch (stage) {
+            StarPurchaseStage.order => l10n.starBuyStageOrder,
+            StarPurchaseStage.pay => l10n.starBuyStagePay,
+            // 已跳出到 PayPal：蒙层这时会被 finally 收掉，没有文案可换。
+            StarPurchaseStage.approving => null,
+            StarPurchaseStage.confirming => l10n.starBuyStageConfirm,
+          };
+          if (text != null) {
+            AppLoadingDialog.update(text);
           }
-          setState(() {
-            _stageText = switch (stage) {
-              StarPurchaseStage.order => l10n.starBuyStageOrder,
-              StarPurchaseStage.pay => l10n.starBuyStagePay,
-              StarPurchaseStage.approving => null,
-              StarPurchaseStage.confirming => l10n.starBuyStageConfirm,
-            };
-          });
         },
       );
       if (!mounted) {
@@ -125,17 +123,18 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       setState(() {
         _pending = pending;
         _busy = false;
-        _stageText = null;
       });
     } catch (error) {
+      // 先收蒙层再弹提示，否则 toast 会被压在蒙层下面。
+      // hide 是幂等的（见 AppLoadingDialog.hideIfAny），下面 finally 再调一次无副作用。
+      AppLoadingDialog.hide(context);
       if (!mounted) {
         return;
       }
-      setState(() {
-        _busy = false;
-        _stageText = null;
-      });
+      setState(() => _busy = false);
       AppToast.warn(context, _errorText(error, l10n));
+    } finally {
+      AppLoadingDialog.hide(context);
     }
   }
 
@@ -147,8 +146,8 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     }
     final l10n = AppL10n.of(context);
     // 先占住重入闸再去问原生（resumed 可能连发两次）。这里**故意不 setState**：
-    // 取消的情形下根本不该闪一下「正在确认到账…」，而这一问只是一次 MethodChannel
-    // 往返，期间没有别的东西会触发重建。
+    // 取消的情形下根本不该闪一下蒙层，而这一问只是一次 MethodChannel 往返，
+    // 期间没有别的东西会触发重建。
     _confirming = true;
 
     // 用户在 PayPal 点了取消 → 深链已经把 App 弹回来并留下标记（见 [StarPurchase.consumeCanceled]）。
@@ -159,7 +158,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       }
       setState(() {
         _confirming = false;
-        _stageText = null;
         // 与「放弃本次支付」同样只丢端上的等待态，不动后端那张单（见 [_giveUp]）。
         _pending = null;
       });
@@ -167,22 +165,28 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       return;
     }
     if (!mounted) {
+      _confirming = false;
       return;
     }
-    setState(() {
-      _stageText = l10n.starBuyStageConfirm;
-    });
 
-    final result = await StarPurchase.confirm(
-      pending,
-      baselineBalance: _baseline,
-    );
+    // 到账轮询最长 9.4s，同样走全局蒙层（需求 8）。
+    AppLoadingDialog.show(context, l10n.starBuyStageConfirm);
+    final StarPurchaseResult result;
+    try {
+      result = await StarPurchase.confirm(
+        pending,
+        baselineBalance: _baseline,
+      );
+    } finally {
+      // 结果弹窗必须在蒙层收掉之后再弹，否则被压在下面。
+      AppLoadingDialog.hide(context);
+    }
     if (!mounted) {
+      _confirming = false;
       return;
     }
     setState(() {
       _confirming = false;
-      _stageText = null;
       _pending = null;
     });
 
@@ -224,7 +228,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   void _giveUp() {
     setState(() {
       _pending = null;
-      _stageText = null;
     });
   }
 
@@ -279,7 +282,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       bottom: _BottomBar(
         l10n: l10n,
         payable: payable,
-        stageText: _stageText,
         busy: _busy,
         confirming: _confirming,
         approving: approving,
@@ -293,11 +295,18 @@ class _StarPurchasePageState extends State<StarPurchasePage>
 
 /// 底部操作区。两种形态：未拉起支付时是「立即购买」；已跳出 PayPal 后换成
 /// 「我已完成支付 / 放弃本次支付」——用户回来时该看到的是「怎么继续」，不是再买一次。
+///
+/// ⚠️ 2026-08-31（需求 8）两处改动：
+/// ① **不再画阶段文案**。原来按钮上方有一行「正在下单…/正在拉起支付…」，
+///    现在这些话由全局蒙层 loading 说（见 [_StarPurchasePageState._buy]），
+///    两处都写就成了重复播报，还把按钮往上顶得高低不定。
+/// ② **按钮字号收到 [_kButtonFontSize]**（默认 17 → 15）。英文标签
+///    "Cancel this payment" / "I have paid" 要塞进半宽按钮，17 明显过大；
+///    配合 [FigmaPrimaryButton] 新加的 scaleDown，放不下时整体缩小而不是裁词。
 class _BottomBar extends StatelessWidget {
   const _BottomBar({
     required this.l10n,
     required this.payable,
-    required this.stageText,
     required this.busy,
     required this.confirming,
     required this.approving,
@@ -306,12 +315,15 @@ class _BottomBar extends StatelessWidget {
     required this.onGiveUp,
   });
 
+  /// 本页按钮标签字号。比全站默认（17）小一档：这一页最多同排两颗按钮，
+  /// 且英文标签是全 App 最长的几条之一。
+  static const double _kButtonFontSize = 15;
+
   final AppL10n l10n;
 
   /// 这一端的支付通道接没接（iOS 的 Apple 内购未接 → false，按钮置灰）。
   final bool payable;
 
-  final String? stageText;
   final bool busy;
   final bool confirming;
   final bool approving;
@@ -321,53 +333,45 @@ class _BottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final stage = stageText;
     // 贴底留白补到 30（小程序 `.cta-button` 的 `bottom: 60rpx + safe`）：
     // [FigmaScreen] 的 bottom 槽只给了 12，是全站通用值，不为这一页去改公共组件。
     return Padding(
       padding: const EdgeInsets.only(bottom: 18),
       child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // ⚠️ **不画「应付金额」那一行**（2026-08-28 对齐小程序 confirm 页）：那边底部只有一枚
-        // 「立即购买」，金额由概览卡右上角那个 42rpx 的橙色数字承担。两处都写价钱既重复，
-        // 又会让人以为是两笔（套餐价 vs 应付）。
-        if (stage != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              stage,
-              textAlign: TextAlign.center,
-              style: _BuyStyles.label,
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ⚠️ **不画「应付金额」那一行**（2026-08-28 对齐小程序 confirm 页）：那边底部只有一枚
+          // 「立即购买」，金额由概览卡右上角那个 42rpx 的橙色数字承担。两处都写价钱既重复，
+          // 又会让人以为是两笔（套餐价 vs 应付）。
+          if (approving)
+            Row(
+              children: [
+                Expanded(
+                  child: FigmaSecondaryButton(
+                    label: l10n.starBuyApprovingGiveUp,
+                    fontSize: _kButtonFontSize,
+                    onPressed: confirming ? null : onGiveUp,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FigmaPrimaryButton(
+                    label: l10n.starBuyApprovingDone,
+                    fontSize: _kButtonFontSize,
+                    // ⚠️ 不传 loading：转圈由全局蒙层承担（需求 8）。
+                    onPressed: confirming ? null : onConfirm,
+                  ),
+                ),
+              ],
+            )
+          else
+            FigmaPrimaryButton(
+              label: l10n.starBuyNow,
+              fontSize: _kButtonFontSize,
+              // iOS：通道未接，按钮置灰（原因写在上面那句 [_ApplePendingNote] 里）。
+              onPressed: busy || !payable ? null : onBuy,
             ),
-          ),
-        if (approving)
-          Row(
-            children: [
-              Expanded(
-                child: FigmaSecondaryButton(
-                  label: l10n.starBuyApprovingGiveUp,
-                  onPressed: confirming ? null : onGiveUp,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: FigmaPrimaryButton(
-                  label: l10n.starBuyApprovingDone,
-                  loading: confirming,
-                  onPressed: confirming ? null : onConfirm,
-                ),
-              ),
-            ],
-          )
-        else
-          FigmaPrimaryButton(
-            label: l10n.starBuyNow,
-            loading: busy,
-            // iOS：通道未接，按钮置灰（原因写在上面那句 [_ApplePendingNote] 里）。
-            onPressed: busy || !payable ? null : onBuy,
-          ),
         ],
       ),
     );
@@ -403,33 +407,49 @@ class _SummaryCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ⚠️ 左边一组必须整个包在 [Expanded] 里，价格才真的贴右。
+          //
+          // 2026-08-31 修：原来是 `Flexible(数字) … Spacer() … 价格`，**两个 flex 子项各占 1**，
+          // 于是剩余空间被**平分**；而 Flexible 是 loose、只取文字自身宽度，分到的那一半
+          // 用不完的部分既不还给 Spacer 也不给别人，就留在行尾——价格因此停在离右边界
+          // 半个空档的位置，和下面「合计获得」那行右对齐的数字对不齐。
+          // 英文版更明显：`Stars` 比「星币」宽，行内自由空间变化后偏移量更扎眼。
+          // 现在左组吃掉全部剩余宽度，价格是唯一的非 flex 尾项，自然落到最右。
           Row(
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
-              Flexible(
-                child: Text(
-                  '${package.tokens}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF2A2D32),
-                    fontSize: 21,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
+              Expanded(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.baseline,
+                  textBaseline: TextBaseline.alphabetic,
+                  children: [
+                    // 数字仍留 Flexible：套餐数很大时先省略号，别把单位挤出屏幕
+                    Flexible(
+                      child: Text(
+                        '${package.tokens}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF2A2D32),
+                          fontSize: 21,
+                          fontWeight: FontWeight.w700,
+                          height: 1,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      l10n.aiTokenUnit,
+                      style: const TextStyle(
+                        color: Color(0xFF7C828A),
+                        fontSize: 15,
+                        height: 1,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 5),
-              Text(
-                l10n.aiTokenUnit,
-                style: const TextStyle(
-                  color: Color(0xFF7C828A),
-                  fontSize: 15,
-                  height: 1,
-                ),
-              ),
-              const Spacer(),
               const SizedBox(width: 12),
               Text(
                 // 符号取后端按商品下发的 currencySymbol，别写死 —— 见 StarPackage.currencySymbol
@@ -672,12 +692,6 @@ class _BuyStyles {
     color: Color(0xFF2A2D32),
     fontSize: 16,
     fontWeight: FontWeight.w600,
-    height: 1,
-  );
-
-  static const TextStyle label = TextStyle(
-    color: Color(0xFF9AA0A8),
-    fontSize: 13,
     height: 1,
   );
 }

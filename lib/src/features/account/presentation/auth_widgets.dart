@@ -351,8 +351,16 @@ class AuthAgreementRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Wrap 而非 Row：EN 文案 "I have read and agree to ..." 在 ≤375dp 宽屏上
-    // 会超出一行，Row 直接横向溢出，Wrap 允许换行居中。
+    // ⚠️ 2026-08-31 需求：**协议行一律不换行**。
+    // 原来用 Wrap 是为了让 EN 文案 "I have read and agree to User Agreement and
+    // Privacy Policy" 在 ≤375dp 窄屏上折行而不横向溢出，但折成两行后这一行会顶到
+    // 屏幕最下沿、把按钮区挤上去，观感很差。
+    // 改法：Row(mainAxisSize.min) 外面套 [FittedBox]`scaleDown` —— 放得下就**原样不缩**
+    // （中/繁/日都放得下，视觉与之前逐像素相同），放不下才整行等比缩到刚好一行。
+    // 之所以缩整行而不是只调字号：圆点、间距、四段文字一起缩才不会错位，
+    // 而只把 fontSize 写小会连带中文那三种语言一起变小（它们本来就不需要）。
+    // ⚠️ FittedBox 会连**点击热区**一起缩（40 高的可点带在 375dp 英文下约剩 34），
+    // 仍远大于原来的 16×16，2026-08-28「勾选老点不中」那条修复不受影响。
     //
     // 2026-08-28「勾选老点不中」：视觉是 16 的小圆点，热区却也只有 16×16（约 2.5mm），
     // 而且这一行贴在屏幕最下方、离系统手势区很近，指头稍偏就落空。
@@ -361,58 +369,62 @@ class AuthAgreementRow extends StatelessWidget {
     // 小程序靠负 margin 抵消热区占位，Flutter 的 Padding 不收负值，这里改为：
     //   ① 圆点右侧的 8 顶掉原来的 7 间距（圆点相对整行只右移约 4，肉眼看不出来）；
     //   ② 纵向多出的 2×12 由调用页把本行前后的间距各减 12 抵消（见 [hitPadding]）。
-    return Wrap(
-      alignment: WrapAlignment.center,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onChanged,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 8,
-              vertical: hitPadding,
-            ),
-            child: Container(
-              width: 16,
-              height: 16,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: agreed ? const Color(0xFFEB5F1B) : Colors.transparent,
-                border: Border.all(
-                  color: agreed
-                      ? const Color(0xFFEB5F1B)
-                      : const Color(0xFF8C9092),
-                ),
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onChanged,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: hitPadding,
               ),
-              child: agreed
-                  ? const Icon(
-                      Icons.check_rounded,
-                      size: 12,
-                      color: Colors.white,
-                    )
-                  : null,
+              child: Container(
+                width: 16,
+                height: 16,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: agreed ? const Color(0xFFEB5F1B) : Colors.transparent,
+                  border: Border.all(
+                    color: agreed
+                        ? const Color(0xFFEB5F1B)
+                        : const Color(0xFF8C9092),
+                  ),
+                ),
+                child: agreed
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 12,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
             ),
           ),
-        ),
-        _tappable(prefixText, AuthTextStyles.agreement, onChanged),
-        _tappable(
-          userAgreementText,
-          AuthTextStyles.agreementLink,
-          onUserAgreement,
-        ),
-        // 「和」不可点：夹在两个链接中间，点它跳哪边都是猜的。热区照补，
-        // 否则这一小段会在 40 高的可点带上留一个洞。
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: hitPadding),
-          child: Text(andText, style: AuthTextStyles.agreement),
-        ),
-        _tappable(
-          privacyPolicyText,
-          AuthTextStyles.agreementLink,
-          onPrivacyPolicy,
-        ),
-      ],
+          _tappable(prefixText, AuthTextStyles.agreement, onChanged),
+          _tappable(
+            userAgreementText,
+            AuthTextStyles.agreementLink,
+            onUserAgreement,
+          ),
+          // 「和」不可点：夹在两个链接中间，点它跳哪边都是猜的。热区照补，
+          // 否则这一小段会在 40 高的可点带上留一个洞。
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: hitPadding),
+            child: Text(andText, style: AuthTextStyles.agreement),
+          ),
+          _tappable(
+            privacyPolicyText,
+            AuthTextStyles.agreementLink,
+            onPrivacyPolicy,
+          ),
+        ],
+      ),
     );
   }
 }

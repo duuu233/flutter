@@ -44,25 +44,102 @@ class OtaUpgradePage extends StatefulWidget {
   State<OtaUpgradePage> createState() => _OtaUpgradePageState();
 }
 
-/// 详情页「固件升级」入口流程（对齐小程序 detail.js `goOtaUpgrade`）：
-/// ① 未连接→自动扫连；② loading 下二次拉取版本(`getUserProductDetail`)；
-/// ③ 已最新/无有效包→提示后返回；④ 有新版→弹「检测到新版本 X，是否升级(稍后/立刻更新)」；
-/// ⑤ 确认「立刻更新」→进 OTA 页并 `autoStart` 自动开始。
+/// 详情页「固件升级」入口流程 —— **逐步对齐小程序 `detail.js` 的 `goOtaUpgrade`
+/// + `enterOtaUpgrade`**（2026-08-31 重排）：
+/// ① loading「检测版本中」下拉最新版本（`getUserProductDetail`）；
+/// ② 已是最新 → 弹「固件升级 / 当前固件已是最新版本 / 知道了」后返回；
+/// ③ **包无效**（缺版本号/下载地址/不是 .bin）→ 弹**具体原因**后返回；
+/// ④ 有新版 → 弹「检测到新版本：X，是否升级（稍后 / 立刻更新）」；
+/// ⑤ 确认「立刻更新」→ 提醒电量 → 未连接则自动扫连 → 进 OTA 页 `autoStart` 自动开始。
+///
+/// ⚠️ **顺序不能再倒过来**（这是本次与小程序对齐的关键一处）：
+/// 原来 App 是「先连设备 → 再查版本」，于是用户点一下「固件升级」，先被拉着等一轮
+/// 十几秒的蓝牙扫连，结果很可能只是为了看一句「当前固件已是最新版本」——
+/// 版本查询根本不需要连接（走的是后端接口）。小程序一直是「先查、有新版且用户确认了才连」。
+///
+/// ⚠️ ③ 这一支 App 侧此前**没有**：包无效被并进了「已是最新」，用户看到的是
+/// 「当前固件已是最新版本」——明明有新版本却说已最新，等于把后端配错的锅扣在用户身上。
 Future<void> startOtaFlow(
   BuildContext context,
   PhotoFrameState state,
   String deviceId,
 ) async {
   final device = state.deviceById(deviceId);
-  // ① 未连接自动扫连（升级需设备在线）。
+
+  // ① loading 下拉取最新版本信息。**不需要蓝牙连接**，所以放在连接之前。
+  AppLoadingDialog.show(context, AppL10n.of(context).otaCheckingVersion);
+  final DeviceItem? updated;
+  try {
+    updated = await state.fetchDeviceFirmwareInfo(device.id);
+  } finally {
+    // 统一 hide 收口（精确移除 + 无 mounted 门控），替换掉盲 pop（历史闪退根源）：
+    // 本流程可叠在详情页其它 loading 之上，show 被静默忽略时盲 pop 会弹掉业务页。
+    AppLoadingDialog.hide(context);
+  }
+  if (!context.mounted) {
+    return;
+  }
+  final target = updated ?? device;
+
+  // 判据与详情页右侧那行**同一处**（[evaluateFirmwareUpdate]）——只有读不到设备当前版本时
+  // 才退回后端的 `isUpdate` 标记。两处各判各的会让用户卡在「详情说有版本可更新 →
+  // 点进来却说已是最新」，永远升不了级。
+  final verdict = evaluateFirmwareUpdate(target);
+  final l10n = AppL10n.of(context);
+
+  // ③ 包无效：如实说原因，别冒充「已是最新」（口径与 OTA 页 `_load` 的 invalidReason 同源）。
+  if (verdict == FirmwareUpdateVerdict.invalid) {
+    await showAppNoticeDialog(
+      context,
+      title: l10n.otaFirmwareUpgrade,
+      message: target.newVersionNo.trim().isEmpty ||
+              target.downloadPath.trim().isEmpty
+          ? l10n.otaInvalidMissingInfo
+          : l10n.otaInvalidBinUrl,
+      icon: Icons.system_update_alt_rounded,
+      confirmLabel: l10n.otaKnow,
+    );
+    return;
+  }
+
+  // ② 已是最新（含「读不到当前版本、后端也没说有更新」）：提示后返回。
+  final canUpgradeNow = verdict == FirmwareUpdateVerdict.update ||
+      (verdict == FirmwareUpdateVerdict.unknown && target.hasFirmwareUpdate);
+  if (!canUpgradeNow) {
+    await showAppNoticeDialog(
+      context,
+      title: l10n.otaFirmwareUpgrade,
+      message: l10n.otaAlreadyLatestContent,
+      icon: Icons.system_update_alt_rounded,
+      confirmLabel: l10n.otaKnow,
+    );
+    return;
+  }
+
+  // ④ 有新版本：确认弹窗（稍后 / 立刻更新）。
+  final confirmed = await showAppConfirmDialog(
+    context,
+    title: l10n.otaFirmwareUpgrade,
+    message: l10n.otaNewVersionConfirm(target.newVersionNo),
+    icon: Icons.system_update_alt_rounded,
+    cancelLabel: l10n.otaLater,
+    confirmLabel: l10n.otaUpdateNow,
+  );
+  if (confirmed != true || !context.mounted) {
+    return;
+  }
+
+  // ⑤「立刻更新」之后才碰设备（对齐小程序 enterOtaUpgrade）。
+  // 先提醒电量，再连接：授权框/提醒要单独出现，不与蒙层同屏（见 PermissionGate）。
+  await showLowBatteryTipIfNeeded(context, state, device.id);
+  if (!context.mounted) {
+    return;
+  }
   if (!state.isDeviceActuallyConnected(device.id)) {
-    // 权限门禁前置于 loading：授权框要单独出现，不与设备操作同屏（见 PermissionGate）。
     if (!await PermissionGate.ensureBleReady(context) || !context.mounted) {
       return;
     }
-    AppLoadingDialog.show(context, AppL10n.of(context).otaConnecting);
-    // 统一 hide 收口（精确移除 + 无 mounted 门控），替换掉盲 pop（历史闪退根源）：
-    // 本流程可叠在详情页其它 loading 之上，show 被静默忽略时盲 pop 会弹掉业务页。
+    AppLoadingDialog.show(context, l10n.otaConnecting);
     final ActionFeedback feedback;
     try {
       feedback = await state.connectDevice(device.id);
@@ -77,56 +154,9 @@ Future<void> startOtaFlow(
       return;
     }
   }
-  // 主动点「固件升级」这一行：本来就连着 / 刚扫连上都要提醒一次电量
-  // （对齐小程序 detail.js `enterOtaUpgrade` 走的 ensureConnectedForAction，
-  //  2026-08-27 补齐 08-21 那轮遗留的入口）。位置在版本 loading 之前，不与蒙层抢屏。
-  await showLowBatteryTipIfNeeded(context, state, device.id);
   if (!context.mounted) {
     return;
   }
-  // ② loading 下二次拉取最新版本信息。
-  AppLoadingDialog.show(context, AppL10n.of(context).otaCheckingVersion);
-  final DeviceItem? updated;
-  try {
-    updated = await state.fetchDeviceFirmwareInfo(device.id);
-  } finally {
-    AppLoadingDialog.hide(context);
-  }
-  if (!context.mounted) {
-    return;
-  }
-  final target = updated ?? device;
-  // ③ 已是最新 / 无有效可升级包：提示后返回。
-  //
-  // 2026-08-12（两端同源）：判据与详情页右侧那行**同一处**（[evaluateFirmwareUpdate]）——
-  // 只有读不到设备当前版本时才退回后端的 `isUpdate` 标记。两处各判各的会让用户卡在
-  // 「详情说有版本可更新 → 点进来却说已是最新」，永远升不了级。
-  final verdict = evaluateFirmwareUpdate(target);
-  final canUpgradeNow = verdict == FirmwareUpdateVerdict.update ||
-      (verdict == FirmwareUpdateVerdict.unknown && target.hasFirmwareUpdate);
-  if (!canUpgradeNow) {
-    await showAppNoticeDialog(
-      context,
-      title: AppL10n.of(context).otaFirmwareUpgrade,
-      message: AppL10n.of(context).otaAlreadyLatestContent,
-      icon: Icons.system_update_alt_rounded,
-      confirmLabel: AppL10n.of(context).otaKnow,
-    );
-    return;
-  }
-  // ④ 有新版本：确认弹窗（稍后 / 立刻更新）。
-  final confirmed = await showAppConfirmDialog(
-    context,
-    title: AppL10n.of(context).otaFirmwareUpgrade,
-    message: AppL10n.of(context).otaNewVersionConfirm(target.newVersionNo),
-    icon: Icons.system_update_alt_rounded,
-    cancelLabel: AppL10n.of(context).otaLater,
-    confirmLabel: AppL10n.of(context).otaUpdateNow,
-  );
-  if (confirmed != true || !context.mounted) {
-    return;
-  }
-  // ⑤ 进 OTA 页并自动开始升级。
   await Navigator.of(context).push<void>(
     AppPageRoute(
       builder: (_) => OtaUpgradePage(
@@ -164,15 +194,26 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   /// 一次性消费：此后本页的手动「连接并升级 / 重新升级」照常各弹各的。
   late bool _lowBatteryTipDoneByEntry = widget.autoStart;
 
-  // 设备名/状态文案初值留空，展示时在 build 里按当前语言兜底
+  // 文案初值留空，展示时在 build 里按当前语言兜底
   //（字段初始化处没有 context，硬编码中文会绕过 i18n）。
-  String _deviceName = '';
-  String _currentVersion = '--';
+
+  /// 目标版本号。既进 [_buildPackage] 做刷机前预检，也是「发现新版本」那屏的副文案。
   String _latestVersion = '--';
-  String _packageSizeText = '--';
-  String _statusText = '';
-  String _errorMessage = '';
-  List<String> _releaseNotes = const [];
+
+  /// 大标题 / 副文案 —— 与小程序 `ota.js` 的 `statusTitle` / `statusDesc` **一一对应**。
+  ///
+  /// 刻意做成「每次状态切换显式赋值」而不是从 [_stage] 推导：ota.js 就是这么写的，
+  /// 逐条对着那边核最省事；推导版一旦漏一个分支，页面会停在上一屏的文案上，很难发现。
+  String _statusTitle = '';
+  String _statusDesc = '';
+
+  /// 当前协议阶段（[OtaProgress.phase]），决定进行中那屏的大标题三段切换
+  /// （下载中 / 传输中 / 升级中，见 [_stageTitle]）。
+  String _phase = '';
+
+  /// 这次失败是**升级过程中**出的（→ 主按钮「重新升级」），还是**版本检查阶段**出的
+  /// （→「重新检查」）。对齐 ota.js：两种失败给的补救动作不是一回事。
+  bool _failedDuringUpgrade = false;
 
   bool _hasPackage = false; // 有有效可升级包（后端更新 + .bin 地址）
   String _downloadPath = '';
@@ -208,32 +249,24 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   bool get _connected =>
       widget.state.isDeviceActuallyConnected(widget.deviceId);
 
-  static String _formatSize(int bytes) {
-    if (bytes >= 1024 * 1024) {
-      return '${(bytes / 1024 / 1024).toStringAsFixed(1)}MB';
-    }
-    if (bytes >= 1024) {
-      return '${(bytes / 1024).round()}KB';
-    }
-    return '${bytes}B';
-  }
-
   Future<void> _load() async {
     final id = _deviceId;
     if (id == null) {
       final l10n = AppL10n.of(context);
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = l10n.otaDeviceNotFound;
-        _errorMessage = l10n.otaMissingDeviceId;
+        _failedDuringUpgrade = false; // 检查阶段失败 → 主按钮是「重新检查」
+        _statusTitle = l10n.otaDeviceNotFound;
+        _statusDesc = l10n.otaMissingDeviceId;
       });
       return;
     }
 
     setState(() {
       _stage = _OtaStage.checking;
-      _statusText = AppL10n.of(context).otaChecking;
-      _errorMessage = '';
+      _statusTitle = AppL10n.of(context).otaCheckingVersion;
+      _statusDesc = AppL10n.of(context).otaCheckingFirmware;
+      _phase = '';
       _progress = 0;
       _progressText = '';
     });
@@ -248,9 +281,9 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     } catch (_) {
       setState(() {
         _stage = _OtaStage.failed;
-        _deviceName = l10n.otaDefaultDeviceName;
-        _statusText = l10n.otaDeviceNotFound;
-        _errorMessage = l10n.otaMissingDeviceInfo;
+        _failedDuringUpgrade = false;
+        _statusTitle = l10n.otaDeviceNotFound;
+        _statusDesc = l10n.otaMissingDeviceInfo;
       });
       return;
     }
@@ -279,36 +312,39 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     // 先渲染一帧「发现新版本 + 可点的主按钮」再切进行中，那一帧就是用户看到的按钮闪动。
     final autoStarting = widget.autoStart && hasPackage;
     setState(() {
-      _deviceName = device.name.isEmpty ? l10n.otaDefaultDeviceName : device.name;
-      _currentVersion = currentVersion.isEmpty ? '--' : currentVersion;
       _latestVersion = latestVersion.isEmpty ? '--' : latestVersion;
       _hasPackage = hasPackage;
       _downloadPath = device.downloadPath;
       _sizeBytes = device.firmwareSize;
-      _packageSizeText = hasPackage
-          ? (device.firmwareSize > 0
-              ? _formatSize(device.firmwareSize)
-              : l10n.otaConfirmAfterDownload)
-          : '--';
+      _failedDuringUpgrade = false;
 
       if (packageInvalid) {
+        // ota.js：screenStatus 'fail' / '无法升级' / errorMessage（无则「固件包无效…」）
         _stage = _OtaStage.invalid;
-        _statusText = l10n.otaCannotUpgrade;
-        _errorMessage = invalidReason;
-        _releaseNotes = const [];
+        _statusTitle = l10n.otaCannotUpgrade;
+        _statusDesc =
+            invalidReason.isEmpty ? l10n.otaInvalidPackageDesc : invalidReason;
       } else if (hasPackage) {
+        // ota.js：screenStatus 'ready' / '发现新版本' / 副文案就是版本号本身，
+        // 未连接时补一句「（将先连接电子纸设备）」——按钮那时是「连接并升级」。
         _stage = autoStarting ? _OtaStage.upgrading : _OtaStage.available;
-        _statusText = autoStarting
-            ? l10n.otaUpgrading
-            : (_connected ? l10n.otaNewVersionFound : l10n.otaDeviceNotConnected);
-        _errorMessage = (autoStarting || _connected) ? '' : l10n.otaConnectFirstHint;
-        _progressText = autoStarting ? l10n.otaPreparingUpgrade : '';
-        _releaseNotes = [l10n.otaNewVersionNote(latestVersion)];
+        if (autoStarting) {
+          _phase = '';
+          _statusTitle = l10n.otaPreparingUpgrade;
+          _statusDesc = l10n.otaPreparingDesc;
+          _progressText = '';
+        } else {
+          _statusTitle = l10n.otaNewVersionFound;
+          _statusDesc = _connected
+              ? _latestVersion
+              : l10n.otaReadyWillConnect(_latestVersion);
+          _progressText = '';
+        }
       } else {
+        // ota.js：screenStatus 'success' / '已是最新版本' / '当前固件已是最新，无需升级'
         _stage = _OtaStage.latest;
-        _statusText = l10n.otaUpToDate;
-        _errorMessage = '';
-        _releaseNotes = const [];
+        _statusTitle = l10n.otaLatestTitle;
+        _statusDesc = l10n.otaLatestDesc;
       }
     });
     // 详情页确认「立刻更新」进入(auto=1)：包就绪即自动开始。
@@ -321,9 +357,10 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
           debugPrint('[OTA] 自动开始升级抛错：$error');
           if (mounted) {
             setState(() {
-              _stage = _OtaStage.available;
-              _statusText = l10n.otaNewVersionFound;
-              _errorMessage = l10n.otaGenericFailure;
+              _stage = _OtaStage.failed;
+              _failedDuringUpgrade = true;
+              _statusTitle = l10n.otaUpgradeFailed;
+              _statusDesc = l10n.otaGenericFailure;
             });
           }
         }),
@@ -342,9 +379,37 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   void _onProgress(OtaProgress p) {
     if (!mounted) return;
     setState(() {
+      _phase = p.phase;
       _progress = p.percent.clamp(0, 100) / 100.0;
       _progressText = p.message;
+      _statusTitle = _stageTitle(AppL10n.of(context));
     });
+  }
+
+  /// 协议阶段 → 进行中那屏的大标题，与小程序 `ota.js` 的 `STAGE_TITLE` **逐值一致**：
+  /// 读包/下载 + 连接握手 → 固件下载中；128 字节头握手 + 窗口化传数据 → 固件传输中；
+  /// 发结束包 + 设备整包校验 → 固件升级中。
+  ///
+  /// ⚠️ 用户就是靠这三段判断「卡在哪一步」：下载中卡住多半是网络，传输中卡住多半是蓝牙，
+  /// 合并成一句「升级中」等于把排障线索抹掉。
+  String _stageTitle(AppL10n l10n) {
+    switch (_phase) {
+      case 'preparing':
+      case 'prepared':
+      case 'connecting':
+      case 'starting':
+        return l10n.otaStageDownloading;
+      case 'header':
+      case 'transferring':
+      case 'retry':
+        return l10n.otaStageTransferring;
+      case 'verifying':
+      case 'done':
+        return l10n.otaStageUpgrading;
+      default:
+        // 还没收到任何进度回调（刚点下去那一瞬）：沿用当前标题，别闪一下空标题。
+        return _statusTitle.isEmpty ? l10n.otaStageDownloading : _statusTitle;
+    }
   }
 
   Future<void> _runUpgrade() async {
@@ -366,19 +431,23 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     if (!_connected) {
       if (!await PermissionGate.ensureBleReady(context) || !mounted) return;
       setState(() {
+        // ota.js：screenStatus 'progress' / '连接电子纸设备中' / '正在连接…请靠近手机…'
         _stage = _OtaStage.upgrading;
-        _statusText = l10n.otaConnecting;
-        _errorMessage = '';
+        _phase = '';
+        _statusTitle = l10n.otaConnectingTitle;
+        _statusDesc = l10n.otaConnectingDesc;
         _progress = 0;
-        _progressText = l10n.otaConnecting;
+        _progressText = '';
       });
       final feedback = await widget.state.connectDevice(widget.deviceId);
       if (!mounted) return;
       if (!feedback.success) {
         setState(() {
+          // ota.js：screenStatus 'fail' / '无法升级' / '未能连接电子纸设备…请重试。'
+          // 仍留在 available：主按钮据此给「连接并升级」，再点一次会重走扫连。
           _stage = _OtaStage.available;
-          _statusText = l10n.otaDeviceNotConnected;
-          _errorMessage = feedback.message.isNotEmpty
+          _statusTitle = l10n.otaCannotUpgrade;
+          _statusDesc = feedback.message.isNotEmpty
               ? feedback.message
               : l10n.otaConnectFailedRetry;
         });
@@ -400,11 +469,14 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     // 会被收尾方误判成「用户新建的连接」而跳过收尾。
     _abortedAt = null;
     setState(() {
+      // ota.js doRunUpgrade：screenStatus 'progress' / '固件下载中' /
+      // '升级中请保持电子纸设备供电、手机屏幕常亮，勿切后台'
       _stage = _OtaStage.upgrading;
-      _statusText = l10n.otaUpgrading;
-      _errorMessage = '';
+      _phase = '';
+      _statusTitle = l10n.otaStageDownloading;
+      _statusDesc = l10n.otaUpgradingDesc;
       _progress = 0;
-      _progressText = l10n.otaPreparingUpgrade;
+      _progressText = '';
     });
 
     // 逐帧联调日志（移植小程序 detail.js「OTA测试」）：设备→APP 的应答全部打印
@@ -462,20 +534,26 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       // 升级结束触觉反馈：整轮要几十秒，用户多半没盯着屏幕。
       HapticFeedback.mediumImpact();
       setState(() {
-        _stage = _OtaStage.success;
-        _statusText = doneText;
         _progress = 1;
         _progressText =
             l10n.otaDoneDetail(doneText, result.size, result.totalPackets);
-        if (!unconfirmed) {
-          // 已确认升级成功：把本地当前版本置为新版本，隐藏可升级包。
-          _currentVersion = _latestVersion;
+        if (unconfirmed) {
+          // ⚠️ 数据发完但没收到设备 0xF3：**按失败画**（ota.js 同口径 —— screenStatus 'fail'、
+          // 主按钮「重新升级」、保留升级包）。谎报成功既误导用户「已经升好了」，
+          // 又把唯一的重试入口拿掉。
+          _stage = _OtaStage.failed;
+          _failedDuringUpgrade = true;
+          _statusTitle = l10n.otaUpgradeFailed;
+          _statusDesc = l10n.otaUnconfirmedDesc;
+        } else {
+          // 已确认升级成功：隐藏可升级包。
+          _stage = _OtaStage.success;
           _hasPackage = false;
           // 设备在 END 校验通过约 2s 后就复位运行新固件，这条 GATT 链路立刻作废。
           // 如实告诉用户「正在重启、稍等几秒再连」——否则他立刻回去点投屏，
           // 会以为是升级把设备刷坏了。
-          _errorMessage = '';
-          _releaseNotes = [l10n.otaDeviceRebootingHint];
+          _statusTitle = l10n.otaSuccessTitle;
+          _statusDesc = l10n.otaSuccessDesc;
         }
       });
       if (!unconfirmed) {
@@ -498,8 +576,9 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       if (!mounted) return;
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = l10n.otaUpgradeFailed;
-        _errorMessage = l10n.otaInterrupted;
+        _failedDuringUpgrade = true;
+        _statusTitle = _failTitle(l10n);
+        _statusDesc = l10n.otaInterrupted;
       });
     } catch (error) {
       final aborted = _aborted;
@@ -512,14 +591,25 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       debugPrint('[OTA] 升级失败: $error');
       setState(() {
         _stage = _OtaStage.failed;
-        _statusText = l10n.otaUpgradeFailed;
-        _errorMessage = aborted
+        _failedDuringUpgrade = true;
+        _statusTitle = _failTitle(l10n);
+        _statusDesc = aborted
             ? l10n.otaInterrupted
             : error is OtaException
             ? error.message
             : l10n.otaGenericFailure;
       });
     }
+  }
+
+  /// 失败屏的大标题（对齐 ota.js：`inDownload ? '固件下载失败' : '升级失败'`）。
+  ///
+  /// 判据是**最后到达过的协议阶段**：还停在读包/下载（preparing/prepared）或压根没进过
+  /// 任何阶段，就是包没拿下来 —— 那是网络问题，不该让用户去查设备。
+  String _failTitle(AppL10n l10n) {
+    final inDownload =
+        _phase.isEmpty || _phase == 'preparing' || _phase == 'prepared';
+    return inDownload ? l10n.otaDownloadFailedTitle : l10n.otaUpgradeFailed;
   }
 
   /// 中断（切后台 / 退出升级页 / 用户确认离开）之后的设备侧收尾。
@@ -555,24 +645,85 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   }
 
   // ── 视图 ─────────────────────────────────────────────────
+  //
+  // ⚠️ 2026-08-31 整块重做：**逐条移植小程序 `subpackages/device/ota`**（ota.wxml + ota.wxss）。
+  // 小程序 2026-08-13 已把这一页简化成「插画 + 大标题 + 副文案 +（进行中才有的）大百分比 +
+  // 进度条 + 两条规则」的居中版式（参照投屏结果页），而 App 侧一直停在三张玻璃卡片
+  // （版本卡 / 升级卡 / 说明卡）的旧版式 —— 两边不是同一个页面，这就是「说了好几次没改」那条。
+  //
+  // 几何一律按小程序 rpx ÷ 2 换算，逐值标注在下面各处。
+
+  /// 五种画面（对齐 ota.js 的 `screenStatus`）。插画只有三张，checking/ready 共用进行中那张。
+  _OtaScreen get _screen {
+    switch (_stage) {
+      case _OtaStage.checking:
+        return _OtaScreen.checking;
+      case _OtaStage.available:
+        return _OtaScreen.ready;
+      case _OtaStage.upgrading:
+        return _OtaScreen.progress;
+      case _OtaStage.latest:
+      case _OtaStage.success:
+        return _OtaScreen.success;
+      case _OtaStage.invalid:
+      case _OtaStage.failed:
+        return _OtaScreen.fail;
+    }
+  }
+
+  /// 画面 → 插画。与小程序 `OTA_ART` 同一组图（`upload-icon01/02/03`，本仓也有这三张）。
+  String get _artImage {
+    switch (_screen) {
+      case _OtaScreen.success:
+        return 'assets/images/upload-icon03.png';
+      case _OtaScreen.fail:
+        return 'assets/images/upload-icon02.png';
+      case _OtaScreen.checking:
+      case _OtaScreen.ready:
+      case _OtaScreen.progress:
+        return 'assets/images/upload-icon01.png';
+    }
+  }
+
   // 「点得动」只取决于「有升级包且不在升级中」——未连接不再是拦截理由，点下去会先自动扫连
   // （见 _runUpgrade）。此前这里含 _connected，按钮画着却点不动，就是用户反馈的「OTA 没反应」。
   bool get _canUpgrade => _stage != _OtaStage.upgrading && _hasPackage;
 
+  /// 是否画底部主按钮（对齐 ota.js 的 `showPrimary`）。
+  ///
+  /// ⚠️ 「已是最新 / 无法升级」两屏**不画**主按钮：那上面写「已是最新」的按钮点了什么都不会
+  /// 发生，是纯粹的噪音；用户在那两屏要的是「返回」，底下那颗一直都在。
+  bool get _showPrimary {
+    switch (_stage) {
+      case _OtaStage.available:
+        return true;
+      case _OtaStage.failed:
+        return true;
+      case _OtaStage.checking:
+      case _OtaStage.upgrading:
+      case _OtaStage.latest:
+      case _OtaStage.invalid:
+      case _OtaStage.success:
+        return false;
+    }
+  }
+
   String get _actionText {
     final l10n = AppL10n.of(context);
     switch (_stage) {
-      case _OtaStage.upgrading:
-        return l10n.otaUpgrading;
       case _OtaStage.available:
         // 未连接时说清楚「点了会先连设备」，别让用户以为按钮坏了
         return _connected
             ? l10n.otaUpgradeNowAction
             : l10n.otaConnectAndUpgrade;
+      case _OtaStage.failed:
+        // 升级过程中失败 → 「重新升级」；版本检查阶段失败 → 「重新检查」。
+        // 两种失败的补救动作不是一回事（对齐 ota.js）。
+        return _failedDuringUpgrade ? l10n.otaRetryUpgrade : l10n.otaRecheck;
+      case _OtaStage.upgrading:
+        return l10n.otaUpgrading;
       case _OtaStage.invalid:
         return l10n.otaCannotUpgrade;
-      case _OtaStage.failed:
-        return l10n.otaRecheck;
       case _OtaStage.success:
         return l10n.otaDone;
       case _OtaStage.latest:
@@ -583,7 +734,8 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   }
 
   void _onAction() {
-    if (_stage == _OtaStage.failed) {
+    if (_stage == _OtaStage.failed && !_failedDuringUpgrade) {
+      // 版本检查失败：重新检查一遍
       _load();
       return;
     }
@@ -592,36 +744,9 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     }
   }
 
-  Color get _statusColor {
-    switch (_stage) {
-      case _OtaStage.available:
-        return const Color(0xFFEB5F1B);
-      case _OtaStage.invalid:
-      case _OtaStage.failed:
-        return const Color(0xFFFF3045);
-      case _OtaStage.upgrading:
-        return const Color(0xFF3D5A80);
-      default:
-        return const Color(0xFF588157);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
-    if (_stage == _OtaStage.checking) {
-      return FigmaScreen(
-        title: l10n.otaTitle,
-        // 与主画面同口径：本页不留「随手点一下就走」的顶部入口（见 _buildScreen）
-        showBack: false,
-        body: Padding(
-          padding: const EdgeInsets.only(top: 120),
-          // 与其他页一致的转圈 loading（原来只有一行静态文字，没有加载指示）。
-          child: PageLoading(label: l10n.otaCheckingFirmware),
-        ),
-      );
-    }
-
     // 升级中拦截返回：之前无任何拦截，误触返回/侧滑会静默中止固件传输
     // （dispose 打 _aborted），且中断提示只在页内可见，用户毫无感知。
     return PopScope(
@@ -653,212 +778,194 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
   }
 
   Widget _buildScreen(BuildContext context, AppL10n l10n) {
+    final progressing = _screen == _OtaScreen.progress;
+    final percent = (_progress * 100).round().clamp(0, 100);
+
     return FigmaScreen(
-      title: l10n.otaTitle,
+      title: l10n.otaFirmwareUpgrade,
       // 2026-08-13（两端同改）：**去掉顶部返回箭头**。升级不可逆、中断有代价，
       // 页面里不留「随手点一下就走」的入口。
-      // ⚠️ 去掉的只是箭头：底部按钮区在非进行中时会给一颗「返回」（见下），
+      // ⚠️ 去掉的只是箭头：底部在非进行中时给一颗「返回」（见下），
       // 否则升级成功后用户在本页找不到任何出口，就从「防误触」变成「把人困住」。
       // 进行中确实一个返回入口都没有（这正是需求要的），系统手势那条路仍有
       // PopScope 的「退出将中断本次升级」二次确认拦着。
       showBack: false,
+      // 小程序 `.ota-body` 的 `padding: 48rpx 56rpx 40rpx` → 左右 28，上下在 body 里给。
+      bodyPadding: const EdgeInsets.symmetric(horizontal: 28),
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: 12),
-          _versionCard(),
-          const SizedBox(height: 12),
-          _upgradeCard(),
-          const SizedBox(height: 12),
-          _notesCard(),
-          if (_errorMessage.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _errorCard(),
-          ],
-          const SizedBox(height: 16),
+          // .ota-art：260×220rpx = 130×110，margin 40rpx auto 48rpx = 上 20 下 24
+          //（.ota-body 自己还有 48rpx=24 的上内边距，合起来是 24 + 20）。
+          const SizedBox(height: 24 + 20),
+          Center(
+            child: Image.asset(
+              _artImage,
+              width: 130,
+              height: 110,
+              fit: BoxFit.contain,
+              // 三张图任一缺失都不该把整页炸掉：留出同样的占位，文案照常读得到。
+              errorBuilder: (context, error, stackTrace) =>
+                  const SizedBox(width: 130, height: 110),
+            ),
+          ),
+          const SizedBox(height: 24),
+          // .ota-title：40rpx=20 / w700 / #2a2d32 / line-height 1
           Text(
-            l10n.otaKeepPoweredHint,
+            _statusTitle,
+            textAlign: TextAlign.center,
             style: const TextStyle(
-                color: Color(0xFF808690), fontSize: 12, height: 1.5),
+              color: Color(0xFF2A2D32),
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              height: 1,
+            ),
           ),
-          const SizedBox(height: 16),
-          // 内容与底部固定按钮之间的留白：FigmaScreen 给 bottom 的上内边距只有 8，
-          // 卡片多/报错卡片出现时滚到底就会顶在按钮上（对齐小程序 2026-08-03 把
-          // .ota-body / .result-body 下内边距补到 40rpx=20px：8 + 12 = 20）。
-          const SizedBox(height: 12),
-        ],
-      ),
-      bottom: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FigmaPrimaryButton(
-            label: _actionText,
-            onPressed:
-                (_canUpgrade || _stage == _OtaStage.failed) ? _onAction : null,
-          ),
-          // 顶部箭头去掉之后唯一的可见出口（对齐小程序底部那颗「返回」）：
-          // 进行中不画——那一屏本来就不该有返回入口。
-          if (_stage != _OtaStage.upgrading) ...[
-            const SizedBox(height: 8),
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.of(context).maybePop(),
-              child: Container(
-                height: 40,
-                alignment: Alignment.center,
-                child: Text(
-                  l10n.aiBack,
-                  style: const TextStyle(
-                    color: Color(0xFF6F6B66),
-                    fontSize: 15,
-                  ),
+          // .ota-desc：margin-top 22rpx=11 / 26rpx=13 / #828a95 / line-height 1.5
+          if (_statusDesc.isNotEmpty) ...[
+            const SizedBox(height: 11),
+            Text(
+              _statusDesc,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF828A95),
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ],
+          if (progressing) ...[
+            // .progress-percent：margin-top 56rpx=28 / 72rpx=36 / w700 / #ff6421
+            const SizedBox(height: 28),
+            Text.rich(
+              TextSpan(
+                text: '$percent',
+                style: const TextStyle(
+                  color: Color(0xFFFF6421),
+                  fontSize: 36,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
                 ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _versionCard() {
-    final l10n = AppL10n.of(context);
-    return FigmaGlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEB5F1B),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: const Text('OTA',
-                style: TextStyle(
-                    color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(_deviceName,
-                    style: const TextStyle(
-                        color: Color(0xFF2A2D32), fontSize: 15, fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                Text(l10n.otaCurrentVersion(_currentVersion),
-                    style: const TextStyle(color: Color(0xFF808690), fontSize: 12)),
-              ],
-            ),
-          ),
-          Text(_statusText,
-              style: TextStyle(color: _statusColor, fontSize: 13, fontWeight: FontWeight.w500)),
-        ],
-      ),
-    );
-  }
-
-  Widget _upgradeCard() {
-    final l10n = AppL10n.of(context);
-    return FigmaGlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(l10n.otaFirmwareVersion(_latestVersion),
-              style: const TextStyle(
-                  color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          Text(l10n.otaPackageSize(_packageSizeText),
-              style: const TextStyle(color: Color(0xFF808690), fontSize: 12)),
-          const SizedBox(height: 14),
-          FigmaProgressBar(
-            progress: _progress,
-            label:
-                '${_progressText.isNotEmpty ? _progressText : (_stage == _OtaStage.available ? l10n.otaReadyToUpgrade : l10n.otaNoUpgradeNeeded)}  ·  ${(_progress * 100).round()}%',
-          ),
-          // 两条升级规则**只在进行中这一屏**出现（2026-08-13 两端同改）：其余画面挂着它
-          // 只会跟结论文案抢注意力（「已是最新版本」下面写「意外中断可能导致设备无法使用」
-          // 是没有意义的）。整块左对齐——居中会让长句断点参差、序号对不齐。
-          if (_stage == _OtaStage.upgrading) ...[
-            const SizedBox(height: 14),
-            Text(
-              l10n.otaRuleWaitPatiently,
-              textAlign: TextAlign.left,
-              style: const TextStyle(
-                color: Color(0xFF808690),
-                fontSize: 12,
-                height: 1.6,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              l10n.otaRuleRecoverHint,
-              textAlign: TextAlign.left,
-              style: const TextStyle(
-                color: Color(0xFF808690),
-                fontSize: 12,
-                height: 1.6,
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _notesCard() {
-    final l10n = AppL10n.of(context);
-    return FigmaGlassCard(
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(l10n.otaUpgradeContent,
-              style: const TextStyle(
-                  color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 10),
-          if (_releaseNotes.isEmpty)
-            Text(l10n.otaNoReleaseNotes,
-                style: const TextStyle(color: Color(0xFF808690), fontSize: 12))
-          else
-            ..._releaseNotes.map(
-              (note) => Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 6, right: 8),
-                      width: 5,
-                      height: 5,
-                      decoration: const BoxDecoration(
-                          color: Color(0xFFEB5F1B), shape: BoxShape.circle),
+                children: const [
+                  // .progress-percent__sign：36rpx=18 / w600 / margin-left 4rpx=2
+                  TextSpan(
+                    text: ' %',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      height: 1,
                     ),
-                    Expanded(
-                      child: Text(note,
-                          style: const TextStyle(
-                              color: Color(0xFF5A616B), fontSize: 12, height: 1.5)),
+                  ),
+                ],
+              ),
+              textAlign: TextAlign.center,
+            ),
+            // .progress-wrap：margin-top 28rpx=14；.progress-bar：18rpx=9 高、#e6ebf2 底
+            const SizedBox(height: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: SizedBox(
+                height: 9,
+                child: Stack(
+                  children: [
+                    const ColoredBox(
+                      color: Color(0xFFE6EBF2),
+                      child: SizedBox.expand(),
+                    ),
+                    // .progress-fill：linear-gradient(90deg, #ff8a45, #ff6421)
+                    FractionallySizedBox(
+                      widthFactor: _progress.clamp(0.0, 1.0),
+                      child: const DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [Color(0xFFFF8A45), Color(0xFFFF6421)],
+                          ),
+                        ),
+                        child: SizedBox.expand(),
+                      ),
                     ),
                   ],
                 ),
               ),
             ),
+            // .progress-note：margin-top 24rpx=12 / 24rpx=12 / #828a95
+            if (_progressText.isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Text(
+                _progressText,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: Color(0xFF828A95),
+                  fontSize: 12,
+                  height: 1.5,
+                ),
+              ),
+            ],
+            // .progress-rules（2026-08-13 需求 2）：**只在进行中这一屏**出现 ——
+            // 它要说的是「此刻别走开」和「万一失败怎么自救」，成功/失败画面上再挂着
+            // 只会跟结论文案抢注意力。
+            // ⚠️ 整块**左对齐**：这一屏其余内容都是居中的，两条长句居中后每行断点不齐、
+            // 像散文；这是要一条条读进去的告知，序号「1）2）」必须对齐同一条左边界。
+            // margin-top 40rpx=20，padding 24rpx 28rpx = 12 / 14。
+            const SizedBox(height: 20),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.otaRuleWaitPatiently, style: _OtaStyles.rule),
+                  // 两条之间留一点气口，比行距大、比段距小（小程序 12rpx=6）：
+                  // 读起来是「两条规则」而不是一段话。
+                  const SizedBox(height: 6),
+                  Text(l10n.otaRuleRecoverHint, style: _OtaStyles.rule),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 20),
         ],
       ),
+      // .ota-actions：进行中整块不渲染（那一屏本来就不该有任何出口，见 showBack 的说明）；
+      // 其余画面是「（可选）主按钮 + 返回」，gap 24rpx=12。
+      bottom: progressing
+          ? null
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (_showPrimary) ...[
+                  FigmaPrimaryButton(
+                    label: _actionText,
+                    onPressed: _onAction,
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                // 顶部箭头去掉之后唯一的可见出口（对齐小程序底部那颗「返回」）。
+                FigmaSecondaryButton(
+                  label: l10n.aiBack,
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
+                // 贴底留白补到 30（小程序 `.ota-actions` 的 `60rpx + safe`）：
+                // [FigmaScreen] 的 bottom 槽只给了 12，是全站通用值，不为这一页改公共组件。
+                const SizedBox(height: 18),
+              ],
+            ),
     );
   }
+}
 
-  Widget _errorCard() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF0F0),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFFD4D4)),
-      ),
-      child: Text(_errorMessage,
-          style: const TextStyle(color: Color(0xFFFF3045), fontSize: 12, height: 1.5)),
-    );
-  }
+/// OTA 页的五种画面，对齐小程序 `ota.js` 的 `screenStatus`
+/// （checking 检测中 / ready 可升级待开始 / progress 进行中 / success 成功或已最新 / fail 失败或无法升级）。
+enum _OtaScreen { checking, ready, progress, success, fail }
+
+class _OtaStyles {
+  const _OtaStyles._();
+
+  /// .progress-rule：24rpx=12 / #8b929d / line-height 1.6
+  static const TextStyle rule = TextStyle(
+    color: Color(0xFF8B929D),
+    fontSize: 12,
+    height: 1.6,
+  );
+
 }

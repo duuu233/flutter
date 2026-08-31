@@ -239,7 +239,22 @@ class FluwxWeChatAuthorizationClient implements WeChatAuthorizationClient {
 
     try {
       final launched = await _sdk.authBy(
-        which: NormalAuth(scope: 'snsapi_userinfo', state: state),
+        // ⚠️ `nonAutomatic: true`（2026-08-31）：**每次点微信登录都要真的跳进微信让用户确认账号**。
+        //
+        // 默认 false 时，用户第一次授权过之后微信就把这个 App 记成「已授权」，之后再调
+        // sendAuth 会**静默直接回 code** —— 表现就是「闪一下就登录了」，既看不到跳转，
+        // 也没有任何换个微信号登录的入口（微信切了账号，App 这边还是按老账号闷头登进去）。
+        //
+        // 这个参数直通微信 OpenSDK 的 `SendAuth.Req.nonAutomatic`
+        //（fluwx 6.0.0：Android FluwxAuthHandler.kt / iOS FluwxPlugin.m 两端都已接线），
+        // 置 true 即「不允许自动授权」，微信每次都会把确认界面摆出来。
+        //
+        // 代价是老用户每次登录都多一步确认——这是需求要的，不是副作用。
+        which: NormalAuth(
+          scope: 'snsapi_userinfo',
+          state: state,
+          nonAutomatic: true,
+        ),
       );
       if (!launched) {
         throw const WeChatAuthorizationException('无法拉起微信授权，请稍后重试。');

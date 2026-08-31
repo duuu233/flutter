@@ -1578,6 +1578,95 @@ class AppL10n {
     '2) If a failed upgrade leaves the device unreachable, reopen the mini program / app or power-cycle the device.',
     '2）アップグレード失敗で接続できなくなった場合は、ミニプログラム／アプリを開き直すか、デバイスの電源を入れ直してください。',
   );
+  // ── 固件升级页的五种画面（2026-08-31 移植小程序 subpackages/device/ota）──────
+  //
+  // 小程序 2026-08-13 把这一页**简化成了「插画 + 大标题 + 大百分比 + 进度条 + 两条规则」**
+  // 的居中版式（参照投屏结果页），App 侧此前仍是三张玻璃卡片的旧版式，两边根本不是一个页面。
+  // 下面这组文案与 ota.js 的 statusTitle / statusDesc 逐条对应，改动前先对一遍那边。
+
+  /// checking：`statusTitle: '检测版本中'` 用既有的 [otaCheckingVersion]，
+  /// desc 用既有的 [otaCheckingFirmware]。
+
+  /// ready：desc 平时就是版本号本身；未连接时补一句「点了会先连设备」。
+  String otaReadyWillConnect(String version) => _pick(
+    '$version（将先连接电子纸设备）',
+    '$version (will connect to the device first)',
+    '$version（先に電子ペーパーへ接続します）',
+  );
+
+  String get otaLatestTitle =>
+      _pick('已是最新版本', 'Already up to date', 'すでに最新です');
+  String get otaLatestDesc => _pick(
+    '当前固件已是最新，无需升级',
+    'Your firmware is the latest version. No update needed.',
+    'ファームウェアは最新です。更新は不要です。',
+  );
+
+  String get otaInvalidPackageDesc => _pick(
+    '固件包无效，请稍后重试',
+    'The firmware package is invalid. Please try again later.',
+    'ファームウェアパッケージが無効です。後でもう一度お試しください。',
+  );
+
+  String get otaCheckFailedTitle =>
+      _pick('检查失败', 'Check failed', '確認に失敗しました');
+
+  /// 自动扫连那一屏（升级前设备不在线时）。
+  String get otaConnectingTitle =>
+      _pick('连接电子纸设备中', 'Connecting to the device…', '電子ペーパーに接続中…');
+  String get otaConnectingDesc => _pick(
+    '正在连接电子纸设备，请保持设备已开机并靠近手机…',
+    'Connecting to the e-paper device. Keep it powered on and close to your phone…',
+    '電子ペーパーに接続しています。電源を入れたまま、スマホの近くに置いてください…',
+  );
+
+  String get otaPreparingDesc => _pick(
+    '正在准备固件升级，请保持电子纸设备已开机并靠近手机…',
+    'Preparing the firmware update. Keep the e-paper device powered on and close to your phone…',
+    'ファームウェア更新を準備しています。電子ペーパーの電源を入れたまま、スマホの近くに置いてください…',
+  );
+
+  /// 进行中那一屏的副文案（进度条上方那句「此刻别走开」）。
+  String get otaUpgradingDesc => _pick(
+    '升级中请保持电子纸设备供电、手机屏幕常亮，勿切后台',
+    'Keep the device powered and your screen on, and do not switch apps during the upgrade.',
+    'アップグレード中は電子ペーパーの電源を入れたまま、画面を点灯し、他のアプリに切り替えないでください。',
+  );
+
+  /// 进度屏的大标题：按 OTA 协议阶段（OtaProgress.phase）三段切换，
+  /// 与小程序 ota.js 的 `STAGE_TITLE` 逐值一致
+  /// （preparing/prepared/connecting/starting=下载中，header/transferring/retry=传输中，
+  ///  verifying/done=升级中）。
+  String get otaStageDownloading =>
+      _pick('固件下载中', 'Downloading firmware…', 'ファームウェアをダウンロード中…');
+  String get otaStageTransferring =>
+      _pick('固件传输中', 'Transferring firmware…', 'ファームウェアを転送中…');
+  String get otaStageUpgrading =>
+      _pick('固件升级中', 'Updating firmware…', 'ファームウェアを更新中…');
+
+  String get otaSuccessTitle =>
+      _pick('升级成功', 'Upgrade complete', 'アップグレード完了');
+  String get otaSuccessDesc => _pick(
+    '固件已升级到最新版本。电子纸设备正在重启，请稍等几秒后重新连接。',
+    'The firmware is now up to date. The e-paper device is restarting — please reconnect in a few seconds.',
+    'ファームウェアは最新になりました。電子ペーパーを再起動しています。数秒後に再接続してください。',
+  );
+
+  /// 失败屏的大标题分两种：还没碰到设备就失败（下载/校验阶段）说「固件下载失败」，
+  /// 已经在传了才说「升级失败」——用户据此判断该查网络还是查设备。
+  String get otaDownloadFailedTitle =>
+      _pick('固件下载失败', 'Firmware download failed', 'ファームウェアのダウンロードに失敗');
+
+  /// 数据发完但没收到设备 0xF3 确认：**按失败处理**，绝不谎报成功。
+  String get otaUnconfirmedDesc => _pick(
+    '数据已全部发送，但未收到电子纸设备确认，升级未确认成功，请重试。',
+    'All data was sent, but the e-paper device did not confirm. The upgrade is unconfirmed — please retry.',
+    'データは送信済みですが、電子ペーパーからの確認が得られませんでした。アップグレードは未確認です。再試行してください。',
+  );
+
+  String get otaRetryUpgrade =>
+      _pick('重新升级', 'Retry upgrade', '再アップグレード');
+
   String get otaReadyToUpgrade =>
       _pick('可开始升级', 'Ready to upgrade', 'アップグレード可能');
   String get otaNoUpgradeNeeded =>
@@ -1857,6 +1946,59 @@ class AppL10n {
   /// 套餐卡底部的单价（约）。⚠️ 按含赠送总数算，见 [StarPackage.unitPrice]。
   String starBuyUnitPrice(String price, String currency) =>
       _pick('≈ $currency$price/星币', '≈ $currency$price/star', '≈ $currency$price/コイン');
+
+  // ── 购买/消费记录里后端下发的两个「已转文字」字段 ───────────────────────
+  //
+  // ⚠️ **BoltFox 后端忽略 language 参数**（同 retMsg，见 [_serverMessages] 的说明），
+  // `payTypeMsg` / `orderStateMsg` 恒为中文。英/日/繁用户在「Purchases & Usage」页
+  // 右侧看到的就是「已完成」「微信支付」——2026-08-31 报障即此。
+  // 所以展示一律先在端上翻一遍，翻不到才原样透传（后端加了新状态也不会变成空白）。
+
+  /// 支付方式。[payType] 是 swagger 的数值（1=微信支付 2=IOS内购 3=payPal），
+  /// 认不出时回落后端原文 [raw]。
+  ///
+  /// ⚠️ **按数值判而不是按中文字符串**：这三个值 swagger 写死了，后端改文案也不影响。
+  String starPayChannel(int payType, String raw) {
+    switch (payType) {
+      case 1:
+        return _pick('微信支付', 'WeChat Pay', 'WeChat Pay');
+      case 2:
+        // 苹果侧的正式叫法就是「App 内购买」，不叫 Apple Pay（那是另一回事）。
+        return _pick('Apple 内购', 'In-App Purchase', 'アプリ内課金');
+      case 3:
+        // 品牌名，四语种都写 PayPal。
+        return 'PayPal';
+      default:
+        return raw;
+    }
+  }
+
+  /// 订单状态。⚠️ `orderState` 的**枚举后端至今没给**（swagger 只写「状态」），
+  /// 所以这里只能按后端下发的中文原文 [raw] 查表，认不出的原样透传。
+  /// 后端补上枚举后改成按数值判，这张表即可删。
+  String starRecordStatus(String raw) {
+    switch (raw.trim()) {
+      case '已完成':
+        return _pick('已完成', 'Completed', '完了');
+      case '待支付':
+      case '未支付':
+        return _pick('待支付', 'Unpaid', '未払い');
+      case '已支付':
+        return _pick('已支付', 'Paid', '支払い済み');
+      case '已取消':
+        return _pick('已取消', 'Canceled', 'キャンセル済み');
+      case '支付失败':
+        return _pick('支付失败', 'Payment failed', '支払い失敗');
+      case '已退款':
+        return _pick('已退款', 'Refunded', '返金済み');
+      case '退款中':
+        return _pick('退款中', 'Refunding', '返金処理中');
+      case '已关闭':
+        return _pick('已关闭', 'Closed', 'クローズ');
+      default:
+        return raw;
+    }
+  }
 
   String get starBuyTotalGain => _pick('合计获得', 'You get', '合計獲得');
   String get starBuyAmountDue => _pick('应付金额', 'Total', 'お支払い金額');

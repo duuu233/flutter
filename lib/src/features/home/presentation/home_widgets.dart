@@ -653,12 +653,15 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
   }
 }
 
-/// 设备卡的卡面（小程序 `.carousel-glass`）：**透明底 + 一层投影**，没别的。
+/// 设备卡的卡面（小程序 `.carousel-glass`）：**透明底 + 一圈描边 + 一层外投影**，没别的。
 ///
-/// ⚠️ 2026-08-28 二次修正：上一版按 CSS 里写着的 `backdrop-filter: blur(10.55px)` 加了
+/// ⚠️ 2026-08-28 一次修正：上一版按 CSS 里写着的 `backdrop-filter: blur(10.55px)` 加了
 /// [BackdropFilter]，观感仍然不对 —— 产品确认那块**就是透明的**（那条 backdrop-filter
 /// 在微信/安卓 webview 上多半根本没生效，所以线上看到的一直是「透明 + 投影」）。
-/// 这里去掉模糊：模糊本身还逐帧重算、压在横滑的 [PageView] 里白白吃 GPU。
+/// 去掉模糊还顺带省了 GPU：模糊要逐帧重算，而它就压在横滑的 [PageView] 里。
+///
+/// ⚠️ 2026-08-31 二次修正：**「透明底 + BoxShadow」在 Flutter 里画出来是一整张灰卡片**，
+/// 不是一圈阴影 —— 成因与解法见 [_CardGlassPainter]。同轮按需求补了 1px 描边。
 ///
 /// 投影按 `box-shadow: 0px 4px 16px rgba(60, 53, 16, 0.12)` 换算：
 /// 偏移 (0,4)、模糊 16、色 `#3C3510` @12% = `0x1F3C3510`。
@@ -670,20 +673,79 @@ class _CardGlass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        // 不铺任何底色：卡面就是透明的，露出下面的墙面背景。
-        borderRadius: BorderRadius.circular(_kCardRadius),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x1F3C3510), // rgba(60, 53, 16, 0.12)
-            blurRadius: 16,
-            offset: Offset(0, 4),
-          ),
-        ],
-      ),
+    return const CustomPaint(painter: _CardGlassPainter());
+  }
+}
+
+/// 卡面的描边 + 外阴影，**卡内保持全透明**。
+///
+/// ⚠️ **2026-08-31 修「整个盒子都是灰的」**：上一版是
+/// `DecoratedBox(BoxDecoration(borderRadius: …, boxShadow: [ … ]))` 且不给 `color`。
+/// 那样写在 CSS 里是对的（`box-shadow` 会被浏览器裁掉盒内那部分，只留外沿一圈），
+/// **但 Flutter 不裁**：`BoxShadow` 画的是一整块「按盒形状模糊过的实心圆角矩形」，
+/// 垫在盒子底下；盒子自身没有底色，于是那整块模糊直接透出来 —— 观感就是
+/// 一整张灰卡片，而不是一圈阴影。
+///
+/// 所以这里改成自己画，两步：
+///   ① 把画布裁成「卡面之外」，再画那块模糊圆角矩形 → 只剩外沿一圈真正的投影；
+///   ② 沿卡面画一圈 1px 描边。
+/// 卡内一个像素都不涂，浅蓝墙面原样透上来。
+class _CardGlassPainter extends CustomPainter {
+  const _CardGlassPainter();
+
+  /// 小程序 `.carousel-glass` 的 `box-shadow: 0px 4px 16px rgba(60, 53, 16, 0.12)`。
+  static const Color _shadowColor = Color(0x1F3C3510);
+  static const double _shadowBlur = 16;
+  static const Offset _shadowOffset = Offset(0, 4);
+
+  /// 玻璃描边：与全站玻璃卡（`FigmaGlassCard` / `StarCard`）同一口径的白 0.9、1px。
+  /// ⚠️ 小程序 `.carousel-glass` 本身**没有** border（那条渐变底也是注释掉的），
+  /// 这一圈是 App 侧按需求 2026-08-31「边框带点阴影就行」加的，属有意差异。
+  static const Color _borderColor = Color(0xE6FFFFFF);
+  static const double _borderWidth = 1;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      const Radius.circular(_kCardRadius),
+    );
+
+    // ① 外阴影：先把画布裁成「整块 − 卡面」，模糊矩形就只在卡外沿显形。
+    //    裁剪范围按模糊半径外扩，别把该显出来的那圈裁掉。
+    final outside = Path.combine(
+      PathOperation.difference,
+      Path()..addRect((Offset.zero & size).inflate(_shadowBlur * 3)),
+      Path()..addRRect(rrect),
+    );
+    canvas.save();
+    canvas.clipPath(outside);
+    canvas.drawRRect(
+      rrect.shift(_shadowOffset),
+      Paint()
+        ..color = _shadowColor
+        // CSS 的 blur-radius 与高斯 sigma 不是同一物理量，用 Flutter 自己的换算，
+        // 与 BoxShadow 内部一致（否则同样的 16 画出来比别处的卡片糊一圈）。
+        ..maskFilter = MaskFilter.blur(
+          BlurStyle.normal,
+          Shadow.convertRadiusToSigma(_shadowBlur),
+        ),
+    );
+    canvas.restore();
+
+    // ② 描边：向内缩半个线宽，1px 的线才不会被卡面边界切掉一半。
+    canvas.drawRRect(
+      rrect.deflate(_borderWidth / 2),
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = _borderWidth
+        ..color = _borderColor,
     );
   }
+
+  // 无外部输入，画出来永远一样。
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _ConnectedDeviceCard extends StatelessWidget {

@@ -58,8 +58,10 @@ class _HomeTextStyles {
   // .projection-name → font-size 36rpx(=18) / weight 700 / #2a2d32 / line-height 1
   // 六宫格入口（2026-08-21）：.entry-name 28rpx/600（颜色逐项不同，由卡片 copyWith 覆盖）、
   // .entry-desc 18rpx/#8f959d。
+  // ⚠️ 2026-08-31 按需求把六宫格**大标题缩小一号**：14 → 13（小程序 .entry-name 是 28rpx=14，
+  // 这里是 App 端有意的一档差异，别照 rpx 换算把它改回 14）。副标题 entrySubtitle 不动。
   static const entryTitle = TextStyle(
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: FontWeight.w600,
     height: 1.2,
   );

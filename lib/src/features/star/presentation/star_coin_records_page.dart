@@ -260,13 +260,16 @@ class _RecordCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 购买行要把后端下发的支付方式/订单状态翻成当前语言（后端忽略 language，恒中文），
+    // 所以 l10n 从 build 传进去，别在子方法里再取一次 context。
+    final l10n = AppL10n.of(context);
     return FigmaGlassCard(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-      child: spend ? _buildSpend() : _buildPurchase(),
+      child: spend ? _buildSpend() : _buildPurchase(l10n),
     );
   }
 
-  Widget _buildPurchase() {
+  Widget _buildPurchase(AppL10n l10n) {
     final gift = record.gift > 0 ? ' + $giftLabel ${record.gift}' : '';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -287,8 +290,18 @@ class _RecordCard extends StatelessWidget {
         const SizedBox(height: 8),
         Row(
           children: [
-            Expanded(child: Text(record.channel, style: _RecordStyles.sub)),
-            Text(record.status, style: _RecordStyles.sub),
+            // 两处都不能直接渲染后端原文：后端忽略 language，`payTypeMsg`/`orderStateMsg`
+            // 恒为中文，英/日/繁用户会在这一行看到「微信支付」「已完成」。
+            Expanded(
+              child: Text(
+                l10n.starPayChannel(record.payType, record.channel),
+                style: _RecordStyles.sub,
+              ),
+            ),
+            Text(
+              l10n.starRecordStatus(record.status),
+              style: _RecordStyles.sub,
+            ),
           ],
         ),
       ],
