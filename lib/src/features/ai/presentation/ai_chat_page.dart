@@ -3665,7 +3665,12 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
                       decoration: BoxDecoration(
                         // 小程序 `.voice-hold`：常态米底 #f2eee9 + #555 字；
                         // 按住时整条转 90° 橙色渐变 + 白字（`.voice-hold--recording`）。
-                        color: _recording ? null : const Color(0xFFF2EEE9),
+                        //
+                        // ⚠️ **常态底色改中性灰**（2026-08-31 需求，与小程序有意不同）：
+                        // #f2eee9 是暖米色，配 2026-08-21 换上的浅蓝墙面背景会发脏、
+                        // 看着像没渲染完。按住录音时那条橙色渐变**保持不变**——
+                        // 它是「正在录」的状态色，不属于这次要改的「背景色」。
+                        color: _recording ? null : const Color(0xFFEFEFEF),
                         gradient: _recording
                             ? const LinearGradient(
                                 begin: Alignment.centerLeft,

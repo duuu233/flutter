@@ -509,6 +509,14 @@ const double _kViewportH = 372;
 /// 注意那里写的是 **px 不是 rpx**，所以就是 24）。
 const double _kCardRadius = 24;
 
+/// 卡内「左侧圆环图标」与「右侧设备信息」之间的**保底间距**。
+///
+/// ⚠️ 这条必须写死、不能再交给 `MainAxisAlignment.spaceAround` 去摊：
+/// 小程序那边卡宽是按 rpx 等比的、比例恒定，spaceAround 摊出来的留白也就恒定；
+/// App 这边卡宽 = 屏宽 − 固定内缩，**屏越窄留白越少**，360dp 的安卓机上直接摊没了
+/// （实测中间只剩约 1.5px，观感就是图标和文字粘在一起）。
+const double _kCardIconGap = 16;
+
 /// 已连接设备卡片（小程序 `.device-carousel`）：
 /// 玻璃卡面（[_CardGlass]）+ 左侧圆环 `home-device-thumb.png` +
 /// 右侧设备信息（名称 / 蓝牙连接状态 / 电量）。
@@ -653,7 +661,7 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
   }
 }
 
-/// 设备卡的卡面（小程序 `.carousel-glass`）：**透明底 + 一圈描边 + 一层外投影**，没别的。
+/// 设备卡的卡面（小程序 `.carousel-glass`）：**透明底 + 一层外投影**，没别的。
 ///
 /// ⚠️ 2026-08-28 一次修正：上一版按 CSS 里写着的 `backdrop-filter: blur(10.55px)` 加了
 /// [BackdropFilter]，观感仍然不对 —— 产品确认那块**就是透明的**（那条 backdrop-filter
@@ -661,7 +669,8 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
 /// 去掉模糊还顺带省了 GPU：模糊要逐帧重算，而它就压在横滑的 [PageView] 里。
 ///
 /// ⚠️ 2026-08-31 二次修正：**「透明底 + BoxShadow」在 Flutter 里画出来是一整张灰卡片**，
-/// 不是一圈阴影 —— 成因与解法见 [_CardGlassPainter]。同轮按需求补了 1px 描边。
+/// 不是一圈阴影 —— 成因与解法见 [_CardGlassPainter]。（同轮一度加过 1px 白描边，
+/// 产品复看后确认**不要边框**，已撤。）
 ///
 /// 投影按 `box-shadow: 0px 4px 16px rgba(60, 53, 16, 0.12)` 换算：
 /// 偏移 (0,4)、模糊 16、色 `#3C3510` @12% = `0x1F3C3510`。
@@ -677,7 +686,7 @@ class _CardGlass extends StatelessWidget {
   }
 }
 
-/// 卡面的描边 + 外阴影，**卡内保持全透明**。
+/// 卡面的外阴影，**卡内保持全透明、没有描边**。
 ///
 /// ⚠️ **2026-08-31 修「整个盒子都是灰的」**：上一版是
 /// `DecoratedBox(BoxDecoration(borderRadius: …, boxShadow: [ … ]))` 且不给 `color`。
@@ -686,10 +695,12 @@ class _CardGlass extends StatelessWidget {
 /// 垫在盒子底下；盒子自身没有底色，于是那整块模糊直接透出来 —— 观感就是
 /// 一整张灰卡片，而不是一圈阴影。
 ///
-/// 所以这里改成自己画，两步：
-///   ① 把画布裁成「卡面之外」，再画那块模糊圆角矩形 → 只剩外沿一圈真正的投影；
-///   ② 沿卡面画一圈 1px 描边。
-/// 卡内一个像素都不涂，浅蓝墙面原样透上来。
+/// 所以这里改成自己画：把画布裁成「卡面之外」，再画那块模糊圆角矩形 —— 只剩外沿一圈
+/// 真正的投影，卡内一个像素都不涂，浅蓝墙面原样透上来。
+///
+/// ⚠️ **不要再加描边**（2026-08-31 需求原话「不要边框不要白色的 Border，只要阴影就可以了」）。
+/// 同轮曾按「边框带点阴影」加过一圈白 0.9 的 1px 描边，产品复看后确认不要 ——
+/// 与小程序 `.carousel-glass` 也一致：那边只有 box-shadow，没有 border。
 class _CardGlassPainter extends CustomPainter {
   const _CardGlassPainter();
 
@@ -697,12 +708,6 @@ class _CardGlassPainter extends CustomPainter {
   static const Color _shadowColor = Color(0x1F3C3510);
   static const double _shadowBlur = 16;
   static const Offset _shadowOffset = Offset(0, 4);
-
-  /// 玻璃描边：与全站玻璃卡（`FigmaGlassCard` / `StarCard`）同一口径的白 0.9、1px。
-  /// ⚠️ 小程序 `.carousel-glass` 本身**没有** border（那条渐变底也是注释掉的），
-  /// 这一圈是 App 侧按需求 2026-08-31「边框带点阴影就行」加的，属有意差异。
-  static const Color _borderColor = Color(0xE6FFFFFF);
-  static const double _borderWidth = 1;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -732,15 +737,6 @@ class _CardGlassPainter extends CustomPainter {
         ),
     );
     canvas.restore();
-
-    // ② 描边：向内缩半个线宽，1px 的线才不会被卡面边界切掉一半。
-    canvas.drawRRect(
-      rrect.deflate(_borderWidth / 2),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = _borderWidth
-        ..color = _borderColor,
-    );
   }
 
   // 无外部输入，画出来永远一样。
@@ -780,8 +776,16 @@ class _ConnectedDeviceCard extends StatelessWidget {
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 18),
+          // ⚠️ **弹性布局**（2026-08-31 修「安卓上左右贴到一起」）：
+          // 原来是 `spaceAround` + 右列写死 `maxWidth: 190`。这两个数是按 375dp 量的：
+          // 卡片内容宽 = 屏宽 − 页内缩 48 − 卡内左右各 18；375dp 上是 291，
+          // 减掉圆环 83 与右列 190 还剩 18，spaceAround 摊成中间 9、两端各 4.5，勉强够看。
+          // 但 **360dp 的安卓机只剩 276**，83 + 190 = 273 —— 中间只剩 1.5px，就是「贴到一起」。
+          //
+          // 现在：左侧圆环定宽，中间给一条**写死的 [_kCardIconGap] 间距**（任何屏宽都保底），
+          // 右列用 [Expanded] 吃掉剩下的全部宽度。窄屏不再挤（360dp 右列仍有 175），
+          // 宽屏也不会因为 190 的上限而在中间空出一大块。
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               // 左侧圆环图标（home-icon02.png，166rpx≈83）。
               Image.asset(
@@ -797,16 +801,15 @@ class _ConnectedDeviceCard extends StatelessWidget {
                   );
                 },
               ),
-              // 右侧设备信息。
+              const SizedBox(width: _kCardIconGap),
+              // 右侧设备信息：吃掉剩余全部宽度。
               //
-              // ⚠️ 宽度由**写死 138 改成上限 190**（2026-08-28）：138 是按中文「连接蓝牙」
-              // 四个字量的，英文 "Connect Bluetooth" 连图标带内边距要 150+，直接撑爆
-              //（按钮是 mainAxisSize.min 的内容宽，卡在这个 138 的父约束上）。
-              // 190 = 卡片内容宽 291 − 圆环 83 − 两侧呼吸，够放最长的那一版文案；
-              // 上限而不是定宽，所以中文时这一列仍按内容收窄，`spaceAround` 的留白不变。
-              // 列里的设备名本来就是 maxLines:1 + ellipsis，不会因为放宽而顶出去。
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 190),
+              // 历史（留着免得有人又改回去）：这里曾写死 138，英文 "Connect Bluetooth"
+              // 连图标带内边距要 150+，直接把按钮撑爆（按钮是 mainAxisSize.min 的内容宽，
+              // 卡在父约束上）；2026-08-28 改成上限 190 治标，2026-08-31 索性改成 Expanded ——
+              // 宽度由布局给，不再有任何按某一款屏幕量出来的魔数。
+              // 列里的设备名本来就是 maxLines:1 + ellipsis，放宽也不会顶出去。
+              Expanded(
                 child: SizedBox(
                   height: 110,
                 child: Column(
