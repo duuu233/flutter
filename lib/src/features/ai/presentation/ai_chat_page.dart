@@ -237,6 +237,16 @@ const List<String> _kStyleKeys = ['anime', 'portrait', 'landscape', 'cartoon'];
 /// （小程序 `VOICE_CANCEL_DY` 同款交互，仿微信）。
 const double _kVoiceCancelDy = 60;
 
+/// **长按输入框**唤起语音：按住这么久才起手（小程序 `INPUT_HOLD_MS`，同值）。
+///
+/// 350ms 比平台长按（Android ~500ms / iOS ~500ms）短一档，是有意的：
+/// 要抢在输入框自己的长按选词/放大镜之前把键盘收掉，否则两套 UI 会叠在一起。
+const Duration _kInputHoldDelay = Duration(milliseconds: 350);
+
+/// 长按判定**之前**手指允许的抖动（小程序 `INPUT_HOLD_MOVE_PX`，同值）。
+/// 超过就当成滑动/选字，取消这次长按 —— 用户是想挪光标，不是想说话。
+const double _kInputHoldMovePx = 10;
+
 /// 一段语音的最长时长（与小程序 `VOICE_MAX_MS` 同值）。
 ///
 /// 到点**不丢**：按「松手」处理 —— 把已经识别到的内容照常发出去，再提示一句
@@ -537,6 +547,12 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   /// 手动松手 / 取消 / 页面销毁都要把它取消掉，否则会在录音早就结束后空放一枪。
   Timer? _voiceLimitTimer;
 
+  /// 长按输入框唤起语音的三件套（对齐小程序 `_holdTimer` / `_holdStart` / `_holdFired`）。
+  /// 只在**非语音模式**（输入框可见）时有意义，见 [_onInputPointerDown]。
+  Timer? _inputHoldTimer;
+  Offset? _inputHoldStart;
+  bool _inputHoldFired = false;
+
   /// 手指还按在「按住说话」上。
   ///
   /// ⚠️ 这个标记是给 [_beginVoice] 里的 await 用的：首次按下要先 `initialize()`
@@ -643,6 +659,9 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     // 页面走了还按着说话（返回手势/被 pop）：丢掉这一轮，别让隐藏页继续占着麦克风。
     _voiceLimitTimer?.cancel();
     _voiceLimitTimer = null;
+    // 长按输入框的计时器同理：不收的话页面已经没了，350ms 后还会空放一枪去开麦克风。
+    _inputHoldTimer?.cancel();
+    _inputHoldTimer = null;
     if (_recording || _transcribing) {
       unawaited(AiVoiceInput.instance.cancel());
     }
@@ -3696,33 +3715,45 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
                       ),
                     ),
                   )
-                : TextField(
-                    controller: _input,
-                    enabled: !_banned,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _onSendTap(),
-                    onChanged: (_) => setState(() {}),
-                    // 键盘和浮层不该同时占着底部（对齐小程序 bindfocus="closeTools"）
-                    onTap: _closeTools,
-                    style: const TextStyle(
-                      color: Color(0xFF3A3A3A),
-                      fontSize: 15,
-                    ),
-                    decoration: InputDecoration(
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 10),
-                      border: InputBorder.none,
-                      enabledBorder: InputBorder.none,
-                      focusedBorder: InputBorder.none,
-                      disabledBorder: InputBorder.none,
-                      hintText: _banned
-                          ? l10n.aiBannedHint
-                          : (_pending.isEmpty
-                                ? l10n.aiInputHint
-                                : l10n.aiInputWithImagesHint),
-                      hintStyle: const TextStyle(
-                        color: Color(0xFF9C9791),
+                // 长按输入框也能说话（2026-08-31，见 [_onInputPointerDown]）。
+                // [Listener] 只旁听原始指针事件、不进手势竞技场，所以短按照常穿透给
+                // TextField 聚焦打字，两者不抢。
+                : Listener(
+                    onPointerDown: _onInputPointerDown,
+                    onPointerMove: _onInputPointerMove,
+                    onPointerUp: _onInputPointerUp,
+                    onPointerCancel: _onInputPointerCancel,
+                    child: TextField(
+                      controller: _input,
+                      // 录音期间禁用输入框（小程序 `disabled="{{banned || recording}}"` 同款）：
+                      // 不禁的话，松手那一下会顺带把光标落进输入框、键盘弹上来，
+                      // 和刚收起的录音浮层打架。
+                      enabled: !_banned && !_recording,
+                      textInputAction: TextInputAction.send,
+                      onSubmitted: (_) => _onSendTap(),
+                      onChanged: (_) => setState(() {}),
+                      // 键盘和浮层不该同时占着底部（对齐小程序 bindfocus="closeTools"）
+                      onTap: _closeTools,
+                      style: const TextStyle(
+                        color: Color(0xFF3A3A3A),
                         fontSize: 15,
+                      ),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(vertical: 10),
+                        border: InputBorder.none,
+                        enabledBorder: InputBorder.none,
+                        focusedBorder: InputBorder.none,
+                        disabledBorder: InputBorder.none,
+                        hintText: _banned
+                            ? l10n.aiBannedHint
+                            : (_pending.isEmpty
+                                  ? l10n.aiInputHint
+                                  : l10n.aiInputWithImagesHint),
+                        hintStyle: const TextStyle(
+                          color: Color(0xFF9C9791),
+                          fontSize: 15,
+                        ),
                       ),
                     ),
                   ),
@@ -3810,6 +3841,99 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       return;
     }
     unawaited(_endVoice(cancel: _voiceCancel));
+  }
+
+  // —— 直接长按输入框唤起语音（2026-08-31，移植小程序 `chat.js` 的 `onInputTouch*`）——
+  //
+  // 输入框的 hint 一直写着「按住说话或输入您的想法...」，可此前只有点右侧麦克风切到
+  // 「按住说话」条才录得了 —— 提示与实现对不上，这次补齐（小程序早已是这么做的）。
+  //
+  // 挂法与小程序一致：绑在输入框**外层**、用 bind 不用 catch（Flutter 这边对应
+  // [Listener] —— 它只旁听原始指针事件，**不进手势竞技场**，所以不会和 TextField 抢）。
+  // 于是短按照常穿透给输入框聚焦打字；按住超过 [_kInputHoldDelay] 且几乎没动才唤起语音，
+  // 唤起之后本次触摸的 move/up 直接复用「按住说话」那套 [_onVoicePointerMove] /
+  // [_onVoicePointerUp]，两条路只有入口不同，录音、上滑取消、松手发送完全同一套。
+  //
+  // ⚠️ 授权与「按住说话」同一条路：起手统一走 [_beginVoice]，它内部先 `ensureReady()`
+  // （首次会拉起系统麦克风授权框），被拒则弹引导。不在这里另写一套权限判断。
+
+  void _onInputPointerDown(PointerDownEvent event) {
+    // 已经在语音模式：那条「按住说话」自己有手势，不重复挂。
+    if (_voiceMode || _banned) {
+      return;
+    }
+    _inputHoldFired = false;
+    _inputHoldStart = event.position;
+    // 上滑取消以**起手点**为基准（小程序 `_voiceAnchorY = _holdStart.y` 同口径）：
+    // 若等 350ms 到点再取当时位置，这 350ms 里已经上滑的那段就被白吃掉了。
+    _voiceStart = event.position;
+    _inputHoldTimer?.cancel();
+    _inputHoldTimer = Timer(_kInputHoldDelay, () {
+      _inputHoldTimer = null;
+      if (!mounted) {
+        return;
+      }
+      _inputHoldFired = true;
+      _voiceRejected = false;
+      _voiceHolding = true;
+      // 长按之前可能正打着字（键盘开着）：唤起语音的同时把键盘收掉，
+      // 否则录音浮层和输入法叠在一起。
+      FocusScope.of(context).unfocus();
+      unawaited(_beginVoice());
+    });
+  }
+
+  void _onInputPointerMove(PointerMoveEvent event) {
+    if (_inputHoldFired) {
+      _onVoicePointerMove(event);
+      return;
+    }
+    final start = _inputHoldStart;
+    if (start == null) {
+      return;
+    }
+    // 还没到时间就移动了 → 当作滑动/选字，取消这次长按。
+    final delta = event.position - start;
+    if (delta.dx.abs() > _kInputHoldMovePx ||
+        delta.dy.abs() > _kInputHoldMovePx) {
+      _inputHoldTimer?.cancel();
+      _inputHoldTimer = null;
+      _inputHoldStart = null;
+    }
+  }
+
+  void _onInputPointerUp(PointerUpEvent event) {
+    _inputHoldTimer?.cancel();
+    _inputHoldTimer = null;
+    _inputHoldStart = null;
+    if (!_inputHoldFired) {
+      // 普通点击 / 没按够时长：什么都不做，交给 TextField 自己聚焦打字。
+      return;
+    }
+    _inputHoldFired = false;
+    _onVoicePointerUp(event);
+    // 松手那一下若仍触发了输入框聚焦（`enabled:false` 对**已经开始的这次触摸**
+    // 在部分机型拦不住），延迟一拍把键盘压回去；正常被拦住时这句是空操作。
+    // 与小程序 `setTimeout(() => this.hideKeyboard(), 100)` 同一处兜底。
+    Future<void>.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) {
+        FocusScope.of(context).unfocus();
+      }
+    });
+  }
+
+  void _onInputPointerCancel(PointerCancelEvent event) {
+    _inputHoldTimer?.cancel();
+    _inputHoldTimer = null;
+    _inputHoldStart = null;
+    if (!_inputHoldFired) {
+      return;
+    }
+    _inputHoldFired = false;
+    _voiceStart = null;
+    _voiceHolding = false;
+    _voiceRejected = false;
+    unawaited(_endVoice(cancel: true));
   }
 
   /// 起手：确认能录 → 开始监听。返回是否真的起来了。
