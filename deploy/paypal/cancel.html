@@ -20,28 +20,31 @@
   .btn{display:none;margin-top:22px;padding:13px 34px;border:0;border-radius:999px;
     color:#fff;font-size:16px;font-weight:700;
     background:linear-gradient(90deg,#ff8338,#ff621f);box-shadow:0 9px 18px rgba(255,98,31,.22)}
-  .btn.show{display:inline-block}
+  .btn.show{display:inline-block;text-decoration:none}
+  /* 排查用：拉不起 App 时把这次要跳的地址露出来，肉眼就能核 scheme/参数 */
+  .diag{margin-top:14px;color:#a8b0bb;font-size:11px;word-break:break-all}
 </style>
 </head>
 <body>
   <div class="spin" id="spin"></div>
   <div id="title">正在返回 App…</div>
   <div class="tip" id="tip">本次支付已取消，正在返回…</div>
-  <button class="btn" id="btn" type="button">返回 App</button>
+  <a class="btn" id="btn" href="#">返回 App</a>
+  <div class="diag" id="diag"></div>
 
 <script>
 (function () {
   // 用户在 PayPal 点「Cancel and return」后，浏览器被 302 到本页。
   // 本页**唯一的职责**就是把 App 拉起来，让它当场提示「已取消支付」。
   //
-  // ⚠️ 与 return.html 的唯一差别只有 APP_PATH 和几句文案 —— 逻辑保持一致，
+  // ⚠️ 与 return.html 的差别只有 APP_PATH 和几句文案 —— 跳转逻辑保持一致，
   //    改一个记得看另一个。这条路上没有 token/PayerID，也不需要调任何接口。
   var APP_PATH = 'pay/paypal/cancel';
   var SCHEME   = 'boltstar';
   var PACKAGE  = 'com.boltfox.boltstar';
 
-  var query  = window.location.search || '';
-  var deep   = SCHEME + '://' + APP_PATH + query;
+  var query = window.location.search || '';
+  var deep  = SCHEME + '://' + APP_PATH + query;
   // 安卓 Chrome 用 intent:// 成功率最高；browser_fallback_url 指回本页的 #manual，
   // 拉不起来时不会跳去应用商店，而是回到本页显示手动按钮（#manual 不会再自动跳，不成环）。
   var fallback = window.location.origin + window.location.pathname + query + '#manual';
@@ -52,19 +55,22 @@
                ';end';
 
   var isAndroid = /android/i.test(navigator.userAgent);
-  var btn = document.getElementById('btn');
+  var btn  = document.getElementById('btn');
+  var diag = document.getElementById('diag');
 
-  function manual() {
-    // 手动点击属于**用户手势**，浏览器对外跳的限制最松，成功率比自动跳高得多。
-    window.location.href = deep;
-  }
-  btn.addEventListener('click', manual);
+  // 手动点击属于**用户手势**，浏览器对外跳的限制最松，成功率比自动跳高得多。
+  // 用真链接（<a href>）而不是 JS 赋值：国内不少安卓浏览器（UC/QQ/百度、各家自带浏览器）
+  // 会拦掉脚本发起的 scheme 跳转，却放行用户点击的链接。
+  btn.setAttribute('href', deep);
 
   function giveUp(text) {
     document.getElementById('spin').style.display = 'none';
     document.getElementById('title').textContent = '已取消支付';
     document.getElementById('tip').textContent = text;
     btn.className = 'btn show';
+    // 露出这次要跳的地址：排查时一眼看出 scheme/参数对不对，
+    // 也方便把它复制出来用 adb 直接试。
+    diag.textContent = deep;
   }
 
   // 从 fallback 回来的：别再自动跳一次（会和刚才那次抢），直接给手动按钮。
@@ -73,11 +79,26 @@
     return;
   }
 
-  window.location.href = isAndroid ? intent : deep;
+  // ① 先试 intent://（安卓 Chrome 最稳）
+  if (isAndroid) {
+    window.location.href = intent;
+  } else {
+    window.location.href = deep;
+  }
 
-  // 2.5 秒还停在本页 = 没拉起来，给一个手动出口。
+  // ② 900ms 还在本页，再试一次**朴素 scheme**。
+  // 有些安卓浏览器（尤其国产内核）压根不认 intent:// 语法，却认 boltstar://；
+  // 反过来 Chrome 两种都认，多试这一次没有副作用（已经跳走的话本页脚本早就停了）。
+  var second = setTimeout(function () {
+    if (isAndroid) {
+      window.location.href = deep;
+    }
+  }, 900);
+
+  // ③ 2.5 秒仍停在本页 = 都没拉起来，给一个手动出口。
   // 取消这条没有金额风险，措辞可以直说。
   setTimeout(function () {
+    clearTimeout(second);
     giveUp('如果没有自动返回，请点击下方按钮');
   }, 2500);
 })();

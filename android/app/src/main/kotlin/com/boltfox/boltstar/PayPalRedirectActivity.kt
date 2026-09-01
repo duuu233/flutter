@@ -84,6 +84,9 @@ class PayPalRedirectActivity : Activity() {
             payerId = data.getQueryParameter("PayerID")
                 ?: data.getQueryParameter("payerID")
                 ?: data.getQueryParameter("payerId"),
+            // 中转页自己已经调过 getPayPalNotify 且拿到 retCode=200 时会带上这个标记。
+            // App 据此**跳过自己那次通知**，免得对同一单重复 capture（见 Dart 侧 _confirm）。
+            notified = data.getQueryParameter("notified") == "1",
         )
     }
 }
@@ -115,18 +118,24 @@ object PayPalRedirect {
     @Volatile
     private var returnPayerId: String? = null
 
+    /** 中转页是否已经替我们把 getPayPalNotify 调掉了（capture 已触发）。 */
+    @Volatile
+    private var returnNotified = false
+
     fun markCanceled() {
         returned = false
         returnToken = null
         returnPayerId = null
+        returnNotified = false
         canceled = true
     }
 
-    fun markReturned(token: String?, payerId: String?) {
+    fun markReturned(token: String?, payerId: String?, notified: Boolean) {
         canceled = false
         returned = true
         returnToken = token
         returnPayerId = payerId
+        returnNotified = notified
     }
 
     /** 读走并清掉「用户点了取消」。一次取消只应被判定一次，所以是 consume 不是 get。 */
@@ -148,12 +157,15 @@ object PayPalRedirect {
         }
         val token = returnToken
         val payerId = returnPayerId
+        val notified = returnNotified
         returned = false
         returnToken = null
         returnPayerId = null
+        returnNotified = false
         return mapOf(
             "token" to (token ?: ""),
             "PayerID" to (payerId ?: ""),
+            "notified" to if (notified) "1" else "",
         )
     }
 
@@ -163,5 +175,6 @@ object PayPalRedirect {
         returned = false
         returnToken = null
         returnPayerId = null
+        returnNotified = false
     }
 }

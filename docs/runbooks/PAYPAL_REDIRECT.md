@@ -17,16 +17,31 @@ PayPal **唯一**会把用户送回来的机制，就是授权/取消之后把�
 
 ```
 授权成功：PayPal --302--> https 中转页?token=..&PayerID=..
-          --JS--> boltstar://pay/paypal/return?token=..&PayerID=..
-          --> 安卓 PayPalRedirectActivity（记一次性标记 + 把 App 原任务提回前台）
-          --> 确认购买页 resumed 时读走
-          --> GET /Client/Pay/getPayPalNotify?token=..&PayerID=..
+          --> ① 中转页自己调 GET /Client/Pay/getPayPalNotify?token=..&PayerID=..
               （**后端据此 capture 扣款、入账**）
-          --> 照旧轮询余额确认到账
+          --> ② 跳 boltstar://pay/paypal/return?token=..&PayerID=..&notified=1
+              （retCode=200 时才带 notified=1）
+          --> 安卓 PayPalRedirectActivity（记一次性标记 + 把 App 原任务提回前台）
+          --> 确认购买页 resumed 时读走；带 notified=1 就跳过自己那次通知
+          --> 轮询余额确认到账
 
 用户取消：PayPal --302--> https 中转页 --JS--> boltstar://pay/paypal/cancel
-          --> 当场提示「已取消支付」，不走轮询
+          --> 当场提示「已取消支付」，不走轮询、也不调任何接口
 ```
+
+### ⚠️ capture 为什么放在中转页而不是 App
+
+**这样 capture 不依赖 App 能不能被拉起来。** 深链失败、用户手动切回 App、甚至进程被杀，
+钱都已经扣了、星币已入账，App 那边照常靠「余额变多」确认得到。
+这是本页最大的价值 —— 也大幅缓解（但没根治）第五节那个「用户不回 App 就不扣款」的风险。
+
+**但不能只靠页面**：那次 fetch 可能被跨域拦掉、断网、或后端回非 200。所以：
+retCode=200 才在深链上带 `notified=1`；**没带标记时 App 会自己再调一次**。
+两条路互为兜底，正常情况下只有一条真的 capture。
+
+⚠️ **跨域必须放行**：页面在 `pp.boltfox.cn`、接口在 `api.boltfox.cn`，是跨域请求，
+后端要给 `getPayPalNotify` 加 `Access-Control-Allow-Origin`。
+**不加也不会崩** —— fetch 被拦 → 不带 notified → App 补调，只是 capture 晚一步。
 
 ### ⚠️ 中间那个 https 页不能省
 
@@ -59,7 +74,7 @@ https://pp.boltfox.cn/cancel.html     ← deploy/paypal/cancel.html
 
 > 用独立域名而不是挂在 `badmin.boltfox.cn` 下，正好绕开了下面注意点 ② 那个坑。
 
-### 五个注意点
+### 六个注意点
 
 | # | 注意点 |
 | --- | --- |
@@ -67,7 +82,8 @@ https://pp.boltfox.cn/cancel.html     ← deploy/paypal/cancel.html
 | ② | ⚠️ **别把它挂到跑着 SPA 的域名下。** 那类站点的 nginx 大概率有 `try_files $uri /index.html` 的兜底——访问中转页返回的会是 SPA 的首页 HTML，脚本根本不执行，表现是「PayPal 跳过去看到的是后台首页」。当前用独立域名 `pp.boltfox.cn` 已规避；日后若要合并到别的域名，务必先把这两个路径从 catch-all 里排除。 |
 | ③ | **必须 https 且证书有效**。PayPal 只接受 http(s)，浏览器对混合内容也会拦。 |
 | ④ | **页面不许有任何外部依赖**。现在是纯内联 HTML+CSS+JS，没有 CDN、字体、图片。用户此刻在海外网络、刚付完钱，多一个外部请求就多一分失败——**别顺手加统计脚本**。 |
-| ⑤ | **页面不调任何后端接口**。capture 已约定由 App 调 `getPayPalNotify` 完成，中转页多调一次等于对同一单**重复 capture**。 |
+| ⑤ | **`return.html` 只调 `getPayPalNotify` 这一个接口**（`cancel.html` 一个都不调）。别再往里加别的调用：页面跑在支付回来的关键路径上，多一个请求就多一分失败。 |
+| ⑥ | ⚠️ **后端要给 `getPayPalNotify` 放行 CORS**（页面在 `pp.boltfox.cn`、接口在 `api.boltfox.cn`）。不放行不会崩，但 capture 会退回由 App 补调、晚一步。 |
 
 ### 页面自带的兜底（改页面前先读这段）
 
@@ -117,9 +133,12 @@ adb logcat -c && adb logcat | findstr /i paypal      # bash: grep -i paypal
 ```
 [PayPal] setCreatePay 返回 ... approveUrl=有
 [PayPal] 收到授权回跳 token=... PayerID=...
-[PayPal] getPayPalNotify 返回 paid=true ...
+[PayPal] 中转页已完成 getPayPalNotify，App 侧跳过，直接确认到账   ← CORS 已放行时
+[PayPal] getPayPalNotify 返回 paid=true ...                        ← CORS 没放行时（App 补调）
 [PayPal] 到账确认：+N（orderNo=...）
 ```
+
+第 3 行出现哪一条，正好说明中转页那次调用成没成 —— 两条都算正常，只是 capture 早晚之别。
 
 ### 第 4 步：取消流程
 

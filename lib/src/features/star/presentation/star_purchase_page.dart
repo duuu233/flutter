@@ -179,11 +179,22 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     final StarPurchaseResult result;
     StarPayNotify? notify;
     try {
-      // ② 授权成功回跳：把 PayPal 带回来的 token/PayerID 原样转给后端，
-      // **后端据此 capture 扣款并入账**。没有这一跳（用户自己切回来）就跳过，直接轮询。
+      // ② 授权成功回跳。
+      //
+      // ⚠️ `getPayPalNotify`（**后端据此 capture 扣款并入账**）现在**优先由中转页调**：
+      // 那样 capture 不依赖 App 能不能被拉起来 —— 深链失败、用户手动切回来、
+      // 甚至进程被杀，钱都已经扣了、星币已入账。中转页调成功（retCode=200）时会在深链上
+      // 带回 `notified=1`，这里就**跳过自己那次**，免得对同一单重复 capture。
+      //
+      // 没带标记的三种情况都要由 App 补这一刀，一次都不能漏：
+      //   · 中转页那次 fetch 被跨域拦了 / 断网 / 超时；
+      //   · 后端回了非 200；
+      //   · 用户走的是老版中转页。
       final returned = await StarPurchase.consumeReturn();
-      if (returned != null) {
+      if (returned != null && returned['notified'] != '1') {
         notify = await StarPurchase.notifyReturn(returned);
+      } else if (returned != null) {
+        debugPrint('[PayPal] 中转页已完成 getPayPalNotify，App 侧跳过，直接确认到账');
       }
       // ③ 无论有没有回跳，结论一律由**服务端余额**给（文件头铁律）。
       // 走过 ② 的话，capture 已经触发，这轮轮询通常第一次就命中。

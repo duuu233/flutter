@@ -10,12 +10,18 @@ import 'package:BoltStar/src/app.dart';
 import 'package:BoltStar/src/device/ble/ble_tuning.dart';
 import 'package:BoltStar/src/device/ble/device_ble.dart';
 import 'package:BoltStar/src/native_device_api.dart';
+import 'package:BoltStar/src/network/network_permission_primer.dart';
 import 'package:BoltStar/src/shared/temp_cache_sweeper.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   _configureAndroidPhotoPicker();
   _installCrashHandlers();
+  // iOS 首次联网授权预热：国内 iOS 会在**进程内第一次网络请求**时弹「允许使用无线数据」，
+  // 在用户点允许之前所有出站连接都被挡着。不预热的话，首次安装后直接点微信登录，
+  // 那第一次连接就发生在授权链路里 → 被挡 → 报「微信登录失败」，而微信的 code 只能用一次、
+  // 重试也救不回来。这里把框提到首屏。**不 await**：它只负责把框弹出来，不该挡首帧。
+  unawaited(NetworkPermissionPrimer.warmUp());
   // 热重启/异常退出残留清扫（best-effort）：Dart 侧单例重建后 connected=false，
   // 但原生侧的连接保活前台服务可能仍在跑——表现为热重启后通知栏保活常驻、
   // 设备被残留 GATT 占线搜不到。冷启动时本就没有服务在跑，停一次是无害空调用。
