@@ -1,5 +1,7 @@
 import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show debugPrint;
+
 import '../../network/api_exception.dart';
 import '../../network/boltfox_api.dart';
 
@@ -34,6 +36,19 @@ class StarCoinApi {
   }
 
   static String _toText(Object? value) => '${value ?? ''}'.trim();
+
+  /// 取第一个 **> 0** 的整数：同一个 id 后端可能给在不同字段名下。
+  /// ⚠️ 与 [_firstNonEmpty] 同一个思路，但**必须按「> 0」而不是「非 null」判**：
+  /// 这几个候选字段缺失时 [_toInt] 给的是 0，按非 null 判会在第一个候选就停下。
+  static int _firstPositiveInt(Map<String, dynamic> json, List<String> keys) {
+    for (final key in keys) {
+      final value = _toInt(json[key]);
+      if (value > 0) {
+        return value;
+      }
+    }
+    return 0;
+  }
 
   /// 取第一个非空串（同一个信息后端可能给在不同字段名下，见 [StarPayCreation.fromJson]）。
   static String _firstNonEmpty(List<String> values) {
@@ -199,6 +214,19 @@ class StarCoinApi {
     required StarPackage package,
     required int payType,
   }) async {
+    // 发出去之前先拦住：goodsId 为 0 时后端只会回一句笼统的「商品id必须大于0」，
+    // 用户看到的是一句和自己的操作对不上的话，我们也不知道是哪一档、哪个字段出的问题。
+    // 这里如实说明并把套餐名带进日志，比让后端替我们报错强。
+    if (package.goodsId <= 0) {
+      debugPrint(
+        '[星币] 建单被拦：goodsId=${package.goodsId} name=${package.name} '
+        '—— 套餐归一时没拿到商品 id，见 StarPackage.fromJson 的日志',
+      );
+      throw StarPurchaseException(
+        StarPurchaseError.goodsIdMissing,
+        '套餐数据缺少商品 id',
+      );
+    }
     final data = await BoltFoxApi.addOrder(
       goodsId: package.goodsId,
       payType: payType,
@@ -346,8 +374,25 @@ class StarPackage {
   });
 
   factory StarPackage.fromJson(Map<String, dynamic> json) {
+    // ⚠️ **goodsId 是整条购买链的第一把钥匙**：它为 0 时 `addOrder` 会被后端拒掉
+    // （retMsg「商品id必须大于0」），而页面照常渲染、照常「选中」—— 因为六档全是 0，
+    // `_selectedGoodsId` 也就是 0，从列表页到确认页一路都不报错，直到建单才炸。
+    // 2026-09-01 现场就是这个症状，所以这里多认几种键名，并在认不出时把后端**真实的键名**
+    // 打进日志（swagger 写的是 `goodsId`，但 swagger 与实际出参在本项目已经对不上过好几次）。
+    final goodsId = StarCoinApi._firstPositiveInt(json, const [
+      'goodsId',
+      'goodsID',
+      'goods_id',
+      'id',
+    ]);
+    if (goodsId <= 0) {
+      debugPrint(
+        '[星币] ⚠️ 套餐缺少可用的 goodsId，建单必失败。'
+        '后端这一行的键名：${json.keys.toList()}',
+      );
+    }
     return StarPackage(
-      goodsId: StarCoinApi._toInt(json['goodsId']),
+      goodsId: goodsId,
       name: StarCoinApi._toText(json['goodsName']),
       tokens: StarCoinApi._toInt(json['num']),
       gift: StarCoinApi._toInt(json['giveNum']),
@@ -581,6 +626,10 @@ class StarPayQuery {
 enum StarPurchaseError {
   /// 这一端的支付通道没接入（当前 = iOS）。
   channelUnavailable,
+
+  /// 套餐没解析出可用的 `goodsId`（后端字段名/取值与预期不符）。
+  /// 拿 0 去 `addOrder` 只会换回一句笼统的「商品id必须大于0」。
+  goodsIdMissing,
 
   /// 建单成功但没拿到 `orderNo`（后端出参异常）。
   orderNoMissing,
