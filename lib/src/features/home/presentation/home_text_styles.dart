@@ -69,7 +69,9 @@ class _HomeTextStyles {
   //      把基准从 13 抬到 15 对它一个像素都不影响）；
   //    · 副标题由 [_HomeMainView._entrySubtitleFontSize] 反过来算：**放得下才往上长**
   //      （最多 [_HomeMainView._entrySubtitleMaxFontSize]），长不动就退回这里的 9，
-  //      所以本轮对副标题是「有余量的语言变大、没余量的与改前逐像素相同」。
+  //      所以本轮对副标题是「有余量的语言变大、没余量的与改前逐像素相同」；
+  //      ⚠️ 2026-09-01 后半轮又按需求给**安卓**在算出来的值上再减一号
+  //      （[_HomeMainView._entrySubtitleAndroidDelta]），**iOS 保持不变**。
   static const entryTitle = TextStyle(
     fontSize: 15,
     fontWeight: FontWeight.w600,

@@ -324,6 +324,17 @@ class _HomeMainView extends StatelessWidget {
   /// 再往上调只会让更多语言退回 9（[_entrySubtitleFontSize] 放不下就一路退），白改。
   static const double _entrySubtitleMaxFontSize = 11;
 
+  /// 安卓端副标题在算出来的字号上**再降一号**（2026-09-01 需求：安卓副标题改小一号、
+  /// **iOS 保持不变**）。同一个 `fontSize` 在两端观感不同 —— iOS 走 SF、安卓走 Roboto/
+  /// 思源，字身高与字重都不一样，上一轮把副标题放开到「最多 11」之后，安卓真机上比 iOS 涨得更满。
+  ///
+  /// ⚠️ 这是**只减不加**的一步，所以不会新增截断：[_entrySubtitleFontSize] 挑的是
+  /// 「六条都能在两行里放下的最大字号」，比它更小的字号必然也放得下。
+  ///
+  /// ⚠️ 差值加在**最终值**上、而不是把上限/基准各减 1：需求要的是「安卓比 iOS 小一号」，
+  /// 若改成从 10 往 8 试，某些语种会落在「iOS 10.5 / 安卓 10」——只差半号，不是需求那一档。
+  static const double _entrySubtitleAndroidDelta = 1;
+
   /// 六张宫格卡副标题的**共用字号**：口径与标题一致（六张一样大、一条都不许被截成「...」），
   /// 方向相反 —— 标题是「基准值封顶、放不下才缩」，副标题是**「放得下才往上长」**。
   ///
@@ -335,15 +346,24 @@ class _HomeMainView extends StatelessWidget {
   ///
   /// ⚠️ 用的是 [_HomeEntryCard.subtitleHorizontalReserve] 而不是标题那条：
   /// 副标题才是**和箭头徽标并排**的那一行，可用宽度比标题少一个箭头。
+  ///
+  /// ⚠️ 算完之后**安卓再减 [_entrySubtitleAndroidDelta]**（iOS 不动，见那条常量）。
+  /// 减法放在最后一步，量文字时用的仍是未减的字号 —— 量的是「能放下的上限」，
+  /// 上限之下怎么减都还是放得下。
   double _entrySubtitleFontSize(BuildContext context, List<String> subtitles) {
     final base = _HomeTextStyles.entrySubtitle.fontSize ?? 9;
+    // 安卓比 iOS 小一号（需求 2026-09-01）。用 Theme 的 platform 而不是 dart:io 的
+    // `Platform.isAndroid`：前者可被 ThemeData/测试覆盖，量的又是纯布局，不该依赖进程环境。
+    final delta = Theme.of(context).platform == TargetPlatform.android
+        ? _entrySubtitleAndroidDelta
+        : 0.0;
     final media = MediaQuery.of(context);
     final rowWidth =
         media.size.width - media.padding.horizontal - _cardInset.horizontal;
     final cardWidth = (rowWidth - _entryGridGap * 2) / 3;
     final available = cardWidth - _HomeEntryCard.subtitleHorizontalReserve;
     if (available <= 0) {
-      return base;
+      return base - delta;
     }
 
     final direction = Directionality.of(context);
@@ -367,10 +387,10 @@ class _HomeMainView extends StatelessWidget {
         }
       }
       if (fits) {
-        return size;
+        return size - delta;
       }
     }
-    return base;
+    return base - delta;
   }
 
   /// 两种场景共用的底部六宫格入口（2026-08-21 同步小程序改版）。
