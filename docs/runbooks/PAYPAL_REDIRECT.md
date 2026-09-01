@@ -94,9 +94,39 @@ https://api.boltfox.cn/cancel.html    ← deploy/paypal/cancel.html
 
 - 安卓走 `intent://`（成功率最高）；`browser_fallback_url` 指回本页的 `#manual`，
   拉不起来时**不会跳应用商店**，而是回到本页显示「返回 App」按钮（`#manual` 不再自动跳，不成环）。
+  回跳时结果也一并带回来（`#manual-paid`）——那时**不能再调一次 `getPayPalNotify`**（会重复 capture），
+  不带的话回到本页就只能显示「处理中」。
 - 2.5 秒仍停在本页也会显示那颗按钮。**手动点击属于用户手势**，浏览器对外跳限制最松，
   成功率比自动跳高得多。
-- 文案**不写「支付失败」**：那一刻钱多半已经授权成功，只是 App 没被唤起。
+- 只用 `visibilitychange` / `pagehide` 判断「App 是否已被拉起」，**不认 `blur`**：
+  系统那个「要打开 App 吗」的确认框也会让本页 blur，用户点「取消」时什么都没发生。
+
+### ⚠️ 页面上显示的是**支付结果**，不是「跳转结果」（2026-09-01 改）
+
+老版本拉不起 App 时一律显示「支付处理中」，与支付成没成无关 —— 用户和排查的人都以为是**支付**
+出了问题，其实那次 `getPayPalNotify` 早就成功了。页面手里就有准信（同源那次 fetch 拿回来的
+就是后端 capture 的结论），没道理不说。现在按**三档**措辞：
+
+| 后端响应 | 页面显示 |
+| --- | --- |
+| `retCode=200` | **支付成功**（绿色）+「星币已到账」 |
+| 明确回了非 200 | **支付结果待确认** + **后端原话**（`retMsg` / `exceptionMsg`） |
+| 没拿到响应（超时/断网/被拦） | **支付处理中** —— 页面这时确实不知道，不许猜 |
+
+⚠️ 三档都**不写「支付失败」**：重复 capture、回调慢都会回非 200，但钱可能已经扣了。
+⚠️ 这不动第六节那条底线：页面这句话只是给用户一个准信，**App 的到账判据仍然是服务端余额变多**。
+
+### 屏幕内调试日志
+
+页面底部有一条「调试日志 (n) ▾」，点开是这次回跳的完整流水（手机上没有 devtools，
+链路断在哪只能靠它）。**跳 App 失败时自动展开**；也可以 `?debug=1` / `#debug` 强制展开，
+面板里有「复制日志」。记的东西按用途分三样，少一样就定位不了：
+
+- **原始 query 与 UA** —— PayPal 到底带没带 `token`/`PayerID`、当前是什么浏览器内核；
+- **HTTP 状态 +「响应原文」** —— 页面故意先 `r.text()` 再自己 `JSON.parse`，
+  **不用 `r.json()`**：后端/网关回 HTML（404 页、502 页、SPA 首页）时 `r.json()` 直接抛异常，
+  日志里就只剩一句「失败」，看不出是压根没打到接口；
+- **每次跳转尝试 + 页面有没有被切到后台** —— 后者是网页里唯一能观测到「深链成没成」的信号。
 
 ## 三、联调测试步骤
 
@@ -164,7 +194,9 @@ adb logcat -c && adb logcat | findstr /i paypal      # bash: grep -i paypal
 | --- | --- |
 | `setCreatePay` 报错 / `approveUrl=(空)` | 后端没接上 `payPalReturnUrl`，或那两个 URL 传给 PayPal 时被拒。看后端日志 |
 | PayPal 跳过去是 404 / 别的站点首页 | 部署路径不对，或域名有 SPA catch-all（注意点 ①②） |
-| 停在中转页、按钮点了也没反应 | 深链没接上：核对 `AndroidManifest.xml` 的 `PayPalRedirectActivity` 与 `StarPurchase.appReturnLink` 是否逐字一致（`test/star_purchase_test.dart` 有一条测试专门比对这两处） |
+| **停在中转页**（无论显示哪一档文案） | 先点开页面底部的**调试日志**——里面直接写着断在哪一步。停在本页 = 深链没生效，与支付成没成无关 |
+| 停在中转页、按钮点了也没反应 | 深链没接上：核对 `AndroidManifest.xml` 的 `PayPalRedirectActivity` 与 `StarPurchase.appReturnLink` 是否逐字一致（`test/star_purchase_test.dart` 有一条测试专门比对这两处）。日志里那条 `② 拉起 App：boltstar://…` 就是这次要跳的地址，可直接复制出来用 adb 试 |
+| 日志里「响应原文」不是 JSON | 那次 fetch 没打到接口，被静态站/网关接走了（看原文是 404 页还是别的站点首页），对照注意点 ①② |
 | 回到 App 了但余额一直不变 | `getPayPalNotify` 没触发 capture。日志里 `paid=` 就是后端给的结论，拿它去问后端 |
 | **第 5 步（不点回跳）余额永远不变** | **后端没有 webhook 兜底**，见下 |
 

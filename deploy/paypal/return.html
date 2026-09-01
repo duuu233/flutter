@@ -4,18 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="referrer" content="no-referrer">
-<title>支付处理中</title>
+<title>支付结果</title>
 <style>
   html,body{margin:0;height:100%}
   body{
     display:flex;flex-direction:column;align-items:center;justify-content:center;
-    padding:24px;box-sizing:border-box;text-align:center;
+    padding:24px 24px 72px;box-sizing:border-box;text-align:center;
     font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
     color:#2a2d32;background:#f2f5fc;
   }
   .spin{width:34px;height:34px;margin-bottom:18px;border-radius:50%;
     border:3px solid #e6ebf2;border-top-color:#ff6421;animation:r 1s linear infinite}
   @keyframes r{to{transform:rotate(360deg)}}
+  #title{font-size:19px;font-weight:700}
+  #title.ok{color:#12a05c}
   .tip{color:#828a95;font-size:14px}
   .btn{display:none;margin-top:22px;padding:13px 34px;border:0;border-radius:999px;
     color:#fff;font-size:16px;font-weight:700;
@@ -23,31 +25,54 @@
   .btn.show{display:inline-block;text-decoration:none}
   /* 排查用：拉不起 App 时把这次要跳的地址露出来，肉眼就能核 scheme/参数 */
   .diag{margin-top:14px;color:#a8b0bb;font-size:11px;word-break:break-all}
+
+  /* 屏幕内日志：手机上没有 devtools，链路断在哪只能靠这块面板看 */
+  .log{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e6ebf2;text-align:left}
+  .log-bar{padding:10px 14px;color:#828a95;font-size:12px;cursor:pointer;
+    -webkit-user-select:none;user-select:none}
+  .log-body{display:none;margin:0;padding:0 14px 10px;max-height:46vh;overflow:auto;
+    white-space:pre-wrap;word-break:break-all;color:#5b6472;
+    font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .log-copy{display:none;margin:0 14px 14px;padding:7px 16px;border:1px solid #d8e0ea;
+    border-radius:8px;background:#f7f9fd;color:#5b6472;font-size:12px}
+  .log.open .log-body,.log.open .log-copy{display:block}
 </style>
 </head>
 <body>
   <div class="spin" id="spin"></div>
-  <div id="title">正在返回 App…</div>
+  <div id="title">正在确认支付结果…</div>
   <div class="tip" id="tip">请稍候，不要关闭本页面</div>
   <a class="btn" id="btn" href="#">返回 App 查看结果</a>
   <div class="diag" id="diag"></div>
+
+  <div class="log" id="log">
+    <div class="log-bar" id="logbar">调试日志 <span id="logn">(0)</span> ▾</div>
+    <pre class="log-body" id="logbody"></pre>
+    <button class="log-copy" id="logcopy" type="button">复制日志</button>
+  </div>
 
 <script>
 (function () {
   // PayPal 授权成功后把浏览器 302 到本页，query 上带着：
   //   ?token=<PayPal 订单号>&PayerID=<付款人>
   //
-  // 本页做两件事，顺序不能反：
+  // 本页做三件事，前两件顺序不能反：
   //   ① 调 getPayPalNotify —— **后端拿这两个值去 capture（真正扣款）并入账**；
-  //   ② 把 App 拉起来，并在深链上带回 notified=1，告诉 App「这一步我已经替你做了」。
+  //   ② 把 App 拉起来，并在深链上带回 notified=1，告诉 App「这一步我已经替你做了」；
+  //   ③ **把 ① 的结论显示在本页**（2026-09-01 加）。
   //
-  // ⚠️ 为什么放在页面而不是等 App 来调：capture 从此**不依赖 App 能不能被拉起来**。
+  // ⚠️ 为什么 capture 放在页面而不是等 App 来调：capture 从此**不依赖 App 能不能被拉起来**。
   //    深链失败、用户手动切回 App、甚至进程被杀，钱都已经扣了、星币已经入账，
   //    App 那边照常靠「余额变多」确认得到。这是本页存在的最大价值。
   //
   // ⚠️ 但**不能只靠页面**：这次 fetch 可能因为跨域/断网失败。所以失败时不带 notified，
   //    App 收到深链后会自己再调一次（见 star_purchase_page._confirm）。两条路互为兜底，
   //    正常情况下只有一条会真的 capture。
+  //
+  // ⚠️ ③ 为什么值得做：② 拉不起 App 是常态风险（浏览器内核/厂商拦截），
+  //    老版本此时一律显示「支付处理中」，用户和排查的人都以为是**支付**出了问题，
+  //    其实 ① 早就成功了 —— 页面手里就有准信，没道理不说。
+  //
   // ⚠️ 接口用**相对路径**：本页与 API 部署在同一个域名下（api.boltfox.cn），
   //    相对路径天然同源，**不需要后端放行 CORS**，也不会因为将来换域名而写死一个旧 host。
   //    如果哪天把本页挪到别的域名，这次 fetch 会失败 → 走 catch 分支、不带 notified、
@@ -59,14 +84,103 @@
   var NOTIFY_TIMEOUT_MS = 6000;   // 等后端 capture 的上限，超时就先回 App，别把人晾在网页上
 
   var query = window.location.search || '';
+  var hash  = window.location.hash || '';
   var btn   = document.getElementById('btn');
   var diag  = document.getElementById('diag');
 
   function el(id) { return document.getElementById(id); }
 
+  // ── 屏幕内日志 ───────────────────────────────────────────────────────
+  //
+  // 用户手机上打不开 devtools、adb 也未必连着，链路断在哪全靠这块面板。所以每一步都记，
+  // 尤其是这三样（少一样就定位不了）：
+  //   · 原始 query —— 看 PayPal 到底带没带 token/PayerID；
+  //   · HTTP 状态 + **响应原文** —— 回的是不是 JSON、是不是被静态站/网关接走了；
+  //   · 页面有没有被切到后台 —— 这是网页里唯一能观测到「深链成没成」的信号。
+  // 默认折叠，跳 App 失败时自动展开（那正是需要看它的时候）；?debug=1 可强制展开。
+  var t0 = Date.now();
+  var lines = [];
+  var logBox = el('log');
+
+  function log(text) {
+    var ms = Date.now() - t0;
+    lines.push('[+' + (ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's') + '] ' + text);
+    el('logbody').textContent = lines.join('\n');
+    el('logn').textContent = '(' + lines.length + ')';
+    el('logbody').scrollTop = el('logbody').scrollHeight;
+  }
+
+  function openLog() { logBox.className = 'log open'; }
+
+  el('logbar').onclick = function () {
+    logBox.className = logBox.className.indexOf('open') < 0 ? 'log open' : 'log';
+  };
+  el('logcopy').onclick = function () {
+    var text = lines.join('\n');
+    var done = function () { el('logcopy').textContent = '已复制'; };
+    // clipboard API 在 https 下可用；不可用时退回选中，用户长按也能复制。
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, select);
+    } else { select(); }
+    function select() {
+      var range = document.createRange();
+      range.selectNodeContents(el('logbody'));
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      el('logcopy').textContent = '已选中，长按复制';
+    }
+  };
+
+  // 脚本自己挂了也要留痕，否则页面卡在初始文案上，看不出是 JS 死了还是接口没回。
+  window.onerror = function (msg, src, line) {
+    log('‼️ JS 错误：' + msg + ' @' + line); openLog();
+  };
+  window.addEventListener('unhandledrejection', function (e) {
+    log('‼️ 未处理的 Promise：' + e.reason);
+  });
+
+  function cut(text) {
+    text = String(text == null ? '' : text).replace(/\s+/g, ' ');
+    return text.length > 400 ? text.slice(0, 400) + '…(已截断)' : (text || '(空)');
+  }
+
+  log('页面加载 ' + window.location.pathname + query + hash);
+  log('UA=' + navigator.userAgent);
+
+  // 页面被切到后台 = App 十有八九被拉起来了。这是**唯一**能在网页里观测到深链成没成的信号，
+  // 比「等 2.5 秒还在本页」准得多：拉起成功时就不该再喊「没有自动返回」。
+  // ⚠️ 只认 visibilitychange / pagehide，**不认 blur** —— 系统那个「要打开 App 吗」的
+  //    确认框也会让本页 blur，用户点「取消」的话什么都没发生，据此报成功就错了。
+  var wentHidden = false;
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (!wentHidden) { wentHidden = true; log('✅ 页面被切到后台 → App 已被拉起'); }
+    } else {
+      log('页面回到前台');
+    }
+  });
+  window.addEventListener('pagehide', function () {
+    if (!wentHidden) { wentHidden = true; log('✅ pagehide → 已跳走'); }
+  });
+
+  // ── 这次支付到底成没成 ───────────────────────────────────────────────
+  //
+  // 页面**是知道的**：同源那次 fetch 拿回来的就是后端 capture 的结论。
+  // 老版本把它只用来决定深链带不带 notified=1，用完就扔，所以不管成没成，
+  // 拉不起 App 时页面一律显示「支付处理中」。现在把结论留在这里，页面自己也能给个准信。
+  //
+  // ⚠️ 三档措辞，一档都不能含糊（钱已经在用户账上动过了）：
+  //   · retCode=200 ................. 「支付成功」——后端已 capture 并入账，可以直说；
+  //   · 后端明确回了非 200 .......... 「支付结果待确认」+ **后端原话**。仍然不写「支付失败」：
+  //                                   重复 capture、回调慢都会回非 200，但钱可能已经扣了；
+  //   · 没拿到响应（超时/断网/被拦）... 「支付处理中」——页面这时确实不知道，不许猜。
+  var state = { paid: false, title: '支付处理中', tip: '请返回 App 查看支付结果' };
+
   function setText(title, tip) {
     el('title').textContent = title;
     el('tip').textContent = tip;
+    document.title = title;
   }
 
   // ⚠️ query 整串透传、不解析重组：PayerID 是大写 P 大写 ID，重组极易把大小写弄丢。
@@ -79,10 +193,13 @@
     return SCHEME + '://' + APP_PATH + q;
   }
 
-  function giveUp(deep, text) {
+  // 停在本页了：把结论摆出来 + 给手动出口。
+  // ⚠️ 标题用 state.title（真实结果），**不再写死「支付处理中」** —— 拉不起 App 与支付成没成
+  //    是两件事，混为一谈会让用户以为钱没付成、于是再买一次。
+  function giveUp(deep) {
     el('spin').style.display = 'none';
-    el('title').textContent = '支付处理中';
-    el('tip').textContent = text;
+    el('title').className = state.paid ? 'ok' : '';
+    setText(state.title, state.tip);
     btn.setAttribute('href', deep);
     btn.className = 'btn show';
     // 露出这次要跳的地址：排查时一眼看出 scheme/参数对不对，也方便复制出来用 adb 直接试。
@@ -92,10 +209,12 @@
   function jump(notified) {
     var deep = deepLink(notified);
     btn.setAttribute('href', deep);
-    setText('正在返回 App…', '请稍候，不要关闭本页面');
+    log('② 拉起 App：' + deep);
 
+    // fallback 回来时把结论也带回来（#manual-paid），否则回到本页又只能显示「处理中」，
+    // 而这时**不能再调一次 getPayPalNotify**（会对同一单重复 capture）。
     var fallback = window.location.origin + window.location.pathname +
-                   query + '#manual';
+                   query + '#manual' + (notified ? '-paid' : '');
     var intent = 'intent://' + APP_PATH + (notified
                    ? (query ? query + '&notified=1' : '?notified=1')
                    : query) +
@@ -104,52 +223,130 @@
                  ';S.browser_fallback_url=' + encodeURIComponent(fallback) +
                  ';end';
     var isAndroid = /android/i.test(navigator.userAgent);
+    log('   平台=' + (isAndroid ? 'Android（先试 intent://）' : '非 Android（直接试 scheme）'));
 
     // ① 先试 intent://（安卓 Chrome 最稳）
     window.location.href = isAndroid ? intent : deep;
 
     // ② 900ms 还在本页，再试一次**朴素 scheme**：不少国产内核浏览器不认 intent:// 语法，
-    //    却认 boltstar://。已经跳走的话本页脚本早就停了，多试一次没有副作用。
+    //    却认 boltstar://。
+    //    ⚠️ 已经切走了就别再跳：那一跳会打断刚拉起的 App，或者在系统确认框上再叠一个。
     var second = setTimeout(function () {
-      if (isAndroid) { window.location.href = deep; }
+      if (isAndroid && !wentHidden && !document.hidden) {
+        log('   900ms 仍在本页，改试朴素 scheme：' + deep);
+        window.location.href = deep;
+      }
     }, 900);
 
     // ③ 2.5 秒仍停在本页 = 都没拉起来，给手动出口。
-    //    ⚠️ 措辞不能写「支付失败」：此刻钱多半已经扣成功了，只是 App 没被唤起。
     setTimeout(function () {
       clearTimeout(second);
-      giveUp(deep, '如果没有自动返回，请点击下方按钮');
+      if (wentHidden) {
+        // 拉起成功过，用户又切回了浏览器。按钮照给，但别喊「没有自动返回」。
+        log('③ App 已拉起过，本页保留结果与返回按钮');
+      } else {
+        log('③ 2.5s 仍停在本页 = 深链没生效。检查：App 是否安装、AndroidManifest 里的 ' +
+            'PayPalRedirectActivity scheme/host 是否与上面这条地址逐字一致、当前浏览器是否拦截外跳');
+        openLog();   // 正是需要看日志的时候，直接摊开
+      }
+      giveUp(deepLink(!!state.paid));
     }, 2500);
   }
 
-  // 从 fallback 回来的：别再自动跳一次（会和刚才那次抢），也别重复调后端。
-  if (window.location.hash === '#manual') {
-    giveUp(deepLink(false), '请点击下方按钮返回 App 查看支付结果');
+  if (query.indexOf('debug=1') >= 0 || hash.indexOf('debug') >= 0) { openLog(); }
+
+  // 从 fallback 回来的：别再自动跳一次（会和刚才那次抢），**也绝不重复调后端**（会重复 capture）。
+  // 结论从 hash 上读回来，见 jump() 里那个 fallback。
+  if (hash.indexOf('#manual') === 0) {
+    var paidBefore = hash.indexOf('-paid') > 0;
+    log('从 browser_fallback_url 回到本页（' + hash + '）：不自动跳、不重复调后端');
+    state = paidBefore
+      ? { paid: true,  title: '支付成功',       tip: '星币已到账，点下方按钮回 App 查看' }
+      : { paid: false, title: '支付处理中',     tip: '请点击下方按钮返回 App 查看结果' };
+    openLog();
+    giveUp(deepLink(paidBefore));
     return;
   }
 
   // 没有 token/PayerID（异常访问）：没什么可通知的，直接回 App 让它走查单兜底。
   if (query.indexOf('token=') < 0) {
+    log('⚠️ query 里没有 token=，不调后端，直接回 App 走查单兜底' +
+        '（PayPal 没带参数，或中间某一跳把 query 吃掉了）');
+    openLog();
     jump(false);
     return;
   }
 
   setText('正在确认支付结果…', '请稍候，不要关闭本页面');
 
-  // 同源请求，不涉及 CORS。失败（断网/超时/后端非 200）时走下面的 catch/超时分支：
-  // 不带 notified 回 App，由 App 再调一次，**流程仍然通**，只是 capture 晚一步。
+  var url = NOTIFY_PATH + query;
+  log('① 触发后端 capture：GET ' + url);
+
+  // 同源请求，不涉及 CORS。失败（断网/超时/后端非 200）时不带 notified 回 App，
+  // 由 App 再调一次，**流程仍然通**，只是 capture 晚一步。
+  var TIMEOUT = {};
+  var httpStatus = 0;
+  var started = Date.now();
+
   var timeout = new Promise(function (resolve) {
-    setTimeout(function () { resolve(null); }, NOTIFY_TIMEOUT_MS);
+    setTimeout(function () { resolve(TIMEOUT); }, NOTIFY_TIMEOUT_MS);
   });
-  var request = fetch(NOTIFY_PATH + query, {
-    method: 'GET',
-    credentials: 'omit'
-  }).then(function (r) { return r.json(); }).catch(function () { return null; });
+  var request = fetch(url, { method: 'GET', credentials: 'omit' })
+    .then(function (r) {
+      httpStatus = r.status;
+      // ⚠️ 先取原文再自己 JSON.parse，**别直接 r.json()**：后端/网关回 HTML（404 页、
+      //    502 页、SPA 首页）时 r.json() 直接抛异常，日志里就只剩一句「失败」，
+      //    压根看不出是没打到接口。原文一摆出来，是哪一种一眼就知道。
+      return r.text();
+    })
+    .then(function (text) {
+      log('   ← HTTP ' + httpStatus + '（' + (Date.now() - started) + 'ms）响应原文：' + cut(text));
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        log('   ← 响应不是 JSON：多半没打到接口（被静态站/网关接走了），看上面那段原文');
+        return null;
+      }
+    })
+    .catch(function (e) {
+      log('   ← 请求失败：' + e + '（断网、被浏览器拦掉，或页面已不同源 → 需要后端加 CORS）');
+      return null;
+    });
 
   Promise.race([request, timeout]).then(function (body) {
+    if (body === TIMEOUT) {
+      log('   ← ' + NOTIFY_TIMEOUT_MS + 'ms 内没等到后端，先回 App，capture 交给 App 补调');
+      body = null;
+    }
     // retCode === 200 才算后端确认扣款成功。其余情况（失败/超时/跨域被拦）
     // 一律不带 notified，交给 App 再试一次 —— 宁可多调一次，也不能漏掉 capture。
-    jump(!!body && body.retCode === 200);
+    var paid = !!body && body.retCode === 200;
+
+    if (body) {
+      log('   ← 解析结果：retCode=' + body.retCode +
+          ' retMsg=' + cut(body.retMsg) +
+          ' retData=' + cut(JSON.stringify(body.retData)));
+    }
+    log('   ← 结论：' + (paid ? '后端已 capture 成功，深链带 notified=1'
+                             : '未确认，不带 notified，由 App 补调一次'));
+
+    if (paid) {
+      state = { paid: true, title: '支付成功', tip: '星币已到账，正在返回 App…' };
+    } else if (body) {
+      // 后端明确回了非 200：这是**服务端的结论**，比页面自己编一句有用得多，原话照搬。
+      var reason = String(body.retMsg || (body.retData && body.retData.exceptionMsg) || '').trim();
+      state = {
+        paid: false,
+        title: '支付结果待确认',
+        tip: reason ? reason.slice(0, 80) : '请返回 App 查看余额'
+      };
+    }
+    // body 为 null 时保持默认的「支付处理中」——页面这时确实不知道，不许猜。
+
+    // 先把结论显示出来，再去拉 App：万一深链失败，用户至少看到的是真结果。
+    el('title').className = state.paid ? 'ok' : '';
+    setText(state.title, state.paid ? '星币已到账，正在返回 App…' : '正在返回 App…');
+    jump(paid);
   });
 })();
 </script>

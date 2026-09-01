@@ -76,13 +76,22 @@
                ';end';
   var isAndroid = /android/i.test(navigator.userAgent);
 
+  // 页面被切到后台 = App 已被拉起。与 return.html 同一套判断（只认 visibilitychange /
+  // pagehide，**不认 blur**：系统那个「要打开 App 吗」的确认框也会让本页 blur）。
+  var wentHidden = false;
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { wentHidden = true; }
+  });
+  window.addEventListener('pagehide', function () { wentHidden = true; });
+
   // ① 先试 intent://（安卓 Chrome 最稳）
   window.location.href = isAndroid ? intent : deep;
 
   // ② 900ms 还在本页，再试一次**朴素 scheme**：不少国产内核浏览器不认 intent:// 语法，
-  //    却认 boltstar://。已经跳走的话本页脚本早就停了，多试一次没有副作用。
+  //    却认 boltstar://。
+  //    ⚠️ 已经切走了就别再跳：那一跳会打断刚拉起的 App，或者在系统确认框上再叠一个。
   var second = setTimeout(function () {
-    if (isAndroid) { window.location.href = deep; }
+    if (isAndroid && !wentHidden && !document.hidden) { window.location.href = deep; }
   }, 900);
 
   // ③ 2.5 秒仍停在本页 = 都没拉起来，给手动出口。取消这条没有金额风险，措辞可以直说。

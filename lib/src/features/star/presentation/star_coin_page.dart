@@ -64,11 +64,23 @@ class _StarCoinPageState extends State<StarCoinPage> {
     _load();
   }
 
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _loadFailed = false;
-    });
+  /// 下拉刷新：重拉余额（星币数）、套餐与规则。
+  ///
+  /// 本页原来**只在进页时拉一次**，弱网那次拉失败、或在别处消耗了星币再切回来，
+  /// 都只能退出去重进才能看到新数字。下拉是这一页最顺手的手动刷新入口。
+  ///
+  /// ⚠️ 走 `silent: true`：下拉自带转圈，再翻一次整页 loading 是两个加载态叠着闪，
+  /// 而且会把列表整块换成占位图、下拉手势当场断掉（沿用官方图库那页的口径）。
+  Future<void> _refresh() => _load(silent: true);
+
+  /// [silent] = 不翻整页 loading（下拉刷新用）。
+  Future<void> _load({bool silent = false}) async {
+    if (!silent) {
+      setState(() {
+        _loading = true;
+        _loadFailed = false;
+      });
+    }
     StarAccount? account;
     var failed = false;
     try {
@@ -132,6 +144,9 @@ class _StarCoinPageState extends State<StarCoinPage> {
     return FigmaScreen(
       title: l10n.starCoinTitle,
       background: Image.asset('assets/images/bg02.jpg', fit: BoxFit.cover),
+      // 下拉刷新余额/套餐/规则。整页 loading、加载失败两态也照样能下拉——
+      // 失败态那颗「重试」按钮之外多一条手势入口，不吃亏。
+      onRefresh: _refresh,
       body: _loading
           ? const SizedBox(height: 320, child: PageLoading())
           : _loadFailed

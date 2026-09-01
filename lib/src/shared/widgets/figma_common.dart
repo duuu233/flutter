@@ -25,7 +25,11 @@ class FigmaScreen extends StatelessWidget {
     this.bodyPadding = const EdgeInsets.symmetric(horizontal: 24),
     this.background,
     this.resizeToAvoidBottomInset = true,
-  });
+    this.onRefresh,
+  }) : assert(
+         onRefresh == null || scrollable,
+         'onRefresh 需要一个可滚动的内容区：scrollable:false 时 RefreshIndicator 收不到下拉手势',
+       );
 
   final String? title;
 
@@ -64,9 +68,27 @@ class FigmaScreen extends StatelessWidget {
   final Widget? background;
   final bool resizeToAvoidBottomInset;
 
+  /// 下拉刷新。给了它就把内容区包一层 [RefreshIndicator]，并把滚动物理量改成
+  /// [AlwaysScrollableScrollPhysics]——不改的话内容不满一屏时压根拖不动，下拉手势收不到。
+  ///
+  /// ⚠️ 只包**内容区**：顶栏与贴底按钮不跟着下移，转圈也不该盖住它们。
+  ///
+  /// ⚠️ 回调里**别翻整页 loading**：下拉自带转圈，再清一次屏是两个加载态叠着闪
+  /// （沿用官方图库那页的 `silent: true` 口径）。
+  ///
+  /// ⚠️ body 自带滚动区（`Expanded(child: ListView…)`）的页面别用这里，
+  /// 在那个 ListView 外面自己包 [RefreshIndicator]——本参数包的是 [FigmaScreen] 的外层
+  /// 滚动视图，而那类页面传的是 `scrollable: false`（已由构造断言挡住）。
+  final Future<void> Function()? onRefresh;
+
   @override
   Widget build(BuildContext context) {
-    final Widget content = scrollable
+    // 内容不满一屏时也要能拖动，否则下拉刷新的手势根本到不了 RefreshIndicator。
+    // 没传 onRefresh 的页面保持 null（= 平台默认物理量），观感一点不变。
+    final ScrollPhysics? physics = onRefresh == null
+        ? null
+        : const AlwaysScrollableScrollPhysics();
+    Widget content = scrollable
         ? (fillViewport
               ? LayoutBuilder(
                   builder: (context, constraints) {
@@ -76,6 +98,7 @@ class FigmaScreen extends StatelessWidget {
                         constraints.maxHeight - bodyPadding.vertical;
                     return SingleChildScrollView(
                       padding: bodyPadding,
+                      physics: physics,
                       child: ConstrainedBox(
                         constraints: BoxConstraints(
                           minHeight: available > 0 ? available : 0.0,
@@ -85,8 +108,19 @@ class FigmaScreen extends StatelessWidget {
                     );
                   },
                 )
-              : SingleChildScrollView(padding: bodyPadding, child: body))
+              : SingleChildScrollView(
+                  padding: bodyPadding,
+                  physics: physics,
+                  child: body,
+                ))
         : Padding(padding: bodyPadding, child: body);
+    if (onRefresh != null) {
+      content = RefreshIndicator(
+        onRefresh: onRefresh!,
+        color: const Color(0xFFEB5F1B), // 全站主色，与「我的设备」那页的下拉一致
+        child: content,
+      );
+    }
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.dark.copyWith(
