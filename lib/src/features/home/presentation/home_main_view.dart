@@ -269,7 +269,13 @@ class _HomeMainView extends StatelessWidget {
   /// LayoutBuilder 量不出固有高度，放进去会在布局期直接抛错。
   /// 好在这里的卡宽是**确定可算**的：屏宽 − 左右各 24 的页内缩 − 两条 9 的中缝，再三等分。
   ///
-  /// 中/繁/日词短、放得下 → 比例为 1，字号仍是基准值，与改动前逐像素相同；只有英文会真的缩。
+  /// 中/繁中四个字放得下 → 比例为 1，字号就是基准值；英文（My Uploads / Album Cast）与
+  /// 日文（マイアップロード，六条里最长）放不下时六张一起缩。
+  ///
+  /// ⚠️ 返回值是 `min(基准, 放得下的最大值)`，而「放得下的最大值」= 可用宽 ÷ 单位字号宽度、
+  /// **与基准无关** —— 所以 2026-09-01 把基准从 13 抬到 15 时，对任何语言都只会不变或变大
+  /// （日文照旧压在 ≈11.5），不可能因此新增截断。要放大就动 [_HomeTextStyles.entryTitle]，
+  /// 这里一行都不用改。
   double _entryTitleFontSize(BuildContext context, List<String> titles) {
     final base = _HomeTextStyles.entryTitle.fontSize ?? 13;
     final media = MediaQuery.of(context);
@@ -296,6 +302,10 @@ class _HomeMainView extends StatelessWidget {
         ),
         maxLines: 1,
         textDirection: direction,
+        // ⚠️ 带上系统字体缩放（2026-09-01）：量的是「画出来有多宽」。
+        // 漏了它，用户把系统字体调大后真实文字比量出来的宽，照样会被截成省略号 ——
+        // 而这条算式存在的全部意义就是「一条都不截」。
+        textScaler: media.textScaler,
       )..layout();
       if (painter.width > 0) {
         final fit = available / painter.width;
@@ -305,6 +315,62 @@ class _HomeMainView extends StatelessWidget {
       }
     }
     return base * (scale > 1 ? 1 : scale);
+  }
+
+  /// 六张宫格卡**副标题**的放大上限（2026-09-01）。9 是基准值，这里给出「最多长到几」。
+  ///
+  /// 11 这个数是拿卡内可用宽度反推的：副标题最多两行、超出就省略号，
+  /// 而英文最长的一条 "Generate images with AI" 在 360dp 屏上两行已经用得很满 ——
+  /// 再往上调只会让更多语言退回 9（[_entrySubtitleFontSize] 放不下就一路退），白改。
+  static const double _entrySubtitleMaxFontSize = 11;
+
+  /// 六张宫格卡副标题的**共用字号**：口径与标题一致（六张一样大、一条都不许被截成「...」），
+  /// 方向相反 —— 标题是「基准值封顶、放不下才缩」，副标题是**「放得下才往上长」**。
+  ///
+  /// ⚠️ 2026-09-01 需求：「六宫格的文案可以适度放大，目前是放得下的，不会显示 ...」。
+  /// 副标题不能照标题那样按宽度比例反推：它**最多两行、会换行**，
+  /// 宽度比例算不出「两行装不装得下」（换行点由词边界决定，不是等比缩放）。
+  /// 所以这里从上限往下试，第一个「六条都能在两行里放下」的字号就是答案；
+  /// 一个都试不成就退回基准 9 —— 那种情况下与改动前**逐像素相同**，不会比原来更差。
+  ///
+  /// ⚠️ 用的是 [_HomeEntryCard.subtitleHorizontalReserve] 而不是标题那条：
+  /// 副标题才是**和箭头徽标并排**的那一行，可用宽度比标题少一个箭头。
+  double _entrySubtitleFontSize(BuildContext context, List<String> subtitles) {
+    final base = _HomeTextStyles.entrySubtitle.fontSize ?? 9;
+    final media = MediaQuery.of(context);
+    final rowWidth =
+        media.size.width - media.padding.horizontal - _cardInset.horizontal;
+    final cardWidth = (rowWidth - _entryGridGap * 2) / 3;
+    final available = cardWidth - _HomeEntryCard.subtitleHorizontalReserve;
+    if (available <= 0) {
+      return base;
+    }
+
+    final direction = Directionality.of(context);
+    for (var size = _entrySubtitleMaxFontSize; size > base; size -= 0.5) {
+      var fits = true;
+      for (final subtitle in subtitles) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: subtitle,
+            style: _HomeTextStyles.entrySubtitle.copyWith(fontSize: size),
+          ),
+          // 与卡片里那个 Text 完全同参（maxLines: 2 + 省略号）：
+          // didExceedMaxLines 为真就等于真机上会出现「...」。
+          maxLines: 2,
+          textDirection: direction,
+          textScaler: media.textScaler,
+        )..layout(maxWidth: available);
+        if (painter.didExceedMaxLines) {
+          fits = false;
+          break;
+        }
+      }
+      if (fits) {
+        return size;
+      }
+    }
+    return base;
   }
 
   /// 两种场景共用的底部六宫格入口（2026-08-21 同步小程序改版）。
@@ -328,6 +394,16 @@ class _HomeMainView extends StatelessWidget {
       if (kGalleryEntryEnabled) l10n.tabGallery,
       l10n.devMyDevicesTitle,
     ]);
+    // 副标题同理（2026-09-01「文案适度放大」）：放得下才往上长，六张共用一个值。
+    // ⚠️ 名单要跟着灰度开关走 —— 关掉的卡不渲染，它的副标题不该把别人的字号压下去。
+    final subtitleFontSize = _entrySubtitleFontSize(context, <String>[
+      l10n.homeCastCameraCardSubtitle,
+      l10n.homeCastAlbumCardSubtitle,
+      l10n.homeEntryUploadsSubtitle,
+      if (kAiEntryEnabled) l10n.homeEntryAiSubtitle,
+      if (kGalleryEntryEnabled) l10n.homeEntryGallerySubtitle,
+      l10n.homeEntryDevicesSubtitle,
+    ]);
     final entries = <_HomeEntryCard>[
       _HomeEntryCard(
         title: l10n.homeEntryCameraTitle,
@@ -336,6 +412,7 @@ class _HomeMainView extends StatelessWidget {
         iconAsset: 'assets/images/home-icon01.png',
         arrowAsset: 'assets/images/home-icon11.png',
         titleFontSize: titleFontSize,
+        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.photo_camera_outlined,
         onTap: onCamera,
       ),
@@ -346,6 +423,7 @@ class _HomeMainView extends StatelessWidget {
         iconAsset: 'assets/images/home-icon02.png',
         arrowAsset: 'assets/images/home-icon12.png',
         titleFontSize: titleFontSize,
+        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.photo_library_outlined,
         onTap: onAlbum,
       ),
@@ -356,6 +434,7 @@ class _HomeMainView extends StatelessWidget {
         iconAsset: 'assets/images/home-icon03.png',
         arrowAsset: 'assets/images/home-icon13.png',
         titleFontSize: titleFontSize,
+        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.folder_open_outlined,
         onTap: onOpenUploads,
       ),
@@ -367,7 +446,8 @@ class _HomeMainView extends StatelessWidget {
           iconAsset: 'assets/images/home-icon04.png',
           arrowAsset: 'assets/images/home-icon14.png',
           titleFontSize: titleFontSize,
-        fallbackIcon: Icons.auto_awesome_outlined,
+          subtitleFontSize: subtitleFontSize,
+          fallbackIcon: Icons.auto_awesome_outlined,
           onTap: onOpenAi,
         ),
       if (kGalleryEntryEnabled)
@@ -378,7 +458,8 @@ class _HomeMainView extends StatelessWidget {
           iconAsset: 'assets/images/home-icon05.png',
           arrowAsset: 'assets/images/home-icon15.png',
           titleFontSize: titleFontSize,
-        fallbackIcon: Icons.collections_outlined,
+          subtitleFontSize: subtitleFontSize,
+          fallbackIcon: Icons.collections_outlined,
           onTap: onOpenGallery,
         ),
       _HomeEntryCard(
@@ -388,6 +469,7 @@ class _HomeMainView extends StatelessWidget {
         iconAsset: 'assets/images/home-icon06.png',
         arrowAsset: 'assets/images/home-icon16.png',
         titleFontSize: titleFontSize,
+        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.devices_other_outlined,
         onTap: onOpenDevices,
       ),

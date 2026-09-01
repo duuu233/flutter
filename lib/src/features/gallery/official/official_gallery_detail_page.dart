@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
@@ -19,8 +21,14 @@ import 'official_gallery_api.dart';
 /// 版式：大图铺到状态栏（沉浸式，高度**按图片真实比例**算）→ 白卡从图上盖过来
 /// （标题 + 收藏 + 简介）→ 贴底「开始投屏」。
 ///
-/// ⚠️ 版式固有取舍：大图垫在滚动区**下面**、不跟着滚，所以比一屏还高的长图下半截仍看不到。
-/// 这不是裁剪；真要全图可见得把大图放进滚动区，那是另一套版式。
+/// 大图垫在滚动区**下面**、不跟着滚（往上滑只会让白卡盖住更多），所以「一屏放不下的部分」
+/// 等于**永远看不到**。2026-09-01 产品要求「下面的文字不要挡住图片、整张图要完整展示、
+/// 下面适当减少高度」，为此定死三条（与小程序 `detail.wxss` 的 --hero-max/--detail-card-min 同一套）：
+///   ① 白卡顶 = 大图下沿，**不再往上压 3% 屏高**（压上去的那一条正好是图的下沿）；
+///   ② 大图高度封顶在「屏高 − 底部文字区」，底部文字区收到 [_kCardMinHeight]（够放标题 + 两行简介
+///      + 让开贴底按钮）而不是原来写死的 45% 屏高；
+///   ③ 封顶后盒子比例不再等于图片比例，[BoxFit.cover] 会开始裁两边，所以改用 [BoxFit.contain]
+///      —— 没被封顶时（绝大多数图）两者逐像素相同。
 ///
 /// ⚠️ 「适用设备尺寸」那一块 2026-08-12 已按产品要求去掉（两端一致）：用户不按分辨率挑图，
 /// 它只是把白卡撑高、把大图挤没了。接口仍下发 `productSizeList`，端上不解析。
@@ -65,9 +73,18 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
   String _measuredUrl = '';
 
   /// 极端比例钳制（对齐小程序 `heroPad` 的 `[40, 240]`）：太扁的图会让白卡几乎顶到
-  /// 导航栏，太长的图下半截本来就在屏幕外。
+  /// 导航栏。⚠️ 2026-09-01 起「能不能看全图」由 [_kCardMinHeight] 那条封顶负责，
+  /// 这两个钳位只剩「别把盒子算成离谱值」的兜底作用。
   static const double _kMinHeroAspect = 0.4;
   static const double _kMaxHeroAspect = 2.4;
+
+  /// 底部文字区（白卡）最少要留多高：内边距 16 + 标题/收藏行 36 + 简介 11 + 两行 45 +
+  /// 让开贴底「开始投屏」的 98 ≈ 206，取整 210；底部安全区另加。
+  /// 与小程序 `--detail-card-min: 420rpx` 同一笔账（420rpx 在 375pt 屏上正是 210）。
+  ///
+  /// ⚠️ 它同时是大图的高度上限（屏高 − 它）。调小 = 图更大、文字区更挤；
+  /// 调大 = 矮屏上更多图会被缩进框里（两侧留底色）。
+  static const double _kCardMinHeight = 210;
 
   PhotoFrameState get state => widget.state;
 
@@ -276,14 +293,28 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
     final size = MediaQuery.of(context).size;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
     _measureHero(_imageUrl);
     // 大图**不裁**（2026-08-13，两端一致）：原来是「宽满屏 + 写死 58% 屏高 + cover」，
     // 两个比例对不上时 cover 会放大填满再把多出来的裁掉——横图裁上下、竖图裁左右，
-    // 正是反馈里的「图片被压缩了」。现在盒子比例＝图片比例，cover 一个像素都裁不掉。
-    final heroHeight = size.width * _heroAspect;
+    // 正是反馈里的「图片被压缩了」。现在盒子比例＝图片比例，一个像素都裁不掉。
+    //
+    // 2026-09-01 再封一次顶：大图不跟着滚，越过「屏高 − 底部文字区」的部分永远看不到，
+    // 与其让长图的下半截落在屏幕外，不如把整张图缩进框里（配 BoxFit.contain）。
+    // math.max 兜一手：窗口比底部文字区还矮时（桌面端把窗口拖到很小）差值会是负数，
+    // 负高度会让 Positioned 直接断言崩掉。
+    final maxHeroHeight = math.max(
+      0.0,
+      size.height - (_kCardMinHeight + bottomInset),
+    );
+    final heroHeight = math.min(size.width * _heroAspect, maxHeroHeight);
     // 白卡起点必须与大图**同源**：写死就会在图矮时露出一条底色、图高时提前盖住图。
-    // 差值 3% 屏高保持不变——白卡圆角压在图上，设计稿如此。
-    final spacerHeight = heroHeight - size.height * 0.03;
+    // 2026-09-01 起白卡顶 = 大图下沿（原来还往上压 3% 屏高，压住的正是图片下沿，
+    // 产品要的「下面的文字不要挡住图片」说的就是这一条）。
+    final spacerHeight = heroHeight;
+    // 白卡一路铺到屏幕底部。⚠️ 别写死成「45% 屏高」——横图（图矮、留白也矮）时白卡下沿
+    // 会停在屏幕中段，底下露出一条页面底色，贴底按钮浮在那条底色上。
+    final cardMinHeight = size.height - spacerHeight;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F5EF),
@@ -295,16 +326,21 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
             left: 0,
             right: 0,
             height: heroHeight,
-            child: _imageUrl.isEmpty
-                ? Container(color: const Color(0xFFDFE3E9))
-                : CachedNetworkImage(
-                    imageUrl: _imageUrl,
-                    fit: BoxFit.cover,
-                    placeholder: (context, url) =>
-                        Container(color: const Color(0xFFDFE3E9)),
-                    errorWidget: (context, url, error) =>
-                        Container(color: const Color(0xFFDFE3E9)),
-                  ),
+            // 底色兜在外层：封顶时 contain 会在两侧留出空档，露出的是这层灰
+            //（与小程序 `.detail-hero { background: #dfe3e9 }` 同色），不是页面的米色。
+            child: ColoredBox(
+              color: const Color(0xFFDFE3E9),
+              child: _imageUrl.isEmpty
+                  ? const SizedBox.expand()
+                  : CachedNetworkImage(
+                      imageUrl: _imageUrl,
+                      // ⚠️ 不能用 cover：盒子被 maxHeroHeight 压矮后比例不再等于图片比例，
+                      // cover 会放大填满再裁掉两边。contain 在没被压矮时与 cover 逐像素相同。
+                      fit: BoxFit.contain,
+                      placeholder: (context, url) => const SizedBox.expand(),
+                      errorWidget: (context, url, error) => const SizedBox.expand(),
+                    ),
+            ),
           ),
           SingleChildScrollView(
             child: Column(
@@ -312,7 +348,7 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
               children: [
                 SizedBox(height: spacerHeight),
                 Container(
-                  constraints: BoxConstraints(minHeight: size.height * 0.45),
+                  constraints: BoxConstraints(minHeight: cardMinHeight),
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.vertical(top: Radius.circular(16)),

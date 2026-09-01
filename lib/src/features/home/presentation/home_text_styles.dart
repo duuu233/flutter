@@ -58,10 +58,20 @@ class _HomeTextStyles {
   // .projection-name → font-size 36rpx(=18) / weight 700 / #2a2d32 / line-height 1
   // 六宫格入口（2026-08-21）：.entry-name 28rpx/600（颜色逐项不同，由卡片 copyWith 覆盖）、
   // .entry-desc 18rpx/#8f959d。
-  // ⚠️ 2026-08-31 按需求把六宫格**大标题缩小一号**：14 → 13（小程序 .entry-name 是 28rpx=14，
-  // 这里是 App 端有意的一档差异，别照 rpx 换算把它改回 14）。副标题 entrySubtitle 不动。
+  // ⚠️ 2026-08-31 按需求把六宫格**大标题缩小一号**：14 → 13。
+  // ⚠️ 2026-09-01 产品复看真机后又要「适度放大」（原话：目前是放得下的、不会显示 ...）：
+  //    13 → 15。小程序 .entry-name 是 28rpx，而 rpx 按屏宽等比 —— 在 390 屏上就是 14.6，
+  //    App 这边固定 13 因此看起来比小程序小一档，15 正好把这一档补回来。
+  //
+  // ⚠️ 这两个字号都只是**基准/上限**，不是最终值：
+  //    · 标题由 [_HomeMainView._entryTitleFontSize] 按六条里最长的一条算共用字号，
+  //      放不下就往下缩（日文「マイアップロード」一直是最长的那条，本轮前后都缩在 ~11.5，
+  //      把基准从 13 抬到 15 对它一个像素都不影响）；
+  //    · 副标题由 [_HomeMainView._entrySubtitleFontSize] 反过来算：**放得下才往上长**
+  //      （最多 [_HomeMainView._entrySubtitleMaxFontSize]），长不动就退回这里的 9，
+  //      所以本轮对副标题是「有余量的语言变大、没余量的与改前逐像素相同」。
   static const entryTitle = TextStyle(
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: FontWeight.w600,
     height: 1.2,
   );

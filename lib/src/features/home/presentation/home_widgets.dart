@@ -1178,6 +1178,7 @@ class _HomeEntryCard extends StatelessWidget {
     required this.iconAsset,
     required this.arrowAsset,
     required this.titleFontSize,
+    required this.subtitleFontSize,
     required this.fallbackIcon,
     required this.onTap,
   });
@@ -1189,6 +1190,12 @@ class _HomeEntryCard extends StatelessWidget {
   /// ⚠️ 不要在这里读 [_HomeTextStyles.entryTitle] 的字号 —— 那是基准值，不是最终值；
   /// 各卡自己决定字号就会缩出六个不同大小。
   final double titleFontSize;
+
+  /// 副标题字号：同样由 [_HomeMainView._entrySubtitleFontSize] 按**六条副标题**统一算好传进来
+  /// （2026-09-01「文案适度放大」：放得下就往上长到 11，放不下退回基准 9）。
+  /// ⚠️ 与标题同一条纪律：别在这里读 [_HomeTextStyles.entrySubtitle] 的字号自己决定，
+  /// 那样六张卡会长出六个不同大小。
+  final double subtitleFontSize;
 
   /// 卡内左右内边距（下面 build 里的 `EdgeInsets.only(left: 10, right: 6)`）。
   static const double _padLeft = 10;
@@ -1293,7 +1300,9 @@ class _HomeEntryCard extends StatelessWidget {
                         // 几乎必被截成半句，等于没说。
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: _HomeTextStyles.entrySubtitle,
+                        style: _HomeTextStyles.entrySubtitle.copyWith(
+                          fontSize: subtitleFontSize,
+                        ),
                       ),
                     ),
                     // 徽标素材 90×90 里白圆盘只占中间约 62，四周是透明阴影留白，

@@ -48,6 +48,12 @@ setx FLUTTER_STORAGE_BASE_URL "https://storage.flutter-io.cn"
 
 ## 一、Android（Windows 打包机，keystore 路径由 `android/key.properties` 指定）
 
+> ⚠️ **下面这些命令里的 `^` 是 cmd 的续行符，PowerShell（VSCode 终端的默认 shell）不认。**
+> 直接粘进 VSCode 终端会报「一元运算符"--"后面缺少表达式」——那是 PowerShell 把第二行往后
+> 各自当成了新语句。两条出路：**把命令合成一行**（最省事，各 shell 通吃），
+> 或把 `^` 换成 PowerShell 的续行符**反引号 `` ` ``**（必须是行尾最后一个字符，
+> 后面多一个空格就失效）。同理 `&&` 要 PowerShell 7.0+ 才支持，老版本用 `;`。
+
 ```bash
 flutter clean
 flutter pub get
