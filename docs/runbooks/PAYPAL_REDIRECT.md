@@ -39,9 +39,9 @@ PayPal **唯一**会把用户送回来的机制，就是授权/取消之后把�
 retCode=200 才在深链上带 `notified=1`；**没带标记时 App 会自己再调一次**。
 两条路互为兜底，正常情况下只有一条真的 capture。
 
-⚠️ **跨域必须放行**：页面在 `pp.boltfox.cn`、接口在 `api.boltfox.cn`，是跨域请求，
-后端要给 `getPayPalNotify` 加 `Access-Control-Allow-Origin`。
-**不加也不会崩** —— fetch 被拦 → 不带 notified → App 补调，只是 capture 晚一步。
+✅ **不涉及跨域**：页面与接口同域名，那次 fetch 走相对路径。
+（若将来把页面挪到别的域名，就得给 `getPayPalNotify` 加 `Access-Control-Allow-Origin`；
+不加也不会崩 —— fetch 被拦 → 不带 notified → App 补调，只是 capture 晚一步。）
 
 ### ⚠️ 中间那个 https 页不能省
 
@@ -57,12 +57,17 @@ retCode=200 才在深链上带 `notified=1`；**没带标记时 App 会自己再
 
 ## 二、部署
 
-✅ **2026-09-01 已确定并部署**，用的是**支付专用的独立域名**：
+✅ **2026-09-01 已部署**，两个页面就放在 **API 同一个域名**下：
 
 ```
-https://pp.boltfox.cn/return.html     ← deploy/paypal/return.html
-https://pp.boltfox.cn/cancel.html     ← deploy/paypal/cancel.html
+https://api.boltfox.cn/return.html    ← deploy/paypal/return.html
+https://api.boltfox.cn/cancel.html    ← deploy/paypal/cancel.html
 ```
+
+⚠️ **同源是有意的，别再挪走**：`return.html` 要自己调 `GET /Client/Pay/getPayPalNotify`
+触发 capture。放在别的域名下就成了跨域请求，得让后端专门给这个接口放行 CORS；
+同源则一行配置都不用（页面里那次 fetch 走的是**相对路径**）。
+中途试过 `pp.boltfox.cn` 这个独立域名，就是为了免掉 CORS 才并回 API 域名的。
 
 这两个地址已写进 `StarPurchase.returnUrl` / `cancelUrl` 的默认值，**正常打包不必再传 dart-define**。
 换域名/路径时也不用改代码：
@@ -72,18 +77,18 @@ https://pp.boltfox.cn/cancel.html     ← deploy/paypal/cancel.html
 --dart-define=PAYPAL_CANCEL_URL=https://实际域名/cancel.html
 ```
 
-> 用独立域名而不是挂在 `badmin.boltfox.cn` 下，正好绕开了下面注意点 ② 那个坑。
+> 放在 API 域名下同时也绕开了下面注意点 ② 那个坑（那台机器不跑 SPA）。
 
 ### 六个注意点
 
 | # | 注意点 |
 | --- | --- |
 | ① | **路径必须与 App 传的一致**。两处对不上时表现为「PayPal 跳到 404，用户停在错误页」。 |
-| ② | ⚠️ **别把它挂到跑着 SPA 的域名下。** 那类站点的 nginx 大概率有 `try_files $uri /index.html` 的兜底——访问中转页返回的会是 SPA 的首页 HTML，脚本根本不执行，表现是「PayPal 跳过去看到的是后台首页」。当前用独立域名 `pp.boltfox.cn` 已规避；日后若要合并到别的域名，务必先把这两个路径从 catch-all 里排除。 |
+| ② | ⚠️ **别把它挂到跑着 SPA 的域名下。** 那类站点的 nginx 大概率有 `try_files $uri /index.html` 的兜底——访问中转页返回的会是 SPA 的首页 HTML，脚本根本不执行，表现是「PayPal 跳过去看到的是别的站点首页」。当前放在 API 域名下（不跑 SPA）已规避。 |
 | ③ | **必须 https 且证书有效**。PayPal 只接受 http(s)，浏览器对混合内容也会拦。 |
 | ④ | **页面不许有任何外部依赖**。现在是纯内联 HTML+CSS+JS，没有 CDN、字体、图片。用户此刻在海外网络、刚付完钱，多一个外部请求就多一分失败——**别顺手加统计脚本**。 |
 | ⑤ | **`return.html` 只调 `getPayPalNotify` 这一个接口**（`cancel.html` 一个都不调）。别再往里加别的调用：页面跑在支付回来的关键路径上，多一个请求就多一分失败。 |
-| ⑥ | ⚠️ **后端要给 `getPayPalNotify` 放行 CORS**（页面在 `pp.boltfox.cn`、接口在 `api.boltfox.cn`）。不放行不会崩，但 capture 会退回由 App 补调、晚一步。 |
+| ⑥ | **两个页面必须与 API 同域名**（现在都在 `api.boltfox.cn`）。挪走就成跨域，得给 `getPayPalNotify` 加 CORS —— 不加不会崩，但 capture 会退回由 App 补调、晚一步。 |
 
 ### 页面自带的兜底（改页面前先读这段）
 
@@ -112,7 +117,7 @@ adb shell am start -a android.intent.action.VIEW -d "boltstar://pay/paypal/retur
 手机浏览器直接打开：
 
 ```
-https://pp.boltfox.cn/return.html?token=TESTTOKEN&PayerID=TESTPAYER
+https://api.boltfox.cn/return.html?token=TESTTOKEN&PayerID=TESTPAYER
 ```
 
 应当自动拉起 App。**如果看到的是别的站点首页 → 就是注意点 ② 那个 catch-all 问题。**
@@ -133,12 +138,13 @@ adb logcat -c && adb logcat | findstr /i paypal      # bash: grep -i paypal
 ```
 [PayPal] setCreatePay 返回 ... approveUrl=有
 [PayPal] 收到授权回跳 token=... PayerID=...
-[PayPal] 中转页已完成 getPayPalNotify，App 侧跳过，直接确认到账   ← CORS 已放行时
-[PayPal] getPayPalNotify 返回 paid=true ...                        ← CORS 没放行时（App 补调）
+[PayPal] 中转页已完成 getPayPalNotify，App 侧跳过，直接确认到账   ← 正常路径
+[PayPal] getPayPalNotify 返回 paid=true ...                        ← 页面那次没成，App 补调
 [PayPal] 到账确认：+N（orderNo=...）
 ```
 
 第 3 行出现哪一条，正好说明中转页那次调用成没成 —— 两条都算正常，只是 capture 早晚之别。
+⚠️ **测第 2 步（浏览器直开中转页）时会真的触发一次 capture**，别拿真实订单的 token 反复刷。
 
 ### 第 4 步：取消流程
 

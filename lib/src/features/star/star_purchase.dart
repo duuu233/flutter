@@ -64,18 +64,20 @@ class StarPurchase {
   /// PayPal 会往它后面追加 `?token=<PayPal订单号>&PayerID=<付款人>`，中转页把这串 query
   /// **原样**接到 [appReturnLink] 后面再拉起 App。
   ///
-  /// ✅ **2026-09-01 域名已定**：`pp.boltfox.cn`，两个页面都在根级、带 `.html` 后缀。
+  /// ✅ **2026-09-01 定稿**：中转页直接部署在 **API 同一个域名**下
+  /// （`api.boltfox.cn`，根级、带 `.html` 后缀）。
   ///
-  /// 用的是**支付专用的独立域名**（不是挂在管理后台 `badmin.boltfox.cn` 下）——
-  /// 这样就不会撞上后台那种 SPA 的 `try_files $uri /index.html` 兜底
-  /// （撞上的表现是 PayPal 跳过去返回的是后台首页，脚本根本不执行）。
+  /// ⚠️ **同源是有意的、别再挪走**：中转页要自己调 `GET /Client/Pay/getPayPalNotify`
+  /// 触发 capture（见 `deploy/paypal/return.html`）。放在别的域名下就成了跨域请求，
+  /// 得让后端专门给这个接口放行 CORS；同源则一行配置都不用。
+  /// （中途试过 `pp.boltfox.cn` 这个独立域名，就是为了免掉 CORS 才并回 API 域名的。）
   ///
-  /// 页面源码在仓库的 `deploy/paypal/return.html`，部署与联调见
-  /// `docs/runbooks/PAYPAL_REDIRECT.md`。
-  /// 换域名/路径**不必改代码**：打包时 `--dart-define=PAYPAL_RETURN_URL=https://…` 覆盖即可。
+  /// 页面源码在仓库的 `deploy/paypal/`，部署与联调见 `docs/runbooks/PAYPAL_REDIRECT.md`。
+  /// 真要换域名**不必改代码**：打包时 `--dart-define=PAYPAL_RETURN_URL=https://…` 覆盖，
+  /// 但记得同时安排 CORS。
   static const String returnUrl = String.fromEnvironment(
     'PAYPAL_RETURN_URL',
-    defaultValue: 'https://pp.boltfox.cn/return.html',
+    defaultValue: 'https://api.boltfox.cn/return.html',
   );
 
   /// 用户点「Cancel and return」后 PayPal 跳去的 https 中转页
@@ -83,7 +85,7 @@ class StarPurchase {
   /// `--dart-define=PAYPAL_CANCEL_URL=https://…` 覆盖。
   static const String cancelUrl = String.fromEnvironment(
     'PAYPAL_CANCEL_URL',
-    defaultValue: 'https://pp.boltfox.cn/cancel.html',
+    defaultValue: 'https://api.boltfox.cn/cancel.html',
   );
 
   /// 中转页拉起 App 用的深链（授权成功）。

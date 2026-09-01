@@ -209,9 +209,10 @@ BoltStar 当前使用三套不同的远端服务：
 拉不起 App 时页面还能给一句「请返回 App 查看」的兜底。
 
 ⚠️ **两组地址职责不同，别混用**：`StarPurchase.returnUrl` / `cancelUrl` 是**交给 PayPal 的**
-（https，✅ 2026-09-01 已定并部署在支付专用的独立域名：
-`https://pp.boltfox.cn/return.html` / `https://pp.boltfox.cn/cancel.html`，页面源码在 `deploy/paypal/`，
-换域名用 `--dart-define=PAYPAL_RETURN_URL= / PAYPAL_CANCEL_URL=` 覆盖即可）；`StarPurchase.appReturnLink` / `appCancelLink` 是**中转页拉起
+（https，✅ 2026-09-01 已部署在 **API 同域名**下：
+`https://api.boltfox.cn/return.html` / `https://api.boltfox.cn/cancel.html`，页面源码在 `deploy/paypal/`。
+⚠️ 同源是有意的：`return.html` 自己要调 `getPayPalNotify` 触发 capture，同域才免 CORS。
+换域名用 `--dart-define=PAYPAL_RETURN_URL= / PAYPAL_CANCEL_URL=` 覆盖，但要同时安排 CORS）；`StarPurchase.appReturnLink` / `appCancelLink` 是**中转页拉起
 App 用的**深链，PayPal 不认识它，且必须与 `AndroidManifest.xml` 里 `PayPalRedirectActivity`
 的 intent-filter 逐字一致 —— `test/star_purchase_test.dart` 有一条测试拿清单来比对，防止只改一处。
 

@@ -48,7 +48,11 @@
   // ⚠️ 但**不能只靠页面**：这次 fetch 可能因为跨域/断网失败。所以失败时不带 notified，
   //    App 收到深链后会自己再调一次（见 star_purchase_page._confirm）。两条路互为兜底，
   //    正常情况下只有一条会真的 capture。
-  var API      = 'https://api.boltfox.cn';
+  // ⚠️ 接口用**相对路径**：本页与 API 部署在同一个域名下（api.boltfox.cn），
+  //    相对路径天然同源，**不需要后端放行 CORS**，也不会因为将来换域名而写死一个旧 host。
+  //    如果哪天把本页挪到别的域名，这次 fetch 会失败 → 走 catch 分支、不带 notified、
+  //    由 App 补调，流程仍然通，但那时就该给后端加 CORS 了。
+  var NOTIFY_PATH = '/Client/Pay/getPayPalNotify';
   var APP_PATH = 'pay/paypal/return';
   var SCHEME   = 'boltstar';
   var PACKAGE  = 'com.boltfox.boltstar';
@@ -132,14 +136,12 @@
 
   setText('正在确认支付结果…', '请稍候，不要关闭本页面');
 
-  // ⚠️ **跨域**：本页在 pp.boltfox.cn，接口在 api.boltfox.cn。
-  //    后端必须给 getPayPalNotify 放行 CORS（Access-Control-Allow-Origin），
-  //    否则这次 fetch 会被浏览器拦掉 —— 那时走 catch 分支，不带 notified 回 App，
-  //    由 App 再调一次，**流程仍然通**，只是 capture 晚了一步。
+  // 同源请求，不涉及 CORS。失败（断网/超时/后端非 200）时走下面的 catch/超时分支：
+  // 不带 notified 回 App，由 App 再调一次，**流程仍然通**，只是 capture 晚一步。
   var timeout = new Promise(function (resolve) {
     setTimeout(function () { resolve(null); }, NOTIFY_TIMEOUT_MS);
   });
-  var request = fetch(API + '/Client/Pay/getPayPalNotify' + query, {
+  var request = fetch(NOTIFY_PATH + query, {
     method: 'GET',
     credentials: 'omit'
   }).then(function (r) { return r.json(); }).catch(function () { return null; });
