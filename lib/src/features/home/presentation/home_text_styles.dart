@@ -71,7 +71,10 @@ class _HomeTextStyles {
   //      （最多 [_HomeMainView._entrySubtitleMaxFontSize]），长不动就退回这里的 9，
   //      所以本轮对副标题是「有余量的语言变大、没余量的与改前逐像素相同」；
   //      ⚠️ 2026-09-01 后半轮又按需求给**安卓**在算出来的值上再减一号
-  //      （[_HomeMainView._entrySubtitleAndroidDelta]），**iOS 保持不变**。
+  //      （[_HomeMainView._entrySubtitleAndroidDelta]），**iOS 保持不变**；
+  //      同日第三轮再给**安卓**加一条硬约束：从那个值继续往下试到「中文一行就装得下」
+  //      （下限 8），英文一行怎么都装不下、于是原样保持两行完整展示。
+  //      所以真机上的最终值：iOS 9~11，安卓 8~10，都不是这里的 9。
   static const entryTitle = TextStyle(
     fontSize: 15,
     fontWeight: FontWeight.w600,

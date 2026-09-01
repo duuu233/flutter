@@ -328,35 +328,57 @@ class _HomeMainView extends StatelessWidget {
   /// **iOS 保持不变**）。同一个 `fontSize` 在两端观感不同 —— iOS 走 SF、安卓走 Roboto/
   /// 思源，字身高与字重都不一样，上一轮把副标题放开到「最多 11」之后，安卓真机上比 iOS 涨得更满。
   ///
-  /// ⚠️ 这是**只减不加**的一步，所以不会新增截断：[_entrySubtitleFontSize] 挑的是
+  /// ⚠️ 这是**只减不加**的一步，所以不会新增截断：[_entrySubtitleFontSize] 第一步挑的是
   /// 「六条都能在两行里放下的最大字号」，比它更小的字号必然也放得下。
   ///
   /// ⚠️ 差值加在**最终值**上、而不是把上限/基准各减 1：需求要的是「安卓比 iOS 小一号」，
   /// 若改成从 10 往 8 试，某些语种会落在「iOS 10.5 / 安卓 10」——只差半号，不是需求那一档。
+  ///
+  /// ⚠️ 它同时是安卓那条「中文不换行」额外规则的**下限**（`基准 9 − 1 = 8`，
+  /// 见 [_entrySubtitleFontSize] 第二步）：那一步只在这个差值划出的区间里往下试，
+  /// 所以安卓的最终字号恒在 8 ~ 10，与上一轮的取值范围一致。
   static const double _entrySubtitleAndroidDelta = 1;
 
   /// 六张宫格卡副标题的**共用字号**：口径与标题一致（六张一样大、一条都不许被截成「...」），
   /// 方向相反 —— 标题是「基准值封顶、放不下才缩」，副标题是**「放得下才往上长」**。
   ///
-  /// ⚠️ 2026-09-01 需求：「六宫格的文案可以适度放大，目前是放得下的，不会显示 ...」。
-  /// 副标题不能照标题那样按宽度比例反推：它**最多两行、会换行**，
-  /// 宽度比例算不出「两行装不装得下」（换行点由词边界决定，不是等比缩放）。
-  /// 所以这里从上限往下试，第一个「六条都能在两行里放下」的字号就是答案；
-  /// 一个都试不成就退回基准 9 —— 那种情况下与改动前**逐像素相同**，不会比原来更差。
+  /// 分两步，**第二步只在安卓走**：
+  ///
+  /// **第一步（两端共用，2026-09-01「文案适度放大」）**：从上限 11 往下试，
+  /// 第一个「六条都能在**两行**里放下」的字号就是答案，一个都试不成退回基准 9；
+  /// 安卓再减 [_entrySubtitleAndroidDelta]。
+  /// ⚠️ 副标题不能照标题那样按宽度比例反推：它**最多两行、会换行**，
+  /// 宽度比例算不出「两行装不装得下」（换行点由词边界决定，不是等比缩放），
+  /// 所以只能拿 `TextPainter(maxLines: 2)` 一档一档实测。
+  ///
+  /// **第二步（仅安卓，2026-09-01 需求：「副标题再缩一点，保证中文不换行；
+  /// 英语两行能完整展示即可」）**：从第一步的结果继续往下试，
+  /// 第一个「六条都能在**一行**里放下」的字号就是最终值；一路试到下限
+  /// （`基准 9 − `[_entrySubtitleAndroidDelta]` = 8`）还不成，就保持第一步的结果。
+  ///
+  /// 三条不变量，都是这个写法直接给出的：
+  ///
+  /// 1. **中文一定不换行**（只要 8 这一档放得下）—— 中文六条里最长的是
+  ///    「AI生成精美图片」约 7 个字身宽，360dp 屏上副标题可用宽 ≈65，9 号就够单行；
+  ///    上一轮安卓落在 10（≈72 宽）必然折成两行，正是这次要治的。
+  /// 2. **英文/日文不受影响**：一行怎么都放不下（"Generate images with AI" 光是
+  ///    这一条 8 号就要 ≈90 宽），第二步一路试空、原样返回第一步的结果 ——
+  ///    仍是「两行完整展示、不出省略号」，与上一轮**逐像素相同**。
+  /// 3. **只会更小或不变**：第二步是从第一步的结果**起步往下**试的，不可能比它大。
+  ///
+  /// ⚠️ 第二步返回的是量出来的那个字号本身、**不再减一次** [_entrySubtitleAndroidDelta]：
+  /// 起点已经是减过的值，再减一次就成了「小两号」。
   ///
   /// ⚠️ 用的是 [_HomeEntryCard.subtitleHorizontalReserve] 而不是标题那条：
   /// 副标题才是**和箭头徽标并排**的那一行，可用宽度比标题少一个箭头。
   ///
-  /// ⚠️ 算完之后**安卓再减 [_entrySubtitleAndroidDelta]**（iOS 不动，见那条常量）。
-  /// 减法放在最后一步，量文字时用的仍是未减的字号 —— 量的是「能放下的上限」，
-  /// 上限之下怎么减都还是放得下。
+  /// ⚠️ iOS 一个像素都不动：第二步之前就 `return` 了。
   double _entrySubtitleFontSize(BuildContext context, List<String> subtitles) {
     final base = _HomeTextStyles.entrySubtitle.fontSize ?? 9;
     // 安卓比 iOS 小一号（需求 2026-09-01）。用 Theme 的 platform 而不是 dart:io 的
     // `Platform.isAndroid`：前者可被 ThemeData/测试覆盖，量的又是纯布局，不该依赖进程环境。
-    final delta = Theme.of(context).platform == TargetPlatform.android
-        ? _entrySubtitleAndroidDelta
-        : 0.0;
+    final isAndroid = Theme.of(context).platform == TargetPlatform.android;
+    final delta = isAndroid ? _entrySubtitleAndroidDelta : 0.0;
     final media = MediaQuery.of(context);
     final rowWidth =
         media.size.width - media.padding.horizontal - _cardInset.horizontal;
@@ -367,30 +389,69 @@ class _HomeMainView extends StatelessWidget {
     }
 
     final direction = Directionality.of(context);
+    bool fits(double size, int maxLines) => _subtitlesFitInLines(
+      subtitles,
+      fontSize: size,
+      maxLines: maxLines,
+      maxWidth: available,
+      direction: direction,
+      textScaler: media.textScaler,
+    );
+
+    // 第一步：两行放得下的最大字号（安卓再减一号）。
+    var result = base - delta;
     for (var size = _entrySubtitleMaxFontSize; size > base; size -= 0.5) {
-      var fits = true;
-      for (final subtitle in subtitles) {
-        final painter = TextPainter(
-          text: TextSpan(
-            text: subtitle,
-            style: _HomeTextStyles.entrySubtitle.copyWith(fontSize: size),
-          ),
-          // 与卡片里那个 Text 完全同参（maxLines: 2 + 省略号）：
-          // didExceedMaxLines 为真就等于真机上会出现「...」。
-          maxLines: 2,
-          textDirection: direction,
-          textScaler: media.textScaler,
-        )..layout(maxWidth: available);
-        if (painter.didExceedMaxLines) {
-          fits = false;
-          break;
-        }
-      }
-      if (fits) {
-        return size - delta;
+      if (fits(size, 2)) {
+        result = size - delta;
+        break;
       }
     }
-    return base - delta;
+    if (!isAndroid) {
+      return result;
+    }
+    // 第二步（仅安卓）：继续往下找「一行就放得下」的最大字号 —— 中文不换行。
+    // 下限就是第一步的兜底值 `base - delta`（=8），英文/日文会一路试到这里都不成，
+    // 于是原样返回 result，保持「两行完整展示」。
+    for (var size = result; size >= base - delta; size -= 0.5) {
+      if (fits(size, 1)) {
+        return size;
+      }
+    }
+    return result;
+  }
+
+  /// 量「这六条副标题在 [fontSize] 下能不能全部塞进 [maxLines] 行」。
+  ///
+  /// 与卡片里那个 `Text` 完全同参（同一个基准 style + 省略号 + 同样的可用宽度），
+  /// 所以 `didExceedMaxLines` 为真就等于真机上会出现「...」（[maxLines] 为 1 时
+  /// 则等于「会折行」）。任何一条放不下就整体判负 —— 六张卡共用一个字号，
+  /// 不允许某一条单独缩小。
+  ///
+  /// ⚠️ [textScaler] 必须带上（2026-09-01）：量的是「画出来有多宽」。
+  /// 漏了它，用户把系统字体调大后真实文字比量出来的宽，整条算式就白算了。
+  bool _subtitlesFitInLines(
+    List<String> subtitles, {
+    required double fontSize,
+    required int maxLines,
+    required double maxWidth,
+    required TextDirection direction,
+    required TextScaler textScaler,
+  }) {
+    for (final subtitle in subtitles) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: subtitle,
+          style: _HomeTextStyles.entrySubtitle.copyWith(fontSize: fontSize),
+        ),
+        maxLines: maxLines,
+        textDirection: direction,
+        textScaler: textScaler,
+      )..layout(maxWidth: maxWidth);
+      if (painter.didExceedMaxLines) {
+        return false;
+      }
+    }
+    return true;
   }
 
   /// 两种场景共用的底部六宫格入口（2026-08-21 同步小程序改版）。

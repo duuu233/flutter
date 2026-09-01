@@ -1192,7 +1192,8 @@ class _HomeEntryCard extends StatelessWidget {
   final double titleFontSize;
 
   /// 副标题字号：同样由 [_HomeMainView._entrySubtitleFontSize] 按**六条副标题**统一算好传进来
-  /// （2026-09-01「文案适度放大」：放得下就往上长到 11，放不下退回基准 9）。
+  /// （2026-09-01「文案适度放大」：放得下就往上长到 11，放不下退回基准 9；
+  /// 安卓在此基础上再往下找「一行就放得下」的字号，见那个方法的第二步）。
   /// ⚠️ 与标题同一条纪律：别在这里读 [_HomeTextStyles.entrySubtitle] 的字号自己决定，
   /// 那样六张卡会长出六个不同大小。
   final double subtitleFontSize;
@@ -1222,7 +1223,10 @@ class _HomeEntryCard extends StatelessWidget {
   static const double titleHorizontalReserve = _padLeft + _padRight;
 
   /// **副标题**能用的横向开销：它才是和箭头并排的那一行。
-  /// 目前只用于说明布局意图（副标题不参与字号计算，它固定 9px、最多两行）。
+  ///
+  /// ⚠️ 2026-09-01 起它也参与字号计算了（[_HomeMainView._entrySubtitleFontSize]
+  /// 拿它当可用宽度，反推六张卡共用的副标题字号）——
+  /// **改下面 build 里的 Padding 或箭头，必须同步改这里**，和标题那条一个纪律。
   static const double subtitleHorizontalReserve =
       _padLeft + _padRight + _arrowVisualWidth;
 
@@ -1298,6 +1302,9 @@ class _HomeEntryCard extends StatelessWidget {
                         // ⚠️ 2026-08-31 需求：小标题**最多两行**，超出才省略号。
                         // 原来写死一行，英文副标题（"Generate images with AI" 这类）
                         // 几乎必被截成半句，等于没说。
+                        // ⚠️ 这里仍是 2，安卓「中文不换行」不靠改这个数、而是靠
+                        // [_HomeMainView._entrySubtitleFontSize] 把字号选到能单行装下 ——
+                        // 改成 1 会把英文重新截成半句。
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: _HomeTextStyles.entrySubtitle.copyWith(
