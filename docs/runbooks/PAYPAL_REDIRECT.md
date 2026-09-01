@@ -42,26 +42,29 @@ PayPal **唯一**会把用户送回来的机制，就是授权/取消之后把�
 
 ## 二、部署
 
-把两个文件放到 https 站点上，默认路径：
+✅ **2026-09-01 已确定并部署**，用的是**支付专用的独立域名**：
 
 ```
-https://<域名>/pay/paypal/return.html
-https://<域名>/pay/paypal/cancel.html
+https://pp.boltfox.cn/return.html     ← deploy/paypal/return.html
+https://pp.boltfox.cn/cancel.html     ← deploy/paypal/cancel.html
 ```
 
-域名/路径换了**不用改代码**，打包时覆盖即可（默认值指向 `badmin.boltfox.cn`）：
+这两个地址已写进 `StarPurchase.returnUrl` / `cancelUrl` 的默认值，**正常打包不必再传 dart-define**。
+换域名/路径时也不用改代码：
 
 ```bash
---dart-define=PAYPAL_RETURN_URL=https://实际域名/pay/paypal/return.html
---dart-define=PAYPAL_CANCEL_URL=https://实际域名/pay/paypal/cancel.html
+--dart-define=PAYPAL_RETURN_URL=https://实际域名/return.html
+--dart-define=PAYPAL_CANCEL_URL=https://实际域名/cancel.html
 ```
+
+> 用独立域名而不是挂在 `badmin.boltfox.cn` 下，正好绕开了下面注意点 ② 那个坑。
 
 ### 五个注意点
 
 | # | 注意点 |
 | --- | --- |
 | ① | **路径必须与 App 传的一致**。两处对不上时表现为「PayPal 跳到 404，用户停在错误页」。 |
-| ② | ⚠️ **最容易踩的：SPA 的 catch-all 会把它吃掉。** 放在 `badmin.boltfox.cn` 这类管理后台域名下时，nginx 大概率有 `try_files $uri /index.html` 的兜底——那样访问中转页返回的是后台首页 HTML，脚本根本不执行。**要在 SPA 规则之前把 `/pay/paypal/` 前缀排除掉。** |
+| ② | ⚠️ **别把它挂到跑着 SPA 的域名下。** 那类站点的 nginx 大概率有 `try_files $uri /index.html` 的兜底——访问中转页返回的会是 SPA 的首页 HTML，脚本根本不执行，表现是「PayPal 跳过去看到的是后台首页」。当前用独立域名 `pp.boltfox.cn` 已规避；日后若要合并到别的域名，务必先把这两个路径从 catch-all 里排除。 |
 | ③ | **必须 https 且证书有效**。PayPal 只接受 http(s)，浏览器对混合内容也会拦。 |
 | ④ | **页面不许有任何外部依赖**。现在是纯内联 HTML+CSS+JS，没有 CDN、字体、图片。用户此刻在海外网络、刚付完钱，多一个外部请求就多一分失败——**别顺手加统计脚本**。 |
 | ⑤ | **页面不调任何后端接口**。capture 已约定由 App 调 `getPayPalNotify` 完成，中转页多调一次等于对同一单**重复 capture**。 |
@@ -93,10 +96,10 @@ adb shell am start -a android.intent.action.VIEW -d "boltstar://pay/paypal/retur
 手机浏览器直接打开：
 
 ```
-https://<域名>/pay/paypal/return.html?token=TESTTOKEN&PayerID=TESTPAYER
+https://pp.boltfox.cn/return.html?token=TESTTOKEN&PayerID=TESTPAYER
 ```
 
-应当自动拉起 App。**如果看到的是管理后台首页 → 就是注意点 ② 那个 catch-all 问题。**
+应当自动拉起 App。**如果看到的是别的站点首页 → 就是注意点 ② 那个 catch-all 问题。**
 
 ### 第 3 步：完整沙箱支付
 
@@ -135,7 +138,7 @@ adb logcat -c && adb logcat | findstr /i paypal      # bash: grep -i paypal
 | 现象 | 多半是 |
 | --- | --- |
 | `setCreatePay` 报错 / `approveUrl=(空)` | 后端没接上 `payPalReturnUrl`，或那两个 URL 传给 PayPal 时被拒。看后端日志 |
-| PayPal 跳过去是 404 / 后台首页 | 部署路径不对，或 SPA catch-all（注意点 ①②） |
+| PayPal 跳过去是 404 / 别的站点首页 | 部署路径不对，或域名有 SPA catch-all（注意点 ①②） |
 | 停在中转页、按钮点了也没反应 | 深链没接上：核对 `AndroidManifest.xml` 的 `PayPalRedirectActivity` 与 `StarPurchase.appReturnLink` 是否逐字一致（`test/star_purchase_test.dart` 有一条测试专门比对这两处） |
 | 回到 App 了但余额一直不变 | `getPayPalNotify` 没触发 capture。日志里 `paid=` 就是后端给的结论，拿它去问后端 |
 | **第 5 步（不点回跳）余额永远不变** | **后端没有 webhook 兜底**，见下 |

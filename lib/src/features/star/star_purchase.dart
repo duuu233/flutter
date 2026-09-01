@@ -64,25 +64,26 @@ class StarPurchase {
   /// PayPal 会往它后面追加 `?token=<PayPal订单号>&PayerID=<付款人>`，中转页把这串 query
   /// **原样**接到 [appReturnLink] 后面再拉起 App。
   ///
-  /// ⚠️ **域名待定**：默认值先指向 `badmin.boltfox.cn`（管理后台已在用的域名，
-  /// iOS 微信的 Universal Link 校验文件也挂在它上面，部署路径现成）。
-  /// 中转页真正部署到哪里定了之后，改这个默认值或打包时用
-  /// `--dart-define=PAYPAL_RETURN_URL=https://…` 覆盖，**不必改代码**。
+  /// ✅ **2026-09-01 域名已定**：`pp.boltfox.cn`，两个页面都在根级、带 `.html` 后缀。
   ///
-  /// ⚠️ 默认带 `.html` 后缀：纯静态托管直接把文件丢上去就能访问，不需要额外的 URL
-  /// 重写规则。服务器配了「无后缀映射」的话去掉也行，两边一致即可。
-  /// 页面源码在仓库的 `deploy/paypal/`。
+  /// 用的是**支付专用的独立域名**（不是挂在管理后台 `badmin.boltfox.cn` 下）——
+  /// 这样就不会撞上后台那种 SPA 的 `try_files $uri /index.html` 兜底
+  /// （撞上的表现是 PayPal 跳过去返回的是后台首页，脚本根本不执行）。
+  ///
+  /// 页面源码在仓库的 `deploy/paypal/return.html`，部署与联调见
+  /// `docs/runbooks/PAYPAL_REDIRECT.md`。
+  /// 换域名/路径**不必改代码**：打包时 `--dart-define=PAYPAL_RETURN_URL=https://…` 覆盖即可。
   static const String returnUrl = String.fromEnvironment(
     'PAYPAL_RETURN_URL',
-    defaultValue: 'https://badmin.boltfox.cn/pay/paypal/return.html',
+    defaultValue: 'https://pp.boltfox.cn/return.html',
   );
 
   /// 用户点「Cancel and return」后 PayPal 跳去的 https 中转页
-  /// （`setCreatePay` 的 `payPalCancelUrl`）。域名同 [returnUrl]，可用
+  /// （`setCreatePay` 的 `payPalCancelUrl`）。域名与约定同 [returnUrl]，可用
   /// `--dart-define=PAYPAL_CANCEL_URL=https://…` 覆盖。
   static const String cancelUrl = String.fromEnvironment(
     'PAYPAL_CANCEL_URL',
-    defaultValue: 'https://badmin.boltfox.cn/pay/paypal/cancel.html',
+    defaultValue: 'https://pp.boltfox.cn/cancel.html',
   );
 
   /// 中转页拉起 App 用的深链（授权成功）。
