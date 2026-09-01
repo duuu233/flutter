@@ -21,11 +21,20 @@ class StarCoinApi {
 
   static const int recordPageSize = 20;
 
+  /// ⚠️ 用 [num.tryParse] 而**不是** `int.tryParse`：星币这一摊的数字后端一律给 String，
+  /// 且**常常带着小数位**（`availableToken="200.0"`、规则表 `num="30.0"`、`chkAiDialogue`
+  /// 的「需要最低余额：30.0 token」）。`int.tryParse('200.0')` 返回 null，再被 `?? 0` 兜成 0
+  /// —— 不报错、不空列表，只是把每个数字都显示成 **0**。
+  ///
+  /// 2026-09-01 修：星币管理页「可用/累计购买/已消耗」三个数恒为 0 就是这么来的。
+  /// 同一份出参在「我的」页和 AI 页却是对的，因为那两处走 `AiToken._toBalance` /
+  /// `state.dart` 的 `_applyUserInfo`，它们本来就用 `num.tryParse` —— 三处解析同一个字段、
+  /// 只有这一处用了 int，是这个 bug 能瞒过所有人的原因。
   static int _toInt(Object? value) {
     if (value is num) {
       return value.toInt();
     }
-    return int.tryParse('${value ?? ''}'.trim()) ?? 0;
+    return num.tryParse('${value ?? ''}'.trim())?.toInt() ?? 0;
   }
 
   static double _toDouble(Object? value) {
@@ -74,17 +83,13 @@ class StarCoinApi {
         .replaceFirst(RegExp(r'\.$'), '');
   }
 
-  /// 账户概览。三个字段后端都是 **String**，这里统一转数字。
+  /// 账户概览。三个字段后端都是 **String、且可能带小数位**，归一见 [StarAccount.fromJson]。
   static Future<StarAccount> fetchAccount() async {
     final data = await BoltFoxApi.getUserAccount();
     if (data is! Map) {
       return const StarAccount(balance: 0, totalPurchased: 0, totalSpent: 0);
     }
-    return StarAccount(
-      balance: _toInt(data['availableToken']),
-      totalPurchased: _toInt(data['totalToken']),
-      totalSpent: _toInt(data['consumeToken']),
-    );
+    return StarAccount.fromJson(data.cast<String, dynamic>());
   }
 
   /// 套餐列表（`GET /Client/Order/getGoodsList`）。
@@ -622,6 +627,14 @@ class StarAccount {
     required this.totalPurchased,
     required this.totalSpent,
   });
+
+  /// `GET /Client/Order/getUserAccount` 的 `retData`。三个字段后端都是 **String**
+  /// （`"200.0"` 这种带小数位的也常见），归一走 [StarCoinApi._toInt]。
+  factory StarAccount.fromJson(Map<String, dynamic> json) => StarAccount(
+    balance: StarCoinApi._toInt(json['availableToken']),
+    totalPurchased: StarCoinApi._toInt(json['totalToken']),
+    totalSpent: StarCoinApi._toInt(json['consumeToken']),
+  );
 
   final int balance;
   final int totalPurchased;

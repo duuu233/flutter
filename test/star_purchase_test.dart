@@ -352,4 +352,59 @@ void main() {
       expect(notify.message, 'INSTRUMENT_DECLINED');
     });
   });
+
+  // 2026-09-01：星币管理页三个数恒为 0 的那个 bug。后端这一摊数字**全是 String，
+  // 且常带小数位**（`"200.0"`），而归一用的是 `int.tryParse` —— 它对 "200.0" 返回 null，
+  // 被 `?? 0` 兜成 0。不报错、不空列表，只是每个数字都变成 0，所以谁也没看出是解析挂了。
+  group('账户概览归一（getUserAccount）', () {
+    test('String 出参转数字', () {
+      final account = StarAccount.fromJson(const {
+        'availableToken': '200',
+        'totalToken': '500',
+        'consumeToken': '300',
+      });
+      expect(account.balance, 200);
+      expect(account.totalPurchased, 500);
+      expect(account.totalSpent, 300);
+    });
+
+    test('带小数位的 String 也要认（"200.0" 不能兜成 0）', () {
+      final account = StarAccount.fromJson(const {
+        'availableToken': '200.0',
+        'totalToken': '500.0',
+        'consumeToken': '300.5',
+      });
+      expect(account.balance, 200);
+      expect(account.totalPurchased, 500);
+      // 星币按整数计价，小数位截断（不四舍五入：余额只能少报不能多报）
+      expect(account.totalSpent, 300);
+    });
+
+    test('数值型与缺字段', () {
+      final account = StarAccount.fromJson(const {
+        'availableToken': 200,
+        'totalToken': 500.0,
+      });
+      expect(account.balance, 200);
+      expect(account.totalPurchased, 500);
+      // 缺字段 = 0：这三个数是累计量，后端不给就是没有
+      expect(account.totalSpent, 0);
+    });
+  });
+
+  // 同一个 `_toInt` 也归一套餐/记录里的数字，那边同样可能收到 "200.0"
+  group('套餐数量同样认小数位 String', () {
+    test('num / giveNum 为 "200.0" / "50.0"', () {
+      final package = StarPackage.fromJson(const {
+        'goodsId': '7.0',
+        'num': '200.0',
+        'giveNum': '50.0',
+        'amount': '90',
+      });
+      expect(package.goodsId, 7);
+      expect(package.tokens, 200);
+      expect(package.gift, 50);
+      expect(package.totalTokens, 250);
+    });
+  });
 }
