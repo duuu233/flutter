@@ -258,7 +258,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     if (error is StarPurchaseException) {
       return switch (error.reason) {
         StarPurchaseError.channelUnavailable => l10n.starPurchaseUnavailable,
-        StarPurchaseError.goodsIdMissing => l10n.starBuyGoodsIdMissing,
         StarPurchaseError.orderNoMissing => l10n.starBuyOrderFailed,
         StarPurchaseError.approveUrlMissing => l10n.starBuyCreatePayFailed,
         StarPurchaseError.launchFailed => l10n.starBuyLaunchFailed,

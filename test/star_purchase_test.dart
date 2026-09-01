@@ -94,29 +94,22 @@ void main() {
       expect(package.unitPrice, '0.00');
     });
 
-    // ⚠️ 2026-09-01 现场：`addOrder` 回「商品id必须大于0」。
-    // goodsId 为 0 时**页面一路不报错** —— 六档全是 0，选中态也就是 0，列表页正常渲染、
-    // 确认页正常打开，直到建单才炸。所以这里既钉「多种键名都认」，也钉「拿不到就是 0」
-    // （由 [StarCoinApi.createOrder] 拦下并抛 goodsIdMissing，而不是拿 0 去问后端）。
-    test('goodsId 认多种键名', () {
-      for (final key in const ['goodsId', 'goodsID', 'goods_id', 'id']) {
-        final package = StarPackage.fromJson({key: 7, 'num': 100, 'amount': 9});
-        expect(package.goodsId, 7, reason: key);
-      }
-      // 字符串数字同样认（后端这几个字段的类型不稳）
-      expect(
-        StarPackage.fromJson(const {'goodsId': '7'}).goodsId,
-        7,
-      );
+    // ⚠️ **`goodsId = 0` 是合法取值**（2026-09-01 后端确认）。归一只做类型转换，
+    // 不许加「大于 0 才算数」之类的判断 —— 那会把一档合法的 0 悄悄换掉或拦掉。
+    // 配套：星币页的选中态**按下标**记，不按 goodsId（0 和重复 id 会让按 id 找回
+    // 选中项恒命中第一档：用户点第二档、高亮跟着走了，发出去的却是第一档）。
+    test('goodsId 为 0 原样保留，不当成缺失', () {
+      final package = StarPackage.fromJson(const {
+        'goodsId': 0,
+        'num': 100,
+        'amount': 9,
+      });
+      expect(package.goodsId, 0);
     });
 
-    test('一个候选键都没有时是 0（不许瞎猜一个 id 出来）', () {
-      expect(StarPackage.fromJson(const {'num': 100}).goodsId, 0);
-      // 0 也不能被当成「有效 id」：候选里前一个是 0 时要继续往后找
-      expect(
-        StarPackage.fromJson(const {'goodsId': 0, 'id': 12}).goodsId,
-        12,
-      );
+    test('goodsId 是字符串数字也认', () {
+      expect(StarPackage.fromJson(const {'goodsId': '7'}).goodsId, 7);
+      expect(StarPackage.fromJson(const {'goodsId': '0'}).goodsId, 0);
     });
 
     test('字符串数字与缺字段都能吃（后端这几个字段的类型不稳）', () {

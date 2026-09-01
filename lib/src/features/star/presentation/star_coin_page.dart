@@ -37,20 +37,25 @@ class _StarCoinPageState extends State<StarCoinPage> {
   /// 不该把「看余额」这件正事挡在错误页后面。
   List<StarPackage> _packages = const [];
 
-  /// 当前选中的那一档（`goodsId` 相同即同一档；对象比较不可靠，重拉后是新实例）。
-  /// 后端按档位排好序下发，默认选第一档，与小程序 `index.js` 一致。
-  int? _selectedGoodsId;
+  /// 当前选中的那一档，**按列表下标记**。后端按档位排好序下发，默认第一档，
+  /// 与小程序 `index.js` 一致。
+  ///
+  /// ⚠️ **不能按 `goodsId` 记**（2026-09-01 改）：`goodsId` **允许为 0**，也不保证互不相同；
+  /// 一旦有两档取值相同（比如都是 0），「按 id 找回选中项」会恒命中**第一档** ——
+  /// 用户点第二档，页面高亮跟着走了，带进确认页和 `addOrder` 的却还是第一档的数据。
+  /// 那是一个不报错、只在对账时才发现的错，所以选中态一律按下标。
+  int _selectedIndex = 0;
 
   bool _loading = true;
   bool _loadFailed = false;
 
   StarPackage? get _selected {
-    for (final package in _packages) {
-      if (package.goodsId == _selectedGoodsId) {
-        return package;
-      }
+    if (_packages.isEmpty) {
+      return null;
     }
-    return null;
+    // 下标夹回有效范围：重拉后列表可能变短（后端下架了某一档）。
+    final index = _selectedIndex.clamp(0, _packages.length - 1);
+    return _packages[index];
   }
 
   @override
@@ -96,11 +101,10 @@ class _StarCoinPageState extends State<StarCoinPage> {
       }
       _rules = rules;
       _packages = packages;
-      // 选中项跟着新列表走：原来那档还在就保持不动（买完回来重拉不该把选择弹掉），
-      // 没了/首次加载才落到第一档。
-      final kept = packages.any((p) => p.goodsId == _selectedGoodsId);
-      if (!kept) {
-        _selectedGoodsId = packages.isNotEmpty ? packages.first.goodsId : null;
+      // 选中项跟着新列表走：下标仍在范围内就保持不动（买完回来重拉不该把选择弹掉），
+      // 越界（后端下架了某一档）才落回第一档。
+      if (_selectedIndex >= packages.length) {
+        _selectedIndex = 0;
       }
       _loading = false;
       // 账户读失败且此前没有过成功值才算整页失败（弱网回到本页不该把余额清零）
@@ -157,9 +161,9 @@ class _StarCoinPageState extends State<StarCoinPage> {
                 else
                   _PackageStrip(
                     packages: _packages,
-                    selectedGoodsId: _selectedGoodsId,
-                    onSelect: (package) =>
-                        setState(() => _selectedGoodsId = package.goodsId),
+                    selectedIndex: _selectedIndex,
+                    onSelect: (index) =>
+                        setState(() => _selectedIndex = index),
                     l10n: l10n,
                   ),
                 const SizedBox(height: 16),
@@ -205,14 +209,18 @@ class _StarCoinPageState extends State<StarCoinPage> {
 class _PackageStrip extends StatelessWidget {
   const _PackageStrip({
     required this.packages,
-    required this.selectedGoodsId,
+    required this.selectedIndex,
     required this.onSelect,
     required this.l10n,
   });
 
   final List<StarPackage> packages;
-  final int? selectedGoodsId;
-  final ValueChanged<StarPackage> onSelect;
+
+  /// 选中项按**下标**，不按 `goodsId`——理由见 [_StarCoinPageState._selectedIndex]。
+  final int selectedIndex;
+
+  /// 回传的是**下标**。
+  final ValueChanged<int> onSelect;
   final AppL10n l10n;
 
   @override
@@ -229,8 +237,8 @@ class _PackageStrip extends StatelessWidget {
           final package = packages[index];
           return _PackageCard(
             package: package,
-            selected: package.goodsId == selectedGoodsId,
-            onTap: () => onSelect(package),
+            selected: index == selectedIndex,
+            onTap: () => onSelect(index),
             l10n: l10n,
           );
         },

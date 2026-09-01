@@ -2100,14 +2100,6 @@ class AppL10n {
     '支払い結果を確認中です。購入履歴で後ほどご確認ください。',
   );
 
-  /// 套餐没解析出商品 id（后端字段名/取值与预期不符）。
-  /// ⚠️ 不写成「下单失败」：那会让用户以为重试有用，而这是数据问题，重试多少次都一样。
-  String get starBuyGoodsIdMissing => _pick(
-    '套餐数据有误，请稍后重试或联系客服',
-    'This plan is misconfigured. Please try again later or contact support.',
-    'プラン情報に誤りがあります。後でもう一度お試しいただくか、サポートにご連絡ください。',
-  );
-
   String get starBuyOrderFailed =>
       _pick('下单失败，请稍后重试', 'Could not create the order. Please try again.', '注文の作成に失敗しました。後でもう一度お試しください。');
   String get starBuyCreatePayFailed => _pick(
