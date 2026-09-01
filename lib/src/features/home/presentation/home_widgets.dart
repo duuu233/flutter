@@ -1193,7 +1193,8 @@ class _HomeEntryCard extends StatelessWidget {
 
   /// 副标题字号：同样由 [_HomeMainView._entrySubtitleFontSize] 按**六条副标题**统一算好传进来
   /// （2026-09-01「文案适度放大」：放得下就往上长到 11，放不下退回基准 9；
-  /// 安卓在此基础上再往下找「一行就放得下」的字号，见那个方法的第二步）。
+  /// 安卓在此基础上再往下找「一行就放得下」的字号，见那个方法的第二步；
+  /// 再按 2026-09-01 第四轮需求，安卓在两步之后统一再减一号，见第三步）。
   /// ⚠️ 与标题同一条纪律：别在这里读 [_HomeTextStyles.entrySubtitle] 的字号自己决定，
   /// 那样六张卡会长出六个不同大小。
   final double subtitleFontSize;

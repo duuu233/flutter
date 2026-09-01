@@ -335,14 +335,35 @@ class _HomeMainView extends StatelessWidget {
   /// 若改成从 10 往 8 试，某些语种会落在「iOS 10.5 / 安卓 10」——只差半号，不是需求那一档。
   ///
   /// ⚠️ 它同时是安卓那条「中文不换行」额外规则的**下限**（`基准 9 − 1 = 8`，
-  /// 见 [_entrySubtitleFontSize] 第二步）：那一步只在这个差值划出的区间里往下试，
-  /// 所以安卓的最终字号恒在 8 ~ 10，与上一轮的取值范围一致。
+  /// 见 [_entrySubtitleFontSize] 第二步）：那一步只在这个差值划出的区间里往下试。
+  ///
+  /// ⚠️ 它**不再是最后一步**（2026-09-01 第四轮）：两步走完还要再减
+  /// [_entrySubtitleAndroidFinalDelta]，所以真机上的安卓最终字号是 **7 ~ 9**，
+  /// 不是这个差值单独划出的 8 ~ 10。
   static const double _entrySubtitleAndroidDelta = 1;
+
+  /// 安卓端副标题**两步都走完之后再降一号**（2026-09-01 第四轮需求：
+  /// 「副标题安卓端还要小一个字号」）。上一轮把中文治成了单行，产品复看真机后
+  /// 仍嫌这一行偏大，要的是**在当前结果上再退一档**。
+  ///
+  /// ⚠️ 为什么不是把 [_entrySubtitleAndroidDelta] 从 1 改成 2 —— 那样**中文一个像素都不动**：
+  /// 第二步挑的是「一行装得下的**最大**字号」，360dp 屏上那个最大值就是 9，
+  /// 把第一步的差值调大只是让第二步的**起点**从 10 降到 9、挑出来的还是 9，
+  /// 结果成了「英文小一号、中文原地不动」——不是需求要的那一档。
+  ///
+  /// ⚠️ 所以这一号加在**两步之后**：无论最终值来自第一步（英文/日文，两行完整展示）
+  /// 还是第二步（中文，单行），都稳定比上一轮小一号，六张卡仍共用同一个值。
+  ///
+  /// ⚠️ 仍是**只减不加**，不会新增截断、也不会把中文重新顶成两行：
+  /// 比一个「两行放得下」的字号更小必然还是两行放得下，
+  /// 比一个「一行放得下」的字号更小必然还是一行放得下。
+  /// 代价是下限跟着降到 `基准 9 − 1 − 1 = 7`（只有窄屏/放大系统字体时才会落到那里）。
+  static const double _entrySubtitleAndroidFinalDelta = 1;
 
   /// 六张宫格卡副标题的**共用字号**：口径与标题一致（六张一样大、一条都不许被截成「...」），
   /// 方向相反 —— 标题是「基准值封顶、放不下才缩」，副标题是**「放得下才往上长」**。
   ///
-  /// 分两步，**第二步只在安卓走**：
+  /// 分三步，**第二、三步只在安卓走**：
   ///
   /// **第一步（两端共用，2026-09-01「文案适度放大」）**：从上限 11 往下试，
   /// 第一个「六条都能在**两行**里放下」的字号就是答案，一个都试不成退回基准 9；
@@ -353,21 +374,27 @@ class _HomeMainView extends StatelessWidget {
   ///
   /// **第二步（仅安卓，2026-09-01 需求：「副标题再缩一点，保证中文不换行；
   /// 英语两行能完整展示即可」）**：从第一步的结果继续往下试，
-  /// 第一个「六条都能在**一行**里放下」的字号就是最终值；一路试到下限
+  /// 第一个「六条都能在**一行**里放下」的字号就是这一步的结果；一路试到下限
   /// （`基准 9 − `[_entrySubtitleAndroidDelta]` = 8`）还不成，就保持第一步的结果。
+  ///
+  /// **第三步（仅安卓，2026-09-01 第四轮需求：「副标题安卓端还要小一个字号」）**：
+  /// 把前两步的结果**统一再减** [_entrySubtitleAndroidFinalDelta]。
+  /// 放在最后而不是并进前两步的差值里，理由写在那个常量上。
   ///
   /// 三条不变量，都是这个写法直接给出的：
   ///
-  /// 1. **中文一定不换行**（只要 8 这一档放得下）—— 中文六条里最长的是
-  ///    「AI生成精美图片」约 7 个字身宽，360dp 屏上副标题可用宽 ≈65，9 号就够单行；
-  ///    上一轮安卓落在 10（≈72 宽）必然折成两行，正是这次要治的。
-  /// 2. **英文/日文不受影响**：一行怎么都放不下（"Generate images with AI" 光是
-  ///    这一条 8 号就要 ≈90 宽），第二步一路试空、原样返回第一步的结果 ——
-  ///    仍是「两行完整展示、不出省略号」，与上一轮**逐像素相同**。
-  /// 3. **只会更小或不变**：第二步是从第一步的结果**起步往下**试的，不可能比它大。
+  /// 1. **中文一定不换行**（只要 7 这一档放得下）—— 中文六条里最长的是
+  ///    「拍摄照片并投屏」约 7 个字身宽，360dp 屏上副标题可用宽 ≈65，
+  ///    第二步挑到 9（≈63 宽）、第三步再落到 8，仍是单行；
+  ///    上一轮安卓落在 10（≈70 宽）必然折成两行，正是第二步治的。
+  /// 2. **英文/日文只是整体小一号**：一行怎么都放不下（"Generate images with AI" 光是
+  ///    这一条 8 号就要 ≈90 宽），第二步一路试空、原样带上第一步的结果进第三步 ——
+  ///    仍是「两行完整展示、不出省略号」，只比上一轮小一号。
+  /// 3. **只会更小、不会更大**：第二步从第一步的结果**起步往下**试，第三步只做减法；
+  ///    而比「放得下的字号」更小的字号必然也放得下，所以一路都不可能新增「...」。
   ///
   /// ⚠️ 第二步返回的是量出来的那个字号本身、**不再减一次** [_entrySubtitleAndroidDelta]：
-  /// 起点已经是减过的值，再减一次就成了「小两号」。
+  /// 起点已经是减过的值，再减一次就成了「小两号」；第三步那一号是需求单独要的另一档。
   ///
   /// ⚠️ 用的是 [_HomeEntryCard.subtitleHorizontalReserve] 而不是标题那条：
   /// 副标题才是**和箭头徽标并排**的那一行，可用宽度比标题少一个箭头。
@@ -379,13 +406,15 @@ class _HomeMainView extends StatelessWidget {
     // `Platform.isAndroid`：前者可被 ThemeData/测试覆盖，量的又是纯布局，不该依赖进程环境。
     final isAndroid = Theme.of(context).platform == TargetPlatform.android;
     final delta = isAndroid ? _entrySubtitleAndroidDelta : 0.0;
+    // 第三步那一号（2026-09-01 第四轮）。iOS 恒为 0，所以下面所有出口都能无脑减。
+    final finalDelta = isAndroid ? _entrySubtitleAndroidFinalDelta : 0.0;
     final media = MediaQuery.of(context);
     final rowWidth =
         media.size.width - media.padding.horizontal - _cardInset.horizontal;
     final cardWidth = (rowWidth - _entryGridGap * 2) / 3;
     final available = cardWidth - _HomeEntryCard.subtitleHorizontalReserve;
     if (available <= 0) {
-      return base - delta;
+      return base - delta - finalDelta;
     }
 
     final direction = Directionality.of(context);
@@ -411,13 +440,16 @@ class _HomeMainView extends StatelessWidget {
     }
     // 第二步（仅安卓）：继续往下找「一行就放得下」的最大字号 —— 中文不换行。
     // 下限就是第一步的兜底值 `base - delta`（=8），英文/日文会一路试到这里都不成，
-    // 于是原样返回 result，保持「两行完整展示」。
+    // 于是保持第一步的 result，仍是「两行完整展示」。
     for (var size = result; size >= base - delta; size -= 0.5) {
       if (fits(size, 1)) {
-        return size;
+        result = size;
+        break;
       }
     }
-    return result;
+    // 第三步（仅安卓）：两步都走完之后统一再降一号 —— 见 [_entrySubtitleAndroidFinalDelta]。
+    // ⚠️ 量文字的两步都已结束，这一号纯是往下减，既不换行也不会截断。
+    return result - finalDelta;
   }
 
   /// 量「这六条副标题在 [fontSize] 下能不能全部塞进 [maxLines] 行」。
