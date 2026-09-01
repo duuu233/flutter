@@ -755,8 +755,11 @@ class AppL10n {
   String get aiNewSessionAction => _pick('新建', 'New', '新規');
 
   // 2026-07-31 视觉稿的欢迎页：大标题 + 一句副文案 + 三条灵感词（点了只填草稿，不自动发送）。
+  /// ⚠️ 英文版的「星宝」叫 **Stella**（2026-09-01 产品定名），不是 BoltStar ——
+  /// BoltStar 是**产品/App 名**（服务协议、隐私政策、注册页、更新页那些都指它），
+  /// 星宝是 **AI 助手的人格名**，两者不能混。改这句时别顺手把别处的 BoltStar 也换了。
   String get aiWelcomeGreeting =>
-      _pick('您好！我是星宝', 'Hi! I am BoltStar', 'こんにちは！星宝です');
+      _pick('您好！我是星宝', 'Hi! I am Stella', 'こんにちは！星宝です');
   String get aiWelcomeText => _pick(
     '您的 AI 创作伙伴，有什么我可以帮您的吗？',
     'Your AI creative partner. How can I help?',

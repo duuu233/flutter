@@ -11,30 +11,34 @@ import 'ai_voice_recorder.dart';
 
 /// AI 聊天「按住说话」。有两套底层实现，由 [AiVoiceInput] 挑一套用：
 ///
-/// | 端 | 首选 | 备胎 |
-/// |---|---|---|
-/// | 安卓 | `speech_to_text` → 系统 `SpeechRecognizer`（端上，音频不出手机） | 录音上传后端 ASR |
-/// | iOS | `speech_to_text` → `SFSpeechRecognizer`（端上） | 无（系统识别一直可用） |
-/// | 小程序 | 微信「同声传译」插件（端上） | 无 |
+/// | 端 | 用哪一套 |
+/// |---|---|
+/// | **安卓** | **一律**录音（`VoiceRecorder.kt`）→ 上传 `POST /speech/recognize` → 后端 ASR |
+/// | iOS | `speech_to_text` → `SFSpeechRecognizer`（端上，音频不出手机） |
+/// | 小程序 | 微信「同声传译」插件（端上） |
 ///
-/// ## 安卓为什么需要备胎（2026-08-29）
+/// ## 安卓为什么直接走上传，不再先探系统识别（2026-09-01 产品定）
 ///
-/// 端上识别在**安卓国行机（华为、以及不少小米/OV 的国内版）上用不了** —— 这不是权限问题：
+/// 端上识别在**安卓国行机（华为、以及不少小米/OV 的国内版）上根本用不了** —— 这不是权限问题：
 /// `SpeechRecognizer.isRecognitionAvailable()` 直接为 false。2026-08-28 真机实测确认：
 /// 授权弹窗照弹（麦克风权限是系统给的），点完同意仍然报「不支持」，因为缺的是**识别服务**
 /// 不是权限；清单里那两条 `<queries>` 只能解决「有服务但看不见」，服务本身不存在时无解。
-/// 当时只能降级成一句「本机未提供系统语音识别」的提示。
 ///
-/// 后端 2026-08-29 补上了 `POST /speech/recognize`（文档 `assets/BoltStar-语音识别接口文档.md`），
-/// 于是安卓多了一条备胎：录音（`VoiceRecorder.kt`）→ 上传 → 豆包 ASR 转文字。
+/// 后端 2026-08-29 补上 `POST /speech/recognize`（文档 `assets/BoltStar-语音识别接口文档.md`）后，
+/// 一度做成「先探系统、探不到才落备胎」。**2026-09-01 改成安卓无条件走上传**，理由：
+///   · 国内目标机型里有系统识别服务的是少数，探测那一趟 `initialize()` 往返多数是白花的；
+///   · 两条路的**识别质量与语种支持不一致**，同一台机器上「有时准有时不准」比一直走后端更难排查；
+///   · 后端 ASR 是我们能持续调优的一环，端上识别是黑盒。
 ///
-/// **顺序是先探系统、探不到才落备胎**（见 [ensureReady]），不是无条件走上传：
-/// 端上识别音频不出手机、没有网络往返、也不花服务端的钱，有就该用。
-/// 只有这台机器压根没有识别服务时，才值得付上传那一趟的代价：
-///   · 录音参数压到 16 kHz 单声道（ASR 的标准输入，见 `VoiceRecorder.kt`），1 分钟约 1.9 MB；
-///   · 松手到出文字之间页面要显示「识别中…」（[remote] 就是给页面判断这个的）。
+/// 代价是上传那一趟，端上已按 ASR 的标准输入把它压到最小：
+///   · 录音 16 kHz 单声道（见 `VoiceRecorder.kt`），1 分钟约 1.9 MB；
+///   · 松手到出文字之间页面显示「识别中…」（[remote] 就是给页面判断这个的，安卓上恒为 true）。
 ///
-/// iOS 不落备胎：系统识别在那边一直可用，没有理由多绕一趟网络。
+/// iOS 不动：`SFSpeechRecognizer` 在那边一直可用，没有理由多绕一趟网络。
+///
+/// ⚠️ 随之而来的一条：安卓上 [_SystemSpeechBackend] **不再会被选中**，
+/// 清单里 `android.speech.RecognitionService` 那两条 `<queries>` 也就没用了
+/// （留着无害，删之前先确认没有别处依赖）。
 ///
 /// ## 单例
 /// 底层两条路都是「同一时刻只能有一路」（插件是全局单例式会话；麦克风也只有一个）。
@@ -65,17 +69,30 @@ class AiVoiceInput {
 
   bool get permissionDenied => _backend?.permissionDenied ?? false;
 
-  /// 惰性探测并汇报「这台机器能不能用语音输入」。
+  /// 定链路并汇报「这台机器能不能用语音输入」。
   ///
-  /// 定链路的顺序：**先试系统识别**，可用就用它；安卓上不可用才换录音上传。
-  /// 这里会拉起系统授权弹窗，所以必须在用户**真的按下**「按住说话」之后调，
+  /// **安卓：直接定到录音上传，不再探系统识别**（2026-09-01，理由见类注释）。
+  /// **iOS：用系统 `SFSpeechRecognizer`。**
+  ///
+  /// 这里会拉起麦克风授权弹窗，所以必须在用户**真的按下**「按住说话」之后调，
   /// 不能在进页面时偷偷弹权限。
   ///
   /// 返回 false 时调用方要先看 [permissionDenied]：为 true 是「授权被拒」（引导去设置），
-  /// 否则才是「这台机器起不来」（安卓备胎 = 录音起不来，iOS = 没有识别服务）。
+  /// 否则才是「这台机器起不来」（安卓 = 录音起不来，iOS = 没有识别服务）。
   Future<bool> ensureReady() async {
     if (_settled) {
       return _backend!.ensureReady();
+    }
+    if (Platform.isAndroid) {
+      // ⚠️ 这里**不做任何「这台机器支不支持」的探测**：安卓一律走后端 ASR。
+      // 探测那一趟在国内目标机型上多数是白花的，两条路的识别质量还不一致
+      //（同一台机器「有时准有时不准」比一直走后端更难排查）。
+      final remote = _RemoteAsrBackend();
+      _backend = remote;
+      // 先定案再问权限：链路选择与授权结果无关 —— 用户去设置里开了麦克风再回来按，
+      // 走的仍然是这条路，只是 [_RemoteAsrBackend.ensureReady] 会重新要一次权限。
+      _settled = true;
+      return remote.ensureReady();
     }
     final system = _SystemSpeechBackend();
     _backend = system;
@@ -83,23 +100,8 @@ class AiVoiceInput {
       _settled = true;
       return true;
     }
-    if (!Platform.isAndroid) {
-      return false; // iOS 没有备胎：没有识别服务就是没有，如实上报
-    }
-    // 安卓：系统识别起不来。**先分清是不是麦克风被拒** —— 备胎要的是同一个
-    // RECORD_AUDIO，刚被拒就换条路，只会紧接着再弹一次一模一样的授权框。
-    // （`speech_to_text` 在安卓是先要权限、后查识别服务，所以被拒时它自己那个
-    // permissionDenied 反而是 false —— 不能只信它，得直接问系统要不要得到权限。）
-    if (system.permissionDenied || !await AiVoiceRecorder.hasPermission()) {
-      system.markPermissionDenied();
-      return false;
-    }
-    // 走到这里 = 麦克风有权限、但系统压根没有识别服务（国行无 GMS 的机型）：落录音上传。
-    debugPrint('[AiVoice] 无系统识别服务，改走录音上传后端 ASR');
-    final remote = _RemoteAsrBackend();
-    _backend = remote;
-    _settled = true;
-    return remote.ensureReady();
+    // iOS 没有备胎：没有识别服务就是没有，如实上报（调用方按 permissionDenied 分提示）。
+    return false;
   }
 
   /// 开始录音 / 监听。[language] 只对系统识别有意义（决定识别语种）；
@@ -306,11 +308,10 @@ class _SystemSpeechBackend implements _VoiceBackend {
   @override
   bool get permissionDenied => _permissionDenied;
 
-  /// 由 [AiVoiceInput.ensureReady] 在「安卓上直接问系统，发现麦克风其实没授权」时补标。
-  /// 插件在安卓是先要权限、后查识别服务，被拒时它自己报的 [permissionDenied] 是 false。
-  void markPermissionDenied() {
-    _permissionDenied = true;
-  }
+  // ⚠️ 这里原来还有一个 markPermissionDenied()，是给「安卓先探系统识别」那条路补标用的
+  // （插件在安卓是先要权限、后查识别服务，被拒时它自己报的 permissionDenied 反而是 false）。
+  // 2026-09-01 安卓改成一律走后端 ASR 之后，本类只在 iOS 被选中，那个补标点不存在了，
+  // 连同方法一并删除 —— 留着会被分析器报 unused_element。
 
   @override
   Future<bool> ensureReady() async {
