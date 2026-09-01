@@ -75,8 +75,11 @@ class _HomeTextStyles {
   //      同日第三轮再给**安卓**加一条硬约束：从那个值继续往下试到「中文一行就装得下」，
   //      英文一行怎么都装不下、于是原样保持两行完整展示；
   //      ⚠️ 同日第四轮按需求「安卓还要小一个字号」，在上面两步之后**再统一减一号**
-  //      （[_HomeMainView._entrySubtitleAndroidFinalDelta]），中文照旧单行、英文照旧两行完整。
-  //      所以真机上的最终值：iOS 9~11，安卓 7~9，都不是这里的 9。
+  //      （[_HomeMainView._entrySubtitleAndroidFinalDelta]），中文照旧单行、英文照旧两行完整；
+  //      ⚠️ 同日第五轮需求「副标题安卓端需要再小二个字号」，就是把那个常量 1 → **3**
+  //      （仍加在两步之后 —— 加进前两步的差值里中文一个像素都不会动），中文照旧单行、
+  //      英文照旧两行完整。
+  //      所以真机上的最终值：iOS 9~11，安卓 5~7，都不是这里的 9。
   static const entryTitle = TextStyle(
     fontSize: 15,
     fontWeight: FontWeight.w600,
