@@ -127,17 +127,33 @@ class _SplashPageState extends State<SplashPage>
                   axisAlignment: -1,
                   child: FadeTransition(
                     opacity: _slogan,
-                    child: const Padding(
-                      padding: EdgeInsets.only(top: 16),
-                      child: Text(
-                        '把美好，留在一张纸上',
-                        style: TextStyle(
-                          color: Color(0xFF808690),
-                          fontSize: 15,
-                          fontWeight: FontWeight.w400,
-                          letterSpacing: 1,
-                          height: 1.2,
-                          decoration: TextDecoration.none,
+                    // ⚠️ 这层 Center 不能省，去掉 slogan 会贴到屏幕最左边。
+                    // SizeTransition 内部展开是：
+                    //   ClipRect(child: Align(
+                    //     alignment: AlignmentDirectional(-1.0, axisAlignment),  // 竖向时横轴写死 start
+                    //     heightFactor: sizeFactor.value,                        // widthFactor 为 null
+                    //   ))
+                    // 横轴既然是写死的 -1，而 widthFactor 又为 null（⇒ 该 Align 撑满可用宽度），
+                    // 子节点就被顶到左边；外层 Column 的 crossAxisAlignment.center 也管不着，
+                    // 因为 Column 自身跟着被撑成了满屏宽。所以 slogan 必须自己再居中一次。
+                    // heightFactor: 1 ⇒ 纵向仍按内容高度收紧，不跟着 Center 撑开。
+                    // （新版 Flutter 给 SizeTransition 加了 alignment 参数可一步到位，
+                    //   但它与 axisAlignment 互斥且有版本要求，这里用兼容写法。）
+                    child: const Center(
+                      heightFactor: 1,
+                      child: Padding(
+                        padding: EdgeInsets.only(top: 16),
+                        child: Text(
+                          '把美好，留在一张纸上',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Color(0xFF808690),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: 1,
+                            height: 1.2,
+                            decoration: TextDecoration.none,
+                          ),
                         ),
                       ),
                     ),
