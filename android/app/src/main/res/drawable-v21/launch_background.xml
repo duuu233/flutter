@@ -1,5 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Modify this file to customize your launch splash screen -->
+<!-- Android 冷启动图。三处必须同源，改一处就要改另外两处：
+       · 本文件（+ drawable-v21/ 同名副本）
+       · ios/Runner/Base.lproj/LaunchScreen.storyboard
+       · lib/src/features/shell/presentation/splash_page.dart（Flutter 首帧）
+     @drawable/splash_bg 就是唯一的页面背景 assets/images/bg02.jpg 裁成 9:19.5 后
+     导出的 splash_bg.jpg（828×1794）。⚠️ 2026-09-02 之前这里是 splash_bg.png ——
+     那张其实是**已删除的老背景 bg01**（sha256 与 git 里删掉的 assets/images/bg01.png
+     一致），全站 08-21 换 bg02 时漏掉了原生这一层，冷启动会先闪一屏暖白纸纹。
+     @drawable/splash_logo 与 assets/images/logo.png 是同一份文件（210×44）；它在无
+     密度限定符的 drawable/ 下 ⇒ 按 mdpi 解释 ⇒ 210dp，Flutter 侧写死同一个数。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <bitmap

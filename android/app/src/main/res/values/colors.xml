@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动窗口配色，全部取自唯一的页面背景 `assets/images/bg02.jpg`（1159×2535）。
+         ⚠️ 不要改回 bg01 时代的暖米色（#F7EDE2 / #E9D9C4）：那张背景 2026-08-27 已删，
+         留着这套暖色只会让冷启动先闪一屏米黄再跳到冷蓝白。取色方式见下：
+           splash_status_bar  = bg02 顶部 8px 的平均色（状态栏压在启动图最上沿）
+           splash_window      = bg02 整图平均色（Flutter 首帧之前的窗口底色） -->
+    <color name="splash_status_bar">#DEE6F4</color>
+    <color name="splash_window">#E8EDF4</color>
+</resources>
