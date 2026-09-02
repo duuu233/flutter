@@ -350,15 +350,10 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
                 // 白卡吃掉剩余高度（＝小程序 `.detail-body{min-height:100%}` + `.detail-card{flex:1}`）：
                 // 横图（图矮）时它一路铺到屏幕底部，底下不会露出一条页面米色。
                 Expanded(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.vertical(
-                        top: Radius.circular(16),
-                      ),
-                    ),
-                    // 内部滚动时文字不能从两个圆角外面冒出来
-                    clipBehavior: Clip.antiAlias,
+                  // 白卡不切圆角（2026-09-02 反馈）：大图与白卡是硬邻接的上下两栏，
+                  // 顶部两个圆角会在大图下沿两侧各露一小块页面米色，看着像没对齐。
+                  child: ColoredBox(
+                    color: Colors.white,
                     child: SingleChildScrollView(
                       padding: EdgeInsets.fromLTRB(
                         24,
