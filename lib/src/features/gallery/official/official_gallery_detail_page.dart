@@ -18,17 +18,22 @@ import 'official_gallery_api.dart';
 
 /// 官方图库·图片详情，对照小程序 `photo-album/subpackages/gallery/detail`。
 ///
-/// 版式：大图铺到状态栏（沉浸式，高度**按图片真实比例**算）→ 白卡从图上盖过来
-/// （标题 + 收藏 + 简介）→ 贴底「开始投屏」。
+/// 版式：**上下分栏**——大图铺到状态栏（沉浸式，高度**按图片真实比例**算）在上，
+/// 白卡（标题 + 收藏 + 简介）接在图的下沿、吃掉剩余高度，贴底浮着「开始投屏」。
 ///
-/// 大图垫在滚动区**下面**、不跟着滚（往上滑只会让白卡盖住更多），所以「一屏放不下的部分」
-/// 等于**永远看不到**。2026-09-01 产品要求「下面的文字不要挡住图片、整张图要完整展示、
-/// 下面适当减少高度」，为此定死三条（与小程序 `detail.wxss` 的 --hero-max/--detail-card-min 同一套）：
-///   ① 白卡顶 = 大图下沿，**不再往上压 3% 屏高**（压上去的那一条正好是图的下沿）；
+/// 产品要求「下面的文字不要挡住图片、整张图要完整展示、下面适当减少高度」，
+/// 为此定死四条（前三条与小程序 `detail.wxss` 的 --hero-max/--detail-card-min 同一套）：
+///   ① 白卡顶 = 大图下沿，**不压图**（2026-09-01 去掉了原来往上压的 3% 屏高，
+///      压上去的那一条正好是图的下沿）；
 ///   ② 大图高度封顶在「屏高 − 底部文字区」，底部文字区收到 [_kCardMinHeight]（够放标题 + 两行简介
 ///      + 让开贴底按钮）而不是原来写死的 45% 屏高；
 ///   ③ 封顶后盒子比例不再等于图片比例，[BoxFit.cover] 会开始裁两边，所以改用 [BoxFit.contain]
-///      —— 没被封顶时（绝大多数图）两者逐像素相同。
+///      —— 没被封顶时（绝大多数图）两者逐像素相同；
+///   ④ **整页不滚**（2026-09-02）：原来大图垫在一个整页 [SingleChildScrollView] 下面、自己不跟着滚，
+///      白卡一被滑上来就把图盖住，盖住的部分永远看不到。①②③ 只保证了「静止时」看得全，
+///      标题折两行或简介超过两行就会让整页可滚，图照样被盖 —— 这正是反馈里「图片还是被下方的
+///      内容遮挡」。现在改成 [Column] 分栏，白卡只滚**自己内部**，大图一像素都盖不到
+///      （＝小程序 `.detail-body{min-height:100%}` + `.detail-card{flex:1}` 那套常态不可滚的效果）。
 ///
 /// ⚠️ 「适用设备尺寸」那一块 2026-08-12 已按产品要求去掉（两端一致）：用户不按分辨率挑图，
 /// 它只是把白卡撑高、把大图挤没了。接口仍下发 `productSizeList`，端上不解析。
@@ -299,107 +304,111 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
     // 两个比例对不上时 cover 会放大填满再把多出来的裁掉——横图裁上下、竖图裁左右，
     // 正是反馈里的「图片被压缩了」。现在盒子比例＝图片比例，一个像素都裁不掉。
     //
-    // 2026-09-01 再封一次顶：大图不跟着滚，越过「屏高 − 底部文字区」的部分永远看不到，
+    // 2026-09-01 再封一次顶：大图占的是固定的一栏，越过「屏高 − 底部文字区」的部分谁也看不到，
     // 与其让长图的下半截落在屏幕外，不如把整张图缩进框里（配 BoxFit.contain）。
     // math.max 兜一手：窗口比底部文字区还矮时（桌面端把窗口拖到很小）差值会是负数，
-    // 负高度会让 Positioned 直接断言崩掉。
+    // 负高度会让 SizedBox 直接断言崩掉。
     final maxHeroHeight = math.max(
       0.0,
       size.height - (_kCardMinHeight + bottomInset),
     );
     final heroHeight = math.min(size.width * _heroAspect, maxHeroHeight);
-    // 白卡起点必须与大图**同源**：写死就会在图矮时露出一条底色、图高时提前盖住图。
-    // 2026-09-01 起白卡顶 = 大图下沿（原来还往上压 3% 屏高，压住的正是图片下沿，
-    // 产品要的「下面的文字不要挡住图片」说的就是这一条）。
-    final spacerHeight = heroHeight;
-    // 白卡一路铺到屏幕底部。⚠️ 别写死成「45% 屏高」——横图（图矮、留白也矮）时白卡下沿
-    // 会停在屏幕中段，底下露出一条页面底色，贴底按钮浮在那条底色上。
-    final cardMinHeight = size.height - spacerHeight;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8F5EF),
       body: Stack(
         children: [
-          // 大图垫在最底层，滚动区透明、白卡滑上来时正好盖住它
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            height: heroHeight,
-            // 底色兜在外层：封顶时 contain 会在两侧留出空档，露出的是这层灰
-            //（与小程序 `.detail-hero { background: #dfe3e9 }` 同色），不是页面的米色。
-            child: ColoredBox(
-              color: const Color(0xFFDFE3E9),
-              child: _imageUrl.isEmpty
-                  ? const SizedBox.expand()
-                  : CachedNetworkImage(
-                      imageUrl: _imageUrl,
-                      // ⚠️ 不能用 cover：盒子被 maxHeroHeight 压矮后比例不再等于图片比例，
-                      // cover 会放大填满再裁掉两边。contain 在没被压矮时与 cover 逐像素相同。
-                      fit: BoxFit.contain,
-                      placeholder: (context, url) => const SizedBox.expand(),
-                      errorWidget: (context, url, error) => const SizedBox.expand(),
-                    ),
-            ),
-          ),
-          SingleChildScrollView(
+          // 大图与白卡是**上下分栏**（2026-09-02），不是「白卡浮在大图上」：
+          // 大图占 heroHeight，白卡 Expanded 吃掉剩下的全部高度、正好从大图下沿接起
+          //（原来那两笔 spacerHeight / cardMinHeight 的账现在由 Column 自己算，算不错）。
+          // ⚠️ 别改回整页 SingleChildScrollView：那样白卡能被滑上来盖住大图，而大图是不滚的，
+          // 被盖住的部分就永远看不到 —— 产品要的「下面的文字不要挡住图片」正是这一条。
+          // 文字长了只滚白卡**内部**（见下面那个 SingleChildScrollView），大图一像素都盖不到。
+          Positioned.fill(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                SizedBox(height: spacerHeight),
-                Container(
-                  constraints: BoxConstraints(minHeight: cardMinHeight),
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+                SizedBox(
+                  height: heroHeight,
+                  // 底色兜在外层：封顶时 contain 会在两侧留出空档，露出的是这层灰
+                  //（与小程序 `.detail-hero { background: #dfe3e9 }` 同色），不是页面的米色。
+                  child: ColoredBox(
+                    color: const Color(0xFFDFE3E9),
+                    child: _imageUrl.isEmpty
+                        ? const SizedBox.expand()
+                        : CachedNetworkImage(
+                            imageUrl: _imageUrl,
+                            // ⚠️ 不能用 cover：盒子被 maxHeroHeight 压矮后比例不再等于图片比例，
+                            // cover 会放大填满再裁掉两边。contain 在没被压矮时与 cover 逐像素相同。
+                            fit: BoxFit.contain,
+                            placeholder: (context, url) => const SizedBox.expand(),
+                            errorWidget: (context, url, error) =>
+                                const SizedBox.expand(),
+                          ),
                   ),
-                  padding: EdgeInsets.fromLTRB(
-                    24,
-                    16,
-                    24,
-                    // 让开贴底的「开始投屏」：按钮是浮在上面的，不留出这段高度，
-                    // 简介长一点就会从按钮底下穿过去
-                    98 + MediaQuery.of(context).padding.bottom,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
+                ),
+                // 白卡吃掉剩余高度（＝小程序 `.detail-body{min-height:100%}` + `.detail-card{flex:1}`）：
+                // 横图（图矮）时它一路铺到屏幕底部，底下不会露出一条页面米色。
+                Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(16),
+                      ),
+                    ),
+                    // 内部滚动时文字不能从两个圆角外面冒出来
+                    clipBehavior: Clip.antiAlias,
+                    child: SingleChildScrollView(
+                      padding: EdgeInsets.fromLTRB(
+                        24,
+                        16,
+                        24,
+                        // 让开贴底的「开始投屏」：按钮是浮在上面的，不留出这段高度，
+                        // 简介长一点就会从按钮底下穿过去
+                        98 + bottomInset,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Expanded(
-                            child: Text(
-                              _title,
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  _title,
+                                  style: const TextStyle(
+                                    color: Color(0xFF2A2D32),
+                                    fontSize: 22,
+                                    fontWeight: FontWeight.w700,
+                                    height: 1.25,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              _FavoriteButton(
+                                favorited: _favorited,
+                                label: _favorited
+                                    ? l10n.galleryCancelFavorite
+                                    : l10n.galleryFavorite,
+                                onTap: _loading ? null : _toggleFavorite,
+                              ),
+                            ],
+                          ),
+                          if ((_detail?.desc ?? '').isNotEmpty) ...[
+                            const SizedBox(height: 11),
+                            Text(
+                              _detail!.desc,
                               style: const TextStyle(
-                                color: Color(0xFF2A2D32),
-                                fontSize: 22,
-                                fontWeight: FontWeight.w700,
-                                height: 1.25,
+                                color: Color(0xFF8B8F96),
+                                fontSize: 14,
+                                height: 1.6,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          _FavoriteButton(
-                            favorited: _favorited,
-                            label: _favorited
-                                ? l10n.galleryCancelFavorite
-                                : l10n.galleryFavorite,
-                            onTap: _loading ? null : _toggleFavorite,
-                          ),
+                          ],
                         ],
                       ),
-                      if ((_detail?.desc ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 11),
-                        Text(
-                          _detail!.desc,
-                          style: const TextStyle(
-                            color: Color(0xFF8B8F96),
-                            fontSize: 14,
-                            height: 1.6,
-                          ),
-                        ),
-                      ],
-                    ],
+                    ),
                   ),
                 ),
               ],
