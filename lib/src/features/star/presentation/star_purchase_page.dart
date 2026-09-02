@@ -421,7 +421,7 @@ class _BottomBar extends StatelessWidget {
 /// | 内边距 | 34 32 30(rpx) | 17 / 16 / 15 |
 /// | 星币数 | #2a2d32 42rpx w700 + 单位 #7c828a 30rpx | 21 / 15 |
 /// | 售价 | #f2621f 42rpx w700 | 21 |
-/// | 赠送 | 高 46rpx、上 20rpx、左右 20rpx、描边 rgba(255,106,30,.45)、底 .08 | 23 / 10 / 10 |
+/// | 赠送 | 上 20rpx、左右 20rpx、描边 rgba(255,106,30,.45)、底 .08、宽度按内容 | 10 / 10 / 5 |
 /// | 分隔线 | `margin: 28 0 26`(rpx)、rgba(207,214,224,.7) | 14 / 13 |
 /// | 合计 | 标签 #9aa0a8 28rpx、数字 #2a2d32 36rpx w700、单位 #7c828a 28rpx | 14 / 18 / 14 |
 ///
@@ -499,11 +499,10 @@ class _SummaryCard extends StatelessWidget {
           ),
           if (package.gift > 0) ...[
             const SizedBox(height: 10),
-            // 宽度按文字撑开（Align 收窄），不铺满整行 —— 小程序 `.summary-gift` 是 inline-flex。
-            Align(
-              alignment: Alignment.centerLeft,
-              child: _GiftBadge(text: l10n.starPackageGift(package.gift)),
-            ),
+            // 宽度按文字撑开、左边与上面那行的星币数同一条边 —— 小程序 `.summary-gift`
+            // 是 inline-flex。外层 Column 已是 crossAxisAlignment.start，胶囊自己只要
+            // 不主动铺满就天然靠左，不需要再套 Align（套了也没用，见 [_GiftBadge]）。
+            _GiftBadge(text: l10n.starPackageGift(package.gift)),
           ],
           const Padding(
             padding: EdgeInsets.only(top: 14, bottom: 13),
@@ -572,8 +571,13 @@ class _ApplePendingNote extends StatelessWidget {
   }
 }
 
-/// 赠送胶囊（小程序 `.summary-gift`）：高 46rpx、左右 20rpx、
+/// 赠送胶囊（小程序 `.summary-gift`）：左右 20rpx、
 /// 橙色描边 `rgba(255,106,30,.45)` + 浅橙底 `rgba(255,106,30,.08)`、24rpx 字。
+///
+/// ⚠️ **不要给 Container 设 `alignment`**：一旦设了，Container 内部会包一层 [Align]，
+/// 而 Align 在松约束下取 **maxWidth**，胶囊就被撑成整行宽（外面再套 Align 也救不回来，
+/// 那只是把一个已经满宽的盒子"靠左"放而已）。所以这里靠上下左右的 padding 自己撑出
+/// 尺寸：高 = 12(字) + 5×2(padding) + 1×2(描边) = 24，与原来的 23 基本同高。
 class _GiftBadge extends StatelessWidget {
   const _GiftBadge({required this.text});
 
@@ -582,9 +586,7 @@ class _GiftBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 23,
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
         color: const Color(0x14FF6A1E),
         border: Border.all(color: const Color(0x73FF6A1E)),
