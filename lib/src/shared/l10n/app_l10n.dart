@@ -608,6 +608,19 @@ class AppL10n {
   );
   String get castFailureCanceled =>
       _pick('投屏已取消', 'Casting canceled.', 'キャストをキャンセルしました。');
+
+  /// 出帧字节数 ≠ 设备要的六色 4bpp 帧长度（宽×高÷2）时的用户提示（2026-09-03 起，对齐小程序）。
+  ///
+  /// 帧字节数只跟着「喂给抖动接口的那张图的像素」走，第三方不按 type 补齐/缩放。所以对不上
+  /// **一定**是端上出图那一步没把图处理成设备物理分辨率（预览页 canvas/coverCropToSize 失败时
+  /// 会静默回退原图），与设备、网络、第三方接口都无关，重投同一张只会原样再失败一次。
+  /// 因此文案不引导「重试」，而是引导用户换图或先转码——这是当前唯一能自救的动作。
+  /// 排查用的字节数/头 16 字节/期望值照旧只进日志。
+  String get castFailureImageFileBroken => _pick(
+    '图片文件错误，请尝试通过工具转码后重新投屏',
+    'This image file cannot be processed. Convert it with an image tool and cast again.',
+    '画像ファイルに問題があります。変換ツールで形式を変換してから再度キャストしてください。',
+  );
   String get castCannotReadPhoto => _pick(
     '无法读取照片，请检查相机/相册权限后重试。',
     'Cannot read photos. Check camera/album permissions and try again.',

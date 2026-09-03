@@ -324,13 +324,32 @@ class ServerImageProjectionService {
         startPrefetch(i + 1);
 
         final frameData = acquired.frameData;
+        final head = FrameProtocol.bytesToHex(
+          frameData.sublist(0, frameData.length < 16 ? frameData.length : 16),
+        );
+        debugPrint(
+          '[投屏] 第 ${i + 1}/$total 张 抖动帧=${frameData.length} 字节 头16=$head '
+          '设备需六色4bpp=$expected4bpp 字节',
+        );
+        // 字节数必须 = 六色4bpp(宽×高÷2)；对不上一律不发（设备只会回含糊的「参数错误」）。
+        // ⚠️ 用户侧只给「图片文件错误，请尝试通过工具转码后重新投屏」这一句（2026-09-03，对齐小程序）。
+        // 文案沿革：
+        //   ① 「后端返回的不是设备要的六色4bpp帧：收到 X 字节…」——帧自 2026-07-23 起就不是我方后端
+        //      出的（seekink 抖动接口生成），这句把用户和客服全引到我方接口上去；
+        //   ② 现文案——根因是**这张图片文件本身**在端上出图那一步过不去（预览页恒导出设备物理分辨率，
+        //      `_bake` / `CastImageEditor.coverCropToSize` 失败时会静默回退原图 `out ?? src`，
+        //      原图带着原比例进抖动接口，帧字节数必然对不上），重投同一张只会原样再失败一次。
+        // ⚠️ 只改了提示文案，判定逻辑与回退行为一字未动（根因修复另立一轮）。
+        // 排查用的字节数/头16/期望值照旧只进日志（上面这条 debugPrint + 下面这条）。
+        // 详见 photo-album/docs/changes/2026-09-03-AI图投屏帧字节数对不上定位.md。
         if (frameData.length != expected4bpp) {
-          final head = FrameProtocol.bytesToHex(
-            frameData.sublist(0, frameData.length < 16 ? frameData.length : 16),
+          debugPrint(
+            '[投屏] 出帧尺寸不符：第三方抖动接口返回 ${frameData.length} 字节(头16=$head)，'
+            '设备 ${info.width}×${info.height} 需要 $expected4bpp 字节'
+            '（帧字节数跟着上传图像素走，先查上传给抖动接口的图是不是设备物理分辨率）',
           );
           throw FrameBleException(
-            '后端返回的不是设备要的六色4bpp帧：收到 ${frameData.length} 字节(头16=$head)，'
-            '设备 ${info.width}×${info.height} 需要 $expected4bpp 字节',
+            _l10n?.castFailureImageFileBroken ?? '图片文件错误，请尝试通过工具转码后重新投屏',
           );
         }
 
@@ -617,6 +636,21 @@ class ServerImageProjectionService {
       filePath: filePath,
       targetWidth: width,
       targetHeight: height,
+    );
+    // 📌 排查日志（2026-09-03，对齐小程序 result.js fetchDitheringFrame）：帧字节数 =
+    //    **上传图像素** ÷ 2，第三方不按 type 补齐/缩放。此前链路里没有一处记过「这一张到底
+    //    上传了什么」，出帧尺寸不符时只能靠帧长度倒算。像素尺寸留给预览页那条 [预览][出图]
+    //    （这里再解一次图代价太大），本条只记文件与期望值。
+    var uploadBytes = 0;
+    try {
+      uploadBytes = await File(uploadPath).length();
+    } catch (_) {}
+    final shrunk = uploadPath == filePath ? '(原样)' : '(已压缩)';
+    final devFrame = (width * height + 1) ~/ 2;
+    debugPrint(
+      '[投屏][出帧] 喂给抖动接口：${(uploadBytes / 1024).toStringAsFixed(0)}KB $shrunk '
+      '设备=${width}x$height type=${DitheringApi.typeForDevice(width, height)} '
+      '设备需=$devFrame 字节 file=$uploadPath',
     );
     try {
       return await DitheringApi.requestFrameBin(

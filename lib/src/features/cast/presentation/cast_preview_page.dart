@@ -1238,14 +1238,29 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         final state = (i == _activeIndex ? _edit : _states[i]);
         final edited = state != null && state.src == src && !state.pristine;
         String? out;
+        // 📌 排查日志（2026-09-03，对齐小程序 preview.js）：本张走哪条分支——三条分支的出图
+        //    保障完全不同，出问题时不知道走了哪条就没法往下查。
+        String branch;
         if (edited) {
           // 滑动切图时已按同一组几何烘焙过、之后没再动过 → 直接复用，不重复出图
           final cached = _previews[i];
-          out = cached != null && cached.key == _signatureOf(state)
-              ? cached.path
-              : await _bakeIndex(i, state);
+          if (cached != null && cached.key == _signatureOf(state)) {
+            branch = '① 编辑-复用预烘焙缓存';
+            out = cached.path;
+          } else {
+            branch = '① 编辑-_bake';
+            out = await _bakeIndex(i, state);
+          }
+          if (out == null) {
+            debugPrint('[预览][出图] 第 ${i + 1}/${_paths.length} 张 $branch 失败，降级走中心裁切');
+          }
+        } else {
+          branch = '② 未编辑-coverCropToSize';
         }
         if (out == null) {
+          if (edited) {
+            branch = '$branch → ② coverCropToSize';
+          }
           try {
             // 未编辑图走中心裁切，但**旋转角必须与编辑图一致**：都取竖向导出角
             //（设备 verticalRotation，缺省 0 = 不转）。未编辑图必然是竖向取景，
@@ -1257,10 +1272,42 @@ class _CastPreviewPageState extends State<CastPreviewPage>
               rotateDegrees: _exportRotateDegOf(_Orientation.portrait).round(),
             );
             out = result?.path;
-          } catch (_) {
+            if (result == null) {
+              // ⚠️ coverCropToSize 内部解码/编码失败会 resolve null（见 CastImageEditor._coverCrop），
+              //    这里回退原图后帧字节数必然对不上，投屏页会报「图片文件错误」。
+              debugPrint(
+                '[预览][coverCrop] 出图失败（解码或编码返回 null），回退原图投屏'
+                '（本张帧字节数必然对不上，投屏会失败）：src=$src',
+              );
+            } else {
+              debugPrint(
+                '[预览][coverCrop] 出图成功：${result.width}x${result.height}'
+                '（= 设备物理分辨率）file=${result.path}',
+              );
+            }
+          } catch (e) {
+            debugPrint(
+              '[预览][coverCrop] 出图抛异常，回退原图投屏'
+              '（本张帧字节数必然对不上，投屏会失败）：src=$src',
+            );
+            debugPrint('  异常：$e');
             out = null;
           }
         }
+        // 出图结果自检：产物必须是设备物理分辨率，否则该图进抖动接口后帧字节数必然对不上。
+        // 纯日志、不改流程（真正的拦截仍在投屏页的帧长度铁闸）。
+        final fellBack = out == null;
+        final devFrame = ((dev.width * dev.height) + 1) ~/ 2;
+        final outcome = fellBack ? '回退原图' : '已出图';
+        final line =
+            '[预览][出图] 第 ${i + 1}/${_paths.length} 张 分支=$branch '
+            '结果=$outcome 设备=${dev.width}x${dev.height} '
+            '设备需=$devFrame 字节 file=${out ?? src}';
+        debugPrint(
+          fellBack
+              ? '$line ←⚠️ 没出成设备物理分辨率，本张会在投屏页被帧长度铁闸拦下'
+              : line,
+        );
         outPaths.add(out ?? src);
       }
     } finally {
