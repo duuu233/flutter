@@ -21,6 +21,11 @@ import 'star_card.dart';
 /// 画一行点不动的「Apple 内购」比不画更让人困惑。iOS 上改为一句说明 + 置灰的按钮，
 /// 页面本身照常可进、金额照常看得见（需求 7：页面和交互先有，支付后接）。
 ///
+/// ⚠️ **简中语种不给走 PayPal**（2026-09-03 需求）：点「立即购买」时先问一句
+/// [StarPurchase.payPalBlockedFor]，是简中就只弹一句「暂不支持人民币付款，请切换其他语种
+/// 进行支付」（[AppL10n.starBuyCnyUnsupported]）并**当场返回**，后面的建单/拉起支付都不走。
+/// 页面照常可进、金额照常看得见，切成繁中/英文/日文即可付。
+///
 /// ⚠️ **页面状态机的关键一环是「跳出去再回来」**：跳 PayPal 之后 App 进后台。
 /// 本页监听 [AppLifecycleState.resumed] 自动开始确认，另给一颗「我已完成支付」手动兜底 ——
 /// 有些机型/浏览器回前台不发 resumed，只靠生命周期会永远停在等待态。
@@ -93,6 +98,17 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     }
     final package = widget.package;
     final l10n = AppL10n.of(context);
+
+    // 简中：PayPal 收不了人民币（2026-09-03 产品口径，判定收在
+    // [StarPurchase.payPalBlockedFor]）。提示一句就**到此为止** ——
+    // 蒙层、余额基线、建单、创建支付一步都不走。
+    // ⚠️ 拦在这里而不是链路内部：晚一步就会先闪一下 loading，还会在后台留下一张
+    // 永远付不掉的待支付单（与 iOS 那条「付不了就别建单」同一个道理）。
+    if (StarPurchase.payPalBlockedFor(l10n.language)) {
+      AppToast.warn(context, l10n.starBuyCnyUnsupported);
+      return;
+    }
+
     setState(() => _busy = true);
 
     // 需求 8（2026-08-31）：**全局蒙层 loading，不在按钮上转圈**。

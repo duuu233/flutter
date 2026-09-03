@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:BoltStar/src/features/star/star_coin_api.dart';
 import 'package:BoltStar/src/features/star/star_purchase.dart';
+import 'package:BoltStar/src/state.dart';
 
 /// 星币购买链路（2026-08-27 安卓 PayPal）里**不依赖网络与平台**的那几条口径。
 ///
@@ -389,6 +390,18 @@ void main() {
       expect(account.totalPurchased, 500);
       // 缺字段 = 0：这三个数是累计量，后端不给就是没有
       expect(account.totalSpent, 0);
+    });
+  });
+
+  // 2026-09-03 需求：简中语种不支持 PayPal（收不了人民币），点「立即购买」只提示不建单。
+  // ⚠️ 这里钉的是**拦截范围**：历史上「中文」在别处常被写成「zh 系两种一起算」，
+  // 照那个惯性改这里会把繁中用户也一并挡在付款之外。
+  group('简中不给走 PayPal', () {
+    test('只拦简中，繁中/英文/日文照旧可付', () {
+      expect(StarPurchase.payPalBlockedFor(AppLanguage.zh), isTrue);
+      expect(StarPurchase.payPalBlockedFor(AppLanguage.zhHant), isFalse);
+      expect(StarPurchase.payPalBlockedFor(AppLanguage.en), isFalse);
+      expect(StarPurchase.payPalBlockedFor(AppLanguage.ja), isFalse);
     });
   });
 

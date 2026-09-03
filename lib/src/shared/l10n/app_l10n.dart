@@ -2056,6 +2056,17 @@ class AppL10n {
   String get starBuyEmpty =>
       _pick('暂无可购买的套餐', 'No plans available right now', '購入できるプランがありません');
 
+  /// 简中语种点「立即购买」时的**拦截**提示（2026-09-03 需求，判定见
+  /// `StarPurchase.payPalBlockedFor`）：PayPal 收不了人民币，提示一句就结束，不建单。
+  ///
+  /// ⚠️ 简中按需求原文**逐字**写；其余三种语种根本不会被拦，这里的译文只是补齐 [_pick]
+  /// 的形参（万一将来拦截范围扩大，文案已经在了）。
+  String get starBuyCnyUnsupported => _pick(
+    '暂不支持人民币付款，请切换其他语种进行支付',
+    'CNY payment is not supported yet. Please switch to another language to pay.',
+    '現在、人民元でのお支払いには対応していません。他の言語に切り替えてお支払いください。',
+  );
+
   /// 三段式 loading 文案：这条链路最长约 10s，中间没反馈用户会以为卡死。
   String get starBuyStageOrder => _pick('正在下单…', 'Creating order…', '注文を作成中…');
   String get starBuyStagePay =>

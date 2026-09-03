@@ -529,6 +529,20 @@ const double _kCardPeekGap = 12;
 /// （实测中间只剩约 1.5px，观感就是图标和文字粘在一起）。
 const double _kCardIconGap = 16;
 
+/// 卡内「连接状态行」与其下面那行（已连接=电量行 / 未连接=「连接蓝牙」按钮）之间的间距。
+///
+/// ⚠️ **两态必须用同一个值**：电量行高 26（电量图标 26×26 比 12×1.2 的文字高）与按钮高 26
+///（上下内边距各 7 + 内容 12）恰好相等，所以只要这条间距一致，右列两态内容就**逐像素等高**
+///（20×1.2 + 9 + 12×1.2 + 11 + 26 = 84.4），连接状态一变，设备名与状态行一个像素都不动。
+/// 这正是小程序 `.device-info` 那条 `min-height: 220rpx` 想要的「切换连接态文字不上下跳」，
+/// 只是那边靠「块高恒定 + 内容顶对齐」实现，照抄到 Flutter 会让右列整体偏上 ——
+/// 见 [_ConnectedDeviceCard] 右列那段说明。
+///
+/// 值 11 抄自小程序，且是**外边距合并之后**的实际值：`.device-status` 的 `margin-bottom: 22rpx`
+/// 与 `.device-connect-btn` 的 `margin-top: 22rpx` 是相邻兄弟、在普通流里合并成一条 22rpx(=11)，
+/// 不是 44rpx。未连接态原来写死的 22 正是把这两条 margin 加了起来（2026-09-03 修正）。
+const double _kCardMetaGap = 11;
+
 /// 已连接设备卡片（小程序 `.device-carousel`）：
 /// 玻璃卡面（[_CardGlass]）+ 左侧圆环 `home-device-thumb.png` +
 /// 右侧设备信息（名称 / 蓝牙连接状态 / 电量）。
@@ -832,10 +846,22 @@ class _ConnectedDeviceCard extends StatelessWidget {
               // 卡在父约束上）；2026-08-28 改成上限 190 治标，2026-08-31 索性改成 Expanded ——
               // 宽度由布局给，不再有任何按某一款屏幕量出来的魔数。
               // 列里的设备名本来就是 maxLines:1 + ellipsis，放宽也不会顶出去。
+              //
+              // ⚠️ **高度不要再写死**（2026-09-03 修「圆环与文字没上下居中」）：
+              // 这里曾是 `SizedBox(height: 110)` 裹着这一列，照搬小程序 `.device-info` 的
+              // `min-height: 220rpx`(=110)。小程序那条是为「切换连接态时文字不上下跳」——
+              // 块高恒定、内容顶对齐，整块在卡里居中，文字位置就恒定。
+              // 但 App 这边所有文字都写死了 `height: 1.2`，比 webview 的默认行高紧一大截，
+              // 同样的内容只有 84.4 高：110 的块下面空出 25.6，而 Row 居中的是**块**不是内容，
+              // 观感就是「左边圆环正居中、右边文字整体偏上约 12.8」——就是这次反馈的现象。
+              //（与平台无关，安卓上同样偏，只是这轮在 iOS 真机上被看出来。）
+              //
+              // 现在这一列取内容高（`mainAxisSize.min`），由 Row 默认的 `center` 把**内容**
+              // 与 83 的圆环对齐（84.4 ≈ 83，两边几乎等高）。小程序那条「不跳」的诉求
+              // 改由**两态等高**兜住，见 [_kCardMetaGap]。
               Expanded(
-                child: SizedBox(
-                  height: 110,
                 child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
@@ -877,8 +903,10 @@ class _ConnectedDeviceCard extends StatelessWidget {
                         ),
                       ],
                     ),
+                    // ⚠️ 这条间距**两态共用**，故提到 if 外面 —— 免得将来只改一边、
+                    // 两态又不等高（那正是「文字上下跳」的来源，见 [_kCardMetaGap]）。
+                    const SizedBox(height: _kCardMetaGap),
                     if (device.connected) ...[
-                      const SizedBox(height: 11),
                       Row(
                         children: [
                           if (device.hasBatteryReading) ...[
@@ -903,7 +931,6 @@ class _ConnectedDeviceCard extends StatelessWidget {
                         ],
                       ),
                     ] else ...[
-                      const SizedBox(height: 22),
                       // 按钮自己也别硬撑：宽度跟文案走，实在放不下就省略号，
                       // 绝不横向溢出（Row 的交叉轴是 start，这里用 Align 收窄到内容宽）。
                       Align(
@@ -911,8 +938,7 @@ class _ConnectedDeviceCard extends StatelessWidget {
                         child: _HomeConnectButton(onTap: onConnect),
                       ),
                     ],
-                    ],
-                  ),
+                  ],
                 ),
               ),
             ],

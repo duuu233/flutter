@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../native_device_api.dart';
+import '../../state.dart';
 import 'star_coin_api.dart';
 
 /// 星币购买链路的编排（**安卓 = PayPal**，2026-08-27 接入）。
@@ -115,6 +116,21 @@ class StarPurchase {
     Duration(milliseconds: 2500),
     Duration(milliseconds: 3000),
   ];
+
+  /// 这个语种**能不能**走 PayPal 付款。⚠️ **简中不能**（2026-09-03 产品口径）。
+  ///
+  /// 需求原文：「当用户是简中语种，点击 paypal 支付的时候给一个提示『暂不支持人民币付款，
+  /// 请切换其他语种进行支付』，并且不执行后面的逻辑；简中用户不支持 paypal 支付」——
+  /// 简中这条语种对应的是**人民币计价**，而 PayPal 侧收不了人民币。
+  ///
+  /// ⚠️ **拦在建单之前**（页面点「立即购买」的第一步就问这里，见 [StarPurchasePage]）：
+  /// 与 [StarPayType.supportedOnThisApp] 拦 iOS 是同一个道理 —— 付不了就别建单，
+  /// 否则后台留一串永远付不掉的待支付单，对账时全是垃圾。
+  ///
+  /// ⚠️ 只拦**简中**：繁中 / 英文 / 日文照旧可付，别顺手把 [AppLanguage.zhHant] 也算进来。
+  /// 将来 PayPal 侧开通了人民币，改这一个方法即可（全 App 只有这一处判这件事）。
+  static bool payPalBlockedFor(AppLanguage language) =>
+      language == AppLanguage.zh;
 
   /// 读一次余额作为「到账判据」的基线。
   ///
