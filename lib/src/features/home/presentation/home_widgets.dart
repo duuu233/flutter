@@ -521,12 +521,21 @@ const double _kCardRadius = 24;
 /// 换掉「贴在一起」值得。
 const double _kCardPeekGap = 12;
 
+/// 卡内左侧圆环的边长（小程序 `.device-orbit` 的 166rpx）。
+const double _kCardOrbit = 83;
+
+/// 卡内设备名的最大宽度（小程序 `.device-title` 的 `max-width: 320rpx`），超出走省略号。
+/// 它同时是右侧信息块能撑到的宽度上限：名字越长，space-around 摊给两侧与中间的空档越窄，
+/// 这一点两端一致。
+const double _kCardTitleMaxW = 160;
+
 /// 卡内「左侧圆环图标」与「右侧设备信息」之间的**保底间距**。
 ///
-/// ⚠️ 这条必须写死、不能再交给 `MainAxisAlignment.spaceAround` 去摊：
-/// 小程序那边卡宽是按 rpx 等比的、比例恒定，spaceAround 摊出来的留白也就恒定；
-/// App 这边卡宽 = 屏宽 − 固定内缩，**屏越窄留白越少**，360dp 的安卓机上直接摊没了
-/// （实测中间只剩约 1.5px，观感就是图标和文字粘在一起）。
+/// 版式本身是 `spaceAround` 摊出来的（见 [_ConnectedDeviceCard]），这条只当**下限**：
+/// 小程序卡宽按 rpx 等比、比例恒定，摊出来的留白也就恒定；App 卡宽 = 屏宽 − 固定内缩，
+/// **屏越窄留白越少**，2026-08-31 在 360dp 的安卓机上实测中间只剩约 1.5px（图标与文字
+/// 粘在一起）。所以信息块的宽度上限按「卡宽 − 圆环 − 2×本值」再收一道：内容顶到上限时
+/// 中间仍留得住这一条，再窄就先省略设备名，不去挤间距。
 const double _kCardIconGap = 16;
 
 /// 卡内「连接状态行」与其下面那行（已连接=电量行 / 未连接=「连接蓝牙」按钮）之间的间距。
@@ -811,138 +820,154 @@ class _ConnectedDeviceCard extends StatelessWidget {
             onTap: onOpenDevices,
           ),
         ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          // ⚠️ **弹性布局**（2026-08-31 修「安卓上左右贴到一起」）：
-          // 原来是 `spaceAround` + 右列写死 `maxWidth: 190`。这两个数是按 375dp 量的：
-          // 卡片内容宽 = 屏宽 − 页内缩 48 − 卡内左右各 18；375dp 上是 291，
-          // 减掉圆环 83 与右列 190 还剩 18，spaceAround 摊成中间 9、两端各 4.5，勉强够看。
-          // 但 **360dp 的安卓机只剩 276**，83 + 190 = 273 —— 中间只剩 1.5px，就是「贴到一起」。
-          //
-          // 现在：左侧圆环定宽，中间给一条**写死的 [_kCardIconGap] 间距**（任何屏宽都保底），
-          // 右列用 [Expanded] 吃掉剩下的全部宽度。窄屏不再挤（360dp 右列仍有 175），
-          // 宽屏也不会因为 190 的上限而在中间空出一大块。
-          child: Row(
-            children: [
-              // 左侧圆环图标（home-icon02.png，166rpx≈83）。
-              Image.asset(
-                'assets/images/home-device-thumb.png',
-                width: 83,
-                height: 83,
-                fit: BoxFit.contain,
-                errorBuilder: (context, error, stackTrace) {
-                  return const SizedBox(
-                    width: 78,
-                    height: 78,
-                    child: _DeviceOrbitMark(),
-                  );
-                },
-              ),
-              const SizedBox(width: _kCardIconGap),
-              // 右侧设备信息：吃掉剩余全部宽度。
-              //
-              // 历史（留着免得有人又改回去）：这里曾写死 138，英文 "Connect Bluetooth"
-              // 连图标带内边距要 150+，直接把按钮撑爆（按钮是 mainAxisSize.min 的内容宽，
-              // 卡在父约束上）；2026-08-28 改成上限 190 治标，2026-08-31 索性改成 Expanded ——
-              // 宽度由布局给，不再有任何按某一款屏幕量出来的魔数。
-              // 列里的设备名本来就是 maxLines:1 + ellipsis，放宽也不会顶出去。
-              //
-              // ⚠️ **高度不要再写死**（2026-09-03 修「圆环与文字没上下居中」）：
-              // 这里曾是 `SizedBox(height: 110)` 裹着这一列，照搬小程序 `.device-info` 的
-              // `min-height: 220rpx`(=110)。小程序那条是为「切换连接态时文字不上下跳」——
-              // 块高恒定、内容顶对齐，整块在卡里居中，文字位置就恒定。
-              // 但 App 这边所有文字都写死了 `height: 1.2`，比 webview 的默认行高紧一大截，
-              // 同样的内容只有 84.4 高：110 的块下面空出 25.6，而 Row 居中的是**块**不是内容，
-              // 观感就是「左边圆环正居中、右边文字整体偏上约 12.8」——就是这次反馈的现象。
-              //（与平台无关，安卓上同样偏，只是这轮在 iOS 真机上被看出来。）
-              //
-              // 现在这一列取内容高（`mainAxisSize.min`），由 Row 默认的 `center` 把**内容**
-              // 与 83 的圆环对齐（84.4 ≈ 83，两边几乎等高）。小程序那条「不跳」的诉求
-              // 改由**两态等高**兜住，见 [_kCardMetaGap]。
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      device.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: _HomeTextStyles.deviceCardTitle,
-                    ),
-                    const SizedBox(height: 9),
-                    Row(
-                      children: [
-                        Image.asset(
-                          device.connected
-                              ? 'assets/images/bluetooth-icon.png'
-                              : 'assets/images/bluetooth-icon-not.png',
-                          width: 11,
-                          height: 14,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) {
-                            return Icon(
-                              Icons.bluetooth_rounded,
-                              color: device.connected
-                                  ? const Color(0xFF4A98FF)
-                                  : const Color(0xFF777E88),
-                              size: 14,
-                            );
-                          },
+        // ⚠️ **左右弹性布局：整组在卡内居中**（2026-09-03 复刻小程序 `.device-carousel`）。
+        //
+        // 小程序那一行是 `display:flex; justify-content:space-around; align-items:center`，
+        // 两个孩子——左圆环（`.device-orbit` 定宽 166rpx）与右信息块（`.device-info` 没写
+        // 宽度，flex 项按内容宽收缩）——各取**内容宽**，剩下的空档由 space-around 摊成
+        // **「外 1 : 中 2 : 外 1」**：整组在卡内水平居中，左右两侧留白相等、中间是它的两倍。
+        //
+        // App 之前是「圆环贴着左内缩 18 + 写死 [_kCardIconGap] 间距 + 右列 [Expanded] 吃满」，
+        // 空档全被右列吞掉、压在文字右边，观感就是这次反馈的「左右的内容都偏左」。
+        // 现在照抄 spaceAround，右列**不能再 Expanded**（吃满就没有空档可摊），
+        // 改成取内容宽 + 一条宽度上限兜窄屏（见 [_kCardIconGap]）。
+        // 卡内也不再另加左右内边距：两侧那点留白就是 space-around 摊出来的，与小程序同源。
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // 信息块的宽度上限 = 卡宽 − 圆环 − 两条保底间距。顶到上限时 space-around
+            // 摊出来的中间间距恰好是 [_kCardIconGap]，再窄就先省略设备名、不挤那条间距。
+            final infoMaxWidth =
+                constraints.maxWidth - _kCardOrbit - _kCardIconGap * 2;
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                // 左侧圆环图标（home-device-thumb.png，166rpx≈83）。
+                Image.asset(
+                  'assets/images/home-device-thumb.png',
+                  width: _kCardOrbit,
+                  height: _kCardOrbit,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const SizedBox(
+                      width: 78,
+                      height: 78,
+                      child: _DeviceOrbitMark(),
+                    );
+                  },
+                ),
+                // 右侧设备信息：**取内容宽**（同小程序 `.device-info`），上限见上。
+                //
+                // ⚠️ 列里每一行也必须是内容宽，否则它们会各自撑满上限、把空档吃回去，
+                // 又变回「偏左」：所以两条 Row 都写 `mainAxisSize.min`，「连接蓝牙」按钮
+                // 也不再套 [Align]（Align 在有界约束下摊满，会把信息块钉死在上限宽）。
+                //
+                // ⚠️ **高度不要写死**（2026-09-03 修「圆环与文字没上下居中」）：
+                // 这里曾是 `SizedBox(height: 110)` 裹着这一列，照搬小程序 `.device-info` 的
+                // `min-height: 220rpx`(=110)。小程序那条是为「切换连接态时文字不上下跳」——
+                // 块高恒定、内容顶对齐，整块在卡里居中，文字位置就恒定。
+                // 但 App 这边所有文字都写死了 `height: 1.2`，比 webview 的默认行高紧一大截，
+                // 同样的内容只有 84.4 高：110 的块下面空出 25.6，而 Row 居中的是**块**不是
+                // 内容，观感就是「圆环正居中、右边文字整体偏上约 12.8」。
+                // 现在这一列取内容高（`mainAxisSize.min`），由 Row 默认的 `center` 把**内容**
+                // 与 83 的圆环对齐（84.4 ≈ 83）；「不跳」改由两态等高兜住，见 [_kCardMetaGap]。
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: infoMaxWidth < 0 ? 0 : infoMaxWidth,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 设备名最宽 [_kCardTitleMaxW]（小程序 `.device-title` 的
+                      // `max-width: 320rpx`），更长走单行省略号 —— 名字再长也吃不光间距。
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: _kCardTitleMaxW,
                         ),
-                        const SizedBox(width: 7),
-                        Text(
-                          device.connected
-                              ? AppL10n.of(context).homeConnected
-                              : AppL10n.of(context).homeDisconnected,
-                          style: _HomeTextStyles.deviceMeta.copyWith(
-                            color: device.connected
-                                ? const Color(0xFF287DFF)
-                                : null,
-                          ),
+                        child: Text(
+                          device.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: _HomeTextStyles.deviceCardTitle,
                         ),
-                      ],
-                    ),
-                    // ⚠️ 这条间距**两态共用**，故提到 if 外面 —— 免得将来只改一边、
-                    // 两态又不等高（那正是「文字上下跳」的来源，见 [_kCardMetaGap]）。
-                    const SizedBox(height: _kCardMetaGap),
-                    if (device.connected) ...[
+                      ),
+                      const SizedBox(height: 9),
                       Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (device.hasBatteryReading) ...[
-                            Image.asset(
-                              _batteryIconAsset(device.batteryLevel),
-                              width: 26,
-                              fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) {
-                                return const Icon(
-                                  Icons.battery_2_bar_rounded,
-                                  color: Color(0xFFFF6A24),
-                                  size: 18,
-                                );
-                              },
+                          Image.asset(
+                            device.connected
+                                ? 'assets/images/bluetooth-icon.png'
+                                : 'assets/images/bluetooth-icon-not.png',
+                            width: 11,
+                            height: 14,
+                            fit: BoxFit.contain,
+                            errorBuilder: (context, error, stackTrace) {
+                              return Icon(
+                                Icons.bluetooth_rounded,
+                                color: device.connected
+                                    ? const Color(0xFF4A98FF)
+                                    : const Color(0xFF777E88),
+                                size: 14,
+                              );
+                            },
+                          ),
+                          const SizedBox(width: 7),
+                          Flexible(
+                            child: Text(
+                              device.connected
+                                  ? AppL10n.of(context).homeConnected
+                                  : AppL10n.of(context).homeDisconnected,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: _HomeTextStyles.deviceMeta.copyWith(
+                                color: device.connected
+                                    ? const Color(0xFF287DFF)
+                                    : null,
+                              ),
                             ),
-                            const SizedBox(width: 7),
-                          ],
-                          Text(
-                            device.batteryLabel,
-                            style: _HomeTextStyles.deviceMeta,
                           ),
                         ],
                       ),
-                    ] else ...[
-                      // 按钮自己也别硬撑：宽度跟文案走，实在放不下就省略号，
-                      // 绝不横向溢出（Row 的交叉轴是 start，这里用 Align 收窄到内容宽）。
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: _HomeConnectButton(onTap: onConnect),
-                      ),
+                      // ⚠️ 这条间距**两态共用**，故提到 if 外面 —— 免得将来只改一边、
+                      // 两态又不等高（那正是「文字上下跳」的来源，见 [_kCardMetaGap]）。
+                      const SizedBox(height: _kCardMetaGap),
+                      if (device.connected) ...[
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (device.hasBatteryReading) ...[
+                              Image.asset(
+                                _batteryIconAsset(device.batteryLevel),
+                                width: 26,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) {
+                                  return const Icon(
+                                    Icons.battery_2_bar_rounded,
+                                    color: Color(0xFFFF6A24),
+                                    size: 18,
+                                  );
+                                },
+                              ),
+                              const SizedBox(width: 7),
+                            ],
+                            Text(
+                              device.batteryLabel,
+                              style: _HomeTextStyles.deviceMeta,
+                            ),
+                          ],
+                        ),
+                      ] else ...[
+                        // 按钮宽度跟文案走（内部 `mainAxisSize.min` + 省略号），
+                        // 放不下也只是省略，绝不横向溢出。
+                        _HomeConnectButton(onTap: onConnect),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            );
+          },
         ),
       ],
     );
