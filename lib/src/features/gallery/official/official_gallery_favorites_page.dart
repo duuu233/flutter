@@ -38,6 +38,14 @@ class _OfficialGalleryFavoritesPageState
   int _total = 0;
   bool _toggling = false;
 
+  /// 端上量准的真实比例（图片 id → 宽/高），由 [_onRatioResolved] 记下。
+  ///
+  /// ⚠️ 本页尤其需要：**每次进页面都整页重拉**（取消收藏后那张要消失），从详情页返回也走这一遭。
+  /// 重拉换回来的 photo 的 ratio 又是 0，而 `_PhotoCard` 的 State 按 id 复用、量过就不再量，
+  /// 比例要是丢了，宽 > 高的横图就永远停在 3:4 的竖盒子里被 `BoxFit.cover` 放大裁切 ——
+  /// 肉眼就是「返回之后图被拉长了」（2026-09-04 报障，与官方图库列表页、小程序两端同源同修）。
+  final Map<int, double> _ratios = <int, double>{};
+
   @override
   void initState() {
     super.initState();
@@ -72,7 +80,7 @@ class _OfficialGalleryFavoritesPageState
         return;
       }
       setState(() {
-        _photos = page.photos;
+        _photos = _withKnownRatios(page.photos);
         _pageIndex = page.pageIndex;
         _hasMore = page.hasMore;
         _total = page.total;
@@ -105,7 +113,7 @@ class _OfficialGalleryFavoritesPageState
         return;
       }
       setState(() {
-        _photos = [..._photos, ...page.photos];
+        _photos = [..._photos, ..._withKnownRatios(page.photos)];
         _pageIndex = page.pageIndex;
         _hasMore = page.hasMore;
         _loadingMore = false;
@@ -117,10 +125,27 @@ class _OfficialGalleryFavoritesPageState
     }
   }
 
+  /// 把已经量准的比例贴回新拉到的这批（后端不给比例，重拉回来的 ratio 恒为 0）。
+  /// 没量过的保持 0，交给 3:4 占位 + 解码后校正那条老路。
+  List<OfficialPhoto> _withKnownRatios(List<OfficialPhoto> photos) {
+    if (_ratios.isEmpty) {
+      return photos;
+    }
+    return photos.map((photo) {
+      if (photo.ratio > 0) {
+        return photo;
+      }
+      final known = _ratios[photo.id];
+      return known == null ? photo : photo.copyWith(ratio: known);
+    }).toList();
+  }
+
+  /// 图片加载完拿到的真实比例：只改这一张，同时记进 [_ratios] 供之后每次重拉复用。
   void _onRatioResolved(OfficialPhoto photo, double ratio) {
     if (!mounted || ratio <= 0) {
       return;
     }
+    _ratios[photo.id] = ratio;
     final index = _photos.indexWhere((item) => item.id == photo.id);
     if (index < 0 || _photos[index].ratio > 0) {
       return;

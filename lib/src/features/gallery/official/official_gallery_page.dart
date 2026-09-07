@@ -44,6 +44,16 @@ class _OfficialGalleryPageState extends State<OfficialGalleryPage> {
   /// 收藏切换在途锁：连点会对同一张图切两次，最后一次的结果还可能先回来。
   bool _toggling = false;
 
+  /// 端上量准的真实比例（图片 id → 宽/高），由 [_onRatioResolved] 记下。
+  ///
+  /// ⚠️ 存在的唯一理由：**任何一次重拉都不许把量准的比例打回默认占位**。
+  /// 后端列表项不给比例（见 official_gallery_api.dart 缺口①），首屏一律按 3:4 **竖图**占位、
+  /// 图片解码后才校正。而「从详情页/收藏页返回」的静默对账、下拉刷新都会把 [_photos] 整批换成
+  /// 新对象（ratio 又是 0），此时 `_PhotoCard` 的 State 按 id 复用、`_measuring` 还是 true，
+  /// **不会再量第二次** —— 宽 > 高的横图就永远停在 3:4 的竖盒子里被 `BoxFit.cover` 放大裁切，
+  /// 肉眼就是「返回之后图被拉长了」（2026-09-04 报障，小程序同源同修）。
+  final Map<int, double> _ratios = <int, double>{};
+
   @override
   void initState() {
     super.initState();
@@ -125,7 +135,7 @@ class _OfficialGalleryPageState extends State<OfficialGalleryPage> {
       final favoriteIds = results[1] as Set<int>;
       setState(() {
         _favoriteIds = favoriteIds;
-        _photos = _markFavorites(page.photos, favoriteIds);
+        _photos = _withKnownRatios(_markFavorites(page.photos, favoriteIds));
         _pageIndex = page.pageIndex;
         _hasMore = page.hasMore;
         _loading = false;
@@ -164,7 +174,10 @@ class _OfficialGalleryPageState extends State<OfficialGalleryPage> {
         return;
       }
       setState(() {
-        _photos = [..._photos, ..._markFavorites(page.photos, _favoriteIds)];
+        _photos = [
+          ..._photos,
+          ..._withKnownRatios(_markFavorites(page.photos, _favoriteIds)),
+        ];
         _pageIndex = page.pageIndex;
         _hasMore = page.hasMore;
         _loadingMore = false;
@@ -174,6 +187,21 @@ class _OfficialGalleryPageState extends State<OfficialGalleryPage> {
         setState(() => _loadingMore = false);
       }
     }
+  }
+
+  /// 把已经量准的比例贴回新拉到的这批（后端不给比例，重拉回来的 ratio 恒为 0）。
+  /// 没量过的保持 0，交给 3:4 占位 + 解码后校正那条老路。
+  List<OfficialPhoto> _withKnownRatios(List<OfficialPhoto> photos) {
+    if (_ratios.isEmpty) {
+      return photos;
+    }
+    return photos.map((photo) {
+      if (photo.ratio > 0) {
+        return photo;
+      }
+      final known = _ratios[photo.id];
+      return known == null ? photo : photo.copyWith(ratio: known);
+    }).toList();
   }
 
   List<OfficialPhoto> _markFavorites(
@@ -197,10 +225,12 @@ class _OfficialGalleryPageState extends State<OfficialGalleryPage> {
   }
 
   /// 图片加载完拿到的真实比例：只改这一张的 ratio（进而改它的高度），**不重新排序**。
+  /// 同时记进 [_ratios]，供之后每一次重拉复用（见 [_withKnownRatios]）。
   void _onRatioResolved(OfficialPhoto photo, double ratio) {
     if (!mounted || ratio <= 0) {
       return;
     }
+    _ratios[photo.id] = ratio;
     final index = _photos.indexWhere((item) => item.id == photo.id);
     if (index < 0 || _photos[index].ratio > 0) {
       return;
