@@ -1304,6 +1304,12 @@ class AppL10n {
     'The slideshow advances to the next photo 24 hours after it is turned on.',
     'スライドショーを有効にしてから24時間後に次の写真へ切り替わります。',
   );
+  String get carouselEnabledSuccess => _pick(
+    '已开启照片轮播，24小时后轮播下一张',
+    'Photo slideshow enabled. The next photo will appear in 24 hours.',
+    '写真のスライドショーを有効にしました。24時間後に次の写真へ切り替わります。',
+    '已開啟照片輪播，24小時後輪播下一張',
+  );
   String get carouselMode => _pick('轮播方式', 'Slideshow Mode', 'スライドショー方式');
   String get carouselSequence => _pick('顺序轮播', 'Sequential', '順番に再生');
   String get carouselRandom => _pick('随机轮播', 'Random', 'ランダム再生');

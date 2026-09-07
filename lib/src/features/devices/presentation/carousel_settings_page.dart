@@ -94,9 +94,14 @@ class _CarouselSettingsPageState extends State<CarouselSettingsPage> {
       }
       // 失败：状态不变，开关按当前 _enabled 自动还原（对齐小程序 applyPlayback 失败还原开关）。
     });
-    // 成功后开关/选项本身已刷新，作为操作反馈；仅失败时提示。
     if (!feedback.success) {
       _showSnack(feedback.message);
+    } else if (enabled) {
+      AppToast.show(
+        context,
+        AppL10n.of(context).carouselEnabledSuccess,
+        duration: const Duration(seconds: 3),
+      );
     }
   }
 
