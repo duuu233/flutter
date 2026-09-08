@@ -3,6 +3,7 @@ import 'dart:io' show Platform;
 import 'package:flutter/foundation.dart' show debugPrint;
 
 import '../../network/api_exception.dart';
+import '../../network/api_session.dart';
 import '../../network/boltfox_api.dart';
 
 /// 星币（原「Token」，2026-08-12 全站改称；后端字段名仍是 `availableToken` 等）的数据层。
@@ -97,8 +98,11 @@ class StarCoinApi {
   /// 拉不到或空列表都返回空表，由页面决定怎么呈现（购买页空表 = 不给按钮，
   /// 而不是给一颗点了必然失败的「立即购买」）。
   static Future<List<StarPackage>> fetchPackages() async {
+    final languageCode = ApiSession.instance.languageCode;
     final data = await BoltFoxApi.getGoodsList();
-    return _rows(data).map(StarPackage.fromJson).toList();
+    return _rows(data)
+        .map((item) => StarPackage.fromJson(item, languageCode: languageCode))
+        .toList();
   }
 
   /// 星币消耗规则表（`GET /Client/Order/getAiConfigList`）。
@@ -144,11 +148,10 @@ class StarCoinApi {
   }
 
   /// `description` 是不是「纯数量」（例「200 token」「200星币」）。
-  static bool _isQuantityOnlyDescription(String description) =>
-      RegExp(
-        r'^\s*-?\d+(?:\.\d+)?\s*(?:tokens?|星币)?\s*$',
-        caseSensitive: false,
-      ).hasMatch(description);
+  static bool _isQuantityOnlyDescription(String description) => RegExp(
+    r'^\s*-?\d+(?:\.\d+)?\s*(?:tokens?|星币)?\s*$',
+    caseSensitive: false,
+  ).hasMatch(description);
 
   /// 购买 / 消费记录（分页）。[spend] = true 取消费记录（`inOutType=2`）。
   static Future<StarRecordPage> fetchRecords({
@@ -163,31 +166,27 @@ class StarCoinApi {
     final rows = _rows(data);
     final pageCount = data is Map ? _toInt(data['pageCount']) : 0;
     return StarRecordPage(
-      records: rows
-          .map(
-            (item) {
-              final description = _toText(item['description']);
-              final described = _tokensFromDescription(description);
-              return StarRecord(
-                time: _toText(item['joinTime']),
-                // 数量以 description 为准（见 [_tokensFromDescription]），取不到才回落 num
-                amount: described ?? _toInt(item['num']),
-                gift: _toInt(item['giveNum']),
-                money: _toDouble(item['amount']),
-                // 「场景」那一行：description 只是个数量时不再重复画一遍（右边已经写着数量）
-                scene: _isQuantityOnlyDescription(description) ? '' : description,
-                // ⚠️ 数值 + 「已转文字」两个都留着（swagger `ClientUserAccountTradeApiOut`
-                // 同时给了 payType/payTypeMsg、orderState/orderStateMsg）：
-                // **后端忽略 language 参数，两个 Msg 恒为中文**，英/日/繁用户会直接看到
-                // 「已完成」「微信支付」。展示一律走 AppL10n 的本地化，原文只作兜底。
-                payType: _toInt(item['payType']),
-                channel: _toText(item['payTypeMsg']),
-                orderState: _toInt(item['orderState']),
-                status: _toText(item['orderStateMsg']),
-              );
-            },
-          )
-          .toList(),
+      records: rows.map((item) {
+        final description = _toText(item['description']);
+        final described = _tokensFromDescription(description);
+        return StarRecord(
+          time: _toText(item['joinTime']),
+          // 数量以 description 为准（见 [_tokensFromDescription]），取不到才回落 num
+          amount: described ?? _toInt(item['num']),
+          gift: _toInt(item['giveNum']),
+          money: _toDouble(item['amount']),
+          // 「场景」那一行：description 只是个数量时不再重复画一遍（右边已经写着数量）
+          scene: _isQuantityOnlyDescription(description) ? '' : description,
+          // ⚠️ 数值 + 「已转文字」两个都留着（swagger `ClientUserAccountTradeApiOut`
+          // 同时给了 payType/payTypeMsg、orderState/orderStateMsg）：
+          // **后端忽略 language 参数，两个 Msg 恒为中文**，英/日/繁用户会直接看到
+          // 「已完成」「微信支付」。展示一律走 AppL10n 的本地化，原文只作兜底。
+          payType: _toInt(item['payType']),
+          channel: _toText(item['payTypeMsg']),
+          orderState: _toInt(item['orderState']),
+          status: _toText(item['orderStateMsg']),
+        );
+      }).toList(),
       pageIndex: pageIndex,
       // 判停优先 pageCount：只看条数会在「后端无视 pageSize 按自己的默认值分页」时提前停
       hasMore: pageCount > 0
@@ -353,11 +352,15 @@ class StarPackage {
     required this.gift,
     required this.price,
     required this.currencySymbol,
+    this.marketAmount,
     required this.wxProductId,
     required this.appleProductId,
   });
 
-  factory StarPackage.fromJson(Map<String, dynamic> json) {
+  factory StarPackage.fromJson(
+    Map<String, dynamic> json, {
+    int languageCode = 2,
+  }) {
     // ⚠️ **`0` 是合法的 goodsId**（2026-09-01 后端确认），所以这里只做类型归一、
     // 不做任何「大于 0 才算数」的判断 —— 那样会把一档合法的 0 悄悄换成别的值。
     // 同理页面**不能拿 goodsId 当选中项的键**（0 或重复 id 会让 firstWhere 恒命中第一档），
@@ -368,6 +371,7 @@ class StarPackage {
       tokens: StarCoinApi._toInt(json['num']),
       gift: StarCoinApi._toInt(json['giveNum']),
       price: StarCoinApi._toDouble(json['amount']),
+      marketAmount: _readMarketAmount(json, languageCode),
       // 币种符号由后端按商品下发（swagger `ClientGoodsApiOut.currencySymbol`，「币种符号$,¥」）。
       // 后端没给才退回 [kStarCurrencySymbol]：符号跟着钱走，端上写死就会出现
       // 「页面写着 ¥、PayPal 扣的是 $」。
@@ -382,6 +386,25 @@ class StarPackage {
     );
   }
 
+  static double? _readMarketAmount(
+    Map<String, dynamic> json,
+    int languageCode,
+  ) {
+    const fields = {
+      0: 'marketAmountEnglish',
+      1: 'marketAmountEnglish',
+      2: 'marketAmount',
+      3: 'marketAmountFan',
+      4: 'marketAmountJapanese',
+    };
+    final field = fields[languageCode] ?? 'marketAmount';
+    // 兼容已按语种投影到 marketAmount 的响应。明确空值不跨币种回退。
+    final value = json.containsKey(field) ? json[field] : json['marketAmount'];
+    if (value is! num && value is! String) return null;
+    final amount = double.tryParse(value.toString().trim());
+    return amount != null && amount.isFinite && amount >= 0 ? amount : null;
+  }
+
   final int goodsId;
   final String name;
 
@@ -393,6 +416,13 @@ class StarPackage {
 
   /// 售价。币种见 [currencySymbol]，两者必须一起用，别把数字单拎出去配别的符号。
   final double price;
+
+  /// 当前语种的划线原价；缺失或非法为 null，0 为有效金额，不参与支付。
+  final double? marketAmount;
+
+  String get marketAmountText => marketAmount == null
+      ? ''
+      : '$currencySymbol${marketAmount!.toStringAsFixed(2)}';
 
   /// 售价的货币符号（后端 `ClientGoodsApiOut.currencySymbol`，如 `¥` / `$`）。
   /// 后端没给时是 [kStarCurrencySymbol]。
@@ -425,7 +455,10 @@ class StarOrder {
     required this.payType,
   });
 
-  factory StarOrder.fromJson(Map<String, dynamic> json, {required int payType}) {
+  factory StarOrder.fromJson(
+    Map<String, dynamic> json, {
+    required int payType,
+  }) {
     return StarOrder(
       orderNo: StarCoinApi._toText(json['orderNo']),
       orderId: StarCoinApi._toText(json['orderId']),

@@ -177,8 +177,7 @@ class _StarCoinPageState extends State<StarCoinPage> {
                   _PackageStrip(
                     packages: _packages,
                     selectedIndex: _selectedIndex,
-                    onSelect: (index) =>
-                        setState(() => _selectedIndex = index),
+                    onSelect: (index) => setState(() => _selectedIndex = index),
                     l10n: l10n,
                   ),
                 const SizedBox(height: 16),
@@ -282,8 +281,6 @@ class _PackageCard extends StatelessWidget {
 
   static const double _radius = 10;
   static const double _giftSlotHeight = 16;
-  // 划线金额暂用静态占位，后续按确认的接口字段替换，不参与支付计算。
-  static const String _referencePriceText = '￥0.01';
 
   @override
   Widget build(BuildContext context) {
@@ -412,15 +409,22 @@ class _PackageCard extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    _referencePriceText,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF9AA0A8),
-                      fontSize: 11,
-                      height: 1,
-                      decoration: TextDecoration.lineThrough,
+                  // 无原价时留空位，卡片内容仍保持对齐；长金额完整缩放展示。
+                  SizedBox(
+                    height: 11,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        package.marketAmountText,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Color(0xFF9AA0A8),
+                          fontSize: 11,
+                          height: 1,
+                          decoration: TextDecoration.lineThrough,
+                        ),
+                      ),
                     ),
                   ),
                 ],
@@ -760,8 +764,7 @@ class _RulesCard extends StatelessWidget {
             cost: l10n.starRuleColCost,
             head: true,
           ),
-          for (final rule in rules)
-            _RuleRow(name: rule.name, cost: rule.cost),
+          for (final rule in rules) _RuleRow(name: rule.name, cost: rule.cost),
         ],
       ),
     );

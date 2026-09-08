@@ -22,6 +22,68 @@ void main() {
   });
 
   group('套餐归一', () {
+    test('原价按语种映射且不影响售价', () {
+      const json = {
+        'amount': 2,
+        'currencySymbol': r'$',
+        'marketAmount': '12.30',
+        'marketAmountEnglish': '4.50',
+        'marketAmountFan': 6,
+        'marketAmountJapanese': '800',
+      };
+      for (final entry in {2: 12.3, 1: 4.5, 0: 4.5, 3: 6.0, 4: 800.0}.entries) {
+        final package = StarPackage.fromJson(json, languageCode: entry.key);
+        expect(package.marketAmount, entry.value);
+        expect(package.price, 2);
+        expect(package.marketAmountText, r'$' + entry.value.toStringAsFixed(2));
+      }
+    });
+
+    test('原价兼容投影字段且明确空值不跨币种回退', () {
+      expect(
+        StarPackage.fromJson({
+          'marketAmount': 25,
+        }, languageCode: 1).marketAmount,
+        25,
+      );
+      expect(
+        StarPackage.fromJson({
+          'marketAmount': 25,
+          'marketAmountEnglish': null,
+        }, languageCode: 1).marketAmount,
+        isNull,
+      );
+    });
+
+    test('原价零值和六位金额保留，非法或缺失值留空', () {
+      expect(
+        StarPackage.fromJson({'marketAmount': 0}).marketAmountText,
+        '¥0.00',
+      );
+      expect(StarPackage.fromJson({'marketAmount': '0'}).marketAmount, 0);
+      expect(
+        StarPackage.fromJson({'marketAmount': '999999.99'}).marketAmountText,
+        '¥999999.99',
+      );
+      expect(StarPackage.fromJson({}).marketAmount, isNull);
+      for (final value in [
+        null,
+        '',
+        ' ',
+        'invalid',
+        -1,
+        double.infinity,
+        'NaN',
+        true,
+        [],
+        {},
+      ]) {
+        final package = StarPackage.fromJson({'marketAmount': value});
+        expect(package.marketAmount, isNull);
+        expect(package.marketAmountText, '');
+      }
+    });
+
     test('字段映射与「含赠送」的合计口径', () {
       final package = StarPackage.fromJson(const {
         'goodsId': 7,
@@ -70,8 +132,11 @@ void main() {
 
     test('后端没给币种符号时才退回 ¥', () {
       expect(
-        StarPackage.fromJson(const {'goodsId': 7, 'num': 200, 'amount': 90})
-            .currencySymbol,
+        StarPackage.fromJson(const {
+          'goodsId': 7,
+          'num': 200,
+          'amount': 90,
+        }).currencySymbol,
         kStarCurrencySymbol,
       );
       expect(
@@ -145,7 +210,8 @@ void main() {
   group('创建支付出参', () {
     test('只落地 PayPal 那两个字段 + 异常信息', () {
       final creation = StarPayCreation.fromJson(const {
-        'payPalApproveUrl': 'https://www.sandbox.paypal.com/checkoutnow?token=ABC',
+        'payPalApproveUrl':
+            'https://www.sandbox.paypal.com/checkoutnow?token=ABC',
         'payPalOrderId': 'ABC',
         // 微信那一串同壳字段端上不认（App 不走微信支付），有值也不该影响 PayPal 分支
         'wxPayAppId': 'wxdeadbeef',
@@ -212,11 +278,15 @@ void main() {
 
     test('两种形状同时给时以后端映射过的字段为准', () {
       final creation = StarPayCreation.fromJson(const {
-        'payPalApproveUrl': 'https://www.sandbox.paypal.com/checkoutnow?token=MAPPED',
+        'payPalApproveUrl':
+            'https://www.sandbox.paypal.com/checkoutnow?token=MAPPED',
         'payPalOrderId': 'MAPPED',
         'id': 'RAW',
         'links': [
-          {'href': 'https://www.sandbox.paypal.com/checkoutnow?token=RAW', 'rel': 'approve'},
+          {
+            'href': 'https://www.sandbox.paypal.com/checkoutnow?token=RAW',
+            'rel': 'approve',
+          },
         ],
       });
       expect(creation.payPalOrderId, 'MAPPED');
@@ -225,8 +295,10 @@ void main() {
 
     test('links 结构不对时不炸，按「拉不起支付」处理', () {
       expect(
-        StarPayCreation.fromJson(const {'id': 'X', 'links': 'not-a-list'})
-            .payPalApproveUrl,
+        StarPayCreation.fromJson(const {
+          'id': 'X',
+          'links': 'not-a-list',
+        }).payPalApproveUrl,
         isEmpty,
       );
       expect(
@@ -258,10 +330,13 @@ void main() {
 
   group('到账轮询节奏', () {
     test('与小程序 CONFIRM_DELAYS 逐值相同，总时长约 9.4s', () {
-      expect(
-        StarPurchase.confirmDelays.map((d) => d.inMilliseconds).toList(),
-        [900, 1200, 1800, 2500, 3000],
-      );
+      expect(StarPurchase.confirmDelays.map((d) => d.inMilliseconds).toList(), [
+        900,
+        1200,
+        1800,
+        2500,
+        3000,
+      ]);
       final total = StarPurchase.confirmDelays.fold<int>(
         0,
         (sum, d) => sum + d.inMilliseconds,
@@ -295,11 +370,7 @@ void main() {
     // 所以这里直接拿清单来比，别指望下一个人记得改两处。
     test('与 AndroidManifest 里 PayPalRedirectActivity 的 intent-filter 逐字一致', () {
       final manifest = File('android/app/src/main/AndroidManifest.xml');
-      expect(
-        manifest.existsSync(),
-        isTrue,
-        reason: '测试须从项目根目录跑（flutter test）',
-      );
+      expect(manifest.existsSync(), isTrue, reason: '测试须从项目根目录跑（flutter test）');
       final xml = manifest.readAsStringSync();
 
       for (final link in [
