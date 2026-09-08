@@ -261,7 +261,7 @@ class _PackageStrip extends StatelessWidget {
   }
 }
 
-/// 单张套餐卡（小程序 `.package-card`，276×248rpx = 138×124）。
+/// 单张套餐卡（小程序 `.package-card`，248×248rpx = 124×124）。
 ///
 /// ⚠️ 角标那一行**永远占位**（[_giftSlotHeight]）：选中态的角标贴在卡片右上角、
 /// 脱离了正常流，没有这个等高占位，选中那张卡的「星币数」及以下会整体上移半格，
@@ -289,9 +289,11 @@ class _PackageCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        // 2026-09-08 收窄 150 → 138：原宽度是为六位金额留的，实际右侧空得明显。
-        // 主价格整行本来就包在 FittedBox 里，放不下会自动缩，不会截断。
-        width: 138,
+        // 2026-09-08 当日两次收窄：150 → 138 → 124（对齐小程序 248rpx）。
+        // 原宽度是为六位金额留的余量，产品复看两次都嫌右侧空。主价格与原价
+        // 两行都包在 FittedBox 里，放不下自动缩、不会截断，所以这边没有像
+        // 小程序那样的宽度下限；真正的下限是缩到看不清。
+        width: 124,
         height: 124,
         child: Stack(
           clipBehavior: Clip.none,
