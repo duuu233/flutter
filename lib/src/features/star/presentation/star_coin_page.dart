@@ -262,7 +262,7 @@ class _PackageStrip extends StatelessWidget {
   }
 }
 
-/// 单张套餐卡（小程序 `.package-card`，200×248rpx = 100×124）。
+/// 单张套餐卡（小程序 `.package-card`，300×248rpx = 150×124）。
 ///
 /// ⚠️ 角标那一行**永远占位**（[_giftSlotHeight]）：选中态的角标贴在卡片右上角、
 /// 脱离了正常流，没有这个等高占位，选中那张卡的「星币数」及以下会整体上移半格，
@@ -282,6 +282,8 @@ class _PackageCard extends StatelessWidget {
 
   static const double _radius = 10;
   static const double _giftSlotHeight = 16;
+  // 划线金额暂用静态占位，后续按确认的接口字段替换，不参与支付计算。
+  static const String _referencePriceText = '￥0.01';
 
   @override
   Widget build(BuildContext context) {
@@ -290,7 +292,7 @@ class _PackageCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 100,
+        width: 150,
         height: 124,
         child: Stack(
           clipBehavior: Clip.none,
@@ -377,26 +379,28 @@ class _PackageCard extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Text(
-                        // 后端按商品下发的币种符号（见 StarPackage.currencySymbol），不写死
-                        package.currencySymbol,
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          height: 1,
+                  // 金额整行按需缩小，六位整数、小数及币种符号完整显示。
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
+                          package.currencySymbol,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            height: 1,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 3),
-                      Flexible(
-                        child: Text(
+                        const SizedBox(width: 3),
+                        Text(
                           package.price.toStringAsFixed(2),
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: accent,
                             fontSize: 20,
@@ -404,22 +408,19 @@ class _PackageCard extends StatelessWidget {
                             height: 1,
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    // 单价按含赠送总数算，见 StarPackage.unitPrice
-                    l10n.starBuyUnitPrice(
-                      package.unitPrice,
-                      package.currencySymbol,
-                    ),
+                    _referencePriceText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Color(0xFF9AA0A8),
                       fontSize: 11,
                       height: 1,
+                      decoration: TextDecoration.lineThrough,
                     ),
                   ),
                 ],
