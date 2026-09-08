@@ -8,12 +8,14 @@
 
 ## 变更
 
-### 1. 赠送角标：选中与未选中位置一致
+### 1. 赠送角标：位置与配色都不再跟着选中状态变
 
 原来两种状态画在两处：未选中走 Column 里那格 `SizedBox` 内的右对齐橙色文字，选中才由
 `Positioned` 贴到卡片右上角，点选时角标会跳一下。现在统一由 `Positioned` 渲染
 （条件从 `package.gift > 0 && selected` 放宽成 `package.gift > 0`），几何完全相同，
-只有 `decoration.color` 与文字颜色跟着 `selected` 变：未选中透明底橙字，选中橙底白字。
+**当日分两步改**：先统一位置、配色仍跟着 `selected` 变；产品复看后要求配色也固定，于是
+`decoration.color` 与文字颜色都写死成 `Color(0xFFFF6A1E)` 底 + `Colors.white` 字
+（两处随之改回 `const`）。现在选中状态只影响卡片本身的底色、描边与阴影。
 
 ⚠️ Column 里那格 `SizedBox(height: _giftSlotHeight)` **保留为纯占位**：角标恒为 `Positioned`、
 不占高，而卡片内容是 `MainAxisAlignment.center`，占位一旦删掉，有赠送和无赠送的卡片内容会差半格。

@@ -420,9 +420,10 @@ class _PackageCard extends StatelessWidget {
                 ],
               ),
             ),
-            // 赠送角标：**选中与未选中位置完全一致**（都贴卡片右上角），
-            // 两者只差背景色与字色 —— 原来未选中画在卡内、选中才浮到角上，
-            // 切换选中时角标会跳一下位置。小程序端同一套改法。
+            // 赠送角标：**与选中状态完全无关**——位置、橙底、白字三样都固定，
+            // 选中只影响卡片本身的底色、描边与阴影。历史：最早未选中画在卡内、
+            // 选中才浮到角上（切换时角标会跳位置），随后统一位置、仍按选中切换
+            // 配色，本轮按产品要求连配色也固定。小程序端同一套改法。
             if (package.gift > 0)
               Positioned(
                 top: 0,
@@ -431,11 +432,9 @@ class _PackageCard extends StatelessWidget {
                   height: _giftSlotHeight,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: BoxDecoration(
-                    color: selected
-                        ? const Color(0xFFFF6A1E)
-                        : Colors.transparent,
-                    borderRadius: const BorderRadius.only(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF6A1E),
+                    borderRadius: BorderRadius.only(
                       topRight: Radius.circular(_radius),
                       bottomLeft: Radius.circular(_radius),
                     ),
@@ -443,10 +442,8 @@ class _PackageCard extends StatelessWidget {
                   child: Text(
                     l10n.starPackageGift(package.gift),
                     maxLines: 1,
-                    style: TextStyle(
-                      color: selected
-                          ? Colors.white
-                          : const Color(0xFFF2621F),
+                    style: const TextStyle(
+                      color: Colors.white,
                       fontSize: 11,
                       height: 1,
                     ),
