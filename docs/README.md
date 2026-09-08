@@ -216,4 +216,5 @@ codegraph sync .
 
 ## 星币套餐展示记录
 
+- [2026-09-08 星币管理原价字段接入](history/2026-09/2026-09-08-star-package-market-amount.md)：划线原价改取接口 `marketAmount`（按语种，缺失留空不伪造），⚠️ 本轮在无 Flutter SDK 的机器上补写记录，`flutter test`/`analyze` 均未跑。
 - [2026-09-08 星币管理套餐价格展示](history/2026-09/2026-09-08-star-package-price-display.md)：静态划线金额及六位价格完整展示，验证结果见记录。
