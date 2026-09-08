@@ -261,7 +261,7 @@ class _PackageStrip extends StatelessWidget {
   }
 }
 
-/// 单张套餐卡（小程序 `.package-card`，300×248rpx = 150×124）。
+/// 单张套餐卡（小程序 `.package-card`，276×248rpx = 138×124）。
 ///
 /// ⚠️ 角标那一行**永远占位**（[_giftSlotHeight]）：选中态的角标贴在卡片右上角、
 /// 脱离了正常流，没有这个等高占位，选中那张卡的「星币数」及以下会整体上移半格，
@@ -289,7 +289,9 @@ class _PackageCard extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: onTap,
       child: SizedBox(
-        width: 150,
+        // 2026-09-08 收窄 150 → 138：原宽度是为六位金额留的，实际右侧空得明显。
+        // 主价格整行本来就包在 FittedBox 里，放不下会自动缩，不会截断。
+        width: 138,
         height: 124,
         child: Stack(
           clipBehavior: Clip.none,
@@ -325,26 +327,11 @@ class _PackageCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // 角标占位：未选中时在卡内右对齐画橙色小字，选中时这里留空、
-                  // 角标改由下面的 Positioned 贴到卡片右上角。
-                  SizedBox(
+                  // 角标占位：角标恒为 Positioned、不占高，这一格必须留着，
+                  // 否则选中/未选中两张卡的内容会差半格。
+                  const SizedBox(
                     height: _giftSlotHeight,
                     width: double.infinity,
-                    child: package.gift > 0 && !selected
-                        ? Align(
-                            alignment: Alignment.centerRight,
-                            child: Text(
-                              l10n.starPackageGift(package.gift),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: Color(0xFFF2621F),
-                                fontSize: 11,
-                                height: 1,
-                              ),
-                            ),
-                          )
-                        : null,
                   ),
                   const SizedBox(height: 9),
                   Row(
@@ -430,7 +417,10 @@ class _PackageCard extends StatelessWidget {
                 ],
               ),
             ),
-            if (package.gift > 0 && selected)
+            // 赠送角标：**选中与未选中位置完全一致**（都贴卡片右上角），
+            // 两者只差背景色与字色 —— 原来未选中画在卡内、选中才浮到角上，
+            // 切换选中时角标会跳一下位置。小程序端同一套改法。
+            if (package.gift > 0)
               Positioned(
                 top: 0,
                 right: 0,
@@ -438,9 +428,11 @@ class _PackageCard extends StatelessWidget {
                   height: _giftSlotHeight,
                   alignment: Alignment.center,
                   padding: const EdgeInsets.symmetric(horizontal: 8),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFFF6A1E),
-                    borderRadius: BorderRadius.only(
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? const Color(0xFFFF6A1E)
+                        : Colors.transparent,
+                    borderRadius: const BorderRadius.only(
                       topRight: Radius.circular(_radius),
                       bottomLeft: Radius.circular(_radius),
                     ),
@@ -448,8 +440,10 @@ class _PackageCard extends StatelessWidget {
                   child: Text(
                     l10n.starPackageGift(package.gift),
                     maxLines: 1,
-                    style: const TextStyle(
-                      color: Colors.white,
+                    style: TextStyle(
+                      color: selected
+                          ? Colors.white
+                          : const Color(0xFFF2621F),
                       fontSize: 11,
                       height: 1,
                     ),
