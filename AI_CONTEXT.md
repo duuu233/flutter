@@ -215,9 +215,16 @@ Inside `lib/src/features/`, the current domains are `account`, `ai`, `cast`, `de
 | Account feature | Email/WeChat auth, registration, password/email/profile maintenance, local email history | `lib/src/features/account/` |
 | Gallery feature ("My Album") | Successfully cast photos grouped by device (source: cast records with `deviceUploadState:1`), device filtering, batch recast, and delete (device slot + album record + source cast record). Merged from the former "Device Photos" and "Casting" entries on 2026-08-04 | `lib/src/features/gallery/` |
 | Home and Mine | Primary product entry points, selected-device summary, account statistics, navigation cards | `lib/src/features/home/`, `lib/src/features/mine/` |
-| Settings and guide | Language, multilingual legal documents including the AI service agreement, version/update, logout/deletion, FAQ pagination and HTML-subset rendering | `lib/src/features/settings/`, `lib/src/features/guide/`, `lib/src/shared/l10n/` |
+| Settings and guide | Language, legal documents, version/update, logout/deletion, FAQ pagination and HTML-subset rendering | `lib/src/features/settings/`, `lib/src/features/guide/`, `lib/src/shared/l10n/` |
 | AI feature | Sessions, chat history, up to four public image URLs, image compression/upload/enhancement, localized error mapping, and per-user/version consent gating before requests | `lib/src/features/ai/`, `lib/src/network/boltstar_ai_api.dart`, `lib/src/shared/ai_service_consent.dart` |
 | Resource/native infrastructure | Image-cache privacy cleanup, temporary-file cold-start sweep, permission/native bridge, Android foreground service and crash capture | `lib/src/shared/image_cache_cleanup.dart`, `lib/src/shared/temp_cache_sweeper.dart`, `lib/src/native_device_api.dart`, `android/app/src/main/kotlin/com/boltfox/boltstar/`, `ios/Runner/AppDelegate.swift` |
+
+Legal pages are not uniformly multilingual. Since 2026-09-10 the **user agreement and privacy policy bodies are fixed English**
+(compile-time constants `UserAgreementPage.userAgreementSections` / `PrivacyPolicyPage.privacyPolicySections`, deliberately not
+routed through `AppL10n.pick`): legal counsel issues Simplified Chinese and English only, the App takes English and the mini
+program takes Simplified Chinese, and machine-translating a legal text would be worse than showing English. Only the page titles
+still follow the language setting. The **AI service agreement is still multilingual** (`l10n.pick`, zh/en/ja) because it is not
+part of the counsel-issued document set. See `docs/history/2026-09/2026-09-10-协议换法务20260909全文.md`.
 
 ## Data Flow
 

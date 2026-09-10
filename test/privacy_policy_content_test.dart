@@ -4,10 +4,9 @@ import 'package:BoltStar/src/shared/l10n/app_l10n.dart';
 import 'package:BoltStar/src/state.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-/// 隐私政策正文的回归用例（2026-08-13 换成法务 v3.0 的**英文**全文）。
+/// 隐私政策正文的回归用例（2026-09-10 换成法务 20260909 那份 docx 的**英文**版）。
 ///
-/// 这一页此前是 2026-5-13 的旧短文，而 AI 同意弹窗里已经写着「详情见隐私政策第八节」——
-/// 指路指不到就是合规缺口。这里锁四件事：
+/// AI 同意弹窗里写着「详情见隐私政策第八节」——指路指不到就是合规缺口。这里锁四件事：
 ///   ① 14 章齐全、第八章确实讲跨境传输（弹窗那句指路要落到实处）；
 ///   ② 表格每行的列数与表头一致（Flutter 的 Table 行列不齐会直接抛断言）；
 ///   ③ 正文是英文、**不随语种变化**（法务只出了英文版，机翻法律文本比只给英文更糟）；
@@ -15,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   const sections = PrivacyPolicyPage.privacyPolicySections;
 
-  test('隐私政策是法务 v3.0 全文：14 章齐全，第八章讲跨境传输', () {
+  test('隐私政策是法务全文：14 章齐全，第八章讲跨境传输', () {
     expect(sections.length, 14);
     expect(sections[7].heading, contains('Cross-Border'));
   });
