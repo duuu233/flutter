@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:BoltStar/src/features/settings/presentation/legal_document_view.dart';
 import 'package:BoltStar/src/features/settings/presentation/user_agreement_page.dart';
 import 'package:BoltStar/src/shared/l10n/app_l10n.dart';
@@ -50,6 +52,47 @@ void main() {
       }
     }
     expect(tableCount, 1, reason: '第九章的违规处理阶梯表要在');
+  });
+
+  test('违规阶梯与《BoltStar AI 服务协议》同口径', () {
+    // 法务原文写的是「1st / 2nd / 3rd 各封 24 小时」并声称与 AI 协议一致，而 AI 协议
+    // 2026-09-10 已改成「前三次只提示违禁」——产品裁定用户协议按 AI 协议改。这条用例把
+    // 两页钉在一起：AI 协议页改了口径而这里没跟，会当场红。
+    final tiers = sections
+        .expand((section) => section.blocks)
+        .whereType<LegalTable>()
+        .single;
+    expect(tiers.head, <String>['Violation count', 'Measure']);
+    expect(tiers.rows, <List<String>>[
+      <String>['1st-3rd violations', 'AI features show a violation warning'],
+      <String>[
+        'After 3 cumulative violations, each additional violation',
+        'AI features banned for 24 hours',
+      ],
+      <String>['Upon 9 cumulative violations', 'AI features permanently banned'],
+    ]);
+
+    // AI 服务协议那一页的阶梯是 `l10n.pick` 里的纯文本、`_sectionsFor` 又是私有方法，
+    // 拿不到常量；照小程序端的做法直接读源码断言（阶梯改了这里会红）。
+    final aiSource = File(
+      'lib/src/features/settings/presentation/ai_service_agreement_page.dart',
+    ).readAsStringSync();
+    for (final line in <String>[
+      '1st-3rd | Violation warning shown in AI features',
+      'After 3 total, each additional violation | 24-hour AI feature suspension',
+      '9 total | Permanent AI feature suspension',
+      '第1-3次｜AI功能提示违禁',
+      '1〜3回目｜AI機能で違反警告を表示',
+    ]) {
+      expect(aiSource, contains(line), reason: 'AI 服务协议缺少阶梯行：$line');
+    }
+    for (final stale in <String>[
+      '1st | 24-hour AI feature suspension',
+      '第1次｜AI功能封禁24小时',
+      '1回目｜AI機能を24時間停止',
+    ]) {
+      expect(aiSource, isNot(contains(stale)), reason: 'AI 服务协议仍有旧阶梯：$stale');
+    }
   });
 
   test('正文固定英文，且不随语种设置变化', () {

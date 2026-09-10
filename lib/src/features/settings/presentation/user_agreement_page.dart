@@ -19,10 +19,15 @@ import 'legal_document_view.dart';
 /// 一次性使用、未入仓，做法见对应变更记录）。这是**法律文本**：改动只能来自法务给的新文档，
 /// 重新生成，不要在这里改措辞。文档自带的目录（TOC）没有转换进来——页面没有锚点跳转能力。
 ///
-/// ⚠️ 相对法务原文有三处经产品确认的**排版**修正（措辞一字未改，逐条列在转换脚本里）：
+/// ⚠️ 相对法务原文有四处经产品确认的修正（措辞一字未改，逐条列在转换脚本里）：
 ///   ① 生效日期原文是 `[To be completed: effective date]`，按产品口径填 September 10, 2026；
 ///   ② 粗体 run 边界造成的句号后缺空格 6 处（如 `app.If`、`bold.By`）已补齐；
-///   ③ 同一来源的标点前多空格 1 处（`(App Store) ; in the WeChat`）已收齐。
+///   ③ 同一来源的标点前多空格 1 处（`(App Store) ; in the WeChat`）已收齐；
+///   ④ **第 9 章的违规处理阶梯表按《BoltStar AI 服务协议》改**：原文的
+///      `1st / 2nd / 3rd violation` 三行各封 24 小时，合成一行
+///      `1st-3rd violations | AI features show a violation warning`，后两行与原文逐字相同。
+///      原文本就写明该表「consistent with the in-app BoltStar AI Service Agreement」，
+///      而 AI 协议已按产品口径改口，这里是把它对齐回去。
 /// 文档版本：Last Updated: August 28, 2026  Effective Date: September 10, 2026  Version: V1.0
 class UserAgreementPage extends StatelessWidget {
   const UserAgreementPage({super.key});
@@ -311,16 +316,8 @@ class UserAgreementPage extends StatelessWidget {
           head: <String>['Violation count', 'Measure'],
           rows: <List<String>>[
             <String>[
-              '1st violation',
-              'AI features banned for 24 hours',
-            ],
-            <String>[
-              '2nd violation',
-              'AI features banned for 24 hours',
-            ],
-            <String>[
-              '3rd violation',
-              'AI features banned for 24 hours',
+              '1st-3rd violations',
+              'AI features show a violation warning',
             ],
             <String>[
               'After 3 cumulative violations, each additional violation',
