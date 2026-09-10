@@ -70,4 +70,25 @@ void main() {
     );
     expect(sections[7].heading, contains('8.'));
   });
+
+  test('经产品确认的排版修正都在（法务下次给新版时这几条要重新过一遍）', () {
+    final all = <String>[
+      for (final section in sections) ...<String>[
+        section.heading,
+        for (final block in section.blocks)
+          if (block is LegalText)
+            block.text
+          else if (block is LegalTable) ...<String>[
+            ...block.head,
+            for (final row in block.rows) ...row,
+          ],
+      ],
+    ].join('\n');
+
+    // ④ 第 13 节的公司名已按页首页尾统一
+    expect(all, isNot(contains('Qihe Ming')));
+    expect(all, contains('BoltStar (Shenzhen) New Energy Technology Co., Ltd.'));
+    // ③ 粗体 run 边界造成的「标点前多一个空格」已收齐
+    expect(RegExp(r'\s+[.,;]').hasMatch(all), isFalse, reason: '仍有标点前多空格');
+  });
 }

@@ -35,16 +35,16 @@ class AiServiceAgreementPage extends StatelessWidget {
 
   String _introFor(AppL10n l10n) {
     return l10n.pick(
-      '欢迎使用AI服务。本协议是您（以下称“用户”）与 [启和明(深圳)新能源科技有限公司] '
+      '欢迎使用AI服务。本协议是您（以下称“用户”）与启和明（深圳）新能源科技有限公司'
           '（以下称“我们”）之间，关于使用我们提供的AI功能（以下称“本服务”）的法律协议。'
           '请您在使用本服务前仔细阅读。',
       'Welcome to the AI Service. This Agreement is a legal agreement between '
-          'you (the “User”) and [Qihe Ming (Shenzhen) New Energy Technology '
-          'Co., Ltd.] (“we”, “us” or “our”) concerning your use of the AI '
+          'you (the “User”) and BoltStar (Shenzhen) New Energy Technology '
+          'Co., Ltd. (“we”, “us” or “our”) concerning your use of the AI '
           'features we provide (the “Service”). Please read it carefully '
           'before using the Service.',
       'AIサービスへようこそ。本規約は、お客様（以下「ユーザー」といいます）と'
-          '[Qihe Ming (Shenzhen) New Energy Technology Co., Ltd.]'
+          'BoltStar (Shenzhen) New Energy Technology Co., Ltd.'
           '（以下「当社」といいます）との間で、当社が提供するAI機能'
           '（以下「本サービス」といいます）の利用について定める法的な規約です。'
           '本サービスをご利用になる前に、よくお読みください。',

@@ -14,8 +14,13 @@ import 'legal_document_view.dart';
 /// 正文由法务 docx「BoltStar Privacy Policy (EN) 20260909.docx」逐块转换而来（转换脚本
 /// 一次性使用、未入仓，做法见对应变更记录）。这是**法律文本**：改动只能来自法务给的新文档，
 /// 重新生成，不要在这里改措辞。文档自带的目录（TOC）没有转换进来——页面没有锚点跳转能力。
-/// 文档版本：Last Updated: August 28, 2026  Effective Date: To be completed  Version: VI.0
-/// ⚠️ 生效日期在法务原文里就是「To be completed」，端上照抄；发版前需要法务补上真实日期。
+///
+/// ⚠️ 相对法务原文有四处经产品确认的**排版**修正（措辞一字未改，逐条列在转换脚本里）：
+///   ① 生效日期原文是 `To be completed`，按产品口径填 September 10, 2026；
+///   ② 版本号原文写作 `VI.0`，确认是 `V1.0` 的笔误；
+///   ③ 粗体 run 边界造成的标点前多空格 9 处（如 `Permission: Bluetooth . Used`）已收齐；
+///   ④ 第 13 节的公司名原文是 `Qihe Ming (Shenzhen)…`，按页首页尾统一为 `BoltStar (Shenzhen)…`。
+/// 文档版本：Last Updated: August 28, 2026  Effective Date: September 10, 2026  Version: V1.0
 class PrivacyPolicyPage extends StatelessWidget {
   const PrivacyPolicyPage({super.key});
 
@@ -29,7 +34,7 @@ class PrivacyPolicyPage extends StatelessWidget {
       body: LegalDocumentView(
         title: 'BoltStar Privacy Policy',
         updatedAt: 'August 28, 2026',
-        effectiveAt: 'To be completed',
+        effectiveAt: 'September 10, 2026',
         intro: 'BoltStar (Shenzhen) New Energy Technology Co., Ltd. ("we") is '
             'the operator and personal information processor of the BoltStar '
             'e-paper photo frame and its companion app (including the iOS '
@@ -96,12 +101,12 @@ class PrivacyPolicyPage extends StatelessWidget {
             'Star Coins).', bullet: true),
         LegalText('2.2 Searching for, Binding, and Connecting the E-Paper '
             'Device (Essential Function)', subHeading: true),
-        LegalText('Permission: Bluetooth . Used to search for nearby BoltStar '
+        LegalText('Permission: Bluetooth. Used to search for nearby BoltStar '
             'devices, establish connections with them, and send and receive '
             'commands. We scan only for BoltStar Bluetooth devices supported '
             'by this App and will not scan for or connect to Bluetooth '
             'devices of other brands or types.', bullet: true),
-        LegalText('Permission: Location . Both iOS and Android require an app '
+        LegalText('Permission: Location. Both iOS and Android require an app '
             'to obtain location permission before scanning for nearby '
             'low-energy Bluetooth devices, which is why we request this '
             'permission; this App only temporarily uses the system permission '
@@ -120,7 +125,7 @@ class PrivacyPolicyPage extends StatelessWidget {
             'on the device, and determine whether a firmware upgrade is '
             'needed.', bullet: true),
         LegalText('2.3 Photo Casting and "My Album" (Core Function)', subHeading: true),
-        LegalText('Permission: photo album (read) . The system picker is '
+        LegalText('Permission: photo album (read). The system picker is '
             'opened only when you actively tap "Select Photos"; we receive '
             'only the photos you actively select this time, and will not '
             'read, scan, or upload other photos in your album.', bullet: true),
@@ -169,7 +174,7 @@ class PrivacyPolicyPage extends StatelessWidget {
             'payment channels — via Apple In-App Purchase (App Store) on iOS, '
             'and via WeChat Virtual Payment in the WeChat mini program. We do '
             'not collect, and cannot access, your payment account information '
-            'such as bank card numbers or payment passwords ; we only receive '
+            'such as bank card numbers or payment passwords; we only receive '
             'payment results and order numbers from the channels for '
             'crediting purposes.', bullet: true),
         LegalText('2.6 Firmware Upgrade (Essential Function)', subHeading: true),
@@ -218,7 +223,7 @@ class PrivacyPolicyPage extends StatelessWidget {
             ],
             <String>[
               'Location (while in use)',
-              'As required by the system: location permission is required to scan for nearby low-energy Bluetooth devices . Used only for Bluetooth scanning; no tracks are collected, and it is not used for profiling or advertising',
+              'As required by the system: location permission is required to scan for nearby low-energy Bluetooth devices. Used only for Bluetooth scanning; no tracks are collected, and it is not used for profiling or advertising',
               'Cannot discover nearby devices; binding and reconnection cannot be completed',
             ],
             <String>[
@@ -387,7 +392,7 @@ class PrivacyPolicyPage extends StatelessWidget {
         LegalText('Casted photos and records: retained until you delete the '
             'record in the app or delete your account. Please note: deleting '
             'a record in the app does not delete the images already displayed '
-            'on the device ; images in the device must be cleared via the '
+            'on the device; images in the device must be cleared via the '
             'in-app "Delete / Clear All" function or by restoring the device '
             'to factory settings.', bullet: true),
         LegalText('Transaction records: retained as required by tax and '
@@ -458,7 +463,7 @@ class PrivacyPolicyPage extends StatelessWidget {
             'taken, and suggestions for your self-protection, and report to '
             'the regulatory authorities.', bullet: true),
         LegalText('Please note: the internet is not an absolutely secure '
-            'environment ; please keep your account and verification codes '
+            'environment; please keep your account and verification codes '
             'safe and do not disclose them to others.', bullet: true),
       ],
     ),
@@ -483,10 +488,10 @@ class PrivacyPolicyPage extends StatelessWidget {
             'app.', bullet: true),
         LegalText('Account deletion: submit via "Me → Settings → Delete '
             'Account"; after deletion we will delete or anonymize all '
-            'information related to you stored on our servers , including '
-            'your account profile, casting records, and AI conversations, as '
-            'well as the original images you uploaded (photos used for album '
-            'display and re-casting). This operation is irreversible . Please '
+            'information related to you stored on our servers, including your '
+            'account profile, casting records, and AI conversations, as well '
+            'as the original images you uploaded (photos used for album '
+            'display and re-casting). This operation is irreversible. Please '
             'clear the photos in your e-paper device before deleting your '
             'account — after deletion, the binding between your account and '
             'the device is released, and you will no longer be able to delete '
@@ -542,7 +547,7 @@ class PrivacyPolicyPage extends StatelessWidget {
       blocks: <LegalBlock>[
         LegalText('Personal information protection email: '
             'boltstarservice@boltstar.net', bullet: true),
-        LegalText('Company name: Qihe Ming (Shenzhen) New Energy Technology '
+        LegalText('Company name: BoltStar (Shenzhen) New Energy Technology '
             'Co., Ltd.', bullet: true),
         LegalText('Registered address: Room 516, Hantang Building, No. 1 '
             'Xinglong Street, Zhongxin Street Community, Shahe Subdistrict, '

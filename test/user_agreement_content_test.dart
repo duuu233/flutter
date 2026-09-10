@@ -72,4 +72,33 @@ void main() {
     }
     expect(identical(sections, UserAgreementPage.userAgreementSections), isTrue);
   });
+
+  test('经产品确认的排版修正都在（法务下次给新版时这几条要重新过一遍）', () {
+    final all = <String>[
+      for (final section in sections) ...<String>[
+        section.heading,
+        for (final block in section.blocks)
+          if (block is LegalText)
+            block.text
+          else if (block is LegalTable) ...<String>[
+            ...block.head,
+            for (final row in block.rows) ...row,
+          ],
+      ],
+    ].join('\n');
+
+    // ③ 粗体 run 边界造成的「句号后缺空格」已补齐
+    for (final broken in <String>[
+      'bold.By',
+      'Agreement.If',
+      'app.If',
+      'prevail.Functions',
+      'others.You',
+      'Account".After',
+    ]) {
+      expect(all, isNot(contains(broken)));
+    }
+    // 同一来源的「标点前多一个空格」也已收齐
+    expect(RegExp(r'\s+[.,;]').hasMatch(all), isFalse, reason: '仍有标点前多空格');
+  });
 }

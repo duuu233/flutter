@@ -18,10 +18,12 @@ import 'legal_document_view.dart';
 /// 正文由法务 docx「BoltStar User Agreement (EN) 20260909(1).docx」逐块转换而来（转换脚本
 /// 一次性使用、未入仓，做法见对应变更记录）。这是**法律文本**：改动只能来自法务给的新文档，
 /// 重新生成，不要在这里改措辞。文档自带的目录（TOC）没有转换进来——页面没有锚点跳转能力。
-/// 文档版本：Last Updated: August 28, 2026  Effective Date: [To be completed: effective
-/// date]  Version: V1.0
-/// ⚠️ 生效日期在法务原文里就是「[To be completed: effective date]」，端上照抄；
-/// 发版前需要法务补上真实日期。
+///
+/// ⚠️ 相对法务原文有三处经产品确认的**排版**修正（措辞一字未改，逐条列在转换脚本里）：
+///   ① 生效日期原文是 `[To be completed: effective date]`，按产品口径填 September 10, 2026；
+///   ② 粗体 run 边界造成的句号后缺空格 6 处（如 `app.If`、`bold.By`）已补齐；
+///   ③ 同一来源的标点前多空格 1 处（`(App Store) ; in the WeChat`）已收齐。
+/// 文档版本：Last Updated: August 28, 2026  Effective Date: September 10, 2026  Version: V1.0
 class UserAgreementPage extends StatelessWidget {
   const UserAgreementPage({super.key});
 
@@ -35,7 +37,7 @@ class UserAgreementPage extends StatelessWidget {
       body: LegalDocumentView(
         title: 'BoltStar User Agreement',
         updatedAt: 'August 28, 2026',
-        effectiveAt: '[To be completed]',
+        effectiveAt: 'September 10, 2026',
         intro: 'This Agreement is entered into between you and BoltStar '
             '(Shenzhen) New Energy Technology Co., Ltd. ("we") regarding your '
             'use of the companion app for the BoltStar e-paper photo frame '
@@ -44,12 +46,12 @@ class UserAgreementPage extends StatelessWidget {
             'registering, logging in, or using this App, please read this '
             'Agreement in full and carefully, especially the disclaimer '
             'clauses, limitation-of-liability clauses, virtual property (Star '
-            'Coins) clauses, and dispute resolution clauses marked in bold.By '
-            'checking to agree, registering, logging in, or otherwise using '
-            'this App, you are deemed to have fully understood and agreed to '
-            'be bound by the entire contents of this Agreement.If you do not '
-            'agree to any provision of this Agreement, please stop using this '
-            'App immediately.',
+            'Coins) clauses, and dispute resolution clauses marked in bold. '
+            'By checking to agree, registering, logging in, or otherwise '
+            'using this App, you are deemed to have fully understood and '
+            'agreed to be bound by the entire contents of this Agreement. If '
+            'you do not agree to any provision of this Agreement, please stop '
+            'using this App immediately.',
         sections: userAgreementSections,
       ),
     );
@@ -70,7 +72,7 @@ class UserAgreementPage extends StatelessWidget {
         LegalText('We have the right to amend this Agreement in response to '
             'changes in laws and regulations or business needs. After any '
             'amendment, we will notify you in a prominent manner within the '
-            'app.If you continue to use this App after an amendment takes '
+            'app. If you continue to use this App after an amendment takes '
             'effect, you are deemed to have accepted the amended content; if '
             'you do not accept it, you should stop using this App and may '
             'delete your account.', bullet: true),
@@ -101,7 +103,7 @@ class UserAgreementPage extends StatelessWidget {
             'via Bluetooth.', bullet: true),
         LegalText('We may add, adjust, or discontinue some functions from '
             'time to time; the actual display in the version you use shall '
-            'prevail.Functions and payment methods may differ across '
+            'prevail. Functions and payment methods may differ across '
             'platforms (iOS / Android / WeChat mini program).'),
       ],
     ),
@@ -114,7 +116,7 @@ class UserAgreementPage extends StatelessWidget {
             'valid; if false information prevents you from using the services '
             'or causes losses, you shall bear the consequences yourself.', bullet: true),
         LegalText('The account is for your personal use only and may not be '
-            'lent, transferred, sold, or otherwise licensed to others.You '
+            'lent, transferred, sold, or otherwise licensed to others. You '
             'shall properly keep your account and verification codes safe. '
             'Any operation performed through your account is deemed to be '
             'your own act, and you shall bear the resulting liability.', bullet: true),
@@ -122,7 +124,7 @@ class UserAgreementPage extends StatelessWidget {
             'by others or has security vulnerabilities, please notify us '
             'immediately via the means in Section 15.', bullet: true),
         LegalText('Account deletion: you may delete your account yourself via '
-            '"Me → Settings → Delete Account".After deletion, the account '
+            '"Me → Settings → Delete Account". After deletion, the account '
             'data will be deleted or anonymized; the Star Coin balance, '
             'casting records, AI conversations, and device bindings in the '
             'account will be cleared together and cannot be recovered, and '
@@ -221,7 +223,7 @@ class UserAgreementPage extends StatelessWidget {
             'prepaid cards, have no monetary value, cannot be exchanged for '
             'or withdrawn as cash, and cannot be transferred between users.', bullet: true),
         LegalText('Purchase channels: purchases are completed on iOS via '
-            'Apple In-App Purchase (App Store) ; in the WeChat mini program '
+            'Apple In-App Purchase (App Store); in the WeChat mini program '
             'via WeChat Virtual Payment. Actual crediting is subject to our '
             'server records. Purchases are also governed by the terms of the '
             'corresponding payment platforms.', bullet: true),
