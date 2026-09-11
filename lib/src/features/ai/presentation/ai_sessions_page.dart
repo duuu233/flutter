@@ -243,7 +243,8 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
     _lastOpened = row.sessionId;
     await _pushChat(
       sessionId: row.sessionId,
-      title: row.title.isEmpty ? null : row.title,
+      // 占位标题不往下带，交给聊天页按当前语种画。
+      title: AppL10n.isNewChatTitle(row.title) ? null : row.title,
     );
   }
 
@@ -746,7 +747,9 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
   Widget _buildCard(_SessionRow row) {
     final l10n = AppL10n.of(context);
     final active = row.sessionId == _currentId;
-    final title = row.title.isEmpty ? l10n.aiNewChat : row.title;
+    // 后端新建会话时写死简中「新对话」，不跟 App 语种走：跨语种认出来再换成当前
+    // 语种的写法，否则英/日环境下整列都是中文（2026-09-11）。
+    final title = AppL10n.isNewChatTitle(row.title) ? l10n.aiNewChat : row.title;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () => _openSession(row),

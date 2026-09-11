@@ -761,6 +761,29 @@ class AppL10n {
   // 错误码文案不在这里：那套按 code 索引的表在 `features/ai/ai_i18n.dart`（对齐小程序 ai-i18n.js）。
   String get aiTitle => _pick('AI生图', 'AI Studio', 'AI生成');
   String get aiNewChat => _pick('新对话', 'New Chat', '新しいチャット');
+
+  /// 这个标题是不是「还没起名」——**空串，或任意语种下的 [aiNewChat] 占位**。
+  ///
+  /// ⚠️ **判定必须跨语种，这是 2026-09-11 那个 bug 的正解。**
+  /// 新建会话时**后端**把标题写死成简中的「新对话」（要等首条用户消息入库才自动填），
+  /// 而 [aiNewChat] 会跟着 App 当前语种变。原来的代码拿 `title == l10n.aiNewChat`
+  /// 去比，英文环境下 `'新对话' != 'New Chat'` ⇒ 这个占位被当成**用户自己起的标题**，
+  /// 原样画到顶栏和会话列表上——报回来的「标题不跟语种变」就是它。
+  ///
+  /// 连带还有第二个症状：首条用户消息本该顶替占位（见聊天页 `_sendChat`），那处判断
+  /// 同样只比当前语种，于是英/日环境下**发完消息标题也不会更新**，中文占位一直挂着。
+  ///
+  /// 用遍历语种而不是写死一张表：改 [aiNewChat] 的任何一个语种，这里自动跟上，
+  /// 不会漏掉某一种而重新长出同一个 bug。
+  static bool isNewChatTitle(String? title) {
+    final text = (title ?? '').trim();
+    if (text.isEmpty) {
+      return true;
+    }
+    return AppLanguage.values.any(
+      (language) => AppL10n(language).aiNewChat == text,
+    );
+  }
   String get aiSessions => _pick('会话', 'Chats', '履歴');
   String get aiSessionsTitle => _pick('历史会话', 'Chat History', 'チャット履歴');
 

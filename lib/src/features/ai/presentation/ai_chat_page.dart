@@ -627,7 +627,11 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     _livePages.add(this);
     _scroll.addListener(_onScroll);
     _sessionId = widget.sessionId ?? '';
-    _sessionTitle = widget.sessionTitle ?? '';
+    // 会话列表带进来的标题可能就是后端那个简中占位：按「还没起名」处理，
+    // 让顶栏走当前语种的写法，而不是把中文原样搬过来。
+    _sessionTitle = AppL10n.isNewChatTitle(widget.sessionTitle)
+        ? ''
+        : widget.sessionTitle!;
     _rememberAsLastAiPage();
     _loadTokenBalance();
     // 带 sessionId 进来（会话列表 / 深链）才载入那条会话；否则停在「新对话」空态，
@@ -721,18 +725,19 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       if (!mounted) {
         return;
       }
-      final newChatTitle = AppL10n.of(context).aiNewChat;
-      final serverTitle = session.title.isNotEmpty
-          ? session.title
-          : newChatTitle;
+      // 刚建出来的会话，后端给的标题一律是占位的「新对话」（要等首条用户消息入库才自动填）。
+      // ⚠️ **后端那个占位是写死的简中**，不跟 App 语种走，所以判定要用跨语种的
+      // [AppL10n.isNewChatTitle]；拿 `== l10n.aiNewChat` 去比的话，英/日环境下这个中文
+      // 占位会被当成用户自己起的标题原样画到顶栏上（2026-09-11 报回来的就是这个）。
+      final serverIsPlaceholder = AppL10n.isNewChatTitle(session.title);
+      final serverTitle = serverIsPlaceholder
+          ? AppL10n.of(context).aiNewChat
+          : session.title;
       setState(() {
         _sessionId = session.sessionId;
-        // 刚建出来的会话，后端给的标题一律是占位的「新对话」（要等首条用户消息入库才自动填）。
-        // 而这一刻页面上的标题**可能已经**同步成首条用户消息了 —— [_sendChat] 现在是
+        // 这一刻页面上的标题**可能已经**同步成首条用户消息了 —— [_sendChat] 现在是
         // 「气泡先上屏、再建会话」，顺序与 2026-08-07 前相反。别让这个占位把它盖回去。
-        if (serverTitle != newChatTitle ||
-            _sessionTitle.isEmpty ||
-            _sessionTitle == newChatTitle) {
+        if (!serverIsPlaceholder || AppL10n.isNewChatTitle(_sessionTitle)) {
           _sessionTitle = serverTitle;
         }
       });
@@ -1153,7 +1158,6 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     if (!mounted) {
       return;
     }
-    final newChatTitle = AppL10n.of(context).aiNewChat;
     final prevTitle = _sessionTitle;
     // 图片气泡与文字气泡的本地 id **分开记**：SSE `init` 事件会回来
     // `image_msg_ids`（与图片顺序一一对应）+ `user_msg_id`，要按各自的位置贴回去
@@ -1185,7 +1189,9 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       _messages.add(textBubble);
       // 首条消息后标题自动变为首条内容（与后端 session.title 行为一致，本地同步免重拉）。
       // v1.0.4 §二明确后端只取**前 20 字**，这里同样截断，免得列表页重拉后标题突然变短对不上。
-      if (_sessionTitle.isEmpty || _sessionTitle == newChatTitle) {
+      // 跨语种判定：中文占位在英/日环境下也要认出来，否则发完消息标题不更新、
+      // 那句「新对话」会一直挂着（与顶栏那个 bug 同源）。
+      if (AppL10n.isNewChatTitle(_sessionTitle)) {
         _sessionTitle = message.length > _kSessionTitleMax
             ? message.substring(0, _kSessionTitleMax)
             : message;
@@ -2451,7 +2457,18 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   /// 两侧就必须等距，右边挂着一颗 100+ 宽的胶囊时标题只能偏左，两者不可兼得。
   Widget _buildHeader() {
     // 默认页（还没建会话）标题留空，不再写「新对话」（需求 5）。
-    final title = _sessionId.isEmpty ? '' : _sessionTitle;
+    //
+    // ⚠️ **占位标题每次 build 都要按当前语种重新取**，不能直接画 `_sessionTitle`：
+    // 那个字段存的是**已经解析过的字符串**，切语种时不会跟着变——顶栏会一直停在
+    // 切换之前那个语种的写法（2026-09-11 报的「标题没有根据语种动态变化」，
+    // 除了后端占位是简中，还有这一半原因）。用户自己起的标题（首条消息）当然照原样画。
+    //
+    // `AppL10n.of(context)` 订阅了语言作用域，语种一变本页就会重建，这里自然跟上。
+    final title = _sessionId.isEmpty
+        ? ''
+        : (AppL10n.isNewChatTitle(_sessionTitle)
+              ? AppL10n.of(context).aiNewChat
+              : _sessionTitle);
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _dismissKeyboardAndTools, // 点导航行空白处同样收键盘 + 收浮层
