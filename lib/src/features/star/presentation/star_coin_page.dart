@@ -337,15 +337,32 @@ class _PackageCard extends StatelessWidget {
                     width: double.infinity,
                   ),
                   const SizedBox(height: 9),
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.baseline,
-                    textBaseline: TextBaseline.alphabetic,
-                    children: [
-                      Flexible(
-                        child: Text(
+                  // 星币数整行按需缩小，**数值必须完整显示、不许省略号**。
+                  //
+                  // 改前这里是 `Flexible` + `TextOverflow.ellipsis` + 写死 20px：
+                  // 卡片 2026-09-08 收窄到 104（内容宽 104-11*2 = 82）之后，单位先按
+                  // 本征宽度占走，剩给数字的不到 45px，四位数就开始截 ——「7500 Stars」
+                  // 画成「75… Stars」（2026-09-11 报回）。
+                  //
+                  // ⚠️ **不能改成"调小一个固定字号"了事**：单位是多语种的，
+                  // 「星币」2 个全角、`Stars` 5 个半角、**「スターコイン」6 个全角**
+                  // （13px 下约 78px，几乎占满 82）。三者宽度差一倍多，挑不出一个
+                  // 四语种都放得下的固定值 —— 日文比报上来的英文还紧。
+                  //
+                  // 所以照搬下面那行金额的做法：整行套 `FittedBox(scaleDown)`，
+                  // 放得下就原样、放不下按比例缩，**永远不会出现省略号**。数值上限
+                  // 现在是 30000（五位），将来涨到六位七位也不必再动这里。
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerLeft,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.baseline,
+                      textBaseline: TextBaseline.alphabetic,
+                      children: [
+                        Text(
                           '${package.tokens}',
                           maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
                             color: Color(0xFF2A2D32),
                             fontSize: 20,
@@ -353,17 +370,24 @@ class _PackageCard extends StatelessWidget {
                             height: 1,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        l10n.aiTokenUnit,
-                        style: const TextStyle(
-                          color: Color(0xFF7C828A),
-                          fontSize: 13,
-                          height: 1,
+                        const SizedBox(width: 3),
+                        // 单位基准 13 → 11（2026-09-11 产品追加：「Stars 也可以缩小点」）。
+                        //
+                        // `FittedBox` 本来就是**整行等比缩放**，单位一直跟着数字一起变小；
+                        // 这里再调小基准是为了**把位置让给数字**：单位窄一点 ⇒ 整行本征宽度
+                        // 小一点 ⇒ 需要的缩放比例小一点 ⇒ 最终画出来的数字更大。间距也从
+                        // 4 收到 3，同理。
+                        Text(
+                          l10n.aiTokenUnit,
+                          maxLines: 1,
+                          style: const TextStyle(
+                            color: Color(0xFF7C828A),
+                            fontSize: 11,
+                            height: 1,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 10),
                   // 金额整行按需缩小，六位整数、小数及币种符号完整显示。
@@ -664,15 +688,25 @@ class _Amount extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        Flexible(
-          child: Text(
+    // 整行按需缩小，**数值必须完整显示、不许省略号**（2026-09-11，与套餐卡同一根因）。
+    //
+    // 改前是 `Flexible` + `TextOverflow.ellipsis`：单位先按本征宽度占走，剩下的才给
+    // 数字，位数一多就截成「75…」。单位又是多语种的 ——「星币」2 个全角、`Stars`
+    // 5 个半角、**「スターコイン」6 个全角**，宽度差一倍多，靠调一个固定字号解决不了。
+    //
+    // `scaleDown` 只在放不下时才缩，放得下的照原尺寸画，所以余额那格（38px）在常见
+    // 位数下观感不变。
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: [
+          Text(
             value,
             maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: valueColor,
               fontSize: valueSize,
@@ -680,13 +714,14 @@ class _Amount extends StatelessWidget {
               height: 1,
             ),
           ),
-        ),
-        SizedBox(width: gap),
-        Text(
-          unit,
-          style: TextStyle(color: unitColor, fontSize: unitSize, height: 1),
-        ),
-      ],
+          SizedBox(width: gap),
+          Text(
+            unit,
+            maxLines: 1,
+            style: TextStyle(color: unitColor, fontSize: unitSize, height: 1),
+          ),
+        ],
+      ),
     );
   }
 }
