@@ -557,6 +557,14 @@ Logout / successful account deletion / session expiry
     `e-paper device` / `電子ペーパー`. Address the user as 「您」, never 「你」. Deliberate exceptions:
     OS permission names (「附近设备」), text that actually means the user's phone (say 「手机」), and
     the privacy policy's running-terminal wording (「终端信息」, not 「设备信息」).
+    **BoltStar AI pushes hard-coded Simplified Chinese** even though its contract says copy is
+    client-side and requests carry no language: the new-session title 「新对话」, the first `pre_text`
+    placeholder 「星宝努力思考中」, and `progress.message`. Localize them on the client and resolve at
+    build time, never store the resolved string: `AppL10n.isNewChatTitle`,
+    `AppL10n.isThinkingPlaceholder` (exact match, any language), and `aiProgressLabel` in
+    `ai_chat_page.dart` (server `message` only for zh/zhHant; en/ja use `stage` →
+    `AppL10n.aiProgress*`). LLM-written replies/pre-descriptions follow the user's input language and
+    are shown as-is. (2026-09-11 title, 2026-09-14 progress/placeholder.)
 12. New cast/recast temporary-file prefixes must be registered in `TempCacheSweeper` and documented
     in `docs/architecture/RESOURCE_LIFECYCLE.md`.
 13. Do not change BLE pacing, window, MTU/chunk, ACK, connection-interval, or timeout values as a

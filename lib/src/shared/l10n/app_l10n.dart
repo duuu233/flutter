@@ -784,6 +784,71 @@ class AppL10n {
       (language) => AppL10n(language).aiNewChat == text,
     );
   }
+
+  // ── 生图过程里的服务端文案（2026-09-14）─────────────────────────────────
+  //
+  // BoltStar 接口约定「后端不返回面向用户的文案，文案由前端 i18n 管理」，请求里也**没有**
+  // 语种参数；但流式 `/chat` 实际推下来两处写死的**简中**：
+  //
+  // 1. `progress` 事件的 `message`（例：「正在创作图片」），2026-08-07 服务端新增；
+  // 2. 第一条 `pre_text` 的占位「星宝努力思考中」。
+  //
+  // 原样上屏的话，英文 / 日文用户看到的就是中文（2026-09-14 反馈「初稿已完成」等不是英文）。
+  // 所以：进度文案按 `stage` 走下面这组；占位按 [isThinkingPlaceholder] 认出来再换成当前语种。
+
+  /// 生图进度各档（与聊天页 `aiProgressLabel` 的 stage / 数值分档一一对应）。
+  String get aiProgressConnecting => _pick(
+    '正在连接生图引擎…',
+    'Connecting to the image engine…',
+    '画像生成エンジンに接続中…',
+  );
+  String get aiProgressCreating =>
+      _pick('AI 正在创作中…', 'AI is creating…', 'AIが作成中…');
+  String get aiProgressDraftReady =>
+      _pick('初稿已完成 ✨', 'First draft ready ✨', '下書きが完成しました ✨');
+  String get aiProgressRefining =>
+      _pick('正在优化细节…', 'Refining details…', '細部を仕上げ中…');
+  String get aiProgressDownloading =>
+      _pick('正在下载图片…', 'Downloading image…', '画像をダウンロード中…');
+  String get aiProgressDone => _pick('生成完成', 'Done', '生成完了');
+
+  /// 服务端第一条 `pre_text` 占位在当前语种下的写法。星宝的英文名是 Stella（见 [aiWelcomeGreeting]）。
+  String get aiThinkingPlaceholder =>
+      _pick('星宝努力思考中', 'Stella is thinking…', '星宝が考え中…');
+
+  /// 服务端写死的简中占位原文。接口实测是「星宝努力思考中」（小程序
+  /// `tests/ai-stream-doc-conformance.test.js` 照抄的报文）；2026-08-07 版接入文档写作
+  /// 「星宝努力思考创作中」——两种都认。
+  static const Set<String> _serverThinkingPlaceholders = <String>{
+    '星宝努力思考中',
+    '星宝努力思考创作中',
+  };
+
+  /// 这段 `pre_text` 是不是服务端那句「思考中」占位（而不是 LLM 写的真预描述）。
+  ///
+  /// 与 [isNewChatTitle] 同一思路：**完全相等才算**（忽略首尾空白与结尾的省略号/句号），
+  /// 并且任意语种下的 [aiThinkingPlaceholder] 都认——LLM 写的「星宝努力思考中，马上为您画…」
+  /// 这类真文案不会被误吞。
+  static bool isThinkingPlaceholder(String? text) {
+    final normalized = _trimTrailingDots(text ?? '');
+    if (normalized.isEmpty) {
+      return false;
+    }
+    if (_serverThinkingPlaceholders.contains(normalized)) {
+      return true;
+    }
+    return AppLanguage.values.any(
+      (language) =>
+          _trimTrailingDots(AppL10n(language).aiThinkingPlaceholder) ==
+          normalized,
+    );
+  }
+
+  static final RegExp _trailingDots = RegExp(r'[\s.。…]+$');
+
+  static String _trimTrailingDots(String text) =>
+      text.trim().replaceAll(_trailingDots, '');
+
   String get aiSessions => _pick('会话', 'Chats', '履歴');
   String get aiSessionsTitle => _pick('历史会话', 'Chat History', 'チャット履歴');
 

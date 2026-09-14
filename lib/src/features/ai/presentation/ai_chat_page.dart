@@ -156,52 +156,62 @@ const int _kProgressStepFar = 3;
 const int _kProgressStepNear = 1;
 const int _kProgressNearGap = 20;
 
-/// 进度文案的**兜底**映射（文档 §四 对照表）。
+/// 进度文案：**中文语种**下服务端 message 优先；其余一律按 stage / 数值分档走 [AppL10n]。
 ///
-/// 正常情况下直接用服务端 `progress` 事件里的 `message` 字段（2026-08-07 新增，文案归后端管，
-/// 改文案不用发版）。这张表只在 `message` 缺失时用：`pre_text` / `done` 本来就没有 message，
-/// 老部署也没有 —— 删了占位盒里会空着一行。
+/// ⚠️ **服务端 `message` 只有简中**（2026-09-14 反馈：英文版进度写着「初稿已完成」）。
+/// 2026-08-07 服务端在 `progress` 事件里加了 `message`，当时的口径是「文案归后端管，改文案不用
+/// 发版」，于是这里原样上屏；可 BoltStar 的请求里根本**没有语种参数**、接口约定也是「文案由
+/// 前端 i18n 管理」，后端没法按语种给。所以：
+///
+/// - 简中 / 繁中：仍用服务端 message（繁中经 [AppL10n.pick] 自动转繁），保留「改文案不用发版」；
+/// - 英文 / 日文：不看 message，按 stage 取本地文案；stage 也没有时按数值分档。
 ///
 /// **认 stage 而不只看数值**：`progress=5` 有 starting / request_sent 两种 stage，光看数字分不开。
-const Map<String, String> _kStageLabels = <String, String>{
-  'starting': '正在连接生图引擎…',
-  'request_sent': '正在连接生图引擎…',
-  'generating': 'AI 正在创作中…',
-  'partial_succeeded': '初稿已完成 ✨',
-  'completed': '正在优化细节…',
-  'downloading': '正在下载图片…',
-  'uploaded': '正在下载图片…',
-  'done': '生成完成',
-};
-
-/// 进度文案：服务端 message > stage 映射 > 数值分档。
-/// 数值分档的边界与 [_kStageLabels] 对齐，所以「45→50 爬到一半」和「刚好落在 50」
-/// 不会给出矛盾的两句话。
-String _progressLabel(int progress, {String stage = '', String message = ''}) {
+/// 数值分档的边界与 stage 对齐，所以「45→50 爬到一半」和「刚好落在 50」不会给出矛盾的两句话。
+///
+/// 页面**不存**算好的这句话，只存 stage / message，每次 build 现算（见 `_AiMessage.progressStage`）
+/// ——生成途中切语种，占位盒里的文案当场跟着变。
+@visibleForTesting
+String aiProgressLabel(
+  AppL10n l10n,
+  int progress, {
+  String stage = '',
+  String message = '',
+}) {
   final fromServer = message.trim();
-  if (fromServer.isNotEmpty) {
-    return fromServer;
+  final chinese =
+      l10n.language == AppLanguage.zh || l10n.language == AppLanguage.zhHant;
+  if (chinese && fromServer.isNotEmpty) {
+    return l10n.pick(fromServer, fromServer, fromServer);
   }
-  final byStage = stage.isEmpty ? null : _kStageLabels[stage];
+  final byStage = switch (stage) {
+    'starting' || 'request_sent' => l10n.aiProgressConnecting,
+    'generating' => l10n.aiProgressCreating,
+    'partial_succeeded' => l10n.aiProgressDraftReady,
+    'completed' => l10n.aiProgressRefining,
+    'downloading' || 'uploaded' => l10n.aiProgressDownloading,
+    'done' => l10n.aiProgressDone,
+    _ => null,
+  };
   if (byStage != null) {
     return byStage;
   }
   if (progress < 5) {
-    return '正在连接生图引擎…';
+    return l10n.aiProgressConnecting;
   }
   if (progress < 50) {
-    return 'AI 正在创作中…';
+    return l10n.aiProgressCreating;
   }
   if (progress < 80) {
-    return '初稿已完成 ✨';
+    return l10n.aiProgressDraftReady;
   }
   if (progress < 85) {
-    return '正在优化细节…';
+    return l10n.aiProgressRefining;
   }
   if (progress < 100) {
-    return '正在下载图片…';
+    return l10n.aiProgressDownloading;
   }
-  return '生成完成';
+  return l10n.aiProgressDone;
 }
 
 /// 打字期间贴底的节流间隔：每帧都滚会和出字的 setState 抢主线程，反而更卡。
@@ -418,14 +428,20 @@ class _AiMessage {
   bool typing;
 
   /// 流式预描述（SSE `pre_text`）：秒回的一句「正在为您绘制…」，生成完成后保留，
-  /// 当作这条回复的前情提要。
+  /// 当作这条回复的前情提要。存的是服务端原文；那句简中「思考中」占位在渲染时换成
+  /// 当前语种（见 `_buildPreText`）。
   String preText = '';
 
-  /// 生成中：挂着渐变占位盒、显示 [progress] / [progressLabel]。
+  /// 生成中：挂着渐变占位盒、显示 [progress] 与进度文案。
   /// 读数真的爬到 100 时才落下，占位盒原地换成真图。
   bool streaming = false;
   int progress = 0;
-  String progressLabel = '';
+
+  /// 进度文案的**原料**：已上屏读数对应的 stage 与服务端 message（没爬到目标时两者为空，
+  /// 按数值分档）。**不存算好的文案**——那样切语种不会重算，文案就停在切换前的语种；
+  /// 渲染时由 [aiProgressLabel] 按当前语种现算。
+  String progressStage = '';
+  String progressMessage = '';
 
   /// 渐变占位盒的比例（高/宽×100），与这轮回复图将来的占位比例取同一个值，
   /// 100% 换真图时高度不跳。
@@ -478,7 +494,7 @@ class _StreamState {
   /// 当前**上屏**的进度，由 `_pumpProgress` 一步步爬向 [target]。
   int progress = 0;
 
-  /// [target] 那一级的 stage 与服务端文案，用来出文案（见 [_progressLabel]）。
+  /// [target] 那一级的 stage 与服务端文案，用来出文案（见 [aiProgressLabel]）。
   String stage = '';
   String message = '';
 }
@@ -1716,11 +1732,8 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     setState(() {
       _messages[index]
         ..progress = value
-        ..progressLabel = _progressLabel(
-          value,
-          stage: reached ? stream.stage : '',
-          message: reached ? stream.message : '',
-        );
+        ..progressStage = reached ? stream.stage : ''
+        ..progressMessage = reached ? stream.message : '';
       if (value >= 100) {
         _messages[index].streaming = false;
       }
@@ -2842,7 +2855,11 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
           const SizedBox(width: 5),
           Expanded(
             child: Text(
-              message.preText,
+              // 服务端第一条 pre_text 是写死的简中「星宝努力思考中」：认出来换成当前语种；
+              // LLM 写的真预描述原样显示（它跟着用户输入的语言走，端上管不了）。
+              AppL10n.isThinkingPlaceholder(message.preText)
+                  ? AppL10n.of(context).aiThinkingPlaceholder
+                  : message.preText,
               style: const TextStyle(
                 color: Color(0xFF8A6A52),
                 fontSize: 13,
@@ -2902,10 +2919,16 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
                     ],
                   ),
                 ),
-                if (message.progressLabel.isNotEmpty) ...[
+                // 读数第一次上屏（>0）之前不画文案，与原来「文案为空不画」同一时机。
+                if (message.progress > 0) ...[
                   const SizedBox(height: 5),
                   Text(
-                    message.progressLabel,
+                    aiProgressLabel(
+                      AppL10n.of(context),
+                      message.progress,
+                      stage: message.progressStage,
+                      message: message.progressMessage,
+                    ),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       // 压在渐变上用半透明白：与百分比拉开层级，
