@@ -433,7 +433,8 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
     }
     final chinese =
         l10n.language == AppLanguage.zh || l10n.language == AppLanguage.zhHant;
-    return chinese ? raw : l10n.otaGenericFailure;
+    // 细节原文是简中：繁中用户经 `pick` 转成繁体再看（2026-09-14 前原样给了简体）。
+    return chinese ? l10n.pick(raw, raw, raw) : l10n.otaGenericFailure;
   }
 
   /// 协议阶段 → 进行中那屏的大标题，与小程序 `ota.js` 的 `STAGE_TITLE` **逐值一致**：

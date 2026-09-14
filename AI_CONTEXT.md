@@ -226,6 +226,17 @@ program takes Simplified Chinese, and machine-translating a legal text would be 
 still follow the language setting. The **AI service agreement is still multilingual** (`l10n.pick`, zh/en/ja) because it is not
 part of the counsel-issued document set. See `docs/history/2026-09/2026-09-10-协议换法务20260909全文.md`.
 
+**Traditional Chinese is generated, not translated.** Almost all zhHant text comes from the Simplified source through
+`toTraditionalChinese` (`lib/src/shared/l10n/chinese_script.dart`: a phrase map applied first, then a single-character table).
+Only `AiI18n` (error codes / one-click messages) carries hand-written zhHant. Consequences: any Simplified character missing from
+the table silently stays Simplified, and characters with several Traditional forms (注/註, 复/復/複, 里/裡, 余/餘, 松/鬆…) must be
+added as **phrases**, never as single characters. On 2026-09-14 every Simplified source string (`_pick`/`pick`/`tr`, the retMsg
+fallback table, OTA failure details — 919 strings) was diffed against OpenCC `s2tw`: 180 of 772 UI strings (34 of 112 in the AI
+module) still showed Simplified characters. 48 characters and 26 phrases were added and three wrong entries fixed (浏→濟 and
+赞→賞 code-point typos, 复制→復制); 了解/发布/公布 are intentionally kept. **When adding copy with
+uncommon characters, rerun that diff** (method in `docs/history/2026-09/2026-09-14-繁体中文转换表补齐.md`). iOS permission prompts
+(`Info.plist`) have no `.lproj` localizations at all and are Simplified Chinese for every language.
+
 ## Data Flow
 
 ### 1. Startup and session restoration
