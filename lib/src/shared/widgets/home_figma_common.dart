@@ -499,6 +499,8 @@ class FigmaBindDeviceCard extends StatelessWidget {
         // 64 → 82：加了「设备ID」第三行后，内容高度 = 名称 19.2 + 3 + 副标题 14.4 + 3 + ID 14.4
         // ≈ 54px，而 64 减去上下各 8 的 padding 只剩 48px，会稳定触发 RenderFlex 溢出黄条。
         // 82 - 16 = 66px 可用，留出余量给字体缩放。
+        // ⚠️ 改这个数要同步改 `bind_device_found.dart` 的 `_kCardHeight`：搜索设备页的列表
+        // 视口是按「4.5 张卡」算出来的，卡变高了那边不跟着改，露出的就不是半张。
         height: 82,
         padding: const EdgeInsets.fromLTRB(20, 8, 18, 8),
         decoration: BoxDecoration(

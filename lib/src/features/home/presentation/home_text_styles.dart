@@ -56,47 +56,20 @@ class _HomeTextStyles {
   );
 
   // .projection-name → font-size 36rpx(=18) / weight 700 / #2a2d32 / line-height 1
-  // 六宫格入口（2026-08-21）：.entry-name 28rpx/600（颜色逐项不同，由卡片 copyWith 覆盖）、
-  // .entry-desc 18rpx/#8f959d。
+  // 六宫格入口（2026-08-21）：.entry-name 28rpx/600（颜色逐项不同，由卡片 copyWith 覆盖）。
   // ⚠️ 2026-08-31 按需求把六宫格**大标题缩小一号**：14 → 13。
   // ⚠️ 2026-09-01 产品复看真机后又要「适度放大」（原话：目前是放得下的、不会显示 ...）：
   //    13 → 15。小程序 .entry-name 是 28rpx，而 rpx 按屏宽等比 —— 在 390 屏上就是 14.6，
   //    App 这边固定 13 因此看起来比小程序小一档，15 正好把这一档补回来。
   //
-  // ⚠️ 这两个字号都只是**基准/上限**，不是最终值：
-  //    · 标题由 [_HomeMainView._entryTitleFontSize] 按六条里最长的一条算共用字号，
-  //      放不下就往下缩（日文「マイアップロード」一直是最长的那条，本轮前后都缩在 ~11.5，
-  //      把基准从 13 抬到 15 对它一个像素都不影响）；
-  //    · 副标题由 [_HomeMainView._entrySubtitleFontSize] 反过来算：**放得下才往上长**
-  //      （最多 [_HomeMainView._entrySubtitleMaxFontSize]），长不动就退回这里的 9，
-  //      所以本轮对副标题是「有余量的语言变大、没余量的与改前逐像素相同」；
-  //      ⚠️ 2026-09-01 后半轮又按需求给**安卓**在算出来的值上再减一号
-  //      （[_HomeMainView._entrySubtitleAndroidDelta]），**iOS 保持不变**；
-  //      同日第三轮再给**安卓**加一条硬约束：从那个值继续往下试到「中文一行就装得下」，
-  //      英文一行怎么都装不下、于是原样保持两行完整展示；
-  //      ⚠️ 同日第四轮按需求「安卓还要小一个字号」，在上面两步之后**再统一减一号**
-  //      （[_HomeMainView._entrySubtitleAndroidFinalDelta]），中文照旧单行、英文照旧两行完整；
-  //      ⚠️ 同日第五轮需求「副标题安卓端需要再小二个字号」，就是把那个常量 1 → **3**
-  //      （仍加在两步之后 —— 加进前两步的差值里中文一个像素都不会动），中文照旧单行、
-  //      英文照旧两行完整；
-  //      ⚠️ 之后 2026-09-02 又按真机走查上下调过三轮（3 → 2 → 1 → **2**），
-  //      逐轮的加减与取值范围记在 [_HomeMainView._entrySubtitleAndroidFinalDelta] 上，
-  //      别在这里跟着抄一份。上下调都安全（最终值始终是「量出来的字号 − 非负差值」），
-  //      但**差值不能为负**，否则中文重新折行、英文重新出「...」。
-  //      所以真机上的最终值：iOS 9~11，安卓 6~8，都不是这里的 9。
-  static const entryTitle = TextStyle(
-    fontSize: 15,
-    fontWeight: FontWeight.w600,
-    height: 1.2,
-  );
-
-  static const entrySubtitle = TextStyle(
-    color: Color(0xFF8F959D),
-    fontSize: 9,
-    fontWeight: FontWeight.w400,
-    height: 1.2,
-  );
-
+  // ⚠️ 这个字号只是**基准/上限**，不是最终值：由 [_HomeMainView._entryTitleFontSize]
+  //    按六条标题里最长的一条算出共用字号，放不下就往下缩（日文「マイアップロード」一直是
+  //    最长的那条，缩在 ~11.5）。2026-09-16「去副标题」那轮**没有动它**——产品明确
+  //    「主标题字号不变」。
+  //
+  // ⚠️ 2026-09-16 删掉了 `entrySubtitle`（.entry-desc 18rpx/#8f959d）：六宫格不再有副标题，
+  //    连同 [_HomeMainView] 里那套按机型上下调字号的逻辑一起移除（那是 2026-09-01~09-02
+  //    四五轮「再大/再小一号」需求叠出来的，只服务副标题）。要回滚请一并从 git 历史取回。
   static const cardTitle = TextStyle(
     color: Color(0xFF2A2D32),
     fontSize: 18,

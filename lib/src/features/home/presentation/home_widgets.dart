@@ -1221,71 +1221,54 @@ class _UnboundDevicePainter extends CustomPainter {
 /// 宽度**不写死**：rpx 是按屏宽等比的单位（750rpx 恒等于屏幕宽度），把 206rpx 硬写成
 /// 103 逻辑像素会在窄屏溢出（2026-08-05 真机踩过：360dp 机器上两张 159 的卡就超了）。
 /// 所以宽度由外层三等分给出，这里只按 206:220 定高。
+/// 首页六宫格里的一张入口卡。
+///
+/// ⚠️ 2026-09-16 产品改版：**去掉副标题和右侧箭头徽标，把图标拉大**（主标题字号不变）。
+/// 卡里于是只剩「图标 + 主标题」两件，纵向居中；副标题让出来的高度全给了图标
+/// （33 → [_iconSize]）。随之删掉的还有：
+///   · `subtitle` / `subtitleFontSize` 两个入参，以及 [_HomeMainView] 里那一整套
+///     「按六条副标题算共用字号」的逻辑（`_entrySubtitleFontSize` 等）；
+///   · `arrowAsset` 入参与 `assets/images/home-icon1N.png` 六张徽标素材的引用
+///     （素材仍留在仓库里备回滚，见 `test/unused_assets_test.dart` 的 parked 白名单）。
+/// 小程序侧同步改了 `pages/home/home.wxml` / `home.wxss` / `home.js`。
 class _HomeEntryCard extends StatelessWidget {
   const _HomeEntryCard({
     required this.title,
-    required this.subtitle,
     required this.color,
     required this.iconAsset,
-    required this.arrowAsset,
     required this.titleFontSize,
-    required this.subtitleFontSize,
     required this.fallbackIcon,
     required this.onTap,
   });
 
   final String title;
-  final String subtitle;
 
   /// 标题字号：由 [_HomeMainView._entryTitleFontSize] 按**六张卡里最长的标题**统一算好传进来。
   /// ⚠️ 不要在这里读 [_HomeTextStyles.entryTitle] 的字号 —— 那是基准值，不是最终值；
   /// 各卡自己决定字号就会缩出六个不同大小。
   final double titleFontSize;
 
-  /// 副标题字号：同样由 [_HomeMainView._entrySubtitleFontSize] 按**六条副标题**统一算好传进来
-  /// （2026-09-01「文案适度放大」：放得下就往上长到 11，放不下退回基准 9；
-  /// 安卓在此基础上再往下找「一行就放得下」的字号，见那个方法的第二步；
-  /// 再按 2026-09-01 第四轮需求，安卓在两步之后统一再减一号，见第三步）。
-  /// ⚠️ 与标题同一条纪律：别在这里读 [_HomeTextStyles.entrySubtitle] 的字号自己决定，
-  /// 那样六张卡会长出六个不同大小。
-  final double subtitleFontSize;
-
-  /// 卡内左右内边距（下面 build 里的 `EdgeInsets.only(left: 10, right: 6)`）。
-  static const double _padLeft = 10;
-  static const double _padRight = 6;
-
-  /// 右侧箭头徽标**实际占掉的视觉宽度**。
+  /// 卡内左右内边距（下面 build 里的 `EdgeInsets.symmetric(horizontal: 10)`）。
   ///
-  /// 画布是 25，但要减掉两处「**布局上占位、视觉上不占位**」的量：
-  ///   · `Transform.translate(offset: Offset(5, 0))`：Transform **不影响布局**，
-  ///     Row 照旧按 25 给它留位，箭头却画到了右边 5px 外，那 5px 是空的；
-  ///   · 徽标素材 90×90 里白圆盘只占中间约 62，四周是透明阴影留白，
-  ///     25 的画布显示出来的圆盘约 17，两侧各约 4 是透明的（保守只认 3）。
-  /// 漏算这 8px 会让可用宽度算窄一档、字号平白变小。
-  static const double _arrowVisualWidth = 25 - 5 - 3;
+  /// ⚠️ 右边原来是 6：那是留给箭头徽标那圈透明阴影的（徽标 2026-09-16 已去掉）。
+  /// 现在左右对称，与小程序 `.entry-card { padding: 0 20rpx }` 同值。
+  static const double _padLeft = 10;
+  static const double _padRight = 10;
+
+  /// 图标边长（2026-09-16「把图标拉大」）：33 → 48，对齐小程序的 96rpx。
+  /// 副标题那两行腾出的高度差不多正好是这 15，所以卡片比例 206/220 不用动。
+  static const double _iconSize = 48;
 
   /// **标题**能用的横向开销（卡宽减掉它 = 标题可用宽度）。
   ///
-  /// ⚠️ 2026-08-31 改版：箭头徽标由「跨标题+副标题整体居中」改成**只与副标题居中**，
-  /// 于是**标题独占整个内容宽**，不再和箭头分。释放出来的正好是 [_arrowVisualWidth]，
-  /// 目的就是让 "My Devices" / "My Uploads" 这类英文标题**完整显示、不出省略号**。
-  ///
+  /// 标题独占整个内容宽（箭头已去掉，2026-08-31 起它本来也不跟标题抢宽度），
   /// [_HomeMainView._entryTitleFontSize] 按它反推六张卡的共用字号 ——
   /// **改下面 build 里的 Padding，必须同步改这里**。
   static const double titleHorizontalReserve = _padLeft + _padRight;
 
-  /// **副标题**能用的横向开销：它才是和箭头并排的那一行。
-  ///
-  /// ⚠️ 2026-09-01 起它也参与字号计算了（[_HomeMainView._entrySubtitleFontSize]
-  /// 拿它当可用宽度，反推六张卡共用的副标题字号）——
-  /// **改下面 build 里的 Padding 或箭头，必须同步改这里**，和标题那条一个纪律。
-  static const double subtitleHorizontalReserve =
-      _padLeft + _padRight + _arrowVisualWidth;
-
-  /// 每张卡的主色：标题文字色，与箭头徽标同色系（取自素材）。
+  /// 每张卡的主色：标题文字色（取自原箭头徽标素材的配色）。
   final Color color;
   final String iconAsset;
-  final String arrowAsset;
   final IconData fallbackIcon;
   final VoidCallback onTap;
 
@@ -1310,30 +1293,29 @@ class _HomeEntryCard extends StatelessWidget {
             ],
           ),
           child: Padding(
-            // 内边距左 20rpx=10 / 右 12rpx=6（右侧是箭头徽标，自带透明留白、视觉上不贴边）
-            padding: const EdgeInsets.only(left: 10, right: 6),
+            // 内边距左右各 20rpx=10（箭头徽标去掉后不再有「右侧要窄一点」的理由）
+            padding: const EdgeInsets.symmetric(horizontal: _padLeft),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 SizedBox(
-                  width: 33,
-                  height: 33,
+                  width: _iconSize,
+                  height: _iconSize,
                   child: Image.asset(
                     iconAsset,
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) =>
-                        Icon(fallbackIcon, color: color, size: 30),
+                        Icon(fallbackIcon, color: color, size: _iconSize * 0.9),
                   ),
                 ),
-                // ⚠️ 10 → 6（2026-08-31）：入口图标素材四周自带一圈透明留白，
-                // 视觉上的间隙比这个数看起来更宽，收掉 4 也不显拥挤；
-                // 同时把高度让给「标题独占一行 + 副标题两行」的新版式。
-                const SizedBox(height: 6),
-                // ⚠️ 2026-08-31 改版：标题**独占整个内容宽**，不再与箭头并排。
-                // 原来是 `Row[ Expanded(Column[标题, 副标题]), 箭头 ]`，箭头跨两行居中，
-                // 标题因此白白让出箭头那一块宽度 —— 英文标题（My Devices / My Uploads）
-                // 于是被截成省略号。现在箭头下沉到副标题那一行、与**副标题**居中对齐。
+                // 6 → 10（2026-09-16）：图标大了一圈，间距跟着回到 2026-08-31 之前的 10，
+                // 「图标 + 标题」这一组才不显得挤在一起。对齐小程序 `.entry-icon` 的
+                // `margin-bottom: 20rpx`。
+                const SizedBox(height: 10),
+                // 标题独占整个内容宽（箭头已去掉，2026-08-31 起它本来也不跟标题抢宽度），
+                // 字号由 [_HomeMainView._entryTitleFontSize] 按六条标题统一算 —— 产品这轮
+                // 明确「主标题字号不变」，所以那边的基准值一个数都没动。
                 Text(
                   title,
                   maxLines: 1,
@@ -1342,48 +1324,6 @@ class _HomeEntryCard extends StatelessWidget {
                     color: color,
                     fontSize: titleFontSize,
                   ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  // 与副标题居中：副标题是 1 行还是 2 行，箭头都落在它的垂直中线上。
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        subtitle,
-                        // ⚠️ 2026-08-31 需求：小标题**最多两行**，超出才省略号。
-                        // 原来写死一行，英文副标题（"Generate images with AI" 这类）
-                        // 几乎必被截成半句，等于没说。
-                        // ⚠️ 这里仍是 2，安卓「中文不换行」不靠改这个数、而是靠
-                        // [_HomeMainView._entrySubtitleFontSize] 把字号选到能单行装下 ——
-                        // 改成 1 会把英文重新截成半句。
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: _HomeTextStyles.entrySubtitle.copyWith(
-                          fontSize: subtitleFontSize,
-                        ),
-                      ),
-                    ),
-                    // 徽标素材 90×90 里白圆盘只占中间约 62，四周是透明阴影留白，
-                    // 所以画布 25（=50rpx）显示出来的圆盘约 17，与小程序一致；
-                    // 那圈留白压进右内边距（小程序用 margin-right:-10rpx，这里靠 -5 的位移）。
-                    Transform.translate(
-                      offset: const Offset(5, 0),
-                      child: SizedBox(
-                        width: 25,
-                        height: 25,
-                        child: Image.asset(
-                          arrowAsset,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) => Icon(
-                            Icons.play_arrow_rounded,
-                            color: color,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
                 ),
               ],
             ),

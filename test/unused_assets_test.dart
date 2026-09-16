@@ -110,6 +110,17 @@ void main() {
       // 要退回旧卡面只需把 `_CardGlass` 换回 `Image.asset` 那几行。
       // 真机确认后请删掉它（383 KB）并同步撤掉本条。
       'assets/images/home-bg03.png',
+      // 2026-09-16 产品要求首页六宫格「去掉副标题和右侧箭头、把图标拉大」，这六张箭头徽标
+      // 随之无人引用（每张几 KB）。先留着备产品反悔：回滚只需把 `_HomeEntryCard` 的
+      // `arrowAsset` 入参和那段 `Transform.translate` + `Image.asset` 加回来
+      //（认领注释在 `home_widgets.dart` 的 `_HomeEntryCard` 类文档上）。
+      // 小程序侧同一轮、同样处理（`tests/unused-assets.test.js` 的 parked 白名单）。
+      'assets/images/home-icon11.png',
+      'assets/images/home-icon12.png',
+      'assets/images/home-icon13.png',
+      'assets/images/home-icon14.png',
+      'assets/images/home-icon15.png',
+      'assets/images/home-icon16.png',
     ];
 
     final unused = assetFiles.where((path) {

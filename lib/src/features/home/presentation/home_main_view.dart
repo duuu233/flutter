@@ -317,197 +317,13 @@ class _HomeMainView extends StatelessWidget {
     return base * (scale > 1 ? 1 : scale);
   }
 
-  /// 六张宫格卡**副标题**的放大上限（2026-09-01）。9 是基准值，这里给出「最多长到几」。
-  ///
-  /// 11 这个数是拿卡内可用宽度反推的：副标题最多两行、超出就省略号，
-  /// 而英文最长的一条 "Generate images with AI" 在 360dp 屏上两行已经用得很满 ——
-  /// 再往上调只会让更多语言退回 9（[_entrySubtitleFontSize] 放不下就一路退），白改。
-  static const double _entrySubtitleMaxFontSize = 11;
-
-  /// 安卓端副标题在算出来的字号上**再降一号**（2026-09-01 需求：安卓副标题改小一号、
-  /// **iOS 保持不变**）。同一个 `fontSize` 在两端观感不同 —— iOS 走 SF、安卓走 Roboto/
-  /// 思源，字身高与字重都不一样，上一轮把副标题放开到「最多 11」之后，安卓真机上比 iOS 涨得更满。
-  ///
-  /// ⚠️ 这是**只减不加**的一步，所以不会新增截断：[_entrySubtitleFontSize] 第一步挑的是
-  /// 「六条都能在两行里放下的最大字号」，比它更小的字号必然也放得下。
-  ///
-  /// ⚠️ 差值加在**最终值**上、而不是把上限/基准各减 1：需求要的是「安卓比 iOS 小一号」，
-  /// 若改成从 10 往 8 试，某些语种会落在「iOS 10.5 / 安卓 10」——只差半号，不是需求那一档。
-  ///
-  /// ⚠️ 它同时是安卓那条「中文不换行」额外规则的**下限**（`基准 9 − 1 = 8`，
-  /// 见 [_entrySubtitleFontSize] 第二步）：那一步只在这个差值划出的区间里往下试。
-  ///
-  /// ⚠️ 它**不再是最后一步**（2026-09-01 第四轮起）：两步走完还要再减
-  /// [_entrySubtitleAndroidFinalDelta]（那个常量上记着逐轮的加减，现为 2），
-  /// 所以真机上的安卓最终字号是 **6 ~ 8**，不是这个差值单独划出的 8 ~ 10。
-  static const double _entrySubtitleAndroidDelta = 1;
-
-  /// 安卓端副标题**两步都走完之后统一再降的字号数**。产品逐轮真机走查调出来的档位，
-  /// 口径从没变过（永远是「在前两步量出来的结果上统一退档」），动的只有档数：
-  ///
-  /// | 轮次 | 需求原话 | 档数 | 安卓最终字号 |
-  /// | --- | --- | --- | --- |
-  /// | 2026-09-01 ④ | 还要小一个字号 | +1 → 1 | 7 ~ 9 |
-  /// | 2026-09-01 ⑤ | 需要再小二个字号 | +2 → 3 | 5 ~ 7 |
-  /// | 2026-09-02 ⑥ | 再大一个字号，现在太小了 | −1 → 2 | 6 ~ 8 |
-  /// | 2026-09-02 ⑦ | 再大一个字号，现在太小了 | −1 → 1 | 7 ~ 9 |
-  /// | 2026-09-02 ⑧ | 再小一个字号 | +1 → **2** | **6 ~ 8** |
-  ///
-  /// ⚠️ 已经在 1 与 2 之间来回过一次（⑦ 回到 ④ 那一档、⑧ 又回到 ⑥ 那一档）：
-  /// 360dp 屏上就是中文 8 与 7 的取舍，两档之间没有别的整数。若还想要「介于两者之间」，
-  /// 这个常量吃 **0.5**（第一/二步就是按 0.5 步进量的），1.5 在 360dp 上给出 7.5。
-  ///
-  /// ⚠️ 取值范围是 **[0, 3] 之间的非负数**：0 等于**取消**这一步、退回 09-01 第三轮
-  /// （安卓 8 ~ 10、只比 iOS 小一号），是「往大调」这条路的终点；还要更大就得动
-  /// [_entrySubtitleAndroidDelta] 或 [_entrySubtitleMaxFontSize]/基准，
-  /// **绝不能把这个差值变成负数** —— 负数会顶过前两步量出来的「放得下的字号」，
-  /// 中文重新折行、英文重新出「...」，正是 08-31 与 09-01 前几轮治过的毛病。
-  ///
-  /// ⚠️ 为什么不是把 [_entrySubtitleAndroidDelta] 往上调 —— 那样**中文一个像素都不动**：
-  /// 第二步挑的是「一行装得下的**最大**字号」，360dp 屏上那个最大值就是 9，
-  /// 把第一步的差值调大只是让第二步的**起点**从 10 降到 9、挑出来的还是 9，
-  /// 结果成了「英文变小、中文原地不动」——不是需求要的那一档。
-  ///
-  /// ⚠️ 所以这几号一律加在**两步之后**：无论最终值来自第一步（英文/日文，两行完整展示）
-  /// 还是第二步（中文，单行），都稳定比未减之前小同样的档数，六张卡仍共用同一个值。
-  ///
-  /// ⚠️ 这一步**相对前两步的结果永远是减法**（这个常量恒 ≥ 0），所以不会新增截断、
-  /// 也不会把中文重新顶成两行：比一个「两行放得下」的字号更小必然还是两行放得下，
-  /// 比一个「一行放得下」的字号更小必然还是一行放得下。
-  /// ⚠️ 上下调这个档数（09-02 那几轮）都安全：最终值始终是「量出来的那个字号 − 非负差值」，
-  /// 永远不会越过它，所以中文照旧单行、英文照旧两行完整 —— 这条只在差值 ≥ 0 时成立，
-  /// 见上面那段取值范围。
-  /// 下限随差值走，现为 `基准 9 − 1 − 2 = 6`（只有窄屏/放大系统字体时才会落到那里）。
-  static const double _entrySubtitleAndroidFinalDelta = 2;
-
-  /// 六张宫格卡副标题的**共用字号**：口径与标题一致（六张一样大、一条都不许被截成「...」），
-  /// 方向相反 —— 标题是「基准值封顶、放不下才缩」，副标题是**「放得下才往上长」**。
-  ///
-  /// 分三步，**第二、三步只在安卓走**：
-  ///
-  /// **第一步（两端共用，2026-09-01「文案适度放大」）**：从上限 11 往下试，
-  /// 第一个「六条都能在**两行**里放下」的字号就是答案，一个都试不成退回基准 9；
-  /// 安卓再减 [_entrySubtitleAndroidDelta]。
-  /// ⚠️ 副标题不能照标题那样按宽度比例反推：它**最多两行、会换行**，
-  /// 宽度比例算不出「两行装不装得下」（换行点由词边界决定，不是等比缩放），
-  /// 所以只能拿 `TextPainter(maxLines: 2)` 一档一档实测。
-  ///
-  /// **第二步（仅安卓，2026-09-01 需求：「副标题再缩一点，保证中文不换行；
-  /// 英语两行能完整展示即可」）**：从第一步的结果继续往下试，
-  /// 第一个「六条都能在**一行**里放下」的字号就是这一步的结果；一路试到下限
-  /// （`基准 9 − `[_entrySubtitleAndroidDelta]` = 8`）还不成，就保持第一步的结果。
-  ///
-  /// **第三步（仅安卓，2026-09-01 第四轮起、产品逐轮真机走查调出来的档位）**：
-  /// 把前两步的结果**统一再减** [_entrySubtitleAndroidFinalDelta]（现为 2，逐轮加减记在那个常量上）。
-  /// 放在最后而不是并进前两步的差值里，理由写在那个常量上。
-  ///
-  /// 三条不变量，都是这个写法直接给出的：
-  ///
-  /// 1. **中文一定不换行**（只要 6 这一档放得下）—— 中文六条里最长的是
-  ///    「拍摄照片并投屏」约 7 个字身宽，360dp 屏上副标题可用宽 ≈65，
-  ///    第二步挑到 9（≈63 宽）、第三步再落到 7，仍是单行；
-  ///    2026-09-01 第二轮安卓落在 10（≈70 宽）必然折成两行，正是第二步治的。
-  /// 2. **英文/日文只是整体变小**：一行怎么都放不下（"Generate images with AI" 光是
-  ///    这一条 8 号就要 ≈90 宽），第二步一路试空、原样带上第一步的结果进第三步 ——
-  ///    仍是「两行完整展示、不出省略号」。
-  /// 3. **不会超过前两步量出来的那个字号**：第二步从第一步的结果**起步往下**试，
-  ///    第三步相对它只做减法（差值恒 ≥ 0）；而比「放得下的字号」更小的字号必然也放得下，
-  ///    所以一路都不可能新增「...」—— 09-02 那几轮上下调档数也只是在它下方挪，不会越过。
-  ///
-  /// ⚠️ 第二步返回的是量出来的那个字号本身、**不再减一次** [_entrySubtitleAndroidDelta]：
-  /// 起点已经是减过的值，再减一次就成了「小两号」；第三步那几号是需求单独要的另外几档。
-  ///
-  /// ⚠️ 用的是 [_HomeEntryCard.subtitleHorizontalReserve] 而不是标题那条：
-  /// 副标题才是**和箭头徽标并排**的那一行，可用宽度比标题少一个箭头。
-  ///
-  /// ⚠️ iOS 一个像素都不动：第二步之前就 `return` 了。
-  double _entrySubtitleFontSize(BuildContext context, List<String> subtitles) {
-    final base = _HomeTextStyles.entrySubtitle.fontSize ?? 9;
-    // 安卓比 iOS 小一号（需求 2026-09-01）。用 Theme 的 platform 而不是 dart:io 的
-    // `Platform.isAndroid`：前者可被 ThemeData/测试覆盖，量的又是纯布局，不该依赖进程环境。
-    final isAndroid = Theme.of(context).platform == TargetPlatform.android;
-    final delta = isAndroid ? _entrySubtitleAndroidDelta : 0.0;
-    // 第三步那几号（现为 2，逐轮加减见 [_entrySubtitleAndroidFinalDelta]）。
-    // iOS 恒为 0，所以下面所有出口都能无脑减。
-    final finalDelta = isAndroid ? _entrySubtitleAndroidFinalDelta : 0.0;
-    final media = MediaQuery.of(context);
-    final rowWidth =
-        media.size.width - media.padding.horizontal - _cardInset.horizontal;
-    final cardWidth = (rowWidth - _entryGridGap * 2) / 3;
-    final available = cardWidth - _HomeEntryCard.subtitleHorizontalReserve;
-    if (available <= 0) {
-      return base - delta - finalDelta;
-    }
-
-    final direction = Directionality.of(context);
-    bool fits(double size, int maxLines) => _subtitlesFitInLines(
-      subtitles,
-      fontSize: size,
-      maxLines: maxLines,
-      maxWidth: available,
-      direction: direction,
-      textScaler: media.textScaler,
-    );
-
-    // 第一步：两行放得下的最大字号（安卓再减一号）。
-    var result = base - delta;
-    for (var size = _entrySubtitleMaxFontSize; size > base; size -= 0.5) {
-      if (fits(size, 2)) {
-        result = size - delta;
-        break;
-      }
-    }
-    if (!isAndroid) {
-      return result;
-    }
-    // 第二步（仅安卓）：继续往下找「一行就放得下」的最大字号 —— 中文不换行。
-    // 下限就是第一步的兜底值 `base - delta`（=8），英文/日文会一路试到这里都不成，
-    // 于是保持第一步的 result，仍是「两行完整展示」。
-    // ⚠️ 这里量的仍是「未减第三步」的字号：第三步只往下减，减完必然还放得下。
-    for (var size = result; size >= base - delta; size -= 0.5) {
-      if (fits(size, 1)) {
-        result = size;
-        break;
-      }
-    }
-    // 第三步（仅安卓）：两步都走完之后统一再降 2 号 —— 见 [_entrySubtitleAndroidFinalDelta]。
-    // ⚠️ 量文字的两步都已结束，这几号纯是往下减，既不换行也不会截断。
-    return result - finalDelta;
-  }
-
-  /// 量「这六条副标题在 [fontSize] 下能不能全部塞进 [maxLines] 行」。
-  ///
-  /// 与卡片里那个 `Text` 完全同参（同一个基准 style + 省略号 + 同样的可用宽度），
-  /// 所以 `didExceedMaxLines` 为真就等于真机上会出现「...」（[maxLines] 为 1 时
-  /// 则等于「会折行」）。任何一条放不下就整体判负 —— 六张卡共用一个字号，
-  /// 不允许某一条单独缩小。
-  ///
-  /// ⚠️ [textScaler] 必须带上（2026-09-01）：量的是「画出来有多宽」。
-  /// 漏了它，用户把系统字体调大后真实文字比量出来的宽，整条算式就白算了。
-  bool _subtitlesFitInLines(
-    List<String> subtitles, {
-    required double fontSize,
-    required int maxLines,
-    required double maxWidth,
-    required TextDirection direction,
-    required TextScaler textScaler,
-  }) {
-    for (final subtitle in subtitles) {
-      final painter = TextPainter(
-        text: TextSpan(
-          text: subtitle,
-          style: _HomeTextStyles.entrySubtitle.copyWith(fontSize: fontSize),
-        ),
-        maxLines: maxLines,
-        textDirection: direction,
-        textScaler: textScaler,
-      )..layout(maxWidth: maxWidth);
-      if (painter.didExceedMaxLines) {
-        return false;
-      }
-    }
-    return true;
-  }
+  // ⚠️ 2026-09-16 起六宫格**没有副标题了**（产品：去掉副标题和箭头、把图标拉大），
+  // 这里原本那一整套「按六条副标题算共用字号」的机器随之删除（约 190 行）：
+  //   `_entrySubtitleMaxFontSize` / `_entrySubtitleAndroidDelta` /
+  //   `_entrySubtitleAndroidFinalDelta` / `_entrySubtitleFontSize` / `_subtitlesFitInLines`。
+  // 它们是 2026-09-01~09-02 四轮「副标题再大/再小一号」需求叠出来的，只服务副标题这一件事。
+  // 要回滚副标题，从 git 历史里把那一段连同 [_HomeEntryCard] 的 subtitle 入参一起取回来；
+  // **标题**那条 [_entryTitleFontSize] 与本次无关，一个数都没动（产品要求主标题字号不变）。
 
   /// 两种场景共用的底部六宫格入口（2026-08-21 同步小程序改版）。
   ///
@@ -530,82 +346,54 @@ class _HomeMainView extends StatelessWidget {
       if (kGalleryEntryEnabled) l10n.tabGallery,
       l10n.devMyDevicesTitle,
     ]);
-    // 副标题同理（2026-09-01「文案适度放大」）：放得下才往上长，六张共用一个值。
-    // ⚠️ 名单要跟着灰度开关走 —— 关掉的卡不渲染，它的副标题不该把别人的字号压下去。
-    final subtitleFontSize = _entrySubtitleFontSize(context, <String>[
-      l10n.homeCastCameraCardSubtitle,
-      l10n.homeCastAlbumCardSubtitle,
-      l10n.homeEntryUploadsSubtitle,
-      if (kAiEntryEnabled) l10n.homeEntryAiSubtitle,
-      if (kGalleryEntryEnabled) l10n.homeEntryGallerySubtitle,
-      l10n.homeEntryDevicesSubtitle,
-    ]);
     final entries = <_HomeEntryCard>[
       _HomeEntryCard(
         title: l10n.homeEntryCameraTitle,
-        subtitle: l10n.homeCastCameraCardSubtitle,
         color: const Color(0xFFEE6242),
         iconAsset: 'assets/images/home-icon01.png',
-        arrowAsset: 'assets/images/home-icon11.png',
         titleFontSize: titleFontSize,
-        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.photo_camera_outlined,
         onTap: onCamera,
       ),
       _HomeEntryCard(
         title: l10n.homeEntryAlbumTitle,
-        subtitle: l10n.homeCastAlbumCardSubtitle,
         color: const Color(0xFF3E92E8),
         iconAsset: 'assets/images/home-icon02.png',
-        arrowAsset: 'assets/images/home-icon12.png',
         titleFontSize: titleFontSize,
-        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.photo_library_outlined,
         onTap: onAlbum,
       ),
       _HomeEntryCard(
         title: l10n.homeEntryUploadsTitle,
-        subtitle: l10n.homeEntryUploadsSubtitle,
         color: const Color(0xFF7B5FE8),
         iconAsset: 'assets/images/home-icon03.png',
-        arrowAsset: 'assets/images/home-icon13.png',
         titleFontSize: titleFontSize,
-        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.folder_open_outlined,
         onTap: onOpenUploads,
       ),
       if (kAiEntryEnabled)
         _HomeEntryCard(
           title: l10n.homeEntryAiTitle,
-          subtitle: l10n.homeEntryAiSubtitle,
           color: const Color(0xFF11AE7B),
           iconAsset: 'assets/images/home-icon04.png',
-          arrowAsset: 'assets/images/home-icon14.png',
           titleFontSize: titleFontSize,
-          subtitleFontSize: subtitleFontSize,
           fallbackIcon: Icons.auto_awesome_outlined,
           onTap: onOpenAi,
         ),
       if (kGalleryEntryEnabled)
         _HomeEntryCard(
           title: l10n.tabGallery,
-          subtitle: l10n.homeEntryGallerySubtitle,
           color: const Color(0xFFF0982B),
           iconAsset: 'assets/images/home-icon05.png',
-          arrowAsset: 'assets/images/home-icon15.png',
           titleFontSize: titleFontSize,
-          subtitleFontSize: subtitleFontSize,
           fallbackIcon: Icons.collections_outlined,
           onTap: onOpenGallery,
         ),
       _HomeEntryCard(
         title: l10n.devMyDevicesTitle,
-        subtitle: l10n.homeEntryDevicesSubtitle,
         color: const Color(0xFF05A6B1),
         iconAsset: 'assets/images/home-icon06.png',
-        arrowAsset: 'assets/images/home-icon16.png',
         titleFontSize: titleFontSize,
-        subtitleFontSize: subtitleFontSize,
         fallbackIcon: Icons.devices_other_outlined,
         onTap: onOpenDevices,
       ),
