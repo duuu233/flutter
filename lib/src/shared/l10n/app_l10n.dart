@@ -128,6 +128,12 @@ class AppL10n {
     return _pick(entry.$1, entry.$2, entry.$3);
   }
 
+  // ── 启动页 ──────────────────────────────────────────────────────────────
+  /// 闪屏 LOGO 下方的品牌 slogan（2026-09-16 改文案：原「把美好，留在一张纸上」）。
+  /// 繁中不单独给：`_pick` 缺省会走 `toTraditionalChinese`，字表里「现 → 現」，
+  /// 其余三字繁简同形，结果正是「呈現美好」。
+  String get splashSlogan => _pick('呈现美好', 'Present Beauty', '美しさを映す');
+
   // ── 通用 ────────────────────────────────────────────────────────────────
   String get cancel => _pick('取消', 'Cancel', 'キャンセル');
   String get confirm => _pick('确定', 'OK', '確定');

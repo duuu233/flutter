@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../shared/l10n/app_l10n.dart';
+
 /// 背景图解码完成前的兜底底色：取自 `assets/images/bg02.jpg` 本身
 /// （顶部 8px 均值 → 底部 120px 均值）。
 ///
@@ -139,14 +141,18 @@ class _SplashPageState extends State<SplashPage>
                     // heightFactor: 1 ⇒ 纵向仍按内容高度收紧，不跟着 Center 撑开。
                     // （新版 Flutter 给 SizeTransition 加了 alignment 参数可一步到位，
                     //   但它与 axisAlignment 互斥且有版本要求，这里用兼容写法。）
-                    child: const Center(
+                    child: Center(
                       heightFactor: 1,
                       child: Padding(
-                        padding: EdgeInsets.only(top: 16),
+                        padding: const EdgeInsets.only(top: 16),
                         child: Text(
-                          '把美好，留在一张纸上',
+                          // 跟随语种设置：简中「呈现美好」/ 繁中「呈現美好」/
+                          // 英文 Present Beauty / 日文「美しさを映す」。
+                          // 闪屏在 MaterialApp.builder 的 AppLocalizationsScope 之内，
+                          // 这里能正常拿到当前语言。
+                          AppL10n.of(context).splashSlogan,
                           textAlign: TextAlign.center,
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: Color(0xFF808690),
                             fontSize: 15,
                             fontWeight: FontWeight.w400,
