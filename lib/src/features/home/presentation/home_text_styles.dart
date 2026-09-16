@@ -70,6 +70,12 @@ class _HomeTextStyles {
   // ⚠️ 2026-09-16 删掉了 `entrySubtitle`（.entry-desc 18rpx/#8f959d）：六宫格不再有副标题，
   //    连同 [_HomeMainView] 里那套按机型上下调字号的逻辑一起移除（那是 2026-09-01~09-02
   //    四五轮「再大/再小一号」需求叠出来的，只服务副标题）。要回滚请一并从 git 历史取回。
+  static const entryTitle = TextStyle(
+    fontSize: 15,
+    fontWeight: FontWeight.w600,
+    height: 1.2,
+  );
+
   static const cardTitle = TextStyle(
     color: Color(0xFF2A2D32),
     fontSize: 18,
