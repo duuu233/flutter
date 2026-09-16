@@ -276,20 +276,36 @@ class _HomeMainView extends StatelessWidget {
   /// **与基准无关** —— 所以 2026-09-01 把基准从 13 抬到 15 时，对任何语言都只会不变或变大，
   /// 不可能因此新增截断。要放大就动 [_HomeTextStyles.entryTitle]，这里一行都不用改。
   ///
-  /// ⚠️ **2026-09-16 修：第一步「按比例缩」会把最长的那条算成刚好占满，余量为 0。**
-  /// 日文六条里「マイアップロード」是 8 个全角字（其余五条 ≈3.1 ~ 6 个），它一个人决定
-  /// 共用字号，于是算出来的字号恰好让它的宽度 **等于** 可用宽（390dp 屏：可用宽 88、
-  /// 字号 88 ÷ 8 = 11、文字宽 88.0）。而按比例缩这件事本身并不保证严丝合缝 ——
-  /// 量固有宽用的是 [TextPainter]，真正渲染时 [Text] 还要走「maxLines + 省略号」那条路径，
-  /// 两边在边界上差半个像素就会截断；系统字体缩放非线性时（Android 14+）更是直接不成立。
-  /// 表现就是产品报的那条：**六张卡里偏偏只有第三张显示「マイアップロ…」**，
-  /// 因为只有它踩在 100% 上，其余五条都有 ≥ 2 个字的富余。
+  /// ⚠️ **2026-09-16 两轮才修对，把两条都记下来：**
   ///
-  /// 所以第一步只当**估算**，第二步用 [_entryTitleOverflows] 按 widget 的真实条件复测、
-  /// 还截断就退档。返回值因此只会 ≤ 原来的值（日文 ≈11.5 → ≈11.25，肉眼无差），
-  /// 本来就放得下的语言（中文四字、英文单词）复测一次就通过，字号一个数不变。
+  /// **第一轮（不够）**：发现「按比例缩」会把最长的那条算成刚好占满、余量为 0 —— 日文
+  /// 「マイアップロード」8 个全角字（其余五条 ≈3.1 ~ 6），它一个人决定共用字号，于是
+  /// 字号 = 可用宽 ÷ 8、文字宽**等于**可用宽。当时加了「复测 + 退 0.25 号」，**仍然截断**。
+  ///
+  /// **第二轮（真因）**：复测量的样式不对。[Text] 渲染时用的是
+  /// `DefaultTextStyle.of(context).style.merge(自己的 style)`（见 `Text.build`），而
+  /// [TextPainter] 只喂了 [_HomeTextStyles.entryTitle] 自己那份，**把主题带进来的东西全漏了**：
+  ///   · `letterSpacing: 0.25` —— 主题 `bodyMedium` 继承 Material 的 `englishLike2021`；
+  ///     日文 locale 走 `dense` 文字几何，但 dense 的 `letterSpacing` 是 null，
+  ///     `TextStyle.merge` 只覆盖非空字段，**0.25 于是保留下来**；
+  ///   · `fontFamily: 'Roboto'` —— 日文字形走字体回退，与 `fontFamily: null` 的回退链未必同一条。
+  /// 8 个字就是 **8 × 0.25 = 2 逻辑像素**没被量进去：量出来 88 说"正好放得下"，实际画出来 90。
+  ///
+  /// ⚠️ 而且 **`letterSpacing` 是加法项、不随字号缩放**，所以「宽度与字号成正比」这个前提
+  /// 从根上就不成立 —— 这正是第一轮退了 0.25 号还不够的原因（量 86 / 实际 88，又顶在 88 上）。
+  ///
+  /// 所以现在：**样式统一走 [_entryTitleStyle]（解析后的那份）**，第一步的比例估算只当起点，
+  /// 第二步用 [_entryTitleOverflows] **在候选字号上实测**（加法项因此被如实算进去），
+  /// 并留 [_entryTitleSafetyMargin] 的余量，不再允许"正好等于"。
+  /// 本来就放得下的语言（中文四字、英文单词）第一次复测就通过，字号一个数不变。
+  ///
+  /// ⚠️ 最后还有一道**结构性兜底**：卡里的标题套了 `FittedBox(scaleDown)` 且**不再设省略号**
+  /// （见 [_HomeEntryCard]）—— 即使这里再算错，也只会把那一条标题缩小一点点，
+  /// **不可能出现「…」**。产品这轮的原则原话：「加大宽度、还是日版改小字体都行，就是不要出现 …」。
   double _entryTitleFontSize(BuildContext context, List<String> titles) {
-    final base = _HomeTextStyles.entryTitle.fontSize ?? 13;
+    // ⚠️ 必须用**解析后**的样式量，理由见上面那段 ⚠️。
+    final baseStyle = _entryTitleStyle(context);
+    final base = baseStyle.fontSize ?? 13;
     final media = MediaQuery.of(context);
     // 横向安全区在竖屏恒为 0，带上只是为了异形屏/横屏时不算错。
     final rowWidth =
@@ -300,20 +316,20 @@ class _HomeMainView extends StatelessWidget {
     // （Transform 右移 5 + 素材四周的透明留白），漏算会让字号平白小一档。
     // 逐项拆解写在 [_HomeEntryCard.titleHorizontalReserve] 上，改卡片布局时改那一处。
     final available = cardWidth - _HomeEntryCard.titleHorizontalReserve;
-    if (available <= 0) {
+    // 实际用来定字号的预算：可用宽再留一点余量，不允许「正好等于」。
+    final budget = available - _entryTitleSafetyMargin;
+    if (budget <= 0) {
       return base;
     }
 
     // ── 第一步：估算 ──────────────────────────────────────────────────
-    // 量每条标题在基准字号下的固有宽度，取「最挤的那条」定缩放比例。
+    // 量每条标题在基准字号下的宽度，取「最挤的那条」定缩放比例。只是起点：
+    // 样式里的加法项（letterSpacing）不随字号缩放，比例外推必然偏乐观，交给第二步兜。
     var scale = 1.0;
     final direction = Directionality.of(context);
     for (final title in titles) {
       final painter = TextPainter(
-        text: TextSpan(
-          text: title,
-          style: _HomeTextStyles.entryTitle.copyWith(fontSize: base),
-        ),
+        text: TextSpan(text: title, style: baseStyle.copyWith(fontSize: base)),
         maxLines: 1,
         textDirection: direction,
         // ⚠️ 带上系统字体缩放（2026-09-01）：量的是「画出来有多宽」。
@@ -322,7 +338,7 @@ class _HomeMainView extends StatelessWidget {
         textScaler: media.textScaler,
       )..layout();
       if (painter.width > 0) {
-        final fit = available / painter.width;
+        final fit = budget / painter.width;
         if (fit < scale) {
           scale = fit;
         }
@@ -338,7 +354,14 @@ class _HomeMainView extends StatelessWidget {
     // （320dp 屏日文只有 ≈8），写死 9 会让那些机器一步都退不了、截断照旧。
     final minSize = size * 0.9;
     for (var i = 0; i < _entryTitleMaxStepDowns; i++) {
-      if (!_entryTitleOverflows(titles, size, available, media, direction)) {
+      if (!_entryTitleOverflows(
+        titles,
+        baseStyle,
+        size,
+        budget,
+        media,
+        direction,
+      )) {
         break;
       }
       final next = size - _entryTitleStepDown;
@@ -356,38 +379,56 @@ class _HomeMainView extends StatelessWidget {
   /// 通常一步就够；中文四字、英文单词本来就有富余，压根不会走到退档。
   static const double _entryTitleStepDown = 0.25;
 
-  /// 退档次数上限。与「不低于估算值 90%」那条下限一起兜底，防的是「怎么退都还截断」的
-  /// 意外情形（例如将来加进来一条超长标题）—— 那种情况下宁可保住可读性、留一条省略号。
+  /// 退档次数上限。与「不低于估算值 90%」那条下限一起兜底，防的是「怎么退都还放不下」的
+  /// 意外情形（例如将来加进来一条超长标题）—— 真出那种事，由 `FittedBox` 那道兜底接住。
   static const int _entryTitleMaxStepDowns = 8;
 
-  /// 这组标题在字号 [fontSize] / 可用宽 [available] 下，**会不会有一条被截成省略号**。
+  /// 定字号时从可用宽里让出的余量（逻辑像素）。
   ///
-  /// 与 [_entryTitleFontSize] 第一步的「量固有宽再按比例缩」不同，这里是把 [TextPainter]
-  /// 摆成和 [_HomeEntryCard] 里那个 [Text] **逐项相同的样子** —— `maxLines: 1`、
-  /// 同一个省略号、`layout(maxWidth: 可用宽)` —— 然后直接问 `didExceedMaxLines`。
-  /// **widget 怎么判，这里就怎么判**，不再依赖「宽度与字号成正比」这个近似。
+  /// ⚠️ **存在的意义就是不允许「正好等于」**：共用字号由最长的那条反推，它天然会落在 100%，
+  /// 而文字排版在边界上是不是差半个像素，端上量不准（字体回退、hinting、ceil 取整都掺一脚）。
+  /// 留 1 换来的是"看得见的确定性"，代价是字号小 0.125 号，肉眼无差。
+  static const double _entryTitleSafetyMargin = 1;
+
+  /// 六宫格标题**真正渲染时用的样式**。
   ///
-  /// ⚠️ 省略号字符必须与 [_HomeEntryCard] 里 `TextOverflow.ellipsis` 用的一致（Flutter 是
-  /// `\u2026`，即「…」）；写成三个半角点会让这里量出的宽度比真实的窄，复测就失去意义。
+  /// [Text] 的做法是 `DefaultTextStyle.of(context).style.merge(自己的 style)`
+  /// （见 `Text.build`：`style` 的 `inherit` 为 true 时就这么合）。量宽度必须用同一份，
+  /// 否则主题带进来的 `letterSpacing` / `fontFamily` 会整个漏掉 —— 2026-09-16 那次
+  /// 「日文第三张卡怎么退档都还是 …」就是栽在这儿。
+  ///
+  /// ⚠️ 这里取的是 [_HomeMainView] 自己的 context。从这里到卡里那个 [Text] 之间
+  /// **没有任何 widget 再引入新的 DefaultTextStyle**（中间只有 Padding / Column /
+  /// DecoratedBox / AspectRatio / GestureDetector），所以两处解析出来的是同一份。
+  /// 将来若在宫格外面套了 [DefaultTextStyle]，这条前提就破了，得把样式往下传。
+  TextStyle _entryTitleStyle(BuildContext context) =>
+      DefaultTextStyle.of(context).style.merge(_HomeTextStyles.entryTitle);
+
+  /// 这组标题在字号 [fontSize] 下，**有没有一条宽过预算 [budget]**。
+  ///
+  /// 与第一步的「按比例外推」不同，这里是**在候选字号上重新量一次**。差别不是精度问题
+  /// 而是对错问题：样式里的 `letterSpacing` 是**加法项、不随字号缩放**
+  /// （8 个字恒定 +2.0，字号从 15 缩到 11 它一点没变小），比例外推必然偏乐观。
+  /// 系统字体缩放非线性时（Android 14+）同理 —— 估算里 `textScaler` 乘在**基准**字号上、
+  /// 渲染时乘在**结果**字号上，两者不等价。实测就没有这两个坑。
+  ///
+  /// [style] 必须是 [_entryTitleStyle] 给的那份解析后样式。
   bool _entryTitleOverflows(
     List<String> titles,
+    TextStyle style,
     double fontSize,
-    double available,
+    double budget,
     MediaQueryData media,
     TextDirection direction,
   ) {
     for (final title in titles) {
       final painter = TextPainter(
-        text: TextSpan(
-          text: title,
-          style: _HomeTextStyles.entryTitle.copyWith(fontSize: fontSize),
-        ),
+        text: TextSpan(text: title, style: style.copyWith(fontSize: fontSize)),
         maxLines: 1,
-        ellipsis: '\u2026',
         textDirection: direction,
         textScaler: media.textScaler,
-      )..layout(maxWidth: available);
-      if (painter.didExceedMaxLines) {
+      )..layout();
+      if (painter.width > budget) {
         return true;
       }
     }

@@ -1252,12 +1252,21 @@ class _HomeEntryCard extends StatelessWidget {
   /// 各卡自己决定字号就会缩出六个不同大小。
   final double titleFontSize;
 
-  /// 卡内左右内边距（下面 build 里的 `EdgeInsets.symmetric(horizontal: 10)`）。
+  /// 卡内左右内边距。
   ///
-  /// ⚠️ 右边原来是 6：那是留给箭头徽标那圈透明阴影的（徽标 2026-09-16 已去掉）。
-  /// 现在左右对称，与小程序 `.entry-card { padding: 0 20rpx }` 同值。
-  static const double _padLeft = 10;
-  static const double _padRight = 10;
+  /// ⚠️ 右边原来是 6：那是留给箭头徽标那圈透明阴影的（徽标 2026-09-16 已去掉），
+  /// 之后左右对称回 10，与小程序 `.entry-card { padding: 0 20rpx }` 同值。
+  ///
+  /// ⚠️ 2026-09-16 再由 10 **收窄到 6**，产品原话是「加大宽度……就是不要出现 …」。
+  /// 卡里只剩图标与标题两件、且**都横向居中**，内边距因此不再决定任何东西的位置 ——
+  /// 它唯一的作用就是给标题**封顶宽度**。收窄 4 等于给标题多 8 的可用宽
+  /// （390dp 屏：88 → 96），日文共用字号能从 ≈10.5 抬回 ≈11.5。
+  /// 图标 45 在 96 里照样居中，一点没动。
+  ///
+  /// 🔶 与小程序 20rpx 是**有意偏离**：小程序 `HOME_ENTRIES` 的标题写死中文，
+  /// 没有长标题问题，不需要跟着让这 4。
+  static const double _padLeft = 6;
+  static const double _padRight = 6;
 
   /// 图标边长：33 →（2026-09-16「把图标拉大」）48 →（同日产品复看后「缩小一点」）**45**，
   /// 对齐小程序 `.entry-icon` 的 96 → **90rpx**。
@@ -1273,7 +1282,8 @@ class _HomeEntryCard extends StatelessWidget {
   ///
   /// 标题独占整个内容宽（箭头已去掉，2026-08-31 起它本来也不跟标题抢宽度），
   /// [_HomeMainView._entryTitleFontSize] 按它反推六张卡的共用字号 ——
-  /// **改下面 build 里的 Padding，必须同步改这里**。
+  /// **改下面 build 里的 Padding，必须同步改这里**（现在由 [_padLeft] / [_padRight]
+  /// 直接相加，改那两个常量就够，不会再漏）。
   static const double titleHorizontalReserve = _padLeft + _padRight;
 
   /// 每张卡的主色：标题文字色（取自原箭头徽标素材的配色）。
@@ -1333,17 +1343,33 @@ class _HomeEntryCard extends StatelessWidget {
                 // 标题独占整个内容宽（箭头已去掉，2026-08-31 起它本来也不跟标题抢宽度），
                 // 字号由 [_HomeMainView._entryTitleFontSize] 按六条标题统一算 —— 产品这轮
                 // 明确「主标题字号不变」，所以那边的基准值一个数都没动。
-                Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  // 标题框按内容宽收缩（见上面 crossAxisAlignment 的说明），所以这行平时
-                  // 不产生位移；留着是为了**标题真被截成省略号、文本框顶满卡宽那一刻**
-                  // 仍然居中，而不是忽然回到左对齐。
-                  textAlign: TextAlign.center,
-                  style: _HomeTextStyles.entryTitle.copyWith(
-                    color: color,
-                    fontSize: titleFontSize,
+                // ⚠️ 2026-09-16：**结构性兜底 —— 标题不再有省略号**。
+                //
+                // 产品的原则是「加大宽度、还是日版改小字体都行，就是不要出现 …」。
+                // 光靠 [_HomeMainView._entryTitleFontSize] 把字号算准是"尽力而为"：
+                // 那条算式已经两次没算准（先是余量为 0，再是漏了主题的 letterSpacing），
+                // 而端上量文字宽度本来就有字体回退、hinting、取整一堆变数。
+                //
+                // 所以这里换成 `FittedBox(scaleDown)` + **不设 `overflow`**：
+                //   · 没有配省略号，`…` 就**不可能**被画出来 —— 这是结构保证，不是算准了才成立；
+                //   · 算准时（正常情况）自然宽 ≤ 可用宽，scaleDown **什么都不做**，
+                //     六张卡的标题仍然一模一样大；
+                //   · 万一又算多了，只有超出的那一条被等比缩一点点（几个百分点，肉眼无差），
+                //     而不是被砍掉半个词。
+                //
+                // ⚠️ 别改回 `TextOverflow.ellipsis`：在 `FittedBox` 里 [Text] 拿到的是
+                // **无界宽约束**，省略号永远不会触发，写了也只是误导下一个人。
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    softWrap: false,
+                    textAlign: TextAlign.center,
+                    style: _HomeTextStyles.entryTitle.copyWith(
+                      color: color,
+                      fontSize: titleFontSize,
+                    ),
                   ),
                 ),
               ],
