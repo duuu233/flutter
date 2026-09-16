@@ -1225,12 +1225,16 @@ class _UnboundDevicePainter extends CustomPainter {
 ///
 /// ⚠️ 2026-09-16 产品改版：**去掉副标题和右侧箭头徽标，把图标拉大**（主标题字号不变）。
 /// 卡里于是只剩「图标 + 主标题」两件，纵向居中；副标题让出来的高度全给了图标
-/// （33 → [_iconSize]）。随之删掉的还有：
+/// （33 → 48）。随之删掉的还有：
 ///   · `subtitle` / `subtitleFontSize` 两个入参，以及 [_HomeMainView] 里那一整套
 ///     「按六条副标题算共用字号」的逻辑（`_entrySubtitleFontSize` 等）；
 ///   · `arrowAsset` 入参与 `assets/images/home-icon1N.png` 六张徽标素材的引用
 ///     （素材仍留在仓库里备回滚，见 `test/unused_assets_test.dart` 的 parked 白名单）。
 /// 小程序侧同步改了 `pages/home/home.wxml` / `home.wxss` / `home.js`。
+///
+/// ⚠️ 同日**第二轮**（产品复看真机后）：图标 48 → [_iconSize] **45**（小程序 96 → 90rpx），
+/// 且「图标 + 标题」由左对齐改为**横向居中**。卡高、卡片比例、图标到标题的间距、
+/// 主标题字号基准**一个数都没动**。
 class _HomeEntryCard extends StatelessWidget {
   const _HomeEntryCard({
     required this.title,
@@ -1255,9 +1259,15 @@ class _HomeEntryCard extends StatelessWidget {
   static const double _padLeft = 10;
   static const double _padRight = 10;
 
-  /// 图标边长（2026-09-16「把图标拉大」）：33 → 48，对齐小程序的 96rpx。
-  /// 副标题那两行腾出的高度差不多正好是这 15，所以卡片比例 206/220 不用动。
-  static const double _iconSize = 48;
+  /// 图标边长：33 →（2026-09-16「把图标拉大」）48 →（同日产品复看后「缩小一点」）**45**，
+  /// 对齐小程序 `.entry-icon` 的 96 → **90rpx**。
+  ///
+  /// ⚠️ 折算口径与卡片其余尺寸一致：**rpx 折半**（375dp 基准；同卡里 `border-radius: 28rpx`
+  /// → 14、`margin-bottom: 20rpx` → 10），所以 90rpx → 45。
+  /// **两端必须一起改**：只动一端，同一台手机上并排看就是一圈大小差。
+  /// 卡片比例 206/220、图标到标题的 10（小程序 `margin-bottom: 20rpx`）都没动 ——
+  /// 缩掉的这 3 由「整组垂直居中」自动摊回上下留白，不必调卡高。
+  static const double _iconSize = 45;
 
   /// **标题**能用的横向开销（卡宽减掉它 = 标题可用宽度）。
   ///
@@ -1297,7 +1307,14 @@ class _HomeEntryCard extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: _padLeft),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
+              // 2026-09-16 产品：图标与标题**横向居中**（改前是左对齐）。对齐小程序
+              // `.entry-card { align-items: center }` + `.entry-name { text-align: center }`。
+              //
+              // ⚠️ 换成 center **不改变标题拿到的最大宽度**：Column 在 crossAxisAlignment
+              // 非 stretch 时给孩子的都是松约束（0 ~ 内容宽），与原来的 start 一样。
+              // 所以 [_HomeMainView._entryTitleFontSize] 那条「按最长标题算共用字号」的算式
+              // 一个数都不用动，[titleHorizontalReserve] 也不变，省略号阈值不变。
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
                   width: _iconSize,
@@ -1320,6 +1337,10 @@ class _HomeEntryCard extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  // 标题框按内容宽收缩（见上面 crossAxisAlignment 的说明），所以这行平时
+                  // 不产生位移；留着是为了**标题真被截成省略号、文本框顶满卡宽那一刻**
+                  // 仍然居中，而不是忽然回到左对齐。
+                  textAlign: TextAlign.center,
                   style: _HomeTextStyles.entryTitle.copyWith(
                     color: color,
                     fontSize: titleFontSize,
