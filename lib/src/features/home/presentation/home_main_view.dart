@@ -273,9 +273,21 @@ class _HomeMainView extends StatelessWidget {
   /// 日文（マイアップロード，六条里最长）放不下时六张一起缩。
   ///
   /// ⚠️ 返回值是 `min(基准, 放得下的最大值)`，而「放得下的最大值」= 可用宽 ÷ 单位字号宽度、
-  /// **与基准无关** —— 所以 2026-09-01 把基准从 13 抬到 15 时，对任何语言都只会不变或变大
-  /// （日文照旧压在 ≈11.5），不可能因此新增截断。要放大就动 [_HomeTextStyles.entryTitle]，
-  /// 这里一行都不用改。
+  /// **与基准无关** —— 所以 2026-09-01 把基准从 13 抬到 15 时，对任何语言都只会不变或变大，
+  /// 不可能因此新增截断。要放大就动 [_HomeTextStyles.entryTitle]，这里一行都不用改。
+  ///
+  /// ⚠️ **2026-09-16 修：第一步「按比例缩」会把最长的那条算成刚好占满，余量为 0。**
+  /// 日文六条里「マイアップロード」是 8 个全角字（其余五条 ≈3.1 ~ 6 个），它一个人决定
+  /// 共用字号，于是算出来的字号恰好让它的宽度 **等于** 可用宽（390dp 屏：可用宽 88、
+  /// 字号 88 ÷ 8 = 11、文字宽 88.0）。而按比例缩这件事本身并不保证严丝合缝 ——
+  /// 量固有宽用的是 [TextPainter]，真正渲染时 [Text] 还要走「maxLines + 省略号」那条路径，
+  /// 两边在边界上差半个像素就会截断；系统字体缩放非线性时（Android 14+）更是直接不成立。
+  /// 表现就是产品报的那条：**六张卡里偏偏只有第三张显示「マイアップロ…」**，
+  /// 因为只有它踩在 100% 上，其余五条都有 ≥ 2 个字的富余。
+  ///
+  /// 所以第一步只当**估算**，第二步用 [_entryTitleOverflows] 按 widget 的真实条件复测、
+  /// 还截断就退档。返回值因此只会 ≤ 原来的值（日文 ≈11.5 → ≈11.25，肉眼无差），
+  /// 本来就放得下的语言（中文四字、英文单词）复测一次就通过，字号一个数不变。
   double _entryTitleFontSize(BuildContext context, List<String> titles) {
     final base = _HomeTextStyles.entryTitle.fontSize ?? 13;
     final media = MediaQuery.of(context);
@@ -292,6 +304,8 @@ class _HomeMainView extends StatelessWidget {
       return base;
     }
 
+    // ── 第一步：估算 ──────────────────────────────────────────────────
+    // 量每条标题在基准字号下的固有宽度，取「最挤的那条」定缩放比例。
     var scale = 1.0;
     final direction = Directionality.of(context);
     for (final title in titles) {
@@ -314,7 +328,70 @@ class _HomeMainView extends StatelessWidget {
         }
       }
     }
-    return base * (scale > 1 ? 1 : scale);
+    var size = base * (scale > 1 ? 1 : scale);
+
+    // ── 第二步：复测（2026-09-16 新增，见类文档里那段 ⚠️）─────────────
+    // 上面是「按比例缩」，最长的那条会正好落在 100%，余量为 0；这里按 widget 的
+    // 真实条件问一句「到底截不截」，截就退档。日文那条通常退一步（0.25）就让开。
+    //
+    // ⚠️ 下限取**相对值**（估算值的 90%）而不是写死一个字号：窄屏上估算值本来就小
+    // （320dp 屏日文只有 ≈8），写死 9 会让那些机器一步都退不了、截断照旧。
+    final minSize = size * 0.9;
+    for (var i = 0; i < _entryTitleMaxStepDowns; i++) {
+      if (!_entryTitleOverflows(titles, size, available, media, direction)) {
+        break;
+      }
+      final next = size - _entryTitleStepDown;
+      // 退到 10% 还在截断说明另有原因（不是边界上那半个像素），不再无谓地缩小：
+      // 宁可留一条省略号，也不要把六张卡的标题一起缩到看不清。
+      if (next < minSize) {
+        break;
+      }
+      size = next;
+    }
+    return size;
+  }
+
+  /// 复测用的退档步长。日文标题是 8 个全角字，退 0.25 号 = 让开 2 逻辑像素，
+  /// 通常一步就够；中文四字、英文单词本来就有富余，压根不会走到退档。
+  static const double _entryTitleStepDown = 0.25;
+
+  /// 退档次数上限。与「不低于估算值 90%」那条下限一起兜底，防的是「怎么退都还截断」的
+  /// 意外情形（例如将来加进来一条超长标题）—— 那种情况下宁可保住可读性、留一条省略号。
+  static const int _entryTitleMaxStepDowns = 8;
+
+  /// 这组标题在字号 [fontSize] / 可用宽 [available] 下，**会不会有一条被截成省略号**。
+  ///
+  /// 与 [_entryTitleFontSize] 第一步的「量固有宽再按比例缩」不同，这里是把 [TextPainter]
+  /// 摆成和 [_HomeEntryCard] 里那个 [Text] **逐项相同的样子** —— `maxLines: 1`、
+  /// 同一个省略号、`layout(maxWidth: 可用宽)` —— 然后直接问 `didExceedMaxLines`。
+  /// **widget 怎么判，这里就怎么判**，不再依赖「宽度与字号成正比」这个近似。
+  ///
+  /// ⚠️ 省略号字符必须与 [_HomeEntryCard] 里 `TextOverflow.ellipsis` 用的一致（Flutter 是
+  /// `\u2026`，即「…」）；写成三个半角点会让这里量出的宽度比真实的窄，复测就失去意义。
+  bool _entryTitleOverflows(
+    List<String> titles,
+    double fontSize,
+    double available,
+    MediaQueryData media,
+    TextDirection direction,
+  ) {
+    for (final title in titles) {
+      final painter = TextPainter(
+        text: TextSpan(
+          text: title,
+          style: _HomeTextStyles.entryTitle.copyWith(fontSize: fontSize),
+        ),
+        maxLines: 1,
+        ellipsis: '\u2026',
+        textDirection: direction,
+        textScaler: media.textScaler,
+      )..layout(maxWidth: available);
+      if (painter.didExceedMaxLines) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // ⚠️ 2026-09-16 起六宫格**没有副标题了**（产品：去掉副标题和箭头、把图标拉大），
