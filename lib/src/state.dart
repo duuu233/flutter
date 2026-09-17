@@ -156,6 +156,7 @@ class DeviceItem {
     required this.carouselEnabled,
     this.screenWidth = 0,
     this.screenHeight = 0,
+    this.shapeType = 0,
     this.verticalRotation = 0,
     this.isUpdate = 0,
     this.newVersionNo = '',
@@ -205,6 +206,20 @@ class DeviceItem {
   /// 没下发尺寸时会**回落 5.89 寸**，反查就会显示一个臆造的 `680*960`。原始宽高为 0 就老实显示 `--`。
   int screenWidth;
   int screenHeight;
+
+  /// 屏幕形状，后端产品配置字段 `shapeType`：**0 = 方形，1 = 圆形**
+  /// （后台「形状类型」那个单选，列表 / 详情接口都下发）。
+  ///
+  /// **默认 0**，未下发 / 非法值一律当方形——绝大多数产品是方形，这条路必须和
+  /// 加这个字段之前**完全一样**。
+  final int shapeType;
+
+  /// 是不是圆屏产品。
+  ///
+  /// 只影响**预览怎么裁**（2026-09-17 产品定稿：预览裁成圆、导出还是方的）：
+  /// 设备屏幕是圆的，方框四角那一圈本来就显示不出来，预览裁圆才是所见即所得；
+  /// 而帧数据仍按方形矩阵传（四角留白），所以**导出 / 烘焙一个字都不改**。
+  bool get roundScreen => shapeType == 1;
 
   /// **竖向**构图导出时整幅画面的顺时针旋转角（度）。后端设备字段 `verticalRotation`
   /// （2026-08-04 新增），投屏预览页据此旋转上传给抖动接口、随后图传到设备的成品图。
@@ -3172,7 +3187,8 @@ class PhotoFrameState extends ChangeNotifier {
   ///
   /// 字段名以后端 swagger 为准。
   /// 列表 `ClientUserProductApiOut`：`userProductId` / `productName` / `productImg` /
-  /// `deviceId`(硬件序列号) / `width` / `height` / `shapeType`。
+  /// `deviceId`(硬件序列号) / `width` / `height` / `shapeType`（0 方 / 1 圆，见
+  /// [DeviceItem.shapeType]）。
   /// 详情 `ClientUserProductDetailApiOut` 另有：`carouselInterval`(轮播间隔，单位**小时**) /
   /// `isUpdate` / `newVersionNo` / `downloadPath` / `compulsory` / `isClearImg` / `productId`。
   /// 注意：两个接口都**不下发**固件版本号与固件包大小（`productVersionNo`/`firmwareSize` 不存在），
@@ -3199,6 +3215,9 @@ class PhotoFrameState extends ChangeNotifier {
       // 原始宽高另存一份：屏型是「归一化后的枚举」，未下发时会回落 589，不能拿来展示分辨率。
       screenWidth: _asInt(data['width']),
       screenHeight: _asInt(data['height']),
+      // 屏幕形状（0 方 / 1 圆）。只给投屏预览裁框用，导出不受影响；
+      // 未下发时 _asInt 回落 0 = 方形，正好是加这个字段之前的行为。
+      shapeType: _asInt(data['shapeType']),
       // 竖向导出旋转角（2026-08-04 新增字段）。_asInt 对缺失/非法值返回 0，
       // 正好等于产品要求的「没有这个参数就不旋转」，不需要额外兜底。
       // 兼容名只是大小写/后缀差异，后端定稿后可删。

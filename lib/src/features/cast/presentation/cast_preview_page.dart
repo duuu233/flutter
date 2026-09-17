@@ -285,6 +285,43 @@ const Duration _kPickupDuration = Duration(milliseconds: 340);
 /// 可视区域圆角（小程序 .edit-clip 40rpx = 20px）。
 const double _kClipRadius = 20;
 
+/// 按设备屏幕形状裁一刀：**圆屏裁圆，方屏还是原来那个 [_kClipRadius] 圆角矩形。**
+///
+/// 2026-09-17 产品定稿：**预览裁成圆、导出还是方的**。设备屏幕是圆的，方框四角那一圈
+/// 本来就显示不出来，预览裁圆才是所见即所得；而帧数据仍按方形矩阵传（四角留白），
+/// 所以 [_CastPreviewPageState._bake] **一个字都不改**，画布照旧是整张 `_deviceSize`
+/// 并先铺满白底。
+///
+/// ⚠️ [round] 为 false 时**必须和加这条之前完全一样**（产品原话：千万别改动到现有方形的
+/// 逻辑和代码），所以 else 分支就是原来那个 `ClipRRect` + 同一个半径，一个参数都没动。
+///
+/// ⚠️ **圆得正不正取决于取景框是不是正方形**，而框的比例来自 `_deviceSize` →
+/// `FrameProtocol.screenTypes`（当前只有 3.7寸 480×720 / 5.89寸 680×960 两条，都是竖向
+/// 矩形）。圆屏产品的屏型进那张表之后（带它真实的方形分辨率），这里自然就是正圆；
+/// 在那之前会是个椭圆。**不要为了圆而在这里改 `_deviceSize`** —— 它同时是导出画布的
+/// 尺寸，也和 BLE 图传下发的 `screenCode` 绑在一起，改了就是改导出。
+class _ScreenClip extends StatelessWidget {
+  const _ScreenClip({required this.round, required this.child});
+
+  final bool round;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    if (round) return ClipOval(child: child);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_kClipRadius),
+      child: child,
+    );
+  }
+}
+
+/// 长按拿起 / 拖拽进行中那点浮起阴影。抽成常量只是为了圆形、方形两个分支共用同一份
+/// 值——数值与 2026-09-17 之前逐字节一致，别顺手调。
+const List<BoxShadow> _kPickupShadow = <BoxShadow>[
+  BoxShadow(color: Color(0x4711151C), blurRadius: 24, offset: Offset(0, 9)),
+];
+
 /// 跨页带回上一轮构图（对齐小程序 `pendingProjection.editStates`，2026-08-03）。
 ///
 /// 投屏失败后点「重新投屏」会新建一个 [CastPreviewPage]，[_CastPreviewPageState._states]
@@ -1506,8 +1543,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         return Center(
           child: AspectRatio(
             aspectRatio: ratio,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(_kClipRadius),
+            child: _ScreenClip(
+              round: widget.device.roundScreen,
               // 与编辑层取景框、导出画布同为白底（需求第 4 项「所见即所得」）。
               child: ColoredBox(color: const Color(0xFFFFFFFF), child: image),
             ),
@@ -1543,21 +1580,21 @@ class _CastPreviewPageState extends State<CastPreviewPage>
               builder: (context, child) =>
                   Transform.scale(scale: _pickupScale.value, child: child),
               child: DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(_kClipRadius),
-                  // 拖拽进行中加一点浮起阴影，强调「已拿起、可拖动」
-                  boxShadow: _dragging
-                      ? const [
-                          BoxShadow(
-                            color: Color(0x4711151C),
-                            blurRadius: 24,
-                            offset: Offset(0, 9),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(_kClipRadius),
+                // 圆屏产品（`shapeType` 1）的取景框是圆的，方形照旧走圆角矩形那条。
+                // ⚠️ `BoxDecoration` 不允许 `shape: circle` 和 `borderRadius` 同时给
+                // （断言直接抛），所以这里分两份写，而不是在一份里塞两个字段。
+                // 拖拽进行中才加那点浮起阴影，强调「已拿起、可拖动」——**不是常驻**。
+                decoration: widget.device.roundScreen
+                    ? BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: _dragging ? _kPickupShadow : null,
+                      )
+                    : BoxDecoration(
+                        borderRadius: BorderRadius.circular(_kClipRadius),
+                        boxShadow: _dragging ? _kPickupShadow : null,
+                      ),
+                child: _ScreenClip(
+                  round: widget.device.roundScreen,
                   child: ColoredBox(
                     // 取景框底色必须是**白色**，与 [_bake] 导出前铺的白底一致：
                     // 自由缩小后露出的留白就是最终会写进设备的那块白（需求第 4 项「所见即所得」）。
