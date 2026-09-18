@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../routes/app_routes.dart';
@@ -30,13 +32,24 @@ import 'star_purchase_page.dart';
 /// 因此在 iOS 上不再生效——它描述的是安卓/以后 iOS 解禁时的形态，**留着是为了说明
 /// 这一页本身的设计**，别拿它当「iOS 应该能看到」的依据把屏蔽去掉。
 class StarCoinPage extends StatefulWidget {
-  const StarCoinPage({super.key});
+  const StarCoinPage({super.key, this.autoOpenPurchase = false});
+
+  /// 进页面就把[StarPurchasePage]（确认购买）推上来。
+  ///
+  /// 唯一来路是 AI 聊天页「星币不足 → 去充值」（2026-09-18 产品口径「跳到套餐确认」）。
+  /// ⚠️ **不从聊天页直接 push 确认页**：那一页要一个具体的 [StarPackage]，套餐列表在本页拉；
+  /// 而且这样返回栈里留着本页，用户想换一档退一步就能换。
+  final bool autoOpenPurchase;
 
   @override
   State<StarCoinPage> createState() => _StarCoinPageState();
 }
 
 class _StarCoinPageState extends State<StarCoinPage> {
+  /// [StarCoinPage.autoOpenPurchase] 只兑现一次：`_load` 在买完回来时还会再跑一遍，
+  /// 不记住的话用户会被反复推进确认页，退不出本页。
+  bool _autoOpened = false;
+
   StarAccount? _account;
   List<StarRule> _rules = const [];
 
@@ -44,14 +57,19 @@ class _StarCoinPageState extends State<StarCoinPage> {
   /// 不该把「看余额」这件正事挡在错误页后面。
   List<StarPackage> _packages = const [];
 
-  /// 当前选中的那一档，**按列表下标记**。后端按档位排好序下发，默认第一档，
-  /// 与小程序 `index.js` 一致。
+  /// 当前选中的那一档，**按列表下标记**。后端按档位排好序下发。
+  ///
+  /// 默认选**第二档**：设计稿高亮的就是那张（有赠送的主推档），小程序 `index.js` 写的是
+  /// `packages[1] || packages[0]`。⚠️ 2026-09-18 前这里是 0，注释却写着「与小程序一致」——
+  /// 两端默认档位其实差一张。以前只影响本页的高亮，现在 AI「星币不足 → 去充值」会直接
+  /// 带用户进确认页，两端确认的就是**不同的套餐**了，所以就地对齐。
+  /// 只有一档时 `_load` 里的越界回落会把它拉回第一档。
   ///
   /// ⚠️ **不能按 `goodsId` 记**（2026-09-01 改）：`goodsId` **允许为 0**，也不保证互不相同；
   /// 一旦有两档取值相同（比如都是 0），「按 id 找回选中项」会恒命中**第一档** ——
   /// 用户点第二档，页面高亮跟着走了，带进确认页和 `addOrder` 的却还是第一档的数据。
   /// 那是一个不报错、只在对账时才发现的错，所以选中态一律按下标。
-  int _selectedIndex = 0;
+  int _selectedIndex = 1;
 
   bool _loading = true;
   bool _loadFailed = false;
@@ -129,6 +147,22 @@ class _StarCoinPageState extends State<StarCoinPage> {
       // 账户读失败且此前没有过成功值才算整页失败（弱网回到本页不该把余额清零）
       _loadFailed = failed && _account == null;
     });
+    _autoOpenPurchaseIfRequested();
+  }
+
+  /// 「去充值」带进来的那次自动跳转。
+  ///
+  /// 拉不到套餐（后端挂了 / 一档都没上架）就**停在本页**：余额和消耗规则照样看得见，
+  /// 比推进一个没有套餐可确认的页面强。
+  void _autoOpenPurchaseIfRequested() {
+    if (!widget.autoOpenPurchase || _autoOpened || !mounted) {
+      return;
+    }
+    _autoOpened = true;
+    if (_selected == null) {
+      return;
+    }
+    unawaited(_openPurchase());
   }
 
   /// 进确认购买页。买成功（含「已付款、稍后到账」）会带 true 回来 → 重拉余额。

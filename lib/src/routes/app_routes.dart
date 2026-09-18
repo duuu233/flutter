@@ -214,9 +214,11 @@ class AppRoutes {
         // 万一哪天有人从别处 push 这个路由（深链、旧代码），也不该把整块功能露出来。
         // 形态与 bleDebug 那条一致——给一个**能返回的空页**，而不是 return null
         //（无 onUnknownRoute 时那会直接抛「未知路由」异常）。
+        // `arguments == true` 表示「进去就把确认购买页推上来」，来路是 AI 聊天页的
+        // 「星币不足 → 去充值」（2026-09-18 口径「跳到套餐确认」）。
         builder = StarPayType.moduleHiddenOnThisApp
             ? (_) => const Scaffold(body: SizedBox.shrink())
-            : (_) => const StarCoinPage();
+            : (_) => StarCoinPage(autoOpenPurchase: settings.arguments == true);
         break;
       case AppRoutes.figmaCastManagement:
         builder = (_) => CastManagementFigmaPage(state: state);

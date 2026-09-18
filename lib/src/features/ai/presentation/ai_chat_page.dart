@@ -1972,7 +1972,9 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     if (go != true || !canRecharge || !mounted) {
       return;
     }
-    await Navigator.of(context).pushNamed(AppRoutes.starCoin);
+    // `true` = 进去就把确认购买页推上来（2026-09-18 口径「跳到套餐确认」，
+    // 套餐列表在星币管理页拉，所以由它来推，返回栈里也就留着那一页可以换档）。
+    await Navigator.of(context).pushNamed(AppRoutes.starCoin, arguments: true);
     if (!mounted) {
       return;
     }
