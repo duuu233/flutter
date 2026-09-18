@@ -16,6 +16,7 @@
 | 查看当前代码架构 | [`architecture/PROJECT_STRUCTURE.md`](architecture/PROJECT_STRUCTURE.md) |
 | 查看接口与服务 | [`architecture/API_INTEGRATION.md`](architecture/API_INTEGRATION.md) |
 | 查看 App/小程序差异 | [`integration/APP_VS_MINIPROGRAM.md`](integration/APP_VS_MINIPROGRAM.md) |
+| 评估 Wi-Fi 版相框接入 / BluFi 配网 | [`integration/WIFI_FRAME_BLUFI_ANALYSIS.md`](integration/WIFI_FRAME_BLUFI_ANALYSIS.md) |
 | 打包发版 | [`runbooks/BUILD_RELEASE.md`](runbooks/BUILD_RELEASE.md) |
 | iOS BLE 性能排查 | [`runbooks/IOS_BLE_PERFORMANCE.md`](runbooks/IOS_BLE_PERFORMANCE.md) |
 | PayPal 回跳中转页部署与联调 | [`runbooks/PAYPAL_REDIRECT.md`](runbooks/PAYPAL_REDIRECT.md) |
@@ -38,6 +39,7 @@
 | --- | --- |
 | [`integration/APP_VS_MINIPROGRAM.md`](integration/APP_VS_MINIPROGRAM.md) | App 与微信小程序当前能力矩阵和有意差异 |
 | [`integration/WECHAT_LOGIN_SETUP.md`](integration/WECHAT_LOGIN_SETUP.md) | 微信开放平台移动应用登录与原生配置 |
+| [`integration/WIFI_FRAME_BLUFI_ANALYSIS.md`](integration/WIFI_FRAME_BLUFI_ANALYSIS.md) | **Analysis（决策依据，非当前实现）**：`docs/相框v2.0.0/` 四份 PDF 的解读——Wi-Fi 版相框的 MQTT 指令集、BluFi 蓝牙配网能否并进现有搜索、实现路线与风险清单、待硬件/服务端确认的 12 个问题 |
 
 ### Runbooks
 
@@ -190,6 +192,7 @@ codegraph sync .
 | 图片槽位语义 | `architecture/IMAGE_SLOT_INDEX.md` |
 | 缓存、临时文件、退出清理或租约 | `architecture/RESOURCE_LIFECYCLE.md` |
 | App/小程序能力差异 | `integration/APP_VS_MINIPROGRAM.md` |
+| Wi-Fi 版相框 / BluFi 配网可行性 | `integration/WIFI_FRAME_BLUFI_ANALYSIS.md` |
 | 微信平台配置 | `integration/WECHAT_LOGIN_SETUP.md` |
 | 构建、签名、发版步骤 | `runbooks/BUILD_RELEASE.md` |
 | BLE 性能入口、参数或判据 | `runbooks/IOS_BLE_PERFORMANCE.md` |
