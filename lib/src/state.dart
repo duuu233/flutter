@@ -212,7 +212,9 @@ class DeviceItem {
   ///
   /// **默认 0**，未下发 / 非法值一律当方形——绝大多数产品是方形，这条路必须和
   /// 加这个字段之前**完全一样**。
-  final int shapeType;
+  ///
+  /// 可变：列表接口与详情接口都可能带它，详情带了就以详情为准（见 [refreshDeviceDetail]）。
+  int shapeType;
 
   /// 是不是圆屏产品。
   ///
@@ -229,7 +231,11 @@ class DeviceItem {
   ///
   /// 横向构图的旋转角是另一个字段（`rotationDegree`），当前 App 侧仍写死 270°
   /// （见 `cast_preview_page.dart` 的 `_kLandscapeExportRotateDeg`），与小程序尚未对齐。
-  final int verticalRotation;
+  ///
+  /// 可变：这条来自**产品配置**，列表接口（`ClientUserProductApiOut`）不一定下发；
+  /// 详情接口下发了就补上（见 [refreshDeviceDetail]）。原来是 final，详情里带回来的角度
+  /// 只能被丢掉——「后台配了 180、设备上仍旧是倒的」就是这么来的。
+  int verticalRotation;
 
   // ── 连接后由真机 0x01(readDeviceInfo) 回填的实时内存（对齐小程序 applyConnectedDevice
   //    的 usedMemory/totalMemory）。真机容量最多 95 槽，超出 int 位掩码(最多 32)的表示范围，
@@ -2394,6 +2400,19 @@ class PhotoFrameState extends ChangeNotifier {
         if (detail.firmwareVersion.isNotEmpty) {
           device.firmwareVersion = detail.firmwareVersion;
         }
+        // 产品配置字段（竖向导出角 / 屏幕形状）：列表接口不一定下发，详情下发了就补上。
+        // ⚠️ **只在详情真的带了这个键时才覆盖**——0 是合法角度（明确不旋转），
+        //    键缺失时照样写 0 会把列表已经拿到的角度抹掉，两者必须分清。
+        if (_hasAnyKey(row, const <String>[
+          'verticalRotation',
+          'verticalRotationDegree',
+          'verticalrotation',
+        ])) {
+          device.verticalRotation = detail.verticalRotation;
+        }
+        if (_hasAnyKey(row, const <String>['shapeType'])) {
+          device.shapeType = detail.shapeType;
+        }
         notifyListeners();
         return device;
       }
@@ -3193,6 +3212,11 @@ class PhotoFrameState extends ChangeNotifier {
   /// `isUpdate` / `newVersionNo` / `downloadPath` / `compulsory` / `isClearImg` / `productId`。
   /// 注意：两个接口都**不下发**固件版本号与固件包大小（`productVersionNo`/`firmwareSize` 不存在），
   /// 固件版本只能连接后由 BLE 0x01 读取。
+  /// 这几个键里有没有任何一个**出现在**返回体里（值可以是 0 / null）。
+  /// 用来区分「接口没给这个字段」和「接口给了 0」——后者是合法角度。
+  static bool _hasAnyKey(Map<String, dynamic> row, List<String> keys) =>
+      keys.any(row.containsKey);
+
   DeviceItem _deviceFromJson(Map<String, dynamic> data) {
     final id = (data['userProductId'] ?? _nextId('dev')).toString();
     final name = (data['productName'] ?? '相框').toString();

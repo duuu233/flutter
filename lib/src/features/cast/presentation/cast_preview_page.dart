@@ -493,6 +493,18 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     // 接回上一轮构图：投屏失败点「重新投屏」跳回本页时，底图仍是原图（_paths 全程不改写），
     // 构图还是用户上次构好的那个，不用重新拖一遍（见 [_CarriedEdits]）。
     _states.addAll(_CarriedEdits.take(_paths));
+    // 📌 排查日志（2026-09-18）：「手机预览是正的、投到设备上反了」先看这一行。
+    //    竖向导出角**只有一个来源**——后端设备字段 `verticalRotation`（缺省 0 = 不转，
+    //    2026-08-04 口径）。它是 0 而设备屏又是倒装的，成品图就不会被转正，
+    //    预览（不显示导出角）看着永远是对的，只有设备上能看出来。
+    //    形状一并打出来：它只影响预览裁框，导出一个字都不受它影响（2026-09-17）。
+    debugPrint(
+      '[预览][设备] ${widget.device.name} 后端屏=${widget.device.screenWidth}x'
+      '${widget.device.screenHeight} 出图画布=${_deviceSize.width}x${_deviceSize.height} '
+      '形状=${widget.device.shapeType}(${widget.device.roundScreen ? '圆' : '方'}) '
+      '竖向导出角=${_verticalExportRotateDeg(widget.device)}° '
+      '横向导出角=$_kLandscapeExportRotateDeg°',
+    );
     // 进预览页即预热 seekink 抖动接口 token（对齐小程序 preview.js onLoad 的 prefetchAuthToken）：
     // 用户构图的这几秒先把 token 取回会话缓存，点「开始投屏」出帧零等待；失败静默。
     DitheringApi.prefetchAuthToken();
@@ -1274,6 +1286,13 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         // 当前图优先取活的 _edit（最新手势）；其余取快照
         final state = (i == _activeIndex ? _edit : _states[i]);
         final edited = state != null && state.src == src && !state.pristine;
+        // 本张实际用的导出角：编辑过的按它自己的取景方向，未编辑的恒走竖向角。
+        // 两条链路必须同角，少转这一下就是「编辑过的正着、没编辑的倒着」。
+        // `state != null` 写在前面是给分析器的：`edited` 里已经含这个判断，但用一个
+        // 布尔局部变量去提升可空局部变量属于流分析的边角，显式判一次最省事。
+        final exportDegUsed = _exportRotateDegOf(
+          state != null && edited ? state.orientation : _Orientation.portrait,
+        );
         String? out;
         // 📌 排查日志（2026-09-03，对齐小程序 preview.js）：本张走哪条分支——三条分支的出图
         //    保障完全不同，出问题时不知道走了哪条就没法往下查。
@@ -1338,7 +1357,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         final outcome = fellBack ? '回退原图' : '已出图';
         final line =
             '[预览][出图] 第 ${i + 1}/${_paths.length} 张 分支=$branch '
-            '结果=$outcome 设备=${dev.width}x${dev.height} '
+            '结果=$outcome 导出角=${exportDegUsed.toStringAsFixed(0)}° '
+            '设备=${dev.width}x${dev.height} '
             '设备需=$devFrame 字节 file=${out ?? src}';
         debugPrint(
           fellBack
