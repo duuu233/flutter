@@ -16,6 +16,7 @@ import 'device/serial_match.dart';
 import 'features/ai/ai_last_session.dart';
 import 'features/ai/ai_token.dart';
 import 'features/cast/cast_upload_limit.dart';
+import 'features/cast/device_rotation.dart';
 import 'network/api_exception.dart';
 import 'network/api_rows.dart';
 import 'network/api_session.dart';
@@ -156,7 +157,8 @@ class DeviceItem {
     required this.carouselEnabled,
     this.screenWidth = 0,
     this.screenHeight = 0,
-    this.verticalRotation = 0,
+    this.verticalRotation = DeviceRotation.verticalFallbackDeg,
+    this.rotationDegree = DeviceRotation.landscapeFallbackDeg,
     this.isUpdate = 0,
     this.newVersionNo = '',
     this.downloadPath = '',
@@ -212,13 +214,23 @@ class DeviceItem {
   /// **未下发 / 非法值一律 0，即不旋转**——这是产品口径，不要改成 180 之类的「历史默认角」。
   /// ⚠️ 0 是合法值（设备明确要求不旋转），判空只能判 null/空串，绝不能用真假值。
   ///
-  /// 横向构图的旋转角是另一个字段（`rotationDegree`），当前 App 侧仍写死 270°
-  /// （见 `cast_preview_page.dart` 的 `_kLandscapeExportRotateDeg`），与小程序尚未对齐。
+  /// 横向构图的旋转角是**另一个字段** [rotationDegree]，两者互不通用。
   ///
   /// 可变：这条来自**产品配置**，列表接口（`ClientUserProductApiOut`）不一定下发；
   /// 详情接口下发了就补上（见 [refreshDeviceDetail]）。原来是 final，详情里带回来的角度
   /// 只能被丢掉——「后台配了 180、设备上仍旧是倒的」就是这么来的。
   int verticalRotation;
+
+  /// **横向**构图导出时整幅画面的顺时针旋转角（度）。后端设备字段 `rotationDegree`
+  /// （后台「横向旋转度数」），2026-09-18 接入。
+  ///
+  /// **未下发 / 非法值回退 270°**（历史行为：90° 横转竖 + 180° 真机倒置校正）——
+  /// ⚠️ 与竖向那条的缺省不一样，竖向缺省是 0，别把两个缺省搞混。
+  ///
+  /// 在这之前 App 把横向角**写死成 270°**，后台给这个产品配的是 **90°**，
+  /// 于是两端差了整整 180°：小程序投出来是正的，App 投出来是倒的。
+  /// 口径与小程序 `utils/device-rotation.js` 同源，见 [DeviceRotation]。
+  int rotationDegree;
 
   // ── 连接后由真机 0x01(readDeviceInfo) 回填的实时内存（对齐小程序 applyConnectedDevice
   //    的 usedMemory/totalMemory）。真机容量最多 95 槽，超出 int 位掩码(最多 32)的表示范围，
@@ -2383,15 +2395,14 @@ class PhotoFrameState extends ChangeNotifier {
         if (detail.firmwareVersion.isNotEmpty) {
           device.firmwareVersion = detail.firmwareVersion;
         }
-        // 产品配置字段（竖向导出角）：列表接口不一定下发，详情下发了就补上。
+        // 产品配置字段（两个导出角）：列表接口不一定下发，详情下发了就补上。
         // ⚠️ **只在详情真的带了这个键时才覆盖**——0 是合法角度（明确不旋转），
-        //    键缺失时照样写 0 会把列表已经拿到的角度抹掉，两者必须分清。
-        if (_hasAnyKey(row, const <String>[
-          'verticalRotation',
-          'verticalRotationDegree',
-          'verticalrotation',
-        ])) {
+        //    键缺失时照样写缺省值会把列表已经拿到的角度抹掉，两者必须分清。
+        if (DeviceRotation.hasVerticalKey(row)) {
           device.verticalRotation = detail.verticalRotation;
+        }
+        if (DeviceRotation.hasLandscapeKey(row)) {
+          device.rotationDegree = detail.rotationDegree;
         }
         notifyListeners();
         return device;
@@ -3191,11 +3202,6 @@ class PhotoFrameState extends ChangeNotifier {
   /// `isUpdate` / `newVersionNo` / `downloadPath` / `compulsory` / `isClearImg` / `productId`。
   /// 注意：两个接口都**不下发**固件版本号与固件包大小（`productVersionNo`/`firmwareSize` 不存在），
   /// 固件版本只能连接后由 BLE 0x01 读取。
-  /// 这几个键里有没有任何一个**出现在**返回体里（值可以是 0 / null）。
-  /// 用来区分「接口没给这个字段」和「接口给了 0」——后者是合法角度。
-  static bool _hasAnyKey(Map<String, dynamic> row, List<String> keys) =>
-      keys.any(row.containsKey);
-
   DeviceItem _deviceFromJson(Map<String, dynamic> data) {
     final id = (data['userProductId'] ?? _nextId('dev')).toString();
     final name = (data['productName'] ?? '相框').toString();
@@ -3218,14 +3224,11 @@ class PhotoFrameState extends ChangeNotifier {
       // 原始宽高另存一份：屏型是「归一化后的枚举」，未下发时会回落 589，不能拿来展示分辨率。
       screenWidth: _asInt(data['width']),
       screenHeight: _asInt(data['height']),
-      // 竖向导出旋转角（2026-08-04 新增字段）。_asInt 对缺失/非法值返回 0，
-      // 正好等于产品要求的「没有这个参数就不旋转」，不需要额外兜底。
-      // 兼容名只是大小写/后缀差异，后端定稿后可删。
-      verticalRotation: _asInt(
-        data['verticalRotation'] ??
-            data['verticalRotationDegree'] ??
-            data['verticalrotation'],
-      ),
+      // 两个导出角都走 [DeviceRotation]，与小程序 utils/device-rotation.js 同口径：
+      // 竖向缺省 0（不旋转），横向缺省 270（历史行为）。⚠️ 不能改用 _asInt——
+      // 它对缺失返回 0，横向那条会把「没下发」当成「不旋转」，正好丢掉历史兜底角。
+      verticalRotation: DeviceRotation.verticalDegreeFrom(data),
+      rotationDegree: DeviceRotation.landscapeDegreeFrom(data),
       batteryLevel: 0,
       charging: false,
       connected: false,

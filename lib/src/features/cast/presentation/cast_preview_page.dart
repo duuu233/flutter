@@ -41,8 +41,8 @@ import 'casting_progress_page.dart';
 /// ## 导出铁律（改这里前先读完，错了不报错、设备直接花屏）
 /// 两种取景方向**恒导出竖向设备物理分辨率**（480×720 / 680×960）：
 /// - 竖向：把框内所见整幅转设备字段 `verticalRotation`（2026-08-04 新增，**缺省 0 = 不转**）后画进画布；
-/// - 横向：把框内所见整幅转 **[_kLandscapeExportRotateDeg] = 270°** 再画进**竖向**画布
-///   （90° 进竖向 + 180° 真机倒置校正，2026-07-20 结论）。
+/// - 横向：把框内所见整幅转设备字段 `rotationDegree`（2026-09-18 接入，**缺省 270°**）
+///   再画进**竖向**画布（270° = 90° 进竖向 + 180° 真机倒置校正，是缺省值不是定值）。
 ///
 /// 放大系数 `k` 只看**导出角是否对调轴向**：奇数直角（90/270，横向默认即属此类）时
 /// 取景框的「宽」落到画布的「高」→ `k = outH / frameW`；0/180 时 → `k = outW / frameW`。
@@ -194,7 +194,8 @@ class _BakedPreview {
   final bool landscape;
 
   /// 生成它时的导出角（度，顺时针）：展示时要按 `-exportDeg` 反向转回来。
-  /// 横向恒 270°；竖向取设备 `verticalRotation`（2026-08-04 起，缺省 0 = 不转）。
+  /// 横向取设备 `rotationDegree`（2026-09-18 起，缺省 270°）；
+  /// 竖向取设备 `verticalRotation`（2026-08-04 起，缺省 0 = 不转）。
   final double exportDeg;
 }
 
@@ -236,12 +237,15 @@ const double _kMaxZoomFactor = 8;
 /// 不取 0 是因为 scale=0 之后任何倍率手势都乘不回来，图片会永久消失、手势再也救不回。
 const double _kMinZoomFactor = 0.02;
 
-/// **横向**导出时整幅构图的旋转量（度，顺时针）：90°（横转竖）+ 180°（真机倒置校正）。
-/// 横向的**唯一真源**，别在别处另写角度。
+/// **横向**导出时整幅构图的旋转量：取设备字段 `rotationDegree`（[DeviceItem.rotationDegree]），
+/// **未下发即回退 270°**（90° 横转竖 + 180° 真机倒置校正，2026-07-20 结论）。
 ///
-/// ⚠️ 小程序侧横向角取的是后端设备字段 `rotationDegree`（缺失才回退 270°），App 仍写死 270°，
-/// 两端在这一点上尚未对齐（属既有差异，不在 2026-08-04 竖向旋转这一轮的范围内）。
-const double _kLandscapeExportRotateDeg = 270;
+/// ⚠️ 2026-09-18 之前这里是**写死的 270°**，而小程序一直按后端字段走。后台把这个产品的
+/// 「横向旋转度数」配成 **90°** 之后，两端就差了整整 180°——小程序投出来是正的、
+/// App 投出来是倒的，正是「预览是对的、设备上反了」那条反馈。口径见 `DeviceRotation`
+/// （`lib/src/features/cast/device_rotation.dart`，与小程序 `utils/device-rotation.js` 同源）。
+double _landscapeExportRotateDeg(DeviceItem device) =>
+    device.rotationDegree.toDouble();
 
 /// **竖向**导出时整幅构图的旋转量：取设备字段 `verticalRotation`（[DeviceItem.verticalRotation]），
 /// 2026-08-04 新增；**未下发即 0 = 不旋转**（此前竖向从不旋转，行为等价）。
@@ -435,11 +439,11 @@ class _CastPreviewPageState extends State<CastPreviewPage>
 
   /// 指定取景方向下的**导出旋转角**（度，顺时针）。烘焙、展示反向旋转、缓存标记都必须走这一处：
   /// 分头取值就会出现「设备上正了、手机预览里倒了」。
-  ///   · 横向 → [_kLandscapeExportRotateDeg]（270°，App 侧仍写死）；
+  ///   · 横向 → 设备 `rotationDegree`（2026-09-18 接入，未下发即 270°）；
   ///   · 竖向 → 设备 `verticalRotation`（2026-08-04 新增，未下发即 0 = 不旋转）。
   double _exportRotateDegOf(_Orientation orientation) =>
       orientation == _Orientation.landscape
-      ? _kLandscapeExportRotateDeg
+      ? _landscapeExportRotateDeg(widget.device)
       : _verticalExportRotateDeg(widget.device);
 
   /// 指定取景方向下的可视区域宽高：竖向 = 设备物理分辨率；横向 = 宽高对调。
@@ -464,7 +468,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       '[预览][设备] ${widget.device.name} 后端屏=${widget.device.screenWidth}x'
       '${widget.device.screenHeight} 出图画布=${_deviceSize.width}x${_deviceSize.height} '
       '竖向导出角=${_verticalExportRotateDeg(widget.device)}° '
-      '横向导出角=$_kLandscapeExportRotateDeg°',
+      '横向导出角=${_landscapeExportRotateDeg(widget.device)}°',
     );
     // 进预览页即预热 seekink 抖动接口 token（对齐小程序 preview.js onLoad 的 prefetchAuthToken）：
     // 用户构图的这几秒先把 token 取回会话缓存，点「开始投屏」出帧零等待；失败静默。

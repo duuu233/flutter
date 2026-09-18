@@ -13,7 +13,8 @@ import 'package:image/image.dart' as img;
 ///
 /// **编辑后的出图不在这里**：2026-07-25 起预览页是常驻编辑层（竖/横取景 + 平移/缩放/旋转），
 /// 点「开始投屏」时由 `cast_preview_page.dart` 的 `_bake` 用 `ui.Canvas` 按与小程序 canvas
-/// **完全相同的绘制顺序**合成（含横向 270° 铁律），再调 [encodeRgbaToJpeg] 落文件。
+/// **完全相同的绘制顺序**合成（含横向导出角这条铁律——角度取设备 `rotationDegree`，
+/// 缺省 270°，2026-09-18 起不再写死），再调 [encodeRgbaToJpeg] 落文件。
 /// 交互式裁剪器（image_cropper）与预览态旋转烘焙（旧 `rotate`）随该重构一并下线。
 ///
 /// ## 为什么必须导出 JPEG
