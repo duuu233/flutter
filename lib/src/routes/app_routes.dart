@@ -26,6 +26,7 @@ import '../features/devices/presentation/devices_page.dart';
 import '../features/gallery/official/official_gallery_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
 import '../features/star/presentation/star_coin_page.dart';
+import '../features/star/star_coin_api.dart';
 import '../features/guide/presentation/guide_page.dart';
 import '../features/settings/presentation/ai_service_agreement_page.dart';
 import '../features/settings/presentation/language_settings_page.dart';
@@ -208,7 +209,14 @@ class AppRoutes {
         builder = (_) => OfficialGalleryPage(state: state);
         break;
       case AppRoutes.starCoin:
-        builder = (_) => const StarCoinPage();
+        // iOS 先整体屏蔽星币管理（2026-09-18 用户口径，开关见
+        // [StarPayType.moduleHiddenOnThisApp]）。两个入口都已经不画了，这里是兜底：
+        // 万一哪天有人从别处 push 这个路由（深链、旧代码），也不该把整块功能露出来。
+        // 形态与 bleDebug 那条一致——给一个**能返回的空页**，而不是 return null
+        //（无 onUnknownRoute 时那会直接抛「未知路由」异常）。
+        builder = StarPayType.moduleHiddenOnThisApp
+            ? (_) => const Scaffold(body: SizedBox.shrink())
+            : (_) => const StarCoinPage();
         break;
       case AppRoutes.figmaCastManagement:
         builder = (_) => CastManagementFigmaPage(state: state);

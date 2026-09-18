@@ -8,6 +8,7 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
+import '../../star/star_coin_api.dart';
 import '../ai_i18n.dart';
 import '../ai_last_session.dart';
 import '../ai_token.dart';
@@ -520,6 +521,12 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
   /// 回来时 [_refreshTokenBalance] 重取余额，数字自动对上。
   /// 🔶 与小程序有意不同：小程序那颗指向「去购买」，App 的 IAP 未接，星币页是只读的。
   Widget _buildTokenPill() {
+    // iOS 先整体屏蔽星币管理（2026-09-18 用户口径，开关见
+    // [StarPayType.moduleHiddenOnThisApp]）：**余额照常显示**——那是 AI 要花多少的信息，
+    // 藏了反而让人不知道还剩多少；只是这颗不再是进星币管理的入口，点不动、也不画 `>`。
+    if (StarPayType.moduleHiddenOnThisApp) {
+      return _buildTokenPillBody();
+    }
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () async {
@@ -570,12 +577,16 @@ class _AiSessionsPageState extends State<AiSessionsPage> {
               height: 1,
             ),
           ),
-          const SizedBox(width: 2),
-          const Icon(
-            Icons.chevron_right_rounded,
-            size: 15,
-            color: Color(0xFF9A948C),
-          ),
+          // `>` 是「可以点进去」的暗示。iOS 屏蔽星币管理后这颗点不动，
+          // 箭头得跟着去掉，否则就是画一个点了没反应的可点感。
+          if (!StarPayType.moduleHiddenOnThisApp) ...<Widget>[
+            const SizedBox(width: 2),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 15,
+              color: Color(0xFF9A948C),
+            ),
+          ],
         ],
       ),
     );

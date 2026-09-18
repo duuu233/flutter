@@ -1,6 +1,7 @@
 import 'dart:io' show Platform;
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugPrint, defaultTargetPlatform;
 
 import '../../network/api_exception.dart';
 import '../../network/api_session.dart';
@@ -341,6 +342,23 @@ class StarPayType {
   /// 这一端的通道**是否真的能付**。iOS 的 IAP 尚未接入 → false，
   /// 页面据此不给购买入口（付不了就别建单，见 [StarCoinApi.createOrder]）。
   static bool get supportedOnThisApp => Platform.isAndroid;
+
+  /// **整块星币模块在这一端是否藏起来**（2026-09-18 用户口径：iOS 先屏蔽星币管理与入口）。
+  ///
+  /// 与 [supportedOnThisApp] 不是一回事，别混：
+  /// - [supportedOnThisApp] 管「能不能买」—— 为 false 时页面照常打开，只是买不了
+  ///   （2026-08-27 的口径：iOS 至少看得到价目表）；
+  /// - 这一条管「**整块功能露不露面**」—— 为 true 时入口不画、路由也不给，
+  ///   命中它就根本走不到上面那条。
+  ///
+  /// 生效处**只有三个**，改这里即可全局开关：
+  /// 「我的」页的星币管理行、AI 会话页余额胶囊的点击、路由表的 `AppRoutes.starCoin`。
+  ///
+  /// ⚠️ 用 `defaultTargetPlatform` 而不是 `Platform.isIOS`：这是**界面**判定，
+  /// widget 测试要能用 `debugDefaultTargetPlatformOverride` 覆盖它。上面
+  /// [forCurrentPlatform] 用 dart:io 是因为它算的是发给服务端的 payType，与界面无关。
+  static bool get moduleHiddenOnThisApp =>
+      defaultTargetPlatform == TargetPlatform.iOS;
 }
 
 /// 套餐（`ClientGoodsApiOut`）。

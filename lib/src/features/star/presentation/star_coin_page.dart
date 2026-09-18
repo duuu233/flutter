@@ -22,6 +22,13 @@ import 'star_purchase_page.dart';
 /// 这些都不需要通道；付不付得了是确认页那一步的事（iOS 在确认页不画支付方式、
 /// 按钮置灰并说明原因，见 [StarPurchasePage]）。这样 iOS 用户至少看得到价目表，
 /// 而不是一句「去小程序买」把整块内容都藏掉。
+///
+/// ## ⚠️ 2026-09-18 起 iOS 根本进不到这一页
+///
+/// 用户口径：**iOS 先把星币管理整块屏蔽**（入口不画、路由也不给，
+/// 开关见 [StarPayType.moduleHiddenOnThisApp]）。上面那段「让 iOS 至少看得到价目表」
+/// 因此在 iOS 上不再生效——它描述的是安卓/以后 iOS 解禁时的形态，**留着是为了说明
+/// 这一页本身的设计**，别拿它当「iOS 应该能看到」的依据把屏蔽去掉。
 class StarCoinPage extends StatefulWidget {
   const StarCoinPage({super.key});
 

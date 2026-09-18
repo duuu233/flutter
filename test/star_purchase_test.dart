@@ -1,5 +1,7 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:BoltStar/src/features/star/star_coin_api.dart';
@@ -489,6 +491,23 @@ void main() {
       expect(package.tokens, 200);
       expect(package.gift, 50);
       expect(package.totalTokens, 250);
+    });
+  });
+
+  // 2026-09-18 用户口径：iOS 先把整块星币管理藏掉（入口 + 模块）。
+  //
+  // ⚠️ 与 `supportedOnThisApp` 是**两个**开关，别合并：那条说的是「付不付得了」
+  // （2026-08-27：iOS 付不了但页面照开，至少看得到价目表），这条说的是「露不露面」。
+  // 合成一个的话，将来 IAP 接好了一改，会连「藏起来」一起解除。
+  group('iOS 整体屏蔽星币模块', () {
+    tearDown(() => debugDefaultTargetPlatformOverride = null);
+
+    test('iOS 藏、安卓照旧', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      expect(StarPayType.moduleHiddenOnThisApp, isTrue);
+
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      expect(StarPayType.moduleHiddenOnThisApp, isFalse);
     });
   });
 }

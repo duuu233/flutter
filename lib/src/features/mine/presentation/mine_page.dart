@@ -86,6 +86,11 @@ class _MinePageState extends State<MinePage> with RouteAware {
     // 每次进/回本页都重查一次（同小程序 onShow 口径）：余额会被 AI 生图消耗掉，
     // 缓存住第一次的数字会让用户以为星币没扣。只在 availableToken 缺失时才走到这里，
     // 所以正常后端下这条请求根本不会发出。
+    //
+    // iOS 屏蔽星币管理后这一行压根不画，这个兜底请求也就没有意义了，顺手省掉。
+    if (StarPayType.moduleHiddenOnThisApp) {
+      return;
+    }
     if (!mounted || widget.state.currentUser.availableToken != null) {
       return;
     }
@@ -232,27 +237,35 @@ class _MinePageState extends State<MinePage> with RouteAware {
                             const SizedBox(height: 9),
                             // 与小程序 `pages/mine/mine.wxml` 的 `.service-list` 逐行对齐：
                             // **星币管理 → 操作指南 → 设置**，三行不多不少。
+                            // ⚠️ 2026-09-18 起 **iOS 只有后两行**：星币管理整块先屏蔽。
                             // ⚠️ 「官方图库」2026-08-19 已挪到底栏第三格、「我的收藏」小程序
                             // 2026-08-12 起常驻在图库页分类条右端 —— 这两行都**不要**在这里
                             // 加回来：两个入口指同一个页面只会让人犹豫点哪个。
-                            Padding(
-                              padding: _inset,
-                              child: _ServiceRow(
-                                iconAsset: 'assets/images/mine-icon-token.png',
-                                fallbackIcon: Icons.toll_outlined,
-                                title: AppL10n.of(context).starCoinTitle,
-                                // 右侧余额（小程序 `.service-value`「剩余 N 星币」）。
-                                value: AppL10n.of(
-                                  context,
-                                ).mineStarBalanceText(_starBalance),
-                                onTap: () {
-                                  Navigator.of(
+                            // iOS 先整体屏蔽星币管理（2026-09-18 用户口径），
+                            // 开关见 [StarPayType.moduleHiddenOnThisApp]。
+                            // 连同下面那 13 的间距一起不画 —— 只藏行不藏间距，
+                            // 「操作指南」上面会多出一段空当。
+                            if (!StarPayType.moduleHiddenOnThisApp) ...<Widget>[
+                              Padding(
+                                padding: _inset,
+                                child: _ServiceRow(
+                                  iconAsset:
+                                      'assets/images/mine-icon-token.png',
+                                  fallbackIcon: Icons.toll_outlined,
+                                  title: AppL10n.of(context).starCoinTitle,
+                                  // 右侧余额（小程序 `.service-value`「剩余 N 星币」）。
+                                  value: AppL10n.of(
                                     context,
-                                  ).pushNamed<void>(AppRoutes.starCoin);
-                                },
+                                  ).mineStarBalanceText(_starBalance),
+                                  onTap: () {
+                                    Navigator.of(
+                                      context,
+                                    ).pushNamed<void>(AppRoutes.starCoin);
+                                  },
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 13),
+                              const SizedBox(height: 13),
+                            ],
                             Padding(
                               padding: _inset,
                               child: _ServiceRow(
