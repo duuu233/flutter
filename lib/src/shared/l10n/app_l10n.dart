@@ -1081,13 +1081,22 @@ class AppL10n {
   );
 
   /// 抠不到数字（后端换了文案 / 403 是别的原因）时的兜底正文。
-  /// 🔶 与小程序的差异：小程序这句带「去购买」引导，APP 侧还没有购买页（IAP 未接），
-  /// 所以只说明情况、不指路。
+  ///
+  /// 2026-09-18 起弹窗自己带「去充值」按钮（安卓；iOS 整块星币模块藏着，见
+  /// `StarPayType.moduleHiddenOnThisApp`），所以正文只说明情况、不再由文字指路。
   String get aiTokenEmptyMessage => _pick(
     '当前星币余额不足，无法发起 AI 对话。',
     'Your star balance is too low to start an AI chat.',
     'スターコイン残高が不足しているため、AI との会話を開始できません。',
   );
+
+  /// 星币不足弹窗里那条余额条的左标签；右边的数字是 `AiToken.displayBalance` + [aiTokenUnit]。
+  /// 2026-09-18 需求：先让用户看见自己还剩多少，再决定要不要去充。
+  String get aiTokenBalanceLabel => _pick('当前余额', 'Balance', '現在の残高');
+
+  /// 星币不足弹窗右边那颗按钮：进星币管理页买套餐。
+  /// ⚠️ iOS 上整块星币模块是藏起来的（`StarPayType.moduleHiddenOnThisApp`），那一端不画这颗。
+  String get aiTokenGoRecharge => _pick('去充值', 'Top up', 'チャージする');
   String get aiBannedBanner => _pick(
     '账号已被限制，暂时无法使用 AI 对话',
     'Your account is restricted; AI chat is unavailable.',
