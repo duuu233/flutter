@@ -21,6 +21,7 @@ import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
+import '../../star/star_coin_api.dart';
 import '../ai_i18n.dart';
 import '../ai_image_compress.dart';
 import '../ai_last_session.dart';
@@ -716,11 +717,17 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   // ── 会话 ─────────────────────────────────────────────────
 
   /// 从后端取权威余额（扣费在服务端发生，端上只能重取）。静默失败：读不到就保持当前值。
+  ///
+  /// ⚠️ **读不到时不要把数字抹掉**。[AiToken.fetchBalance] 在网络抖动 / 后端 5xx 时返回 null
+  /// （它自己也不会污染 [AiToken.cachedBalance]）；原来这里照写不误，等于把一次网络故障写成
+  /// 「余额 --」。2026-09-18 起星币不足弹窗要把这个数字摆给用户看，抹掉的代价从「没人看见」
+  /// 变成「用户以为自己一分不剩」。
   Future<void> _loadTokenBalance() async {
     final value = await AiToken.fetchBalance();
-    if (mounted && value != _tokenBalance) {
-      setState(() => _tokenBalance = value);
+    if (value == null || !mounted || value == _tokenBalance) {
+      return;
     }
+    setState(() => _tokenBalance = value);
   }
 
   /// 建会话（`POST /session/new`）。**只有一个触发点**（2026-07-25 用户二次拍板）：
@@ -1910,8 +1917,15 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     if (!mounted) {
       return false;
     }
-    unawaited(_loadTokenBalance());
-    _showTokenShortDialog(verdict);
+    // ⚠️ 这里**等**余额回来再弹：2026-09-18 起弹窗要显示「当前余额」，不等的话
+    // 摆出来的是进页面那会儿的旧数字。用户刚点了发送、已经在等一次网络往返，
+    // 再多等这一次感觉不出来；读不到就用上一次的数字（见 [_loadTokenBalance]）。
+    await _loadTokenBalance();
+    if (!mounted) {
+      return false;
+    }
+    // 弹窗不阻塞这条闸：它的返回值只决定要不要跳充值页，与「这次发不发得出去」无关。
+    unawaited(_showTokenShortDialog(verdict));
     return false;
   }
 
@@ -1923,9 +1937,17 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
   /// 后端原话（把 token 换成星币）—— 403 也可能是余额之外的别的理由，
   /// 那时硬套「星币不足」反而是错的。
   ///
-  /// 🔶 与小程序的差异：小程序的确认键是「去购买」，直达星币管理页；**APP 侧还没有购买页**
-  /// （支付体系目前只有小程序端有），所以这里只有一颗「知道了」。IAP 接上后补跳转即可。
-  void _showTokenShortDialog(AiDialogueVerdict verdict) {
+  /// 2026-09-18 需求：弹窗里**先让用户看见自己还剩多少**（正文下面那条余额带），
+  /// 「知道了」右边再给一颗「去充值」直达星币管理页——原来只有一句「购买后即可继续」，
+  /// 用户还得自己退出去找入口。
+  ///
+  /// ⚠️ **iOS 不画「去充值」**：那一端整块星币模块是藏起来的
+  /// （[StarPayType.moduleHiddenOnThisApp]，2026-09-18 用户口径），路由都只返回兜底空页，
+  /// 给了按钮点过去是一片空白。所以 iOS 仍旧只有一颗「知道了」。
+  ///
+  /// 🔶 与小程序的差异：小程序那颗叫「去充值」也直达星币管理页，两端一致；
+  /// 差别只在小程序不分平台（微信虚拟支付），App 这边分安卓 / iOS。
+  Future<void> _showTokenShortDialog(AiDialogueVerdict verdict) async {
     final l10n = AppL10n.of(context);
     final requiredText = verdict.requiredText;
     final fallback = verdict.message.replaceAll(
@@ -1935,13 +1957,61 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     final message = requiredText.isNotEmpty
         ? l10n.aiTokenShortMessage(requiredText)
         : (fallback.isNotEmpty ? fallback : l10n.aiTokenEmptyMessage);
-    showAppConfirmDialog(
+    final canRecharge = !StarPayType.moduleHiddenOnThisApp;
+    final go = await showAppConfirmDialog(
       context,
       title: l10n.aiTokenEmptyTitle,
       message: message,
       icon: Icons.toll_rounded,
-      showCancel: false,
-      confirmLabel: l10n.otaKnow,
+      content: _buildTokenBalanceBar(l10n),
+      // 两颗按钮时左边是「知道了」（取消位）、右边是「去充值」（确认位），与小程序同序。
+      showCancel: canRecharge,
+      cancelLabel: l10n.otaKnow,
+      confirmLabel: canRecharge ? l10n.aiTokenGoRecharge : l10n.otaKnow,
+    );
+    if (go != true || !canRecharge || !mounted) {
+      return;
+    }
+    await Navigator.of(context).pushNamed(AppRoutes.starCoin);
+    if (!mounted) {
+      return;
+    }
+    // 充完回来余额就变了，重取一次——不然下一次弹窗显示的还是充值前那个数。
+    unawaited(_loadTokenBalance());
+  }
+
+  /// 弹窗正文下面那条「当前余额 N 星币」。
+  ///
+  /// 数字取自 [_tokenBalance]（弹窗弹出来之前刚等回来的那一次，见 [_guardAiDialogue]）。
+  /// 读不到时是 `--`：说不清楚就别编一个 0 出来——0 和「没读到」对用户是两件事。
+  Widget _buildTokenBalanceBar(AppL10n l10n) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFF6A20).withValues(alpha: 0.06),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const AiIcon('assets/images/ai-token-spark.png', size: 14),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              l10n.aiTokenBalanceLabel,
+              style: const TextStyle(color: Color(0xFF6F7782), fontSize: 12),
+            ),
+          ),
+          Text(
+            '${AiToken.displayBalance(_tokenBalance)} ${l10n.aiTokenUnit}',
+            key: const Key('ai-token-short-balance'),
+            style: const TextStyle(
+              color: Color(0xFFFF6A20),
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
