@@ -18,6 +18,8 @@
 | 查看 App/小程序差异 | [`integration/APP_VS_MINIPROGRAM.md`](integration/APP_VS_MINIPROGRAM.md) |
 | 评估 Wi-Fi 版相框接入 / BluFi 配网 | [`integration/WIFI_FRAME_BLUFI_ANALYSIS.md`](integration/WIFI_FRAME_BLUFI_ANALYSIS.md) |
 | Wi-Fi 版功能差异 / 详情页 / 搜索动线 / 上传页面 / TF 卡与 FPGA | [`integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md`](integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md) |
+| XT-IoT 平台侧的功能实现方案（外部） | [`integration/XT-IoT平台_App与IoT功能实现方案_v1.0.md`](integration/XT-IoT平台_App与IoT功能实现方案_v1.0.md) |
+| 上面那份方案的评审意见（删图链路等缺陷） | [`integration/XT-IoT平台_方案评审_协议与规格书对照_v1.0.md`](integration/XT-IoT平台_方案评审_协议与规格书对照_v1.0.md) |
 | 打包发版 | [`runbooks/BUILD_RELEASE.md`](runbooks/BUILD_RELEASE.md) |
 | iOS BLE 性能排查 | [`runbooks/IOS_BLE_PERFORMANCE.md`](runbooks/IOS_BLE_PERFORMANCE.md) |
 | PayPal 回跳中转页部署与联调 | [`runbooks/PAYPAL_REDIRECT.md`](runbooks/PAYPAL_REDIRECT.md) |
@@ -42,6 +44,8 @@
 | [`integration/WECHAT_LOGIN_SETUP.md`](integration/WECHAT_LOGIN_SETUP.md) | 微信开放平台移动应用登录与原生配置 |
 | [`integration/WIFI_FRAME_BLUFI_ANALYSIS.md`](integration/WIFI_FRAME_BLUFI_ANALYSIS.md) | **Analysis（决策依据，非当前实现）**：`docs/相框v2.0.0/` 四份 PDF 的解读——Wi-Fi 版相框的 MQTT 指令集、BluFi 蓝牙配网能否并进现有搜索、实现路线与风险清单、待硬件/服务端确认的 12 个问题 |
 | [`integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md`](integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md) | **Analysis（决策依据，非当前实现）**：Wi-Fi 版与现有蓝牙版的**功能差异矩阵**（投屏/轮播/删图/校时/连接五项换掉，工作模式/休眠/TF 卡/内置图/国家码五项新增）、**为什么详情页要新做一份**（数据源、动作通道、现有页 1000 行的坑），以及**搜索能不能合并**的三层结论（广播层可合、选中后必须分叉、已绑定设备本来就走后端列表）。以及 **§5 上传页面能否合并**（列表页可合、设备图直接用后端 `productImg`、投屏链路后半段必须分叉、**协议没有单张删除指令**只有 `clean_tf` 整类清空）。**§9 TF 卡播放与 FPGA 升级**（`play_tf` 是零参数开关、做不了文件管理；`fpga` 与 `ota` 报文逐字段相同、设备自己下载，但**没有进度上报**，现有「自己下包 + BLE 推送」的升级页要按无进度重做）。附 20 条新增待确认 |
+| [`integration/XT-IoT平台_App与IoT功能实现方案_v1.0.md`](integration/XT-IoT平台_App与IoT功能实现方案_v1.0.md) | **外部输入**：平台侧给出的「各功能如何通过协议实现」方案 v1.0（配网/绑定/投屏/轮播/删图/图源/休眠/OTA/影子/心跳）。**不是本仓实现事实**，评审意见见下一行 |
+| [`integration/XT-IoT平台_方案评审_协议与规格书对照_v1.0.md`](integration/XT-IoT平台_方案评审_协议与规格书对照_v1.0.md) | **Review（评审意见）**：把上面的方案 v1.0 与协议 V1.3.1、三份规格书逐条对照。重点是**删除图片链路不成立**（电子纸不刷屏就一直显示被删的图、TF 缓存与切图键能把它翻出来、`image_refresh` 清 TF 会连内置图一起清、定时通讯模式下最长 24h 才可达）；另有投屏**缺“转 bin”整步**、绑定/解绑未下发设备指令、状态码口径、`wifi_sleep` 字段自相矛盾等 14 条。附 18 条待确认与协议增补建议 |
 
 ### Runbooks
 
