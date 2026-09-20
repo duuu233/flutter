@@ -1,13 +1,20 @@
 # Wi-Fi 版相框接入（二）：功能差异矩阵 · 详情页 · 搜索动线 · 上传页面
 
+## 更新记录
+
+> 约定：每次改这份文档，都在下表**最上面加一行**——日期 + 一句主题 + 改动落在哪一节。
+
+| 日期 | 主题 | 落点 |
+| :--- | :--- | :--- |
+| 2026-09-20 | **TF 卡播放与 FPGA 升级**：`play_tf` 是零参数开关，App 不该做 TF 文件管理；`fpga` 协议上就是第二条 OTA（设备自己下载），但没有进度上报，升级页要按"无进度"重做 | 新增 §9；§0 结论速览第 5 条；修正 §2 里并不存在的 `ota_status`；待确认追加 28~32 |
+| 2026-09-19 | **上传页面能不能合并 · 单张删除协议支不支持**：「我的上传」列表页两类设备可共用，设备图直接读后端早已下发的 `productImg`；协议 18 条 action 里**没有单张删除**，只有 `clean_tf` 整类清空 | 新增 §5（原 §5~§7 顺延为 §6~§8）；待确认追加 23~27 |
+| 2026-09-19 | **一稿**：Wi-Fi 版与蓝牙版的功能差异矩阵、详情页为什么必须新做一份、搜索动线哪一层能合并 | §0~§4、§6~§8；待确认 13~22 |
+
 > 文档类型：Analysis（决策依据，不是当前实现事实）
-> 日期：2026-09-19
-> 承接：[`WIFI_FRAME_BLUFI_ANALYSIS.md`](WIFI_FRAME_BLUFI_ANALYSIS.md)（2026-09-18，BluFi 配网可行性）
+> 承接：[`WIFI_FRAME_BLUFI_ANALYSIS.md`](WIFI_FRAME_BLUFI_ANALYSIS.md)（2026-09-18，BluFi 配网可行性，含待确认 1~12）
 > 依据材料：`docs/相框v2.0.0/XT相框通讯协议_V1.3.1(1).pdf` + 三份产品规格说明书；
 > 本仓当前实现：`lib/src/device/ble/frame_protocol.dart`、`features/devices/presentation/device_details_page.dart`、
 > `features/cast/`、`features/gallery/presentation/gallery_page.dart`、`state.dart` 的 `refreshDevices`
-> 修订：2026-09-19 二稿，追加 §5「上传页面能不能合并 · 单张删除」；
-> 2026-09-20 三稿，追加 §9「TF 卡播放 · FPGA 升级」，并修正 §2 里 `ota_status` 这个**不存在的 action**
 > 适用：相册 App 与相册小程序（两端结论一致，差异在 §5）
 
 ## 0. 结论速览
