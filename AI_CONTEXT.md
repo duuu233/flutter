@@ -133,9 +133,13 @@ OpenHarmony/HAP is not integrated.
   3.44 with `objective_c 9.4.1`. The rollback is assigned to ltt (runbook §〇.7). The Android
   packaging machine was upgraded to 3.47.5 on 2026-09-21 only to build current `main` and must go
   back to 3.44.x after the rollback (downgrade first, then `pub get`). While on 3.47 the Gradle / AGP
-  / KGP "will soon be dropped" warnings and a first-build Windows
-  `Could not delete …flutter_tools\gradle\build\…\caches-jvm` stack (Kotlin daemon falls back to
-  non-daemon compilation) are harmless.
+  / KGP "will soon be dropped" warnings are harmless. The Windows
+  `Could not delete …flutter_tools\gradle\build\kotlin\compileKotlin\cacheable\caches-jvm` error is
+  a machine-side file lock (usually a leftover Kotlin compile daemon / Gradle daemon, sometimes the IDE
+  or antivirus) on the cache of Flutter's own Gradle plugin inside the SDK: the first time it was
+  survivable (Kotlin fell back to non-daemon compilation), the next build it failed
+  `:gradle:compileKotlin` outright (2026-09-21). Fix on the machine, not in the project: runbook
+  「一、Android」→「打包失败：Could not delete …caches-jvm」.
 - Android/iOS signing material, the WeChat AppSecret, and the iOS Universal Link are intentionally
   external to source control. The non-secret mobile AppID is fixed in source.
 

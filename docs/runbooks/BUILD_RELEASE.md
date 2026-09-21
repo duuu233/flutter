@@ -14,6 +14,7 @@
 
 | 日期 | 主题 | 落点 |
 | --- | --- | --- |
+| 2026-09-21 | Windows 打包报 `Could not delete …caches-jvm` 导致构建失败的处理办法 | 「一、Android」末尾新增小节 |
 | 2026-09-21 | 定下「不是必须就不动依赖和环境、Flutter 不升级」；9-18 的升级经核实不是必须，列出回退步骤（待 ltt 执行） | 新增 〇.6、〇.7 |
 
 ## 〇、打包前必须核对的微信配置
@@ -160,6 +161,31 @@ flutter build apk --debug ^
   （微信 OpenSDK / uCrop keep 规则）。
 - `--split-debug-info` 的符号表（build/symbols）要留存，崩溃堆栈还原用。
 - Google Play 自 **2026-08-31** 起新包必须 targetSdk 36 —— 当前 Flutter 3.41+ 默认 36，满足。
+
+### 打包失败：`Could not delete '…\flutter_tools\gradle\build\kotlin\compileKotlin\cacheable\caches-jvm'`
+
+报 `Execution failed for task ':gradle:compileKotlin'`，路径在 **Flutter SDK 目录里**（不在项目里，`flutter clean` 清不到）。
+原因是有进程占着 Flutter 自带 Gradle 插件的编译缓存：多半是上一次构建留下的 Kotlin 编译守护进程 / Gradle 守护进程，
+也可能是开着的 Android Studio、VS Code 或杀毒软件。第一次出现时 Kotlin 会换方式编译、构建还能成功，
+锁一直不放就会直接失败（2026-09-21 打包机两次都遇到过）。**这是打包机的问题，不要为它改项目配置。**
+
+处理（PowerShell，在项目根目录）：
+
+```powershell
+# 1. 关掉 Android Studio / VS Code 里打开的这个项目，然后停掉 Gradle 守护进程
+cd android; .\gradlew.bat --stop; cd ..
+# 2. 结束残留的 Kotlin 编译守护进程和 Gradle 守护进程（只结束这两类 java 进程）
+Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
+  Where-Object { $_.CommandLine -match 'KotlinCompileDaemon|GradleDaemon|GradleWorkerMain' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+# 3. 删掉 SDK 里的这份缓存（下次构建会自动重新生成）
+Remove-Item -Recurse -Force "<Flutter SDK 路径>\packages\flutter_tools\gradle\build"
+# 4. 重新打包
+```
+
+第 3 步还提示「文件正在使用」：打开「资源监视器」（`resmon`）→「CPU」→「关联的句柄」搜 `caches-jvm`，
+看是哪个进程占着再结束它；实在找不到就重启电脑再删。反复出现的话，把 Flutter SDK 目录、项目目录和
+`%USERPROFILE%\.gradle` 加进杀毒软件（Windows 安全中心）的排除项。
 
 ## 二、iOS（macOS + **Xcode 26+**，App Store 自 2026-04-28 起强制 iOS 26 SDK）
 
