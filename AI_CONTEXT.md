@@ -127,6 +127,16 @@ OpenHarmony/HAP is not integrated.
   `flutter pub get`. Do **not** relax the override just to make 3.44 resolve: pub would rewrite the
   shared lock downwards (objective_c 9.5.0 and friends) and the next commit would drag the iOS
   machine back.
+  Why the override exists at all (checked 2026-09-21): `objective_c` is only pulled in by
+  `path_provider_foundation 2.6.0` (`^9.2.1`), so without it pub would have picked the newest 9.x.
+  On 2026-09-18 that was **9.6.1, which broke every iOS/macOS build** — its build hook references
+  `Architecture.arm64e`, absent from every published `code_assets`, failing with
+  `Member not found: 'arm64e'` (dart-lang/native#3640). The exact pin to 9.6.0 was the workaround,
+  not a feature requirement. 9.6.1 has since been retracted (pub.dev latest = 9.6.0) and the fix
+  waits for a new `code_assets`; once a working 9.6.2+ is published the override can be dropped so
+  its fixes (autorelease-pool leaks, `NSInputStream` crash) come through. The same commit's iOS
+  15.0 deployment target matches Flutter 3.47's template (3.44 used 13.0);
+  `enable-swift-package-manager: false` is a choice (SwiftPM is on by default in both versions).
 - Expected Android build output on Flutter 3.47.x (a successful Windows release build after the
   upgrade, 2026-09-21), none of it blocking:
   - Three "Flutter support for your project's … version will soon be dropped" warnings: Gradle 8.14
