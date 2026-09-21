@@ -127,6 +127,20 @@ OpenHarmony/HAP is not integrated.
   `flutter pub get`. Do **not** relax the override just to make 3.44 resolve: pub would rewrite the
   shared lock downwards (objective_c 9.5.0 and friends) and the next commit would drag the iOS
   machine back.
+- Expected Android build output on Flutter 3.47.x (a successful Windows release build after the
+  upgrade, 2026-09-21), none of it blocking:
+  - Three "Flutter support for your project's … version will soon be dropped" warnings: Gradle 8.14
+    (wants ≥ 9.1.0), AGP 8.11.1 (≥ 9.0.1), KGP 2.2.20 (≥ 2.3.20). The current values sit exactly on
+    3.47.5's error floor (`DependencyVersionChecker`: error below 8.14 / 8.11.1 / 2.2.20), so builds
+    pass. Raising them (AGP 9 is a major step) is a separate, tested upgrade, not a drive-by edit.
+  - First build after `flutter upgrade` on Windows may print a long stack ending in
+    `Could not delete '…\flutter\packages\flutter_tools\gradle\build\kotlin\compileKotlin\cacheable\caches-jvm'`
+    plus `exception: warning: …` lines. That is the Kotlin daemon failing to clear the cache of
+    Flutter's own Gradle plugin (a file held by another Gradle/Kotlin daemon, the IDE, or antivirus);
+    the Kotlin plugin falls back to non-daemon compilation and the build succeeds. The
+    `exception: warning:` lines are just Flutter plugin compiler warnings. To silence it: close the
+    IDE, `android\gradlew --stop`, then delete that `flutter_tools\gradle\build` folder in the SDK
+    (regenerated on the next build).
 - Android/iOS signing material, the WeChat AppSecret, and the iOS Universal Link are intentionally
   external to source control. The non-secret mobile AppID is fixed in source.
 
