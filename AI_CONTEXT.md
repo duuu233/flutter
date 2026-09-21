@@ -116,7 +116,17 @@ OpenHarmony/HAP is not integrated.
 ### Environment status
 
 - The repository does not pin a human-readable Flutter release number with FVM or an equivalent
-  version manager: 「待确认」 which Flutter release all development machines must use.
+  version manager, **but the committed `pubspec.lock` now requires Flutter 3.47.x stable or newer**
+  (2026-09-21, found when `flutter pub get` failed on a 3.44 machine). Since `219ad59` (2026-09-18,
+  iOS build configuration) the lock resolves `meta 1.19.0` and `pubspec.yaml` has
+  `dependency_overrides: objective_c: 9.6.0`. That pin chains
+  `objective_c 9.6.0 → code_assets ^2.0.0 → hooks 2.2.0 → record_use ^1.0.0 → meta ^1.19.0`, while
+  Flutter 3.44.x's `flutter_test` hard-pins `meta 1.18.0` (3.47.x allows `^1.18.3`), so 3.44 fails
+  with "version solving failed … objective_c 9.6.0 is incompatible with flutter_test from sdk". Fix
+  on such a machine: `flutter upgrade` on the stable channel (3.47.5 at the time), then
+  `flutter pub get`. Do **not** relax the override just to make 3.44 resolve: pub would rewrite the
+  shared lock downwards (objective_c 9.5.0 and friends) and the next commit would drag the iOS
+  machine back.
 - Android/iOS signing material, the WeChat AppSecret, and the iOS Universal Link are intentionally
   external to source control. The non-secret mobile AppID is fixed in source.
 
