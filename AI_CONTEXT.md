@@ -433,6 +433,17 @@ message substrings.
 - `FrameBleClient.deleteImage` now throws on a non-zero `RESULT` with `FrameBleException.resultCode`
   attached. It previously parsed only the mask, so a firmware rejection read as success and the
   backend record was deleted anyway.
+- 2026-09-21 (mirrors the mini-program the same day): **"clear all" no longer waits blindly for the
+  `0x12` ack.** The firmware acks a delete-all only after erasing everything, so the ack budget is
+  per image (2 s each, 6 s–180 s); when that one ack arrives late or is lost the spinner used to run
+  the whole budget while the frame already showed its default image. `clearDeviceMemory` now goes
+  through `ClearWatch.deleteAll` (`device/ble/clear_watch.dart`): from 5 s after sending `0x12` it
+  reads `0x01` every 3 s (`readTransferInfo`, no `0x03`); an empty mask finishes as success and
+  `FrameBleClient.cancelPending(cmdDeleteImg)` drops the stale wait (otherwise it would hold `0x12`
+  until timeout and reject the next delete as "command pending"). A failed/busy read just waits for
+  the next tick; if the `0x12` ack itself comes back first, it wins and the old verify path is
+  unchanged. Legal per spec v1.5 §6.6.1: a busy device answers new commands with `0x0B`, and acks are
+  matched per command byte.
 
 ### 8. BLE/application lifecycle
 

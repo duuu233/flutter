@@ -1812,6 +1812,30 @@ class FrameBleClient {
     return completer.future;
   }
 
+  /// 不再等 [cmd] 的应答：收回 pending、停掉超时计时器，等待方收到 [FrameBleErrorKind.aborted]。
+  /// 没有这条在等时什么都不做，返回 false。
+  ///
+  /// 用在「已经从别处确认结果、不必再干等应答」的场合（2026-09-21 一键清空：0x12 删除全部要等设备
+  /// 全删完才回一次，预算按张数给到几十秒到 3 分钟；回读 0x01 已确认清空时就不再等它，见
+  /// clear_watch.dart）。不收回的话，这条 pending 会一直占着这个指令号直到超时，期间同指令的新请求
+  /// 都被拒成「正在等待应答」。对齐小程序 device-ble.js cancelPending。
+  bool cancelPending(int cmd) {
+    final pending = _pending.remove(cmd);
+    if (pending == null) {
+      return false;
+    }
+    pending.timer.cancel();
+    if (!pending.completer.isCompleted) {
+      pending.completer.completeError(
+        FrameBleException(
+          '指令 0x${cmd.toRadixString(16)} 已不再等待应答',
+          kind: FrameBleErrorKind.aborted,
+        ),
+      );
+    }
+    return true;
+  }
+
   // ── 业务指令 ──────────────────────────────────────────────
 
   /// 只读投屏关键路径需要的设备核心信息（CMD=0x01），不附带固件版本请求（性能优化 B2）：
