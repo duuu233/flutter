@@ -14,6 +14,7 @@
 
 | 日期 | 主题 | 落点 |
 | --- | --- | --- |
+| 2026-09-21 | 回退推上去之前，3.44 机器临时打安卓包的本地办法（不提交） | 〇.7 末尾 |
 | 2026-09-21 | Windows 打包报 `Could not delete …caches-jvm` 导致构建失败的处理办法 | 「一、Android」末尾新增小节 |
 | 2026-09-21 | 定下「不是必须就不动依赖和环境、Flutter 不升级」；9-18 的升级经核实不是必须，列出回退步骤（待 ltt 执行） | 新增 〇.6、〇.7 |
 
@@ -112,6 +113,12 @@ setx FLUTTER_STORAGE_BASE_URL "https://storage.flutter-io.cn"
 **其它机器（安卓打包机 2026-09-21 为了打当前 main 临时升到了 3.47.5）：** 等上面的回退推上去后，先
 `flutter downgrade` 回到 3.44.x，再拉代码、`flutter clean`、`flutter pub get`，确认 `pubspec.lock` 没有变化。
 **顺序不能反**：还在 3.47 的机器对回退后的 lock 跑 `pub get`，会把 `meta` 又升到 1.19 并改写 lock。
+
+**回退推上去之前，3.44 的机器临时打安卓包（本地改，不提交）：**
+1. 打开 `pubspec.yaml`，删掉 `dependency_overrides:` 和下一行 `objective_c: 9.6.0` 两行（`version:` 不动，否则 versionCode 会变）；
+2. `git checkout 219ad59~1 -- pubspec.lock`；
+3. `flutter clean; flutter pub get`，然后按下面「一、Android」的命令打包；
+4. 打完恢复：`git checkout -- pubspec.yaml pubspec.lock`（**这两处改动不要提交**，回退由 ltt 在 Mac 上做完 iOS 验证后提交）。
 
 ## 一、Android（Windows 打包机，keystore 路径由 `android/key.properties` 指定）
 
