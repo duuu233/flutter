@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'device/ble_controller.dart';
 import 'device/ble/ble_direct_connect_cache.dart';
+import 'device/ble/clear_watch.dart';
 // FrameBleException：删除链路要按**结果码**判断良性失败（0x05/0x07），不再匹配中文文案。
 import 'device/ble/device_ble.dart' show FrameBleException;
 import 'device/ble/frame_protocol.dart';
@@ -2769,11 +2770,26 @@ class PhotoFrameState extends ChangeNotifier {
         try {
           // deleteImage 应答等待已按张数放宽（每张 2s、下限 6s、上限 180s，见 device_ble.deleteImage），
           // 一次删几十张也不会一超 6s 就误判超时。返回删除后最新 IMG_MASK：仍有占用=没删干净。
-          final newMask = await trace.measure(
+          //
+          // 2026-09-21：等 0x12 应答的同时回读 0x01，设备一张不剩就算清完、不再干等应答
+          //（报障「设备都刷出默认图片了，还在转圈圈」：应答迟到/丢了时要转满上面那份按张数给的预算）。
+          // 见 [ClearWatch]；对齐小程序 detail.js confirmClearCopies。
+          final outcome = await trace.measure(
             'delete-images-0x12',
-            () => client.deleteImage(indexes),
+            () => ClearWatch.deleteAll(
+              deleteAll: () => client.deleteImage(indexes),
+              // 只发 0x01（readTransferInfo），不带 0x03：设备正忙着擦，少打扰一次
+              readMask: () async => (await client.readTransferInfo()).imgMask,
+              remainingOf: (mask) => FrameProtocol.maskToIndexes(mask).length,
+              cancelDelete: () =>
+                  client.cancelPending(FrameProtocol.cmdDeleteImg),
+              mark: (stage) => trace.mark(stage),
+            ),
           );
-          deviceCleared = FrameProtocol.maskToIndexes(newMask).isEmpty;
+          if (outcome.confirmedByPoll) {
+            trace.mark('delete-images-0x12-confirmed-by-poll');
+          }
+          deviceCleared = FrameProtocol.maskToIndexes(outcome.mask).isEmpty;
         } catch (deleteError) {
           // 0x12 应答超时/断连——但不少固件其实已把图删干净了，只是应答异常/迟到
           //（设备逐张擦 flash 全删完才回一次应答，慢一点就顶到超时）。设备忙(0x0B)先短路交给下方 busy 分支。
