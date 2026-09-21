@@ -51,7 +51,7 @@
 
 | 文档 | 主职责 |
 | --- | --- |
-| [`runbooks/BUILD_RELEASE.md`](runbooks/BUILD_RELEASE.md) | Android/iOS 构建、签名、占位符与发布检查 |
+| [`runbooks/BUILD_RELEASE.md`](runbooks/BUILD_RELEASE.md) | Android/iOS 构建、签名、占位符与发布检查；**环境与依赖基线（Flutter 3.44.x，不是必须就不升级、不动依赖）** 与待执行的 9-18 升级回退步骤（〇.6、〇.7） |
 | [`runbooks/IOS_BLE_PERFORMANCE.md`](runbooks/IOS_BLE_PERFORMANCE.md) | 正式包自检、RTT、吞吐、日志与 iOS BLE 判定流程 |
 | [`runbooks/PAYPAL_REDIRECT.md`](runbooks/PAYPAL_REDIRECT.md) | PayPal 支付回跳的 https 中转页（源码在 `deploy/paypal/`）：为什么不能让 PayPal 直接 302 到自定义 scheme、部署五个注意点（⚠️ 最容易踩的是 SPA 的 catch-all 把页面吃掉）、五步联调（含「不点回跳」那条兜底测试）、卡住时的对照表。⚠️ 记着一条待后端确认的链路风险：**capture 是 App 调 `getPayPalNotify` 才触发的**，用户不跳回 App 就不扣款也不入账，端上补不了，需要后端 webhook 兜底 |
 

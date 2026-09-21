@@ -2,13 +2,19 @@
 
 > 文档类型：Release Runbook
 > 状态：Active
-> 最后核验：2026-08-11
+> 最后核验：2026-09-21
 > 微信登录的完整平台配置见 `../integration/WECHAT_LOGIN_SETUP.md`。
 > 2026-07-16 全面审查后整理。本次审查已修复的构建阻断项：
 > ① 主 Manifest 缺 `INTERNET` 权限（release 包全部网络请求失败）；
 > ② iOS 缺微信回调 `CFBundleURLTypes` 与 Associated Domains entitlements；
 > ③ App Store 1024 图标含 alpha 通道（上传直接被拒，已转 RGB）；
 > ④ Android 8+ 无自适应图标（已补 `mipmap-anydpi-v26`）。
+
+## 更新记录
+
+| 日期 | 主题 | 落点 |
+| --- | --- | --- |
+| 2026-09-21 | 定下「不是必须就不动依赖和环境、Flutter 不升级」；9-18 的升级经核实不是必须，列出回退步骤（待 ltt 执行） | 新增 〇.6、〇.7 |
 
 ## 〇、打包前必须核对的微信配置
 
@@ -45,6 +51,66 @@ setx FLUTTER_STORAGE_BASE_URL "https://storage.flutter-io.cn"
 ```
 
 已开系统代理的机器可改用 `HTTPS_PROXY` 环境变量，二选一，别混用。
+
+## 〇.6、环境与依赖基线：不是必须就不动
+
+**基线：Flutter 3.44.x stable（自带 Dart 3.12.x）。** 所有打包机、开发机用同一个版本。
+
+规则（2026-09-21 定）：
+
+1. **Flutter 不升级。** 不跑 `flutter upgrade`，也不切 channel。提示有新版本不用理。
+2. **依赖只装不升。** 拉代码后只用 `flutter pub get`；不用 `flutter pub upgrade`（含 `--major-versions`），
+   不看着 `pub outdated` 顺手升，不加 `dependency_overrides`。
+3. **构建环境不随手改。** `ios/Podfile` 的 `platform :ios`、Xcode 的 `IPHONEOS_DEPLOYMENT_TARGET`、
+   `pubspec.yaml` 里 `flutter: config:`（如 SwiftPM 开关）、Gradle / AGP / Kotlin / compileSdk 等保持现状。
+   Flutter 打印的「will soon be dropped」「建议升级」类警告只是预告，不用处理。
+4. **`pubspec.lock` 只在有意改依赖时提交。** 执行 `flutter pub get` 后如果 lock 变了而你并没有改依赖，
+   **不要提交**，先查原因——绝大多数是本机 Flutter 版本和基线不一致。
+5. **什么算「必须」：** 有具体报错挡住了构建或上架（贴报错原文），或某个功能明确需要新版本
+   （写清是哪个功能、要求哪个版本），或应用商店的硬性政策（附官方链接）。
+   确属必须时：先在本节写清原因、影响和各机器要怎么配合，通知其他人，**所有机器一起升级**后再提交 lock。
+
+反例（为什么要这么定）：2026-09-18 的 `219ad59` 在 Flutter 3.47 上跑了依赖升级，赶上 `objective_c 9.6.1`
+这个坏版本（所有 iOS 构建失败），于是加了 `objective_c: 9.6.0` 强制版本；这个版本又把 `meta` 拉到 1.19，
+3.44 解不开，结果安卓打包机被迫跟着升 Flutter。整条链没有一个功能需要它，见 〇.7。
+
+## 〇.7、待 ltt 执行：回退 9-18 的 Flutter 3.47 连带改动
+
+> 状态：**待执行**。做完后把这里改成「已完成（提交号）」，并把 〇.6 的基线补上具体补丁号。
+
+**已核实不是必须（2026-09-21）：**
+- 现在这份 `pubspec.lock` 自己写的就是 `flutter: ">=3.44.0"`、`dart: ">=3.12.0"`：除了上面那处 `meta` 冲突，
+  没有任何包要求 3.47；
+- `objective_c` 只被 `path_provider_foundation 2.6.0` 依赖（要求 `^9.2.1`）。在 3.44 上 pub 根本选不到 9.6.x
+  （9.6.x 需要 `meta` 1.19），坏掉的 9.6.1 也就碰不到——**强制版本是升了 Flutter 才需要的**，9.6.1 如今也已被官方撤回；
+- 所有 Pod 要求的最低 iOS 都 ≤ 13.0（speech_to_text、image_picker_ios、url_launcher_ios、shared_preferences_foundation
+  为 13.0，其余 12.0）；iOS 15 只是 Flutter 3.47 新模板的默认值；
+- SwiftPM 在 3.44 stable 也是默认开启，7 月就是这样打出 iOS 包的；
+- 7-16 ~ 8-28 的 lock 就是 `objective_c 9.4.1`，当时 Flutter stable 只有 3.44.x，7 月的 iOS 正式包在真机上测过。
+
+**步骤（在 Mac 上做，iOS 能验证）：**
+
+1. **Flutter 回到 3.44.x**：`flutter downgrade`（回到上一次 `flutter upgrade` 之前的版本），
+   `flutter --version` 确认是 3.44.x。`downgrade` 不可用时，在 Flutter SDK 目录里 `git checkout <3.44.x 的 tag>`。
+2. **还原依赖**（都以 `219ad59` 的上一个提交为准）：
+   - `pubspec.yaml`：删掉整段 `dependency_overrides:`（`objective_c: 9.6.0`），删掉 `flutter:` 下的
+     `config: enable-swift-package-manager: false`；**`version:` 不动**（发版号，与本次回退无关）；
+   - `git checkout 219ad59~1 -- pubspec.lock`，然后 `flutter pub get`，再看 `git diff pubspec.lock`：
+     **任何包的 `version` 都不应该变**（应为 `meta 1.18.0`、`objective_c 9.4.1`）；只要有版本变化就停下，
+     把 diff 贴出来，不要提交。
+3. **还原 iOS 最低版本**：`ios/Podfile` 改回 `platform :ios, '13.0'`；`ios/Runner.xcodeproj/project.pbxproj` 里
+   6 处 `IPHONEOS_DEPLOYMENT_TARGET = 15.0;` 改回 `13.0;`。
+   （建议一并改：`96752a2` 把 Runner 的 `CURRENT_PROJECT_VERSION` 写死成 `4`，改回 `$(FLUTTER_BUILD_NUMBER)`，
+   构建号以后只改 `pubspec.yaml` 的 `+N` 一处，`--build-number` 也才生效。）
+4. `cd ios && pod install && cd ..`，让 `Podfile.lock` 按 3.44 重新生成（`speech_to_text` 这些 Pod 会保留，别手改）。
+5. **验证**：`flutter analyze`、`flutter test`，`flutter build ipa`（命令见「二」），真机过一遍微信登录回跳、
+   AI 按住说话（语音识别）、选图裁剪、蓝牙连接投屏。
+6. **提交推送**，提交信息例如：`revert: 回退 219ad59 的 Flutter 3.47 连带改动，回到 3.44 基线`。
+7. **任何一步在 3.44 上确实过不去**：说明真的是必须——不要推半截，把报错原文写进本节，和大家商量后再决定全队升级。
+
+**其它机器（安卓打包机 2026-09-21 为了打当前 main 临时升到了 3.47.5）：** 等上面的回退推上去后，先
+`flutter downgrade` 回到 3.44.x，再拉代码、`flutter clean`、`flutter pub get`，确认 `pubspec.lock` 没有变化。
+**顺序不能反**：还在 3.47 的机器对回退后的 lock 跑 `pub get`，会把 `meta` 又升到 1.19 并改写 lock。
 
 ## 一、Android（Windows 打包机，keystore 路径由 `android/key.properties` 指定）
 

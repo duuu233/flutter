@@ -115,42 +115,27 @@ OpenHarmony/HAP is not integrated.
 
 ### Environment status
 
-- The repository does not pin a human-readable Flutter release number with FVM or an equivalent
-  version manager, **but the committed `pubspec.lock` now requires Flutter 3.47.x stable or newer**
-  (2026-09-21, found when `flutter pub get` failed on a 3.44 machine). Since `219ad59` (2026-09-18,
-  iOS build configuration) the lock resolves `meta 1.19.0` and `pubspec.yaml` has
-  `dependency_overrides: objective_c: 9.6.0`. That pin chains
+- **Toolchain baseline: Flutter 3.44.x stable (Dart 3.12.x). Do not upgrade Flutter, dependencies,
+  or build environment settings unless proven necessary** (project owner, 2026-09-21). Rules and
+  procedure: `docs/runbooks/BUILD_RELEASE.md` §〇.6–〇.7; agent rule in `AGENTS.md`.
+- **Temporary state until the rollback lands:** `219ad59` (2026-09-18, iOS build configuration, done
+  on Flutter 3.47) added `dependency_overrides: objective_c: 9.6.0`, re-resolved the lock
+  (`meta 1.19.0`), raised the iOS deployment target 13.0 → 15.0 and set
+  `enable-swift-package-manager: false`. Since then current `main` needs Flutter 3.47.x:
   `objective_c 9.6.0 → code_assets ^2.0.0 → hooks 2.2.0 → record_use ^1.0.0 → meta ^1.19.0`, while
-  Flutter 3.44.x's `flutter_test` hard-pins `meta 1.18.0` (3.47.x allows `^1.18.3`), so 3.44 fails
-  with "version solving failed … objective_c 9.6.0 is incompatible with flutter_test from sdk". Fix
-  on such a machine: `flutter upgrade` on the stable channel (3.47.5 at the time), then
-  `flutter pub get`. Do **not** relax the override just to make 3.44 resolve: pub would rewrite the
-  shared lock downwards (objective_c 9.5.0 and friends) and the next commit would drag the iOS
-  machine back.
-  Why the override exists at all (checked 2026-09-21): `objective_c` is only pulled in by
-  `path_provider_foundation 2.6.0` (`^9.2.1`), so without it pub would have picked the newest 9.x.
-  On 2026-09-18 that was **9.6.1, which broke every iOS/macOS build** — its build hook references
-  `Architecture.arm64e`, absent from every published `code_assets`, failing with
-  `Member not found: 'arm64e'` (dart-lang/native#3640). The exact pin to 9.6.0 was the workaround,
-  not a feature requirement. 9.6.1 has since been retracted (pub.dev latest = 9.6.0) and the fix
-  waits for a new `code_assets`; once a working 9.6.2+ is published the override can be dropped so
-  its fixes (autorelease-pool leaks, `NSInputStream` crash) come through. The same commit's iOS
-  15.0 deployment target matches Flutter 3.47's template (3.44 used 13.0);
-  `enable-swift-package-manager: false` is a choice (SwiftPM is on by default in both versions).
-- Expected Android build output on Flutter 3.47.x (a successful Windows release build after the
-  upgrade, 2026-09-21), none of it blocking:
-  - Three "Flutter support for your project's … version will soon be dropped" warnings: Gradle 8.14
-    (wants ≥ 9.1.0), AGP 8.11.1 (≥ 9.0.1), KGP 2.2.20 (≥ 2.3.20). The current values sit exactly on
-    3.47.5's error floor (`DependencyVersionChecker`: error below 8.14 / 8.11.1 / 2.2.20), so builds
-    pass. Raising them (AGP 9 is a major step) is a separate, tested upgrade, not a drive-by edit.
-  - First build after `flutter upgrade` on Windows may print a long stack ending in
-    `Could not delete '…\flutter\packages\flutter_tools\gradle\build\kotlin\compileKotlin\cacheable\caches-jvm'`
-    plus `exception: warning: …` lines. That is the Kotlin daemon failing to clear the cache of
-    Flutter's own Gradle plugin (a file held by another Gradle/Kotlin daemon, the IDE, or antivirus);
-    the Kotlin plugin falls back to non-daemon compilation and the build succeeds. The
-    `exception: warning:` lines are just Flutter plugin compiler warnings. To silence it: close the
-    IDE, `android\gradlew --stop`, then delete that `flutter_tools\gradle\build` folder in the SDK
-    (regenerated on the next build).
+  3.44.x's `flutter_test` pins `meta 1.18.0` ("version solving failed … objective_c 9.6.0 is
+  incompatible with flutter_test from sdk"). Verified 2026-09-21 that none of it was necessary: the
+  lock's own `sdks` say `flutter >=3.44.0` / `dart >=3.12.0`; `objective_c` is only required by
+  `path_provider_foundation 2.6.0` (`^9.2.1`), and 3.44 can never select 9.6.x — the pin only worked
+  around `objective_c 9.6.1` (build hook references a non-existent `Architecture.arm64e`, broke all
+  iOS/macOS builds, dart-lang/native#3640, since retracted), which only a 3.47 machine could pick;
+  every pod needs iOS ≤ 13.0; SwiftPM is on by default in 3.44 too; the July iOS release builds used
+  3.44 with `objective_c 9.4.1`. The rollback is assigned to ltt (runbook §〇.7). The Android
+  packaging machine was upgraded to 3.47.5 on 2026-09-21 only to build current `main` and must go
+  back to 3.44.x after the rollback (downgrade first, then `pub get`). While on 3.47 the Gradle / AGP
+  / KGP "will soon be dropped" warnings and a first-build Windows
+  `Could not delete …flutter_tools\gradle\build\…\caches-jvm` stack (Kotlin daemon falls back to
+  non-daemon compilation) are harmless.
 - Android/iOS signing material, the WeChat AppSecret, and the iOS Universal Link are intentionally
   external to source control. The non-secret mobile AppID is fixed in source.
 
