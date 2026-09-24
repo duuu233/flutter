@@ -499,11 +499,14 @@ class _AuthCanvas extends StatelessWidget {
           const SizedBox(height: 24),
           _RegisterPrompt(onRegister: onRegister),
           const Spacer(flex: 4),
-          Center(
-            child: _WeChatLoginButton(
-              onPressed: submitting ? null : onWeChatLogin,
+          // iOS 包不画微信快捷登录（审核口径，见 [weChatLoginHiddenOnThisApp]）；
+          // 上面的 Spacer 照留，协议行仍贴底。
+          if (!weChatLoginHiddenOnThisApp)
+            Center(
+              child: _WeChatLoginButton(
+                onPressed: submitting ? null : onWeChatLogin,
+              ),
             ),
-          ),
           // 20 - AuthAgreementRow.hitPadding：协议行上下各撑了 12 的点击热区（视觉不占位），
           // 这里把它扣回去，行的视觉位置与加热区之前一致。
           const SizedBox(height: 20 - AuthAgreementRow.hitPadding),

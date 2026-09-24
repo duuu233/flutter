@@ -1,6 +1,8 @@
 import 'package:BoltStar/src/features/account/data/wechat_authorization_client.dart';
 import 'package:BoltStar/src/features/account/presentation/auth_page.dart';
 import 'package:BoltStar/src/state.dart';
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -63,5 +65,48 @@ void main() {
     // OverlayEntry 归位，不残留到同文件的后续用例。
     await tester.pump(const Duration(seconds: 4));
     await tester.pumpAndSettle();
+  });
+
+  testWidgets('iOS 包隐藏微信快捷登录（2026-09-24 审核口径）', (tester) async {
+    SharedPreferences.setMockInitialValues({});
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    expect(weChatLoginHiddenOnThisApp, isTrue);
+
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(375, 812);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: AuthPage(
+          state: PhotoFrameState.seeded(),
+          weChatAuthorizationClient: _FakeWeChatAuthorizationClient(),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.bySemanticsLabel('微信授权登录'), findsNothing);
+    expect(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Image &&
+            widget.image is AssetImage &&
+            (widget.image as AssetImage).assetName ==
+                'assets/images/login-wx-icon.png',
+      ),
+      findsNothing,
+    );
+    // 必须在测试体内复位：框架在 tearDown 之前就检查平台覆盖有没有还原。
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  test('安卓包照常露出微信快捷登录', () {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    expect(weChatLoginHiddenOnThisApp, isFalse);
+    debugDefaultTargetPlatformOverride = null;
   });
 }
