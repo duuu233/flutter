@@ -33,6 +33,28 @@ Prefer understanding before modifying.
 
 ---
 
+# Dependencies and Toolchain
+
+Toolchain baseline: **Flutter 3.44.6 stable (Dart 3.12.2)** — decided by the project owner on
+2026-09-21. Unless a change is proven necessary (a concrete blocking build/store error, a feature that
+explicitly requires it, or a store policy), do **not**:
+
+- upgrade Flutter or switch channels;
+- run `flutter pub upgrade` or bump dependency versions; use `flutter pub get` only;
+- add `dependency_overrides`;
+- change iOS/Android build environment settings (Podfile platform, `IPHONEOS_DEPLOYMENT_TARGET`,
+  SwiftPM switch, Gradle/AGP/Kotlin/compileSdk).
+
+If `flutter pub get` rewrites `pubspec.lock` without an intended dependency change, do not commit it;
+the local Flutter version is almost certainly off-baseline. More generally, never commit changes that a
+local toolchain produced on its own (`pubspec.lock`, `dependency_overrides` / `flutter: config:` in
+`pubspec.yaml`, `ios/Podfile`, `ios/Podfile.lock`, `project.pbxproj` settings, generated desktop plugin
+files, `.metadata`): discard them with `git checkout -- <file>` and commit only intended edits, so one
+machine's environment never propagates to the owner's other machines. Rules, the reasoning, and the pending
+rollback of `219ad59` are in `docs/runbooks/BUILD_RELEASE.md` §〇.6–〇.7.
+
+---
+
 # CodeGraph Usage
 
 This project uses CodeGraph as the primary code intelligence system.

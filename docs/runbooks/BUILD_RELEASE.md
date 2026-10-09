@@ -2,13 +2,22 @@
 
 > 文档类型：Release Runbook
 > 状态：Active
-> 最后核验：2026-08-11
+> 最后核验：2026-09-21
 > 微信登录的完整平台配置见 `../integration/WECHAT_LOGIN_SETUP.md`。
 > 2026-07-16 全面审查后整理。本次审查已修复的构建阻断项：
 > ① 主 Manifest 缺 `INTERNET` 权限（release 包全部网络请求失败）；
 > ② iOS 缺微信回调 `CFBundleURLTypes` 与 Associated Domains entitlements；
 > ③ App Store 1024 图标含 alpha 通道（上传直接被拒，已转 RGB）；
 > ④ Android 8+ 无自适应图标（已补 `mipmap-anydpi-v26`）。
+
+## 更新记录
+
+| 日期 | 主题 | 落点 |
+| --- | --- | --- |
+| 2026-09-21 | 基线定为 Flutter 3.44.6；依赖部分已回退（`a84ea3f`），iOS 部分待 ltt；新增「本机环境带出来的改动一律不提交」 | 〇.6 第 6 条、〇.7 重写 |
+| 2026-09-21 | 回退推上去之前，3.44 机器临时打安卓包的本地办法（不提交）——已被 `a84ea3f` 取代 | 〇.7 |
+| 2026-09-21 | Windows 打包报 `Could not delete …caches-jvm` 导致构建失败的处理办法 | 「一、Android」末尾新增小节 |
+| 2026-09-21 | 定下「不是必须就不动依赖和环境、Flutter 不升级」；9-18 的升级经核实不是必须，列出回退步骤（待 ltt 执行） | 新增 〇.6、〇.7 |
 
 ## 〇、打包前必须核对的微信配置
 
@@ -45,6 +54,76 @@ setx FLUTTER_STORAGE_BASE_URL "https://storage.flutter-io.cn"
 ```
 
 已开系统代理的机器可改用 `HTTPS_PROXY` 环境变量，二选一，别混用。
+
+## 〇.6、环境与依赖基线：不是必须就不动
+
+**基线：Flutter 3.44.6 stable（Dart 3.12.2）。** 所有打包机、开发机用这一个版本，先 `flutter --version` 核对。
+
+规则（2026-09-21 定）：
+
+1. **Flutter 不升级。** 不跑 `flutter upgrade`，也不切 channel。提示有新版本不用理。
+2. **依赖只装不升。** 拉代码后只用 `flutter pub get`；不用 `flutter pub upgrade`（含 `--major-versions`），
+   不看着 `pub outdated` 顺手升，不加 `dependency_overrides`。
+3. **构建环境不随手改。** `ios/Podfile` 的 `platform :ios`、Xcode 的 `IPHONEOS_DEPLOYMENT_TARGET`、
+   `pubspec.yaml` 里 `flutter: config:`（如 SwiftPM 开关）、Gradle / AGP / Kotlin / compileSdk 等保持现状。
+   Flutter 打印的「will soon be dropped」「建议升级」类警告只是预告，不用处理。
+4. **`pubspec.lock` 只在有意改依赖时提交。** 执行 `flutter pub get` 后如果 lock 变了而你并没有改依赖，
+   **不要提交**，先查原因——绝大多数是本机 Flutter 版本和基线不一致。
+5. **什么算「必须」：** 有具体报错挡住了构建或上架（贴报错原文），或某个功能明确需要新版本
+   （写清是哪个功能、要求哪个版本），或应用商店的硬性政策（附官方链接）。
+   确属必须时：先在本节写清原因、影响和各机器要怎么配合，通知其他人，**所有机器一起升级**后再提交 lock。
+6. **本机环境带出来的改动一律不提交、不推送。** 本机 Flutter / Xcode / CocoaPods / Gradle 和基线不一致时，
+   `pub get`、`pod install`、打开 Xcode 或 Android Studio 都可能顺手改掉下面这些文件——这些是**你电脑的环境**，
+   不是项目改动，推上去就会拖着别人的电脑一起变（2026-09-18 就是这样把安卓打包机弄坏的）：
+   `pubspec.lock`、`pubspec.yaml` 里的 `dependency_overrides` / `flutter: config:`、`ios/Podfile`、`ios/Podfile.lock`、
+   `ios/Runner.xcodeproj/project.pbxproj`（部署版本、构建号、签名等）、`macos/`、`windows/`、`linux/` 下的生成文件、`.metadata`。
+   **每次提交前先 `git status` 看一眼**：出现了上面的文件而你并没有打算改它，就 `git checkout -- <文件>` 丢掉，
+   只提交自己真正改的代码。确实需要改其中某个文件时，按第 5 条先写清原因、和大家说好再提交。
+
+反例（为什么要这么定）：2026-09-18 的 `219ad59` 在 Flutter 3.47 上跑了依赖升级，赶上 `objective_c 9.6.1`
+这个坏版本（所有 iOS 构建失败），于是加了 `objective_c: 9.6.0` 强制版本；这个版本又把 `meta` 拉到 1.19，
+3.44 解不开，结果安卓打包机被迫跟着升 Flutter。整条链没有一个功能需要它，见 〇.7。
+
+## 〇.7、回退 9-18 的 Flutter 3.47 连带改动
+
+> 状态：**依赖部分已回退**（`a84ea3f`，2026-09-21：删掉 `objective_c: 9.6.0` 强制版本，`pubspec.lock` 恢复为 9-18 之前的版本，
+> `meta 1.18.0` / `objective_c 9.4.1`；lock 里被 Flutter SDK 钉版本的 14 个包与 3.44.6 逐个核对一致）。
+> **iOS 部分待 ltt 执行**，做完把这里改成「已完成（提交号）」。
+
+**已核实不是必须（2026-09-21）：**
+- 9-18 的 lock 自己写的就是 `flutter: ">=3.44.0"`、`dart: ">=3.12.0"`：除了强制版本号带出来的 `meta` 冲突，没有任何包要求 3.47；
+- `objective_c` 只被 `path_provider_foundation 2.6.0` 依赖（要求 `^9.2.1`）。在 3.44 上 pub 根本选不到 9.6.x
+  （9.6.x 需要 `meta` 1.19），坏掉的 9.6.1 也就碰不到——**强制版本是升了 Flutter 才需要的**，9.6.1 如今也已被官方撤回；
+- 所有 Pod 要求的最低 iOS 都 ≤ 13.0（speech_to_text、image_picker_ios、url_launcher_ios、shared_preferences_foundation
+  为 13.0，其余 12.0）；iOS 15 只是 Flutter 3.47 新模板的默认值；
+- SwiftPM 在 3.44 stable 也是默认开启，7 月就是这样打出 iOS 包的；
+- 7-16 ~ 8-28 的 lock 就是 `objective_c 9.4.1`，当时 Flutter stable 只有 3.44.x，7 月的 iOS 正式包在真机上测过。
+
+**ltt 要做的（在 Mac 上）：**
+
+1. **先把 Flutter 切到 3.44.6，再拉代码。** 在 Flutter SDK 目录里 `git fetch --tags; git checkout 3.44.6`，
+   然后 `flutter --version` 确认是 3.44.6（第一次会自动下载对应引擎）。
+   ⚠️ **顺序不能反**：还在 3.47 时拉下代码跑 `flutter pub get`，会把 `meta` 又升到 1.19、改写 `pubspec.lock`。
+2. 拉代码后 `flutter clean; flutter pub get`，**`git status` 里不应出现 `pubspec.lock`**。出现了就说明本机版本不对，
+   `git checkout -- pubspec.lock` 丢掉，回到第 1 步。
+3. **还原 iOS 最低版本**：`ios/Podfile` 改回 `platform :ios, '13.0'`；`ios/Runner.xcodeproj/project.pbxproj` 里
+   6 处 `IPHONEOS_DEPLOYMENT_TARGET = 15.0;` 改回 `13.0;`。
+4. `pubspec.yaml` 里 `flutter:` 下的 `config: enable-swift-package-manager: false`：9-18 之前没有这项，iOS 照样能打包；
+   没有明确理由就删掉。确实需要（不加就打不了包）就保留，并把报错原文写在这里。
+5. `cd ios && pod install && cd ..`，让 `Podfile.lock` 在 3.44.6 下重新生成（别手改）。
+6. **验证**：`flutter analyze`、`flutter test`、`flutter build ipa`（命令见「二」），真机过一遍微信登录回跳、
+   AI 按住说话（语音识别）、选图裁剪、蓝牙连接投屏。
+7. **只提交这几个文件**：`ios/Podfile`、`ios/Podfile.lock`、`ios/Runner.xcodeproj/project.pbxproj`（只含部署版本那几行）、
+   以及第 4 步如果删了那一项的 `pubspec.yaml`。除此之外 `git diff` 里的任何改动——`pubspec.lock`、
+   `project.pbxproj` 里部署版本以外的行（签名 / Team、构建号等）、其它生成文件——都是本机环境带出来的，
+   **丢掉，不要推**（见 〇.6 第 6 条）。提交信息例如：`revert(ios): 最低版本改回 13.0，回到 Flutter 3.44 基线`。
+8. **任何一步在 3.44.6 上确实过不去**：说明真的是必须——不要推半截，把报错原文写进本节，和大家商量后再定。
+
+（建议一并处理，但属于发版设置、不是环境回退：`96752a2` 把 Runner 的 `CURRENT_PROJECT_VERSION` 写死成 `4`，
+改回 `$(FLUTTER_BUILD_NUMBER)` 后，构建号只改 `pubspec.yaml` 的 `+N` 一处，`--build-number` 也才生效。要改就单独一个提交。）
+
+**其它电脑：** 保持 Flutter 3.44.6，照常拉代码、`flutter clean; flutter pub get`，`git status` 里不应出现 `pubspec.lock`。
+安卓打包机 2026-09-21 临时升过 3.47.5，当晚已回到 3.44.6；从 `a84ea3f` 起直接打包即可，不再需要本地临时改文件。
 
 ## 一、Android（Windows 打包机，keystore 路径由 `android/key.properties` 指定）
 
@@ -94,6 +173,31 @@ flutter build apk --debug ^
   （微信 OpenSDK / uCrop keep 规则）。
 - `--split-debug-info` 的符号表（build/symbols）要留存，崩溃堆栈还原用。
 - Google Play 自 **2026-08-31** 起新包必须 targetSdk 36 —— 当前 Flutter 3.41+ 默认 36，满足。
+
+### 打包失败：`Could not delete '…\flutter_tools\gradle\build\kotlin\compileKotlin\cacheable\caches-jvm'`
+
+报 `Execution failed for task ':gradle:compileKotlin'`，路径在 **Flutter SDK 目录里**（不在项目里，`flutter clean` 清不到）。
+原因是有进程占着 Flutter 自带 Gradle 插件的编译缓存：多半是上一次构建留下的 Kotlin 编译守护进程 / Gradle 守护进程，
+也可能是开着的 Android Studio、VS Code 或杀毒软件。第一次出现时 Kotlin 会换方式编译、构建还能成功，
+锁一直不放就会直接失败（2026-09-21 打包机两次都遇到过）。**这是打包机的问题，不要为它改项目配置。**
+
+处理（PowerShell，在项目根目录）：
+
+```powershell
+# 1. 关掉 Android Studio / VS Code 里打开的这个项目，然后停掉 Gradle 守护进程
+cd android; .\gradlew.bat --stop; cd ..
+# 2. 结束残留的 Kotlin 编译守护进程和 Gradle 守护进程（只结束这两类 java 进程）
+Get-CimInstance Win32_Process -Filter "Name='java.exe'" |
+  Where-Object { $_.CommandLine -match 'KotlinCompileDaemon|GradleDaemon|GradleWorkerMain' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+# 3. 删掉 SDK 里的这份缓存（下次构建会自动重新生成）
+Remove-Item -Recurse -Force "<Flutter SDK 路径>\packages\flutter_tools\gradle\build"
+# 4. 重新打包
+```
+
+第 3 步还提示「文件正在使用」：打开「资源监视器」（`resmon`）→「CPU」→「关联的句柄」搜 `caches-jvm`，
+看是哪个进程占着再结束它；实在找不到就重启电脑再删。反复出现的话，把 Flutter SDK 目录、项目目录和
+`%USERPROFILE%\.gradle` 加进杀毒软件（Windows 安全中心）的排除项。
 
 ## 二、iOS（macOS + **Xcode 26+**，App Store 自 2026-04-28 起强制 iOS 26 SDK）
 

@@ -30,6 +30,18 @@ const bool kWeChatLoginDiagnostics = bool.fromEnvironment(
   defaultValue: true,
 );
 
+/// iOS 包**不露微信快捷登录**（2026-09-24 用户口径：「上次 iOS 端审核不通过，现在给的方案就是
+/// 隐藏微信快捷登录，只针对打包 iOS 端」）。
+///
+/// 起因是 App Store 审核：提供了第三方快捷登录，就要求同时提供同等的隐私友好登录（Sign in with Apple
+/// 等）。先不接苹果登录，iOS 上只留邮箱登录；安卓照旧。
+///
+/// ⚠️ 用 `defaultTargetPlatform` 而不是 `Platform.isIOS`：这是**界面**判定，widget 测试要能用
+/// `debugDefaultTargetPlatformOverride` 切平台（与 `StarPayType.moduleHiddenOnThisApp` 同一口径）。
+/// 以后 iOS 接了苹果登录、要把微信放回来，只改这里。
+bool get weChatLoginHiddenOnThisApp =>
+    defaultTargetPlatform == TargetPlatform.iOS;
+
 /// 微信授权错误类别：UI 层据此映射当前语言的用户文案（见 auth_page 的 code→l10n 映射）。
 /// [message] 保留中文细节仅供日志排查，**不要**直接展示给非中文用户。
 enum WeChatAuthErrorCode {

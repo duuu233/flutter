@@ -115,18 +115,24 @@ OpenHarmony/HAP is not integrated.
 
 ### Environment status
 
-- The repository does not pin a human-readable Flutter release number with FVM or an equivalent
-  version manager, **but the committed `pubspec.lock` now requires Flutter 3.47.x stable or newer**
-  (2026-09-21, found when `flutter pub get` failed on a 3.44 machine). Since `219ad59` (2026-09-18,
-  iOS build configuration) the lock resolves `meta 1.19.0` and `pubspec.yaml` has
-  `dependency_overrides: objective_c: 9.6.0`. That pin chains
-  `objective_c 9.6.0 → code_assets ^2.0.0 → hooks 2.2.0 → record_use ^1.0.0 → meta ^1.19.0`, while
-  Flutter 3.44.x's `flutter_test` hard-pins `meta 1.18.0` (3.47.x allows `^1.18.3`), so 3.44 fails
-  with "version solving failed … objective_c 9.6.0 is incompatible with flutter_test from sdk". Fix
-  on such a machine: `flutter upgrade` on the stable channel (3.47.5 at the time), then
-  `flutter pub get`. Do **not** relax the override just to make 3.44 resolve: pub would rewrite the
-  shared lock downwards (objective_c 9.5.0 and friends) and the next commit would drag the iOS
-  machine back.
+- **Toolchain baseline: Flutter 3.44.6 stable (Dart 3.12.2). Do not upgrade Flutter, dependencies,
+  or build environment settings unless proven necessary, and never commit changes a local toolchain
+  produced on its own** (project owner, 2026-09-21). Rules and procedure:
+  `docs/runbooks/BUILD_RELEASE.md` §〇.6–〇.7; agent rule in `AGENTS.md`.
+- **2026-09-18 upgrade, being rolled back:** `219ad59` (iOS build configuration, done on Flutter 3.47)
+  added `dependency_overrides: objective_c: 9.6.0`, re-resolved the lock (`meta 1.19.0`), raised the
+  iOS deployment target 13.0 → 15.0 and set `enable-swift-package-manager: false`, which made `main`
+  need 3.47 (`objective_c 9.6.0 → code_assets ^2.0.0 → hooks 2.2.0 → record_use ^1.0.0 →
+  meta ^1.19.0` vs 3.44's `flutter_test` pin `meta 1.18.0`). Verified 2026-09-21 that none of it was
+  necessary (the pin only dodged `objective_c 9.6.1` — non-existent `Architecture.arm64e`, broke all
+  iOS/macOS builds, dart-lang/native#3640, since retracted — which only a 3.47 machine could select;
+  every pod needs iOS ≤ 13.0; SwiftPM is on by default in 3.44; July's iOS release builds used 3.44
+  with `objective_c 9.4.1`). **Dependency part rolled back in `a84ea3f`** (override removed, lock
+  restored to `meta 1.18.0` / `objective_c 9.4.1`; the 14 SDK-pinned packages match 3.44.6). **iOS part
+  (deployment target 13.0, SwiftPM switch, `pod install`, device check) pending, assigned to ltt**, who
+  must switch to 3.44.6 before pulling. The Windows `Could not delete …flutter_tools\gradle\build\
+  kotlin\compileKotlin\cacheable\caches-jvm` build failure is a machine-side file lock (leftover
+  Kotlin/Gradle daemon, IDE or antivirus); fix per runbook「一、Android」, not in the project.
 - Android/iOS signing material, the WeChat AppSecret, and the iOS Universal Link are intentionally
   external to source control. The non-secret mobile AppID is fixed in source.
 
