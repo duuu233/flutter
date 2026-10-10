@@ -494,17 +494,13 @@ void main() {
     });
   });
 
-  // 2026-09-18 用户口径：iOS 先把整块星币管理藏掉（入口 + 模块）。
-  //
-  // ⚠️ 与 `supportedOnThisApp` 是**两个**开关，别合并：那条说的是「付不付得了」
-  // （2026-08-27：iOS 付不了但页面照开，至少看得到价目表），这条说的是「露不露面」。
-  // 合成一个的话，将来 IAP 接好了一改，会连「藏起来」一起解除。
-  group('iOS 整体屏蔽星币模块', () {
+  // 2026-10-10：恢复 iOS 入口供截图，支付能力开关保持原样。
+  group('iOS 恢复星币模块入口', () {
     tearDown(() => debugDefaultTargetPlatformOverride = null);
 
-    test('iOS 藏、安卓照旧', () {
+    test('iOS 和安卓均显示入口', () {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
-      expect(StarPayType.moduleHiddenOnThisApp, isTrue);
+      expect(StarPayType.moduleHiddenOnThisApp, isFalse);
 
       debugDefaultTargetPlatformOverride = TargetPlatform.android;
       expect(StarPayType.moduleHiddenOnThisApp, isFalse);

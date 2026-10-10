@@ -148,10 +148,11 @@ BoltStar 当前使用三套不同的远端服务：
 | --- | --- | --- | --- |
 | 微信小程序 | 微信支付（虚拟支付） | 1 | 小程序端已上线 |
 | **安卓 App** | **PayPal** | **3** | **2026-08-27 接入**（本仓） |
-| iOS App | Apple 内购 | 2 | **未接**，星币页仍显示「去小程序买」 |
+| iOS App | Apple 内购 | 2 | **未接**；2026-10-10 恢复星币入口供截图，套餐及确认页可查看，实际支付不可用 |
 
 端上不要按平台现写 `if`，取 `StarPayType.forCurrentPlatform`；能不能买取
-`StarPayType.supportedOnThisApp`（iOS 为 false → 不给购买入口，**付不了就别建单**）。
+`StarPayType.supportedOnThisApp`（iOS 为 false → 确认页支付不可用，**付不了就别建单**）。
+入口显示由 `StarPayType.moduleHiddenOnThisApp` 单独控制，2026-10-10 起为 false，恢复 iOS 原有入口。
 
 安卓 PayPal 的完整链路（编排在 `features/star/star_purchase.dart`）：
 
