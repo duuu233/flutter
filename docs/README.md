@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次变更：[2026-10-12 iOS 星币内购接入](history/2026-10/2026-10-12-ios-in-app-purchase.md)。
+本次审查：[2026-10-12 iOS 支付后端文档审查](history/2026-10/2026-10-12-ios-iap-backend-document-review.md)。
 
 ## 1. 阅读入口
 
@@ -18,6 +18,7 @@
 | 查看当前代码架构 | [`architecture/PROJECT_STRUCTURE.md`](architecture/PROJECT_STRUCTURE.md) |
 | 查看接口与服务 | [`architecture/API_INTEGRATION.md`](architecture/API_INTEGRATION.md) |
 | iOS 内购、Base64 收据与后端交付契约 | [`integration/IOS_IN_APP_PURCHASE.md`](integration/IOS_IN_APP_PURCHASE.md) |
+| iOS 支付后端示例差异及确认问题 | [`integration/IOS_IAP_BACKEND_ALIGNMENT.md`](integration/IOS_IAP_BACKEND_ALIGNMENT.md) |
 | 查看 App/小程序差异 | [`integration/APP_VS_MINIPROGRAM.md`](integration/APP_VS_MINIPROGRAM.md) |
 | 评估 Wi-Fi 版相框接入 / BluFi 配网 | [`integration/WIFI_FRAME_BLUFI_ANALYSIS.md`](integration/WIFI_FRAME_BLUFI_ANALYSIS.md) |
 | Wi-Fi 版功能差异 / 详情页 / 搜索动线 / 上传页面 / TF 卡与 FPGA | [`integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md`](integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md) |

@@ -103,7 +103,8 @@ OpenHarmony/HAP is not integrated.
 - iOS star purchases use the original StoreKit bridge and traditional Base64 app receipts.
   `features/star/apple_iap.dart` coordinates persistent pending transactions and account isolation;
   verification submits receiptData/orderNo/transactionId; finish follows matching receipt, paid
-  business order and balance delivery checks. The updated backend response/delivery semantics,
+  business order and balance delivery checks. The latest Swagger request/response DTO is verified;
+  delivery semantics,
   idempotency and iOS sandbox testing remain to be confirmed. Current contract:
   `docs/integration/IOS_IN_APP_PURCHASE.md`.
 - `UIBackgroundModes` contains `bluetooth-central`.

@@ -59,15 +59,19 @@ getGoodsList.appleProductId
 按既有接口兼容规则同时写入 header/query。Bundle ID 是后端核验配置，本接口当前 DTO 没有该入参，
 客户端不会擅自添加。请求 body 与此接口响应日志均脱敏，收据及嵌在 `responseData` 中的收据不输出。
 
-2026-10-12 后端确认发布中的新契约为上述三个参数，验证成功后由后端向用户发放星币。
-客户端使用持久化记录中的业务订单号和当前原生苹果交易号，不用 `orderId`、SKU 或 UUID 代替。
-旧的 `excludeOldTransactions` 不再发送。2026-10-12 用户通知后复核 Swagger UI 的
-`/swagger-resources` 与无缓存 `/v2/api-docs`，当前文档仍列 `receiptData/excludeOldTransactions`，
-没有 `orderNo/transactionId`；返回仍为 `status/environment/latestReceipt/responseData`，
-`getPayQuery.payState` 没有枚举说明。按用户确认继续使用上述三个最新参数并准备真机测试，
-不依据尚未更新的 DTO 回退客户端，也不将文档可见等同于发币已联调。
+2026-10-12 最新线上 Swagger 已列出 `receiptData/orderNo/transactionId`，旧 `excludeOldTransactions` 已移除；
+公共参数仍由 ApiClient 注入。验证成功后由后端负责发币。客户端使用持久化业务订单号和原生苹果交易号，
+不用 `orderId`、SKU 或 UUID 代替。
 
-发布中的成功返回字段及 `getPayQuery` 状态仍待确认。当前兼容原有
+本轮同时核验后端提供的流程 Word 与代码示例。线上声明仍为 `retCode=200` 成功，建单为
+`/Client/Order/addOrder(goodsId:integer,payType:2)`；`setCreatePay` 要已有 `orderNo`，不返回新订单号。
+示例中的 `retCode=1` 和 `setCreatePay(goodsId)` 与线上 DTO 冲突，不能据此改动客户端。
+最新验单输出 DTO 为 `status/environment/latestReceipt/responseData/exceptionMsg`，但实际交付时序、
+明细是否必返、幂等返回及 `getPayQuery.payState` 枚举仍待后端确认。Word 写明发币异步执行，
+`status=0` 不能独立作为到账或 finish 的依据。完整差异与可转发问题见
+[后端文档与客户端对照](IOS_IAP_BACKEND_ALIGNMENT.md)。
+
+当前兼容已声明的
 `retData.status/environment/latestReceipt/responseData` 出参；为避免提前结束未交付交易，客户端暂要求：
 
 1. `retData.status=0`；
@@ -79,7 +83,7 @@ getGoodsList.appleProductId
 
 只有四项都满足才保存到账确认并结束苹果交易。缺少苹果明细、只有验收据成功、只有无关余额增长，
 都会停在待确认。读取不到购买前余额时也不猜测到账。余额确认窗口为 0/1/2/3 秒间隔，之后可手动确认。
-这些是返回契约尚未确认时保留的保守条件。新后端若只返回业务成功/发币结果，当前实现可能继续
+这些是交付语义尚未确认时保留的保守条件。新后端若只返回业务成功/发币结果，当前实现可能继续
 显示待确认，需在发布后按明确的交易交付返回和查单语义调整，不能直接把 HTTP 200 当作完成依据。
 
 ## 4. 重试与账号隔离
@@ -105,12 +109,12 @@ getGoodsList.appleProductId
 | 商品配置 | 各档真实可购买的 `appleProductId`，及其对应 `goodsId`、发币数量 |
 | 订单关联 | 已确认客户端提交 `orderNo` 和 `transactionId`；服务端须核验当前用户、订单商品及真实苹果交易的对应关系 |
 | 幂等发币 | 全量收据可能包含多笔交易，同一 `transaction_id` 在重复提交、不同设备或账号下只能交付一次；明确已经处理的返回语义 |
-| 成功返回 | 验证成功后后端发币已确认；是否仍返回 `status=0/responseData`、是否提供明确交付结果，待发布后的文档核对后再适配 |
+| 成功返回 | 验证成功后后端发币已确认；最新 Swagger 已声明 `status/responseData`；实际成功 JSON、明细必返及异步交付结果仍待确认 |
 | 交付查询 | 需确保已关联的 `getPayQuery.payState=1` 与实际发币一致；更可靠的长期契约是按交易/订单返回 `credited`、到账星币数及归属，解决余额已消费或基线缺失时无法确认的问题 |
 | 沙盒与生产 | 服务端负责环境判断、传统验收据的 21007 沙盒回退及错误状态分类；端上只调用业务服务 |
 | 异常恢复 | 明确无本地映射、删 App、注销账号、退款/撤销和长期 pending 的查询与补偿方案 |
 
-后端已确认 Base64 格式、三个请求参数和验证成功后发币职责，正在发布。返回结构、幂等与真实商品
+最新 Swagger 已确认 Base64 格式、三个请求参数及验单返回结构；后端负责发币。交付语义、幂等与真实商品
 尚未联调，不能把本轮前端实现描述为已完成生产支付验收。服务器密钥和苹果验证调用始终留在服务端。
 
 ## 6. 验证与 iOS 联调
