@@ -326,7 +326,7 @@ class StarPayType {
   /// 微信支付（小程序=虚拟支付）。App 两端都不走这条。
   static const int wechat = 1;
 
-  /// iOS 内购。⚠️ 通道未接入，[supportedOnThisApp] 在 iOS 上因此为 false。
+  /// iOS StoreKit 内购，传统 Base64 收据由后端验证。
   static const int apple = 2;
 
   /// PayPal。安卓端 2026-08-27 接入。
@@ -338,14 +338,14 @@ class StarPayType {
   /// 分散写必然有人照旧文档写成 IAP。
   static int get forCurrentPlatform => Platform.isIOS ? apple : paypal;
 
-  /// 这一端的通道**是否真的能付**。iOS 的 IAP 尚未接入 → false，
-  /// 页面据此不给购买入口（付不了就别建单，见 [StarCoinApi.createOrder]）。
-  static bool get supportedOnThisApp => Platform.isAndroid;
+  /// 平台是否有支付实现。iOS 还需通过 StoreKit 商品与支付权限检查，
+  /// 由 AppleIapController 在创建订单前完成。
+  static bool get supportedOnThisApp => Platform.isAndroid || Platform.isIOS;
 
   /// 星币模块入口的显示开关。2026-10-10 按用户要求恢复 iOS 入口，供截图使用。
   ///
   /// 「我的」、AI 余额胶囊、星币不足弹窗及路由共用此开关。
-  /// 仅控制显示；iOS 内购尚未接入，支付能力仍由 [supportedOnThisApp] 判断。
+  /// 仅控制显示；支付能力还需对应平台的商品与权限检查。
   static bool get moduleHiddenOnThisApp => false;
 }
 
@@ -385,8 +385,8 @@ class StarPackage {
         StarCoinApi._toText(json['currencySymbol']),
         kStarCurrencySymbol,
       ]),
-      // 两个渠道商品 id 端上都不直接拿去调支付（微信侧由服务端签进 signData；
-      // PayPal 侧订单也由服务端建），留着是为了排查「这档在这一端配没配」。
+      // iOS 用 appleProductId 查询并购买 StoreKit 商品；微信 ID 由服务端签进 signData。
+      // 安卓 PayPal 订单由服务端创建。
       wxProductId: StarCoinApi._toText(json['wxProductId']),
       appleProductId: StarCoinApi._toText(json['appleProductId']),
     );

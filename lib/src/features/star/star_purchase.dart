@@ -154,7 +154,7 @@ class StarPurchase {
     required int payType,
     void Function(StarPurchaseStage stage)? onStage,
   }) async {
-    if (!StarPayType.supportedOnThisApp) {
+    if (!StarPayType.supportedOnThisApp || payType != StarPayType.paypal) {
       // 付不了就别建单：后台留一串永远付不掉的待支付单，对账时全是垃圾。
       throw StarPurchaseException(
         StarPurchaseError.channelUnavailable,

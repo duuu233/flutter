@@ -7,10 +7,13 @@ import CoreLocation
 import Photos
 import PhotosUI
 import AVFoundation
+import StoreKit
+import Darwin
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
   private var deviceApi: DeviceApiHandler?
+  private var appleIap: AppleIapHandler?
 
   override func application(
     _ application: UIApplication,
@@ -21,6 +24,17 @@ import AVFoundation
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "BoltStarAppleIap") {
+      let channel = FlutterMethodChannel(
+        name: "com.boltfox.boltstar/apple_iap", binaryMessenger: registrar.messenger()
+      )
+      let handler = AppleIapHandler(channel: channel)
+      appleIap = handler
+      channel.setMethodCallHandler { call, result in
+        handler.handle(call, result: result)
+      }
+    }
 
     // 注册与 Android MainActivity.kt 行为对齐的原生设备通道（权限 / 蓝牙状态 / 相册 / 图片解码）。
     // 缺了它，iOS 上 NativeDeviceApi 的任一方法都会抛 MissingPluginException，绑定/投屏链路不可用。
@@ -468,5 +482,211 @@ extension DeviceApiHandler: UIImagePickerControllerDelegate, UINavigationControl
     let callback = pendingGalleryResult
     pendingGalleryResult = nil
     callback?(nil)
+  }
+}
+
+
+/// Original StoreKit API is intentional: the server accepts Base64 app receipts,
+/// not StoreKit 2 JWS. Successful consumables stay unfinished until delivery is
+/// confirmed. Failed transactions are finished, and their result is retained
+/// until Dart acknowledges it, including across a process restart.
+private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
+  SKProductsRequestDelegate, SKRequestDelegate {
+  private let channel: FlutterMethodChannel
+  private let queue = SKPaymentQueue.default()
+  private var observing = false
+  private var products: [String: SKProduct] = [:]
+  private var productRequests: [ObjectIdentifier: SKProductsRequest] = [:]
+  private var productResults: [ObjectIdentifier: FlutterResult] = [:]
+  private var receiptRequest: SKReceiptRefreshRequest?
+  private var receiptResult: FlutterResult?
+  private static let requestKey = "boltstar.appleIap.requests.v1"
+  private static let failureKey = "boltstar.appleIap.failures.v1"
+
+  init(channel: FlutterMethodChannel) { self.channel = channel; super.init() }
+  deinit { if observing { queue.remove(self) } }
+
+  private var requests: [String: String] {
+    get { UserDefaults.standard.dictionary(forKey: Self.requestKey) as? [String: String] ?? [:] }
+    set { UserDefaults.standard.set(newValue, forKey: Self.requestKey) }
+  }
+
+  private var failures: [[String: String]] {
+    get { UserDefaults.standard.array(forKey: Self.failureKey) as? [[String: String]] ?? [] }
+    set { UserDefaults.standard.set(newValue, forKey: Self.failureKey) }
+  }
+
+  func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let args = call.arguments as? [String: Any] ?? [:]
+    switch call.method {
+    case "initialize":
+      if !observing { observing = true; queue.add(self) }
+      var info = utsname()
+      uname(&info)
+      let model = Mirror(reflecting: info.machine).children.reduce(into: "") { value, child in
+        guard let byte = child.value as? Int8, byte != 0 else { return }
+        value.append(String(UnicodeScalar(UInt8(bitPattern: byte))))
+      }
+      result(["canMakePayments": SKPaymentQueue.canMakePayments(),
+        "device": model.isEmpty ? UIDevice.current.model : model])
+    case "product":
+      guard let id = args["productId"] as? String, !id.isEmpty else {
+        result(error("product_unavailable")); return
+      }
+      let request = SKProductsRequest(productIdentifiers: [id])
+      let key = ObjectIdentifier(request)
+      productRequests[key] = request; productResults[key] = result
+      request.delegate = self; request.start()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
+        guard let self = self, let callback = self.productResults.removeValue(forKey: key) else { return }
+        self.productRequests.removeValue(forKey: key)?.cancel()
+        callback(self.error("product_timeout"))
+      }
+    case "buy":
+      guard let id = args["productId"] as? String,
+        let token = args["accountToken"] as? String, UUID(uuidString: token) != nil else {
+        result(error("invalid_arguments")); return
+      }
+      guard SKPaymentQueue.canMakePayments() else { result(error("payment_not_allowed")); return }
+      guard let product = products[id] else { result(error("product_unavailable")); return }
+      // The persisted UUID prevents duplicate add(payment) after a lost reply.
+      guard requests.isEmpty && queue.transactions.isEmpty else {
+        result(error("payment_busy")); return
+      }
+      var saved = requests; saved[token] = id; requests = saved
+      let payment = SKMutablePayment(product: product)
+      payment.quantity = 1; payment.applicationUsername = token
+      queue.add(payment)
+      result(nil)
+    case "pendingTransactions":
+      var rows = queue.transactions.map(summary)
+      let seen = Set(rows.compactMap { $0["accountToken"] as? String })
+      for (token, product) in requests where !seen.contains(token) {
+        rows.append(["accountToken": token, "productId": product, "state": "requested"])
+      }
+      rows.append(contentsOf: failures.map { $0 as [String: Any] })
+      result(rows)
+    case "acknowledgeFailure":
+      if let token = args["accountToken"] as? String {
+        failures = failures.filter { $0["accountToken"] != token }
+      }
+      result(nil)
+    case "receipt":
+      if let receipt = readReceipt() { result(receipt); return }
+      guard args["refreshIfMissing"] as? Bool == true else {
+        result(error("receipt_missing")); return
+      }
+      guard receiptRequest == nil else { result(error("receipt_busy")); return }
+      let request = SKReceiptRefreshRequest()
+      receiptRequest = request; receiptResult = result
+      request.delegate = self; request.start()
+      DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self, weak request] in
+        guard let self = self, let request = request, self.receiptRequest === request else { return }
+        request.cancel(); self.completeReceipt(self.error("receipt_timeout"))
+      }
+    case "finish":
+      guard let id = args["transactionId"] as? String,
+        let token = args["accountToken"] as? String, !id.isEmpty else {
+        result(error("invalid_arguments")); return
+      }
+      if let transaction = queue.transactions.first(where: { $0.transactionIdentifier == id }) {
+        guard transaction.payment.applicationUsername == token,
+          transaction.transactionState == .purchased || transaction.transactionState == .restored else {
+          result(error("transaction_mismatch")); return
+        }
+        queue.finishTransaction(transaction)
+      }
+      // No queue entry can mean finish succeeded before Dart persisted removal.
+      var saved = requests; saved.removeValue(forKey: token); requests = saved
+      result(nil)
+    default: result(FlutterMethodNotImplemented)
+    }
+  }
+
+  private func error(_ code: String) -> FlutterError {
+    FlutterError(code: code, message: nil, details: nil)
+  }
+
+  private func readReceipt() -> String? {
+    guard let url = Bundle.main.appStoreReceiptURL,
+      let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
+    return data.base64EncodedString()
+  }
+
+  private func completeReceipt(_ value: Any?) {
+    let callback = receiptResult; receiptResult = nil; receiptRequest = nil
+    callback?(value)
+  }
+
+  func productsRequest(_ request: SKProductsRequest, didReceive response: SKProductsResponse) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      let key = ObjectIdentifier(request)
+      guard let callback = self.productResults.removeValue(forKey: key) else { return }
+      self.productRequests.removeValue(forKey: key)
+      guard let product = response.products.first else {
+        callback(self.error("product_unavailable")); return
+      }
+      self.products[product.productIdentifier] = product
+      let formatter = NumberFormatter()
+      formatter.numberStyle = .currency; formatter.locale = product.priceLocale
+      callback(["productId": product.productIdentifier,
+        "localizedPrice": formatter.string(from: product.price) ?? ""])
+    }
+  }
+
+  func requestDidFinish(_ request: SKRequest) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self, self.receiptRequest === request else { return }
+      if let receipt = self.readReceipt() { self.completeReceipt(receipt) }
+      else { self.completeReceipt(self.error("receipt_missing")) }
+    }
+  }
+
+  func request(_ request: SKRequest, didFailWithError error: Error) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      if self.receiptRequest === request { self.completeReceipt(self.error("receipt_failed")); return }
+      let key = ObjectIdentifier(request)
+      self.productRequests.removeValue(forKey: key)
+      self.productResults.removeValue(forKey: key)?(self.error("product_unavailable"))
+    }
+  }
+
+  private func summary(_ transaction: SKPaymentTransaction) -> [String: Any] {
+    let state: String
+    switch transaction.transactionState {
+    case .purchasing: state = "purchasing"
+    case .purchased: state = "purchased"
+    case .restored: state = "restored"
+    case .deferred: state = "deferred"
+    case .failed:
+      let code = (transaction.error as NSError?)?.code
+      state = code == SKError.Code.paymentCancelled.rawValue ? "canceled" : "failed"
+    @unknown default: state = "unknown"
+    }
+    return ["state": state, "productId": transaction.payment.productIdentifier,
+      "accountToken": transaction.payment.applicationUsername ?? "",
+      "transactionId": transaction.transactionIdentifier ?? ""]
+  }
+
+  func paymentQueue(_ queue: SKPaymentQueue, updatedTransactions transactions: [SKPaymentTransaction]) {
+    DispatchQueue.main.async { [weak self] in
+      guard let self = self else { return }
+      for transaction in transactions {
+        let row = self.summary(transaction)
+        if transaction.transactionState == .failed {
+          var saved = self.requests
+          if let token = transaction.payment.applicationUsername {
+            saved.removeValue(forKey: token)
+            var failed = self.failures.filter { $0["accountToken"] != token }
+            failed.append(row.compactMapValues { $0 as? String }); self.failures = failed
+          }
+          self.requests = saved
+          queue.finishTransaction(transaction)
+        }
+        self.channel.invokeMethod("transactionUpdated", arguments: row)
+      }
+    }
   }
 }

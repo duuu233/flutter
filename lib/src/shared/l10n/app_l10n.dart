@@ -2077,15 +2077,14 @@ class AppL10n {
   /// 折成两行、把括号拆开，而「消耗」二字区块标题「星币消耗规则」已经交代过。
   String get starRuleColCost => _pick('星币/次', 'Per use', '1回あたり');
 
-  /// ⚠️ **只在 iOS 上出现**：安卓 2026-08-27 起走 PayPal（见 [starBuyEntryTitle]），
-  /// iOS 的 Apple 内购仍未接。措辞不能再写「App 端」——那会把已经能买的安卓也一起否掉。
+  /// 支付通道检查失败时的通用提示。
   String get starPurchaseUnavailable => _pick(
-    'iOS 端暂未开放星币购买，请前往微信小程序「BoltStar 智能相框」购买后在此查看余额。',
-    'Buying stars is not available on iOS yet. Purchase in the BoltStar mini program; your balance shows up here.',
-    'iOS ではスターコインを購入できません。WeChat ミニプログラムで購入すると、残高がここに反映されます。',
+    '当前支付通道暂不可用，请稍后重试。',
+    'This payment channel is unavailable. Please try again later.',
+    '現在この支払い方法は利用できません。後でもう一度お試しください。',
   );
 
-  // ── 星币购买（2026-08-27 安卓接入 PayPal；小程序=微信支付、iOS=Apple 内购未接）──
+  // ── 星币购买（2026-08-27 安卓 PayPal；小程序微信支付；iOS StoreKit 内购）──
 
   /// 星币管理页的套餐区标题（小程序 `.token-section-title`「套餐购买」）。
   String get starPackagesTitle => _pick('套餐购买', 'Buy stars', 'コインを購入');
@@ -2099,17 +2098,53 @@ class AppL10n {
       _pick('选择套餐，PayPal 支付', 'Choose a plan, pay with PayPal', 'プランを選んで PayPal で支払う');
   String get starBuyTitle => _pick('确认购买', 'Confirm Purchase', '購入の確認');
   String get starBuyChoosePackage => _pick('选择套餐', 'Choose a plan', 'プランを選択');
+  // App Store consumable purchases; Traditional Chinese uses the common converter.
+  String get starApplePurchase => _pick(
+    '通过 App Store 购买，支付金额以苹果显示为准。',
+    'Purchase through the App Store at the price shown by Apple.',
+    'App Store で購入します。金額は Apple の表示をご確認ください。',
+  );
+  String get starAppleLoadingPrice =>
+      _pick('正在获取价格…', 'Loading price…', '価格を確認中…');
+  String get starAppleUnavailable => _pick(
+    '暂时无法加载此苹果商品，请稍后重试。',
+    'This App Store product is unavailable. Please try again later.',
+    'この App Store 商品を読み込めません。後でもう一度お試しください。',
+  );
+  String get starAppleWaiting => _pick(
+    '等待苹果支付结果。',
+    'Waiting for the App Store purchase result.',
+    'App Store の購入結果を待っています。',
+  );
+  String get starAppleDeferred => _pick(
+    '购买正在等待批准，批准后会自动确认。',
+    'This purchase is awaiting approval. It will be checked after approval.',
+    '購入の承認を待っています。承認後、自動で確認します。',
+  );
+  String get starAppleVerifying =>
+      _pick('正在验证支付凭证…', 'Verifying your purchase…', '購入を検証中…');
+  String get starApplePending => _pick(
+    '支付结果确认中，请重新确认，避免重复购买。',
+    'Your purchase is being confirmed. Check again before buying again.',
+    '購入結果を確認中です。重複購入せず、再確認してください。',
+  );
+  String get starAppleContinueNote => _pick(
+    '有一笔待继续的购买，请继续支付或重新确认。',
+    'A purchase is pending. Continue the payment or check it again.',
+    '保留中の購入があります。お支払いを続けるか、再確認してください。',
+  );
+  String get starAppleRetry =>
+      _pick('重新确认支付', 'Check purchase again', '購入を再確認');
+  String get starAppleContinue => _pick('继续支付', 'Continue payment', '支払いを続ける');
+  String get starAppleReload => _pick('重新获取商品', 'Reload product', '商品を再読み込み');
+  String get starAppleFailed => _pick(
+    '本次支付未完成，请重试确认。',
+    'Payment was not completed. Please check again.',
+    'お支払いが完了していません。再確認してください。',
+  );
+
   String get starBuyPayChannel =>
       _pick('选择支付方式', 'Choose a payment method', 'お支払い方法を選択');
-
-  /// iOS 的确认购买页：**不画支付方式**（Apple 内购未接），改用这句说明 + 置灰的按钮。
-  /// 与 [starPurchaseUnavailable] 的差别：那句是「这一端买不了」的入口级提示，
-  /// 这句是站在确认页上解释「为什么这颗按钮按不动」。
-  String get starBuyApplePending => _pick(
-    'Apple 内购接入中，暂时无法在 iOS 完成支付。可前往微信小程序「BoltStar 智能相框」购买，余额在这里查看。',
-    'Apple in-app purchase is not connected yet, so payment cannot be completed on iOS. Buy in the BoltStar mini program; your balance shows up here.',
-    'Apple のアプリ内課金は未対応のため、iOS では支払いを完了できません。WeChat ミニプログラムで購入すると、残高がここに反映されます。',
-  );
 
   /// 套餐卡上的赠送角标。
   String starBuyGift(int count) =>

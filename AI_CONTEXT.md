@@ -99,6 +99,12 @@ OpenHarmony/HAP is not integrated.
 - Deployment target: iOS 13.0.
 - CocoaPods-based Flutter integration; native code is Swift.
 - The device method channel is also implemented by `Runner/AppDelegate.swift`.
+- Runner Bundle ID: `com.boltfox.boltstar` in Debug/Profile/Release.
+- iOS star purchases use the original StoreKit bridge and traditional Base64 app receipts.
+  `features/star/apple_iap.dart` coordinates persistent pending transactions and account isolation;
+  finish follows matching receipt, paid business order and balance delivery checks. Backend order
+  association/idempotency and iOS sandbox testing remain to be confirmed. Current contract:
+  `docs/integration/IOS_IN_APP_PURCHASE.md`.
 - `UIBackgroundModes` contains `bluetooth-central`.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.
 - The WeChat URL Scheme and mobile AppID are fixed to `wx4cf0c5f38a70d0bc`; the Universal Link

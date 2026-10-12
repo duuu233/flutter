@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../network/api_exception.dart';
@@ -6,6 +9,7 @@ import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../star_coin_api.dart';
+import '../apple_iap.dart';
 import '../star_purchase.dart';
 import 'star_card.dart';
 
@@ -16,10 +20,8 @@ import 'star_card.dart';
 /// （[StarCoinPage] 的横滑套餐条），本页不再自己拉一遍 `getGoodsList` —— 同一份列表拉两次、
 /// 两处各存一份选中态，是「选了 A 进来却按 B 建单」这类错的温床。
 ///
-/// ⚠️ **支付方式按端**（需求 8）：**安卓只画 PayPal 一项；iOS 不画支付方式**——
-/// Apple 内购尚未接入（[StarPayType.supportedOnThisApp] 为 false），
-/// 画一行点不动的「Apple 内购」比不画更让人困惑。iOS 上改为一句说明 + 置灰的按钮，
-/// 页面本身照常可进、金额照常看得见（需求 7：页面和交互先有，支付后接）。
+/// 支付方式按端：安卓 PayPal；iOS 原生 StoreKit，确认页显示苹果实际价格。
+/// iOS 交易恢复和验单由进程级 [AppleIapController] 管理，离开本页仍会处理回调。
 ///
 /// ⚠️ **简中语种不给走 PayPal**（2026-09-03 需求）：点「立即购买」时先问一句
 /// [StarPurchase.payPalBlockedFor]，是简中就只弹一句「暂不支持人民币付款，请切换其他语种
@@ -41,7 +43,9 @@ import 'star_card.dart';
 /// 到账判据始终是服务端余额变多（[StarPurchase] 文件头那条铁律）。它的作用是触发 capture
 /// 并让轮询几乎必定在第一轮就命中；它的 message 只在最终没确认到账时兜底展示。
 class StarPurchasePage extends StatefulWidget {
-  const StarPurchasePage({super.key, required this.package});
+  const StarPurchasePage({super.key, required this.package, this.appleIap});
+
+  final AppleIapController? appleIap;
 
   /// 星币管理页选好的那一档。本页只确认与支付，不负责挑选。
   final StarPackage package;
@@ -52,6 +56,83 @@ class StarPurchasePage extends StatefulWidget {
 
 class _StarPurchasePageState extends State<StarPurchasePage>
     with WidgetsBindingObserver {
+  bool get _isApple => defaultTargetPlatform == TargetPlatform.iOS;
+  late final AppleIapController _apple =
+      widget.appleIap ?? AppleIapController.instance;
+  AppleIapProduct? _appleProduct;
+  bool _appleLoading = false;
+  bool _appleStarted = false;
+  bool _appleCompleted = false;
+  String? _appleProductError;
+
+  Future<void> _loadAppleProduct() async {
+    if (_appleLoading) return;
+    setState(() {
+      _appleLoading = true;
+      _appleProductError = null;
+    });
+    try {
+      final product = await _apple.prepare(widget.package);
+      if (mounted) setState(() => _appleProduct = product);
+    } catch (_) {
+      if (mounted) setState(() => _appleProductError = 'product_unavailable');
+    } finally {
+      if (mounted) setState(() => _appleLoading = false);
+    }
+  }
+
+  void _onAppleChanged() {
+    if (!mounted) return;
+    setState(() {});
+    if (_appleStarted &&
+        !_appleCompleted &&
+        _apple.phase == AppleIapPhase.credited) {
+      _appleCompleted = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        await showAppNoticeDialog(
+          context,
+          title: AppL10n.of(context).starBuySucceeded(_apple.creditedTokens),
+        );
+        if (mounted) Navigator.of(context).pop(true);
+      });
+    }
+  }
+
+  Future<void> _buyApple() async {
+    if (_busy || !_apple.canBuy || _appleProduct == null) return;
+    _appleStarted = true;
+    setState(() => _busy = true);
+    AppLoadingDialog.show(context, AppL10n.of(context).starBuyStagePay);
+    try {
+      await _apple.buy(widget.package);
+    } finally {
+      if (mounted) {
+        AppLoadingDialog.hide(context);
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  Future<void> _retryApple() async {
+    _appleStarted = true;
+    await _apple.retry(manual: true);
+  }
+
+  String _appleMessage(AppL10n l10n) {
+    if (_appleProductError != null) return l10n.starAppleUnavailable;
+    return switch (_apple.phase) {
+      AppleIapPhase.purchasing => l10n.starAppleWaiting,
+      AppleIapPhase.deferred => l10n.starAppleDeferred,
+      AppleIapPhase.verifying => l10n.starAppleVerifying,
+      AppleIapPhase.pending => l10n.starApplePending,
+      AppleIapPhase.resume => l10n.starAppleContinueNote,
+      AppleIapPhase.canceled => l10n.starBuyCanceled,
+      AppleIapPhase.failed => l10n.starAppleFailed,
+      _ => l10n.starApplePurchase,
+    };
+  }
+
   /// 建单/拉起支付进行中（按钮转圈、不许再点）。
   bool _busy = false;
 
@@ -68,17 +149,27 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (_isApple) {
+      _apple.addListener(_onAppleChanged);
+      unawaited(_loadAppleProduct());
+      unawaited(_apple.retry());
+    }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    if (_isApple) _apple.removeListener(_onAppleChanged);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    if (_isApple) {
+      unawaited(_apple.retry());
       return;
     }
     // 从 PayPal 回到 App：一律走同一条确认链路。[_confirm] 会先问一句「是不是点了取消」
@@ -91,9 +182,12 @@ class _StarPurchasePageState extends State<StarPurchasePage>
 
   /// ②③④：建单 → 创建支付 → 跳 PayPal。
   Future<void> _buy() async {
-    // iOS：通道没接，**不建单**（后台留一串永远付不掉的待支付单，对账时全是垃圾）。
-    // 按钮此时本就是置灰的，这里只是兜底。
-    if (_busy || !StarPayType.supportedOnThisApp) {
+    // iOS 由独立 StoreKit 编排处理，PayPal 的语种限制只适用于安卓。
+    if (_busy || (!_isApple && !StarPayType.supportedOnThisApp)) {
+      return;
+    }
+    if (_isApple) {
+      await _buyApple();
       return;
     }
     final package = widget.package;
@@ -311,17 +405,28 @@ class _StarPurchasePageState extends State<StarPurchasePage>
         children: [
           // 概览卡距顶：小程序 `.summary-card` 的 margin-top 40rpx。
           const SizedBox(height: 20),
-          _SummaryCard(package: widget.package, l10n: l10n),
+          _SummaryCard(
+            package: widget.package,
+            l10n: l10n,
+            applePrice: _isApple
+                ? (_appleProduct?.price ?? l10n.starAppleLoadingPrice)
+                : null,
+          ),
           // 区块标题上下 = 小程序 `.token-section-title` 的 margin 56rpx 0 24rpx。
           const SizedBox(height: 28),
-          // 需求 8：安卓只有 PayPal 一项；iOS 不画支付方式（Apple 内购未接），
-          // 改为一句说明——画一行点不动的选项比不画更让人困惑。
-          if (payable) ...[
+          // iOS 保留单一 App Store 通道及交易状态，安卓显示 PayPal。
+          if (!_isApple && payable) ...[
             Text(l10n.starBuyPayChannel, style: _BuyStyles.sectionTitle),
             const SizedBox(height: 12),
             const _PayPalChannelCard(),
-          ] else
-            _ApplePendingNote(l10n: l10n),
+          ] else ...[
+            _ApplePendingNote(message: _appleMessage(l10n)),
+            if (_appleProductError != null)
+              TextButton(
+                onPressed: _appleLoading ? null : _loadAppleProduct,
+                child: Text(l10n.starAppleReload),
+              ),
+          ],
           if (approving) ...[
             const SizedBox(height: 16),
             _ApprovingCard(l10n: l10n),
@@ -329,16 +434,34 @@ class _StarPurchasePageState extends State<StarPurchasePage>
           const SizedBox(height: 28),
         ],
       ),
-      bottom: _BottomBar(
-        l10n: l10n,
-        payable: payable,
-        busy: _busy,
-        confirming: _confirming,
-        approving: approving,
-        onBuy: _buy,
-        onConfirm: _confirm,
-        onGiveUp: _giveUp,
-      ),
+      bottom: _isApple
+          ? Padding(
+              padding: const EdgeInsets.only(bottom: 18),
+              child: FigmaPrimaryButton(
+                label: _apple.hasPending && _apple.phase != AppleIapPhase.resume
+                    ? l10n.starAppleRetry
+                    : _apple.phase == AppleIapPhase.resume
+                    ? l10n.starAppleContinue
+                    : l10n.starBuyNow,
+                onPressed: _busy || _apple.busy
+                    ? null
+                    : _apple.hasPending && _apple.phase != AppleIapPhase.resume
+                    ? _retryApple
+                    : _appleProduct != null && _apple.canBuy
+                    ? _buy
+                    : null,
+              ),
+            )
+          : _BottomBar(
+              l10n: l10n,
+              payable: payable,
+              busy: _busy,
+              confirming: _confirming,
+              approving: approving,
+              onBuy: _buy,
+              onConfirm: _confirm,
+              onGiveUp: _giveUp,
+            ),
     );
   }
 }
@@ -371,7 +494,7 @@ class _BottomBar extends StatelessWidget {
 
   final AppL10n l10n;
 
-  /// 这一端的支付通道接没接（iOS 的 Apple 内购未接 → false，按钮置灰）。
+  /// PayPal 是否可用。iOS 的底部操作由独立分支处理。
   final bool payable;
 
   final bool busy;
@@ -419,7 +542,7 @@ class _BottomBar extends StatelessWidget {
             FigmaPrimaryButton(
               label: l10n.starBuyNow,
               fontSize: _kButtonFontSize,
-              // iOS：通道未接，按钮置灰（原因写在上面那句 [_ApplePendingNote] 里）。
+              // Android PayPal 的通道保护。
               onPressed: busy || !payable ? null : onBuy,
             ),
         ],
@@ -443,7 +566,13 @@ class _BottomBar extends StatelessWidget {
 ///
 /// ⚠️ **不画单价**：小程序这张卡上没有这一行（单价只出现在星币管理页的套餐卡上）。
 class _SummaryCard extends StatelessWidget {
-  const _SummaryCard({required this.package, required this.l10n});
+  const _SummaryCard({
+    required this.package,
+    required this.l10n,
+    this.applePrice,
+  });
+
+  final String? applePrice;
 
   final StarPackage package;
   final AppL10n l10n;
@@ -503,7 +632,8 @@ class _SummaryCard extends StatelessWidget {
               const SizedBox(width: 12),
               Text(
                 // 符号取后端按商品下发的 currencySymbol，别写死 —— 见 StarPackage.currencySymbol
-                '${package.currencySymbol}${package.price.toStringAsFixed(2)}',
+                applePrice ??
+                    '${package.currencySymbol}${package.price.toStringAsFixed(2)}',
                 style: const TextStyle(
                   color: Color(0xFFF2621F),
                   fontSize: 21,
@@ -566,16 +696,16 @@ class _SummaryCard extends StatelessWidget {
 
 /// iOS 上顶替「支付方式」那一块的说明（需求 8：苹果不显示支付方式）。
 class _ApplePendingNote extends StatelessWidget {
-  const _ApplePendingNote({required this.l10n});
+  const _ApplePendingNote({required this.message});
 
-  final AppL10n l10n;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Text(
-        l10n.starBuyApplePending,
+        message,
         textAlign: TextAlign.center,
         style: const TextStyle(
           color: Color(0xFF888F99),

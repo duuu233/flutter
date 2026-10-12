@@ -8,6 +8,7 @@ import '../device/ble_connection_lease.dart';
 import '../device/ble_controller.dart';
 import '../features/account/presentation/auth_page.dart';
 import '../native_device_api.dart';
+import '../features/star/apple_iap.dart';
 import '../features/shell/presentation/shell_page.dart';
 import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
@@ -197,6 +198,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
   /// 之后每个接口都报错。这里统一 popUntil 回根，显式登出与会话失效两条路径就都收敛了。
   void _handleAuthChanged() {
     final loggedIn = _state.isLoggedIn;
+    AppleIapController.instance.setUser(loggedIn ? _state.currentUser.id : null);
     if (!_wasLoggedIn && loggedIn) {
       // 登录成功（邮箱/微信，或冷启动恢复登录态）：查一次强制升级。
       unawaited(_maybeCheckForceUpdate());
@@ -297,6 +299,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         unawaited(_resumeBleSession());
+        unawaited(AppleIapController.instance.retry());
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:
         unawaited(_enterBackgroundLeasePhase());

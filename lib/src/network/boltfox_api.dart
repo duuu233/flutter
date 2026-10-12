@@ -429,6 +429,23 @@ class BoltFoxApi {
     );
   }
 
+  /// App Store legacy receipt verification. Public session parameters are
+  /// injected by ApiClient. Never automatically repeat a potentially processed POST.
+  static Future<dynamic> setApplePayVerifyReceipt({
+    required String receiptData,
+    bool excludeOldTransactions = false,
+  }) {
+    return _http.postJson(
+      '/Client/Pay/setApplePayVerifyReceipt',
+      body: {
+        'receiptData': receiptData,
+        'excludeOldTransactions': excludeOldTransactions,
+      },
+      retryOnTimeout: false,
+      retryOnConnectionError: false,
+    );
+  }
+
   /// 创建支付（2026-08-27 新增，安卓 PayPal 走这条）。
   ///
   /// 业务入参 `orderNo` + `payType` + **`payPalReturnUrl` / `payPalCancelUrl`**

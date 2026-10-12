@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次变更：[2026-10-10 恢复 iOS 星币入口](history/2026-10/2026-10-10-iOS星币入口恢复.md)。
+本次变更：[2026-10-12 iOS 星币内购接入](history/2026-10/2026-10-12-ios-in-app-purchase.md)。
 
 ## 1. 阅读入口
 
@@ -17,6 +17,7 @@
 | 快速了解项目 | [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) |
 | 查看当前代码架构 | [`architecture/PROJECT_STRUCTURE.md`](architecture/PROJECT_STRUCTURE.md) |
 | 查看接口与服务 | [`architecture/API_INTEGRATION.md`](architecture/API_INTEGRATION.md) |
+| iOS 内购、Base64 收据与后端交付契约 | [`integration/IOS_IN_APP_PURCHASE.md`](integration/IOS_IN_APP_PURCHASE.md) |
 | 查看 App/小程序差异 | [`integration/APP_VS_MINIPROGRAM.md`](integration/APP_VS_MINIPROGRAM.md) |
 | 评估 Wi-Fi 版相框接入 / BluFi 配网 | [`integration/WIFI_FRAME_BLUFI_ANALYSIS.md`](integration/WIFI_FRAME_BLUFI_ANALYSIS.md) |
 | Wi-Fi 版功能差异 / 详情页 / 搜索动线 / 上传页面 / TF 卡与 FPGA | [`integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md`](integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md) |
@@ -43,6 +44,7 @@
 | 文档 | 主职责 |
 | --- | --- |
 | [`integration/APP_VS_MINIPROGRAM.md`](integration/APP_VS_MINIPROGRAM.md) | App 与微信小程序当前能力矩阵和有意差异 |
+| [`integration/IOS_IN_APP_PURCHASE.md`](integration/IOS_IN_APP_PURCHASE.md) | iOS 星币内购、Bundle ID、传统收据、交易恢复、后端交付契约与联调 |
 | [`integration/WECHAT_LOGIN_SETUP.md`](integration/WECHAT_LOGIN_SETUP.md) | 微信开放平台移动应用登录与原生配置 |
 | [`integration/WIFI_FRAME_BLUFI_ANALYSIS.md`](integration/WIFI_FRAME_BLUFI_ANALYSIS.md) | **Analysis（决策依据，非当前实现）**：`docs/相框v2.0.0/` 四份 PDF 的解读——Wi-Fi 版相框的 MQTT 指令集、BluFi 蓝牙配网能否并进现有搜索、实现路线与风险清单、待硬件/服务端确认的 12 个问题 |
 | [`integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md`](integration/WIFI_FRAME_FEATURE_GAP_AND_DETAIL_PAGE.md) | **Analysis（决策依据，非当前实现）**：Wi-Fi 版与现有蓝牙版的**功能差异矩阵**（投屏/轮播/删图/校时/连接五项换掉，工作模式/休眠/TF 卡/内置图/国家码五项新增）、**为什么详情页要新做一份**（数据源、动作通道、现有页 1000 行的坑），以及**搜索能不能合并**的三层结论（广播层可合、选中后必须分叉、已绑定设备本来就走后端列表）。以及 **§5 上传页面能否合并**（列表页可合、设备图直接用后端 `productImg`、投屏链路后半段必须分叉、**协议没有单张删除指令**只有 `clean_tf` 整类清空）。**§9 TF 卡播放与 FPGA 升级**（`play_tf` 是零参数开关、做不了文件管理；`fpga` 与 `ota` 报文逐字段相同、设备自己下载，但**没有进度上报**，现有「自己下包 + BLE 推送」的升级页要按无进度重做）。附 20 条新增待确认 |
@@ -70,6 +72,8 @@
 | [`generated/IOS_LAUNCH_IMAGE.md`](generated/IOS_LAUNCH_IMAGE.md) | Flutter iOS 启动图资源说明的集中存档 |
 
 ## 3. 历史资料
+
+本轮记录：[2026-10-12 iOS 星币内购接入](history/2026-10/2026-10-12-ios-in-app-purchase.md)。
 
 `history/` 只保存当时的审查、变更、进度和旧结构，不承担当前事实：
 

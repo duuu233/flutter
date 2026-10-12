@@ -134,7 +134,7 @@ class ApiClient {
   /// 用途：release 包在真机屏幕上把「客户端到底发了什么」交给后端定位——微信授权链路
   /// 只有 release 包能走通，而 release 包既没有 `kDebugMode` 也没有 `debugPrint` 出口。
   /// 凭证字段（userToken / Authorization / Authentication，无论在 query 还是 header）
-  /// 一律按 [_maskSecret] 打码，业务 body 原样展示。
+  /// 一律按 [_maskSecret] 打码；收据 body 不展示凭证内容。
   String describeRequest(
     String method,
     String path, {
@@ -161,7 +161,11 @@ class ApiClient {
             .join('; '),
       );
     if (body != null) {
-      buffer.write('\nbody: ${jsonEncode(body)}');
+      final shownBody = {...body};
+      if (shownBody.containsKey('receiptData')) {
+        shownBody['receiptData'] = '[redacted]';
+      }
+      buffer.write('\nbody: ${jsonEncode(shownBody)}');
     }
     return buffer.toString();
   }
@@ -424,7 +428,11 @@ class ApiClient {
         ? ''
         : utf8.decode(response.bodyBytes, allowMalformed: true);
     debugPrint('[HTTP] <-- ${response.statusCode} $method ${_redactUri(uri)}');
-    debugPrint('[HTTP] response: ${jsonEncode(_redactJson(text))}');
+    // Apple responseData may contain another Base64 receipt inside a JSON string.
+    final shown = uri.path == '/Client/Pay/setApplePayVerifyReceipt'
+        ? '[redacted Apple receipt response]'
+        : jsonEncode(_redactJson(text));
+    debugPrint('[HTTP] response: $shown');
   }
 
   /// 日志里的 URL 同样要脱敏：/Client/ 公共参数把 userToken 拼进了 query，
@@ -451,6 +459,8 @@ class ApiClient {
       'confirmpassword',
       'token',
       'usertoken',
+      'receiptdata',
+      'latestreceipt',
     };
     if (key != null && sensitiveKeys.contains(key.toLowerCase())) {
       return '***';

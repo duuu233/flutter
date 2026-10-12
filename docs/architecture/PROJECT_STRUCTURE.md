@@ -58,6 +58,7 @@ lib/
     │   ├── home/
     │   ├── mine/
     │   ├── settings/
+    │   ├── star/                # 余额/套餐/记录、安卓 PayPal、iOS StoreKit
     │   └── shell/
     ├── network/
     │   ├── api_client.dart
@@ -102,6 +103,8 @@ lib/
 | `guide` | FAQ/操作指南的全量分页、语种刷新和 HTML 子集展示 |
 | `settings` | 语言、用户/隐私/AI 服务协议、版本检查、退出与注销 |
 | `ai` | 星宝会话、按用户授权、图文对话、图片压缩/增强和四语种错误映射 |
+
+| `star` | 余额、套餐、记录、安卓 PayPal 与 iOS StoreKit；`apple_iap.dart` 以进程级 Controller 持有购买状态/恢复，账号变化由应用层传入，原生桥接在 AppDelegate；[契约](../integration/IOS_IN_APP_PURCHASE.md) |
 
 ## 4. 跨模块架构
 
