@@ -417,7 +417,16 @@ class ApiClient {
   void _logRequest(String method, Uri uri, {Object? data}) {
     if (!kDebugMode) return;
     debugPrint('[HTTP] --> $method ${_redactUri(uri)}');
-    if (data != null) {
+    if (uri.path == '/Client/Pay/setApplePayVerifyReceipt' && data is Map) {
+      final receipt = data['receiptData'];
+      final summary = {
+        'receiptData': '[redacted]',
+        'receiptDataLength': receipt is String ? receipt.length : null,
+        'orderNo': data['orderNo'],
+        'transactionId': data['transactionId'],
+      };
+      debugPrint('[AppleIAP] verify request: ${jsonEncode(summary)}');
+    } else if (data != null) {
       debugPrint('[HTTP] request: ${jsonEncode(_redact(data))}');
     }
   }
@@ -429,10 +438,31 @@ class ApiClient {
         : utf8.decode(response.bodyBytes, allowMalformed: true);
     debugPrint('[HTTP] <-- ${response.statusCode} $method ${_redactUri(uri)}');
     // Apple responseData may contain another Base64 receipt inside a JSON string.
-    final shown = uri.path == '/Client/Pay/setApplePayVerifyReceipt'
-        ? '[redacted Apple receipt response]'
-        : jsonEncode(_redactJson(text));
-    debugPrint('[HTTP] response: $shown');
+    if (uri.path == '/Client/Pay/setApplePayVerifyReceipt') {
+      debugPrint('[HTTP] response: [redacted Apple receipt response]');
+      Map? envelope;
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is Map) envelope = decoded;
+      } catch (_) {
+        // Keep malformed bodies private too; parsing below reports the error.
+      }
+      final data = envelope?['retData'];
+      final retData = data is Map ? data : null;
+      final environment = retData?['environment'];
+      final summary = {
+        'retCode': int.tryParse(envelope?['retCode']?.toString() ?? ''),
+        'status': int.tryParse(retData?['status']?.toString() ?? ''),
+        'environment': const ['Sandbox', 'Production'].contains(environment)
+            ? environment
+            : null,
+        'hasResponseData': retData?['responseData'] != null,
+        'hasLatestReceipt': retData?['latestReceipt'] != null,
+      };
+      debugPrint('[AppleIAP] verify response: ${jsonEncode(summary)}');
+      return;
+    }
+    debugPrint('[HTTP] response: ${jsonEncode(_redactJson(text))}');
   }
 
   /// 日志里的 URL 同样要脱敏：/Client/ 公共参数把 userToken 拼进了 query，

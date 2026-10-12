@@ -61,8 +61,11 @@ getGoodsList.appleProductId
 
 2026-10-12 后端确认发布中的新契约为上述三个参数，验证成功后由后端向用户发放星币。
 客户端使用持久化记录中的业务订单号和当前原生苹果交易号，不用 `orderId`、SKU 或 UUID 代替。
-旧的 `excludeOldTransactions` 不再发送；先前线上 Swagger 尚未反映新参数。按用户安排，
-新接口发布后再核对接口文档，不把旧 DTO 当作新服务的最终返回契约。
+旧的 `excludeOldTransactions` 不再发送。2026-10-12 用户通知后复核 Swagger UI 的
+`/swagger-resources` 与无缓存 `/v2/api-docs`，当前文档仍列 `receiptData/excludeOldTransactions`，
+没有 `orderNo/transactionId`；返回仍为 `status/environment/latestReceipt/responseData`，
+`getPayQuery.payState` 没有枚举说明。按用户确认继续使用上述三个最新参数并准备真机测试，
+不依据尚未更新的 DTO 回退客户端，也不将文档可见等同于发币已联调。
 
 发布中的成功返回字段及 `getPayQuery` 状态仍待确认。当前兼容原有
 `retData.status/environment/latestReceipt/responseData` 出参；为避免提前结束未交付交易，客户端暂要求：
@@ -124,7 +127,21 @@ flutter test --no-pub test/apple_iap_test.dart test/star_purchase_test.dart test
 原生通道参数及四语种文案。静态分析无错误/警告，5 条原有 info 保留。
 
 本轮在 Windows 执行，未编译 Swift/iOS、未调真实支付或发币接口、未完成沙盒/真机验收。
-Mac 上须先编译 Runner，再使用当前 Bundle ID 对应的真实沙盒商品检查：
+Mac 上须先编译 Runner，再使用当前 Bundle ID 对应的真实沙盒商品检查。
+使用 `flutter run` 的 **debug 构建**测试，在 Flutter / Xcode 控制台检索 `[AppleIAP]`：
+
+```text
+[AppleIAP] verify request: {"receiptData":"[redacted]","receiptDataLength":1234,"orderNo":"<业务订单号>","transactionId":"<苹果交易号>"}
+[AppleIAP] verify response: {"retCode":200,"status":0,"environment":"Sandbox","hasResponseData":true,"hasLatestReceipt":true}
+```
+
+`receiptDataLength` 是实际提交的 Base64 字符数；订单号、交易号按本次请求原值打印，方便与后端日志关联。
+返回摘要只打印数值状态、识别出的苹果环境及字段是否存在，不输出原始收据、`responseData`、
+`latestReceipt` 或任意服务端错误正文；公共登录凭证继续脱敏。日志仅在 debug 构建开启，
+release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表发币完成，需结合订单和余额核对。
+本轮补充的日志在隔离 HTTP 测试中核对实际 body、摘要字段及收据不泄露；尚未真机采集。
+
+真机检查：
 
 1. 各档商品、本地化价格、成功支付、取消和系统不允许支付；中文 iOS 不受安卓 PayPal 人民币限制。
 2. Ask to Buy 延迟批准与批准后回调；付款前后杀进程、离开页面、断网、服务器响应丢失。

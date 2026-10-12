@@ -515,6 +515,7 @@ void main() {
               'retCode': 200,
               'retData': {
                 'status': 0,
+                'environment': 'Sandbox',
                 'latestReceipt': receipt,
                 'responseData': jsonEncode({'latest_receipt': receipt}),
               },
@@ -530,6 +531,27 @@ void main() {
         expect((data as Map)['latestReceipt'], receipt);
         expect(logs.join('\n'), isNot(contains(receipt)));
         expect(logs.join('\n'), contains('redacted Apple receipt response'));
+        const requestPrefix = '[AppleIAP] verify request: ';
+        final requestLog = logs.singleWhere(
+          (line) => line.startsWith(requestPrefix),
+        );
+        expect(jsonDecode(requestLog.substring(requestPrefix.length)), {
+          'receiptData': '[redacted]',
+          'receiptDataLength': receipt.length,
+          'orderNo': 'order-1',
+          'transactionId': 'tx-1',
+        });
+        const responsePrefix = '[AppleIAP] verify response: ';
+        final responseLog = logs.singleWhere(
+          (line) => line.startsWith(responsePrefix),
+        );
+        expect(jsonDecode(responseLog.substring(responsePrefix.length)), {
+          'retCode': 200,
+          'status': 0,
+          'environment': 'Sandbox',
+          'hasResponseData': true,
+          'hasLatestReceipt': true,
+        });
       } finally {
         debugPrint = originalPrint;
       }

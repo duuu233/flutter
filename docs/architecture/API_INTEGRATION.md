@@ -153,10 +153,10 @@ iOS 的原生商品 ID 来自 `getGoodsList.appleProductId`，建单使用 `payT
 | --- | --- | --- | --- |
 | 微信小程序 | 微信支付（虚拟支付） | 1 | 小程序端已上线 |
 | **安卓 App** | **PayPal** | **3** | **2026-08-27 接入**（本仓） |
-| iOS App | Apple 内购 | 2 | **未接**；2026-10-10 恢复星币入口供截图，套餐及确认页可查看，实际支付不可用 |
+| iOS App | Apple 内购 | 2 | **前端已接入，待真机联调**；2026-10-12 按确认的三个参数提交传统 Base64 收据，交付契约见 [iOS 内购](../integration/IOS_IN_APP_PURCHASE.md) |
 
 端上不要按平台现写 `if`，取 `StarPayType.forCurrentPlatform`；能不能买取
-`StarPayType.supportedOnThisApp`（iOS 为 false → 确认页支付不可用，**付不了就别建单**）。
+`StarPayType.supportedOnThisApp`，iOS 建单前还须通过 StoreKit 商品和支付权限预检。
 入口显示由 `StarPayType.moduleHiddenOnThisApp` 单独控制，2026-10-10 起为 false，恢复 iOS 原有入口。
 
 安卓 PayPal 的完整链路（编排在 `features/star/star_purchase.dart`）：
