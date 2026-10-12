@@ -26,7 +26,7 @@ getGoodsList.appleProductId
   → StoreKit add(payment)，quantity=1、applicationUsername=UUID
   → purchased 回调
   → Bundle.main.appStoreReceiptURL 读取二进制并 Base64 编码
-  → setApplePayVerifyReceipt(receiptData, excludeOldTransactions=false)
+  → setApplePayVerifyReceipt(receiptData, orderNo, transactionId)
   → 验证当前苹果 transaction_id / product_id
   → getPayQuery(orderNo, payType=2) + getUserAccount
   → 满足订单/到账条件并持久化确认后 finishTransaction
@@ -50,7 +50,8 @@ getGoodsList.appleProductId
 ```json
 {
   "receiptData": "<二进制应用收据的 Base64 字符串>",
-  "excludeOldTransactions": false
+  "orderNo": "<本次 addOrder 返回的业务订单号>",
+  "transactionId": "<本次 StoreKit purchased 回调的 transactionIdentifier>"
 }
 ```
 
@@ -58,11 +59,13 @@ getGoodsList.appleProductId
 按既有接口兼容规则同时写入 header/query。Bundle ID 是后端核验配置，本接口当前 DTO 没有该入参，
 客户端不会擅自添加。请求 body 与此接口响应日志均脱敏，收据及嵌在 `responseData` 中的收据不输出。
 
-2026-10-12 的 Swagger 仍只有上述两个 body 字段，无 `orderNo`、`orderId`、`transactionId`、
-`productId`。出参 `retData` 声明 `status`、`environment`、`latestReceipt`、`responseData`，
-未声明“此交易已经发币”的字段。
+2026-10-12 后端确认发布中的新契约为上述三个参数，验证成功后由后端向用户发放星币。
+客户端使用持久化记录中的业务订单号和当前原生苹果交易号，不用 `orderId`、SKU 或 UUID 代替。
+旧的 `excludeOldTransactions` 不再发送；先前线上 Swagger 尚未反映新参数。按用户安排，
+新接口发布后再核对接口文档，不把旧 DTO 当作新服务的最终返回契约。
 
-`retCode=200` 仅表示业务接口正常返回。客户端另要求：
+发布中的成功返回字段及 `getPayQuery` 状态仍待确认。当前兼容原有
+`retData.status/environment/latestReceipt/responseData` 出参；为避免提前结束未交付交易，客户端暂要求：
 
 1. `retData.status=0`；
 2. `responseData` 是苹果验证结果 JSON 字符串或对象，其中 `receipt.in_app`（兼容
@@ -73,7 +76,8 @@ getGoodsList.appleProductId
 
 只有四项都满足才保存到账确认并结束苹果交易。缺少苹果明细、只有验收据成功、只有无关余额增长，
 都会停在待确认。读取不到购买前余额时也不猜测到账。余额确认窗口为 0/1/2/3 秒间隔，之后可手动确认。
-这些是当前接口下客户端采用的保守条件，不能替代后端将具体苹果交易与业务订单及发币流水绑定。
+这些是返回契约尚未确认时保留的保守条件。新后端若只返回业务成功/发币结果，当前实现可能继续
+显示待确认，需在发布后按明确的交易交付返回和查单语义调整，不能直接把 HTTP 200 当作完成依据。
 
 ## 4. 重试与账号隔离
 
@@ -96,15 +100,15 @@ getGoodsList.appleProductId
 | --- | --- |
 | 应用校验 | Bundle ID 为 `com.boltfox.boltstar`；服务端核验签名、应用、环境、商品、数量和交易有效性 |
 | 商品配置 | 各档真实可购买的 `appleProductId`，及其对应 `goodsId`、发币数量 |
-| 订单关联 | 当前验证入参没有订单号；需明确如何把具体苹果交易关联到 `addOrder(payType=2)` 的订单，不能仅按“最近一张待支付单”猜测 |
+| 订单关联 | 已确认客户端提交 `orderNo` 和 `transactionId`；服务端须核验当前用户、订单商品及真实苹果交易的对应关系 |
 | 幂等发币 | 全量收据可能包含多笔交易，同一 `transaction_id` 在重复提交、不同设备或账号下只能交付一次；明确已经处理的返回语义 |
-| 苹果验证明细 | 当前实现需要 `status=0` 与 `responseData` 中的匹配交易；若后端不返回原始明细，需提供并约定具体交易的验证/交付结果 DTO 后再调整客户端 |
+| 成功返回 | 验证成功后后端发币已确认；是否仍返回 `status=0/responseData`、是否提供明确交付结果，待发布后的文档核对后再适配 |
 | 交付查询 | 需确保已关联的 `getPayQuery.payState=1` 与实际发币一致；更可靠的长期契约是按交易/订单返回 `credited`、到账星币数及归属，解决余额已消费或基线缺失时无法确认的问题 |
 | 沙盒与生产 | 服务端负责环境判断、传统验收据的 21007 沙盒回退及错误状态分类；端上只调用业务服务 |
 | 异常恢复 | 明确无本地映射、删 App、注销账号、退款/撤销和长期 pending 的查询与补偿方案 |
 
-“接受 Base64”只确认了凭证格式，未确认订单关联和发币已实现。上述契约及真实商品未联调前，
-不能把本轮前端实现描述为已完成生产支付验收。服务器密钥和苹果验证调用始终留在服务端。
+后端已确认 Base64 格式、三个请求参数和验证成功后发币职责，正在发布。返回结构、幂等与真实商品
+尚未联调，不能把本轮前端实现描述为已完成生产支付验收。服务器密钥和苹果验证调用始终留在服务端。
 
 ## 6. 验证与 iOS 联调
 

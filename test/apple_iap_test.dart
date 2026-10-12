@@ -138,6 +138,8 @@ class MemoryStore implements AppleIapStore {
 class FakeBackend implements AppleIapBackend {
   int orderCalls = 0;
   int verifyCalls = 0;
+  String? verifiedOrderNo;
+  String? verifiedTransactionId;
   int? currentBalance = 100;
   bool paid = false;
   bool loseVerifyReply = false;
@@ -160,9 +162,17 @@ class FakeBackend implements AppleIapBackend {
   @override
   Future<bool> orderPaid(String orderNo) async => paid;
   @override
-  Future<AppleReceiptVerification> verify(String receipt) async {
+  Future<AppleReceiptVerification> verify({
+    required String receipt,
+    required String orderNo,
+    required String transactionId,
+  }) async {
     expect(base64Decode(receipt), [1, 2, 3]);
     verifyCalls++;
+    verifiedOrderNo = orderNo;
+    verifiedTransactionId = transactionId;
+    expect(orderNo, 'order-1');
+    expect(transactionId, 'tx-1');
     verificationStarted?.complete();
     if (holdVerification != null) await holdVerification!.future;
     if (loseVerifyReply) throw TimeoutException('lost reply');
@@ -474,12 +484,17 @@ void main() {
         expect(request.url.path, '/Client/Pay/setApplePayVerifyReceipt');
         expect(jsonDecode(request.body), {
           'receiptData': receipt,
-          'excludeOldTransactions': false,
+          'orderNo': 'order-1',
+          'transactionId': 'tx-1',
         });
         throw http.ClientException('connection interrupted');
       });
       await expectLater(
-        BoltFoxApi.setApplePayVerifyReceipt(receiptData: receipt),
+        BoltFoxApi.setApplePayVerifyReceipt(
+          receiptData: receipt,
+          orderNo: 'order-1',
+          transactionId: 'tx-1',
+        ),
         throwsA(anything),
       );
       expect(calls, 1);
@@ -509,6 +524,8 @@ void main() {
         });
         final data = await BoltFoxApi.setApplePayVerifyReceipt(
           receiptData: receipt,
+          orderNo: 'order-1',
+          transactionId: 'tx-1',
         );
         expect((data as Map)['latestReceipt'], receipt);
         expect(logs.join('\n'), isNot(contains(receipt)));

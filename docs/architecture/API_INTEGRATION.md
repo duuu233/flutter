@@ -80,7 +80,7 @@ BoltStar 当前使用三套不同的远端服务：
 | 星币消耗规则 | `GET /Client/Order/getAiConfigList` | `getAiConfigList` → `StarCoinApi.fetchRules`（`retData` 是**裸数组**，顺序原样保留） |
 | 星币套餐 | `GET /Client/Order/getGoodsList` | `getGoodsList` → `StarCoinApi.fetchPackages`（2026-08-27 新接） |
 | 建单 | `POST /Client/Order/addOrder` | `addOrder` → `StarCoinApi.createOrder`。入参 `goodsId`+`payType`，**出参 `orderNo` 是后面两步的钥匙** |
-| iOS 内购验收据 | `POST /Client/Pay/setApplePayVerifyReceipt` | `setApplePayVerifyReceipt` → `AppleIapController`。JSON `receiptData` 为传统 Base64，`excludeOldTransactions=false`；关闭所有自动 POST 重试。`status=0` 后仍须匹配交易、查订单并确认到账；[完整契约](../integration/IOS_IN_APP_PURCHASE.md) |
+| iOS 内购验收据 | `POST /Client/Pay/setApplePayVerifyReceipt` | `setApplePayVerifyReceipt` → `AppleIapController`。JSON `receiptData` 为传统 Base64，另传业务 `orderNo` 与苹果 `transactionId`；关闭所有自动 POST 重试。后端验成功负责发币，成功返回结构/查单语义待发布后核对；当前保留匹配交易、查订单和到账确认；[完整契约](../integration/IOS_IN_APP_PURCHASE.md) |
 | 创建支付 | `POST /Client/Pay/setCreatePay` | `setCreatePay` → `StarCoinApi.createPay`。安卓取 `payPalApproveUrl` 跳授权；出参是三渠道共用壳。⚠️ **2026-08-31 新增入参 `payPalCancelUrl`**（取消后浏览器跳的地址，端上传深链 `boltstar://pay/paypal/cancel`） |
 | 查支付侧订单 | `GET /Client/Pay/getPayQuery` | `getPayQuery` → `StarCoinApi.queryPay`。⚠️ `payState` 枚举后端未给，端上只认 **1=已支付** |
 | 官方图库分类/列表/详情 | `GET /Client/Product/{getImgCategory,getProductImgList,getProductImgDetail}` | 同名方法 → `OfficialGalleryApi` |
@@ -91,7 +91,7 @@ BoltStar 当前使用三套不同的远端服务：
 清单中伪装成后端接口。
 
 iOS 的原生商品 ID 来自 `getGoodsList.appleProductId`，建单使用 `payType=2`，不调用 `setCreatePay`。
-当前验收据 DTO 没有订单号或发币确认字段；后端关联与幂等仍待确认，见
+2026-10-12 后端确认验收据新增订单号/苹果交易号并负责发币；新返回 DTO 和幂等交付待发布后核对，见
 [iOS 内购](../integration/IOS_IN_APP_PURCHASE.md)。
 
 ## 4. FAQ 读取规则

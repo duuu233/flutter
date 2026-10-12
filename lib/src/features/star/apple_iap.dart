@@ -178,7 +178,11 @@ abstract class AppleIapBackend {
   Future<StarOrder> createOrder(StarPackage package);
   Future<int?> balance();
   Future<bool> orderPaid(String orderNo);
-  Future<AppleReceiptVerification> verify(String receipt);
+  Future<AppleReceiptVerification> verify({
+    required String receipt,
+    required String orderNo,
+    required String transactionId,
+  });
 }
 
 class ApiAppleIapBackend implements AppleIapBackend {
@@ -204,9 +208,15 @@ class ApiAppleIapBackend implements AppleIapBackend {
       false;
 
   @override
-  Future<AppleReceiptVerification> verify(String receipt) async {
+  Future<AppleReceiptVerification> verify({
+    required String receipt,
+    required String orderNo,
+    required String transactionId,
+  }) async {
     final data = await BoltFoxApi.setApplePayVerifyReceipt(
       receiptData: receipt,
+      orderNo: orderNo,
+      transactionId: transactionId,
     );
     return AppleReceiptVerification.fromJson(
       data is Map ? data.cast<String, dynamic>() : const {},
@@ -498,7 +508,11 @@ class AppleIapController extends ChangeNotifier {
           record['verificationAttempted'] = true;
           await _save();
           if (!_current(epoch)) return;
-          final verified = await backend.verify(receipt);
+          final verified = await backend.verify(
+            receipt: receipt,
+            orderNo: record['orderNo'] as String,
+            transactionId: transactionId,
+          );
           if (!_current(epoch)) return;
           if (!verified.matches(transactionId, record['productId'] as String)) {
             _setPhase(AppleIapPhase.pending, 'receipt_unverified');

@@ -102,8 +102,9 @@ OpenHarmony/HAP is not integrated.
 - Runner Bundle ID: `com.boltfox.boltstar` in Debug/Profile/Release.
 - iOS star purchases use the original StoreKit bridge and traditional Base64 app receipts.
   `features/star/apple_iap.dart` coordinates persistent pending transactions and account isolation;
-  finish follows matching receipt, paid business order and balance delivery checks. Backend order
-  association/idempotency and iOS sandbox testing remain to be confirmed. Current contract:
+  verification submits receiptData/orderNo/transactionId; finish follows matching receipt, paid
+  business order and balance delivery checks. The updated backend response/delivery semantics,
+  idempotency and iOS sandbox testing remain to be confirmed. Current contract:
   `docs/integration/IOS_IN_APP_PURCHASE.md`.
 - `UIBackgroundModes` contains `bluetooth-central`.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.

@@ -41,7 +41,7 @@
 | 协议/隐私 | settings agreement/privacy | 对应 settings 页面 | ✅ | 标题、日期、章节和正文一致 |
 | App 更新 | 小程序更新页 | `update_boltstar_page.dart` | 🔶 | App 走原生版本检查和安装包下载 |
 | 官方图库 / 我的收藏 | `subpackages/gallery` | `features/gallery/official` | ✅⚠️ | **2026-08-12 App 侧补齐**：列表（分类条 + 端上补的「全部」+ 右端固定「收藏」入口 + 两列瀑布流 + 上拉续页）、详情（沉浸式大图 + 收藏 + 开始投屏，走与「再次投屏」同一条链路）、我的收藏。接口 `/Client/Product/{getImgCategory,getProductImgList,getProductImgDetail,setImgCollected,getProductImgCollectionList}`，字段口径与小程序逐条对齐。⚠️ 两处后端缺口两端同款兜底：列表项**没有图片比例**（先按 3:4 占位、加载完校正那一张，**不重新分列**）、**没有收藏态**（另拉一页收藏列表在端上标记）。**2026-08-19 入口对齐**：底栏由两格扩到四格，官方图库进第三格（与小程序同位），「我的 → 服务与帮助」里那一行同步删掉。⚠️未编译/未真机 |
-| 星币（支付体系） | `subpackages/token` | `features/star` | 🔶 | 管理、套餐、余额与购买/消费记录已有。小程序=微信虚拟支付(1)、安卓=PayPal(3)、iOS=Apple 内购(2)。iOS 2026-10-12 接入商品查询、原生购买、传统 Base64 收据及交易恢复；匹配交易、订单已支付和余额到账后才结束交易。后端订单关联/幂等及 iOS 沙盒仍待验收，见 [iOS 内购契约](IOS_IN_APP_PURCHASE.md)。安卓 PayPal 流程保留，联调说明见 `../runbooks/PAYPAL_REDIRECT.md`。 |
+| 星币（支付体系） | `subpackages/token` | `features/star` | 🔶 | 管理、套餐、余额与购买/消费记录已有。小程序=微信虚拟支付(1)、安卓=PayPal(3)、iOS=Apple 内购(2)。iOS 2026-10-12 接入商品查询、原生购买、传统 Base64 收据及交易恢复；匹配交易、订单已支付和余额到账后才结束交易。验收据提交订单号/苹果交易号，后端负责发币；新返回结构/幂等及 iOS 沙盒仍待验收，见 [iOS 内购契约](IOS_IN_APP_PURCHASE.md)。安卓 PayPal 流程保留，联调说明见 `../runbooks/PAYPAL_REDIRECT.md`。 |
 | App 邮箱注册/改密 | 不适用 | `features/account` | 🔶 | App 平台专属 |
 
 ## 3. 全局行为

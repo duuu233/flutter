@@ -433,13 +433,15 @@ class BoltFoxApi {
   /// injected by ApiClient. Never automatically repeat a potentially processed POST.
   static Future<dynamic> setApplePayVerifyReceipt({
     required String receiptData,
-    bool excludeOldTransactions = false,
+    required String orderNo,
+    required String transactionId,
   }) {
     return _http.postJson(
       '/Client/Pay/setApplePayVerifyReceipt',
       body: {
         'receiptData': receiptData,
-        'excludeOldTransactions': excludeOldTransactions,
+        'orderNo': orderNo,
+        'transactionId': transactionId,
       },
       retryOnTimeout: false,
       retryOnConnectionError: false,
