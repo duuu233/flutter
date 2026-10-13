@@ -108,8 +108,10 @@ OpenHarmony/HAP is not integrated.
   idempotency and iOS sandbox testing remain to be confirmed. Current contract:
   `docs/integration/IOS_IN_APP_PURCHASE.md`. Product preflight diagnostics print the selected SKU,
   runtime bundle ID/payment permission, StoreKit returned/invalid product IDs and sanitized native
-  error domain/code/message in debug builds; current UI remains generic. Native changes require a
-  rebuilt iOS debug app; the actual device failure and Swift compilation remain unverified here.
+  error domain/code/message. The confirmation page shows/copies the current query and full redacted
+  error at its bottom in all build modes, including release/TestFlight; only console printing is
+  debug-only. Failed price queries explicitly display price unavailable. The actual device failure
+  and iOS package compilation remain unverified here.
 - `UIBackgroundModes` contains `bluetooth-central`.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.
 - The WeChat URL Scheme and mobile AppID are fixed to `wx4cf0c5f38a70d0bc`; the Universal Link

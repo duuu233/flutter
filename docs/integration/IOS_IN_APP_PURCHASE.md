@@ -2,7 +2,7 @@
 
 > 文档类型：Integration
 > 状态：Active
-> 最后核验：2026-10-13（商品诊断日志、源码与 Flutter 回归；Swagger 契约核验仍为2026-10-12，未完成 iOS 真机联调）
+> 最后核验：2026-10-13（真机页面商品诊断、源码与 Flutter 回归；Swagger 契约核验仍为2026-10-12，未完成 iOS 真机联调）
 
 ## 1. 应用身份与商品
 
@@ -145,11 +145,15 @@ Mac 上须先编译 Runner，再使用当前 Bundle ID 对应的真实沙盒商�
 release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表发币完成，需结合订单和余额核对。
 本轮补充的日志在隔离 HTTP 测试中核对实际 body、摘要字段及收据不泄露；尚未真机采集。
 
-### 商品加载失败诊断（2026-10-13）
+### 商品加载失败诊断：真机页内展示（2026-10-13）
 
-商品业务列表仍取 `/Client/Order/getGoodsList`，`retData` 裸数组由 ApiClient 解包后归一；`appleProductId` 原值交给原生 StoreKit 查询。业务返回有值只证明商品映射存在，苹果实际商品可用性要看 StoreKit 回复。当前界面把预检异常统一显示为“暂时无法加载此苹果商品”；具体原因现在从日志核对。
+商品业务列表仍取 `/Client/Order/getGoodsList`，`retData` 裸数组由 ApiClient 解包后归一；`appleProductId` 原值交给原生 StoreKit 查询。业务返回有值只证明商品映射存在，苹果实际商品可用性要看 StoreKit 回复。主提示保留“暂时无法加载此苹果商品”，价格查询失败时明确显示“价格获取失败”；本次查询的具体返回和错误直接展示在确认页底部。
 
-重新编译安装 **iOS debug 包**（原生有改动，不能只 hot reload），打开星币确认页或点击“重新获取商品”。Flutter / Xcode 控制台搜索 `[AppleIAP]`，从本次 `prepare.request` 到 `.failed` 的日志一起保留：
+安装包含本轮改动的**新iOS包**（普通Release、TestFlight、debug均可），打开确认购买页，底部“苹果商品查询详情”直接显示本次请求、初始化/权限、商品返回和错误。错误自动置顶，保留实际code/message/details及可用栈；未知错误字段不因白名单而丢弃，敏感内容脱敏。详情可上下滚动、选择或点“复制日志”完整复制，不需要连接控制台。
+
+“重新获取商品”清空上次详情并重置滚动位置，只采集本次商品预检。即使初始化已缓存，本次仍记录运行Bundle ID和支付权限；异步请求分别隔离，结束后释放页面回调，离开页面后到达的结果不更新已销毁页面。查询失败时不再继续显示“正在获取价格…”，购买仍受原商品与权限检查保护。
+
+需要控制台时仍可在debug构建搜索 `[AppleIAP]`；以下是查询阶段摘要示例：
 
 ```text
 [AppleIAP] prepare.request: {"goodsId":9,"tokens":7500,"productId":"xb2","supported":true}
@@ -159,7 +163,7 @@ release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表
 [AppleIAP] prepare.product.failed: {"reason":"storekit_empty_products","requestedProductId":"xb2","returnedProductIds":[],"invalidProductIds":["xb2"],"bundleId":"com.boltfox.boltstar","code":"product_unavailable",...}
 ```
 
-以上是诊断格式示例，不是本次真机结论。Dart `AppleIapDiagnostics` 按字段白名单打印，原生 `AppleIapHandler` 补充具体错误详情；日志保持仅 debug，release / TestFlight 不打印这些调试日志。
+以上是诊断格式示例，不是本次真机结论。Dart `AppleIapDiagnostics.capture` 在所有构建模式收集页面所属预检，阶段摘要按白名单脱敏，完整错误保留未知字段并按敏感字段/文本脱敏；原生 `AppleIapHandler` 的错误详情本来就在普通包中通过通道返回。控制台打印仍仅debug，release/TestFlight可直接看页面底部。
 
 | 日志阶段 / reason | 说明与核对方向 |
 | --- | --- |
@@ -173,9 +177,9 @@ release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表
 | `prepare.product.failed` / `product_id_mismatch`、`localized_price_empty` | 原生返回ID与请求不一致或缺价格，查看 product.response |
 | `product.response` | 记录请求/实际商品ID与苹果本地化价格，确认原生查询成功 |
 
-原生请求保留请求对象与ID对应关系，成功/失败/超时均清理；错误仍按原PlatformException码返回，不改变确认页通用文案、购买权限、建单、扣款、收据或交付条件。不打印 NSError 的完整userInfo、收据、账户UUID或登录凭证；系统错误描述中的URL、邮箱及凭证文本脱敏并限制长度。
+原生请求保留请求对象与ID对应关系，成功/失败/超时均清理；错误仍按原PlatformException码返回，购买权限、建单、扣款、收据或交付条件保持。页面只新增本次预检详情及明确的价格失败状态；安卓PayPal价格和付款逻辑保持。不打印 NSError 的完整userInfo、收据、账户UUID或登录凭证；系统错误描述中的URL、邮箱及凭证文本脱敏并限制长度。
 
-新增商品诊断与原有支付回归合计 **70项通过**，三个本轮Dart文件analyze无问题。测试以模拟原生/HTTP返回验证错误传递、阶段、脱敏及商品解析；Windows未编译Swift/iOS，尚未确认实际手机的失败原因。
+页面诊断及原有商品/支付回归合计 **76项通过**；五个修改Dart文件无error/warning、无新增info，原PayPal页有1条既有跨异步context info，analyze因此退出1。新增6项核对底部完整错误与复制、未知/长描述/嵌套凭证脱敏、重试与缓存初始化、短屏大字体滚动、退出及异步采集隔离。测试以模拟原生/HTTP返回完成，页面采集位于debug判断之前；Windows未编译Swift/iOS或普通安装包，尚未确认实际手机的失败原因。
 
 真机检查：
 

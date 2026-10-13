@@ -2106,6 +2106,12 @@ class AppL10n {
   );
   String get starAppleLoadingPrice =>
       _pick('正在获取价格…', 'Loading price…', '価格を確認中…');
+  String get starApplePriceUnavailable =>
+      _pick('价格获取失败', 'Price unavailable', '価格を取得できません');
+  String get starAppleDiagnosticsTitle =>
+      _pick('苹果商品查询详情', 'App Store product details', 'App Store 商品照会の詳細');
+  String get starAppleDiagnosticsWaiting =>
+      _pick('正在查询，请稍候…', 'Querying product, please wait…', '商品を照会中です…');
   String get starAppleUnavailable => _pick(
     '暂时无法加载此苹果商品，请稍后重试。',
     'This App Store product is unavailable. Please try again later.',

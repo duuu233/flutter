@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../network/api_exception.dart';
 import '../../../shared/l10n/app_l10n.dart';
@@ -10,6 +11,7 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../star_coin_api.dart';
 import '../apple_iap.dart';
+import '../apple_iap_diagnostics.dart';
 import '../star_purchase.dart';
 import 'star_card.dart';
 
@@ -64,18 +66,36 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   bool _appleStarted = false;
   bool _appleCompleted = false;
   String? _appleProductError;
+  final _appleDiagnostics = <String>[];
+  int _appleDiagnosticAttempt = 0;
 
   Future<void> _loadAppleProduct() async {
     if (_appleLoading) return;
     setState(() {
       _appleLoading = true;
+      _appleProduct = null;
       _appleProductError = null;
+      _appleDiagnostics.clear();
+      _appleDiagnosticAttempt++;
     });
     try {
-      final product = await _apple.prepare(widget.package);
+      final product = await AppleIapDiagnostics.capture(
+        () => _apple.prepare(widget.package),
+        onEntry: (line) {
+          if (mounted) setState(() => _appleDiagnostics.add(line));
+        },
+      );
       if (mounted) setState(() => _appleProduct = product);
-    } catch (_) {
-      if (mounted) setState(() => _appleProductError = 'product_unavailable');
+    } catch (error, stackTrace) {
+      if (mounted) {
+        setState(() {
+          _appleProductError = 'product_unavailable';
+          _appleDiagnostics.insert(
+            0,
+            'product.error:\n${AppleIapDiagnostics.describeError(error, stackTrace: stackTrace)}',
+          );
+        });
+      }
     } finally {
       if (mounted) setState(() => _appleLoading = false);
     }
@@ -308,10 +328,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       }
       // ③ 无论有没有回跳，结论一律由**服务端余额**给（文件头铁律）。
       // 走过 ② 的话，capture 已经触发，这轮轮询通常第一次就命中。
-      result = await StarPurchase.confirm(
-        pending,
-        baselineBalance: _baseline,
-      );
+      result = await StarPurchase.confirm(pending, baselineBalance: _baseline);
     } finally {
       // 结果弹窗必须在蒙层收掉之后再弹，否则被压在下面。
       AppLoadingDialog.hide(context);
@@ -340,10 +357,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
 
     if (result.paidByQuery) {
       // 钱已经付了、只是还没到账：同样算「买过了」，回星币页刷新一次余额。
-      await showAppNoticeDialog(
-        context,
-        title: l10n.starBuyPendingPaid,
-      );
+      await showAppNoticeDialog(context, title: l10n.starBuyPendingPaid);
       if (!mounted) {
         return;
       }
@@ -409,7 +423,9 @@ class _StarPurchasePageState extends State<StarPurchasePage>
             package: widget.package,
             l10n: l10n,
             applePrice: _isApple
-                ? (_appleProduct?.price ?? l10n.starAppleLoadingPrice)
+                ? (_appleLoading
+                      ? l10n.starAppleLoadingPrice
+                      : _appleProduct?.price ?? l10n.starApplePriceUnavailable)
                 : null,
           ),
           // 区块标题上下 = 小程序 `.token-section-title` 的 margin 56rpx 0 24rpx。
@@ -437,19 +453,34 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       bottom: _isApple
           ? Padding(
               padding: const EdgeInsets.only(bottom: 18),
-              child: FigmaPrimaryButton(
-                label: _apple.hasPending && _apple.phase != AppleIapPhase.resume
-                    ? l10n.starAppleRetry
-                    : _apple.phase == AppleIapPhase.resume
-                    ? l10n.starAppleContinue
-                    : l10n.starBuyNow,
-                onPressed: _busy || _apple.busy
-                    ? null
-                    : _apple.hasPending && _apple.phase != AppleIapPhase.resume
-                    ? _retryApple
-                    : _appleProduct != null && _apple.canBuy
-                    ? _buy
-                    : null,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _AppleProductDiagnostics(
+                    key: ValueKey(_appleDiagnosticAttempt),
+                    lines: _appleDiagnostics,
+                    l10n: l10n,
+                  ),
+                  const SizedBox(height: 12),
+                  FigmaPrimaryButton(
+                    label:
+                        _apple.hasPending &&
+                            _apple.phase != AppleIapPhase.resume
+                        ? l10n.starAppleRetry
+                        : _apple.phase == AppleIapPhase.resume
+                        ? l10n.starAppleContinue
+                        : l10n.starBuyNow,
+                    onPressed: _busy || _apple.busy
+                        ? null
+                        : _apple.hasPending &&
+                              _apple.phase != AppleIapPhase.resume
+                        ? _retryApple
+                        : _appleProduct != null && _apple.canBuy
+                        ? _buy
+                        : null,
+                  ),
+                ],
               ),
             )
           : _BottomBar(
@@ -462,6 +493,79 @@ class _StarPurchasePageState extends State<StarPurchasePage>
               onConfirm: _confirm,
               onGiveUp: _giveUp,
             ),
+    );
+  }
+}
+
+/// Current product preflight only; available on physical release/TestFlight builds.
+class _AppleProductDiagnostics extends StatelessWidget {
+  const _AppleProductDiagnostics({
+    super.key,
+    required this.lines,
+    required this.l10n,
+  });
+
+  final List<String> lines;
+  final AppL10n l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = lines.join('\n\n');
+    return Container(
+      key: const Key('apple-product-diagnostics'),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: .9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD8DFE5)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.starAppleDiagnosticsTitle,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              TextButton(
+                key: const Key('copy-apple-product-diagnostics'),
+                onPressed: text.isEmpty
+                    ? null
+                    : () async {
+                        await Clipboard.setData(ClipboardData(text: text));
+                        if (context.mounted) {
+                          AppToast.show(context, l10n.crashReportCopied);
+                        }
+                      },
+                child: Text(l10n.crashReportCopy),
+              ),
+            ],
+          ),
+          SizedBox(
+            height: MediaQuery.sizeOf(context).height < 650 ? 100 : 150,
+            child: SingleChildScrollView(
+              key: const Key('apple-product-diagnostics-scroll'),
+              child: SelectableText(
+                text.isEmpty ? l10n.starAppleDiagnosticsWaiting : text,
+                key: const Key('apple-product-diagnostics-text'),
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 11,
+                  height: 1.35,
+                  color: Color(0xFF334455),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -579,6 +683,16 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final price = Text(
+      applePrice ??
+          '${package.currencySymbol}${package.price.toStringAsFixed(2)}',
+      style: const TextStyle(
+        color: Color(0xFFF2621F),
+        fontSize: 21,
+        fontWeight: FontWeight.w700,
+        height: 1,
+      ),
+    );
     return StarCard(
       padding: const EdgeInsets.fromLTRB(16, 17, 16, 15),
       fill: 0.86,
@@ -592,9 +706,10 @@ class _SummaryCard extends StatelessWidget {
           // 于是剩余空间被**平分**；而 Flexible 是 loose、只取文字自身宽度，分到的那一半
           // 用不完的部分既不还给 Spacer 也不给别人，就留在行尾——价格因此停在离右边界
           // 半个空档的位置，和下面「合计获得」那行右对齐的数字对不齐。
-          // 英文版更明显：`Stars` 比「星币」宽，行内自由空间变化后偏移量更扎眼。
-          // 现在左组吃掉全部剩余宽度，价格是唯一的非 flex 尾项，自然落到最右。
+          // 英文单位更宽，短屏或大字体下也要保证价格/查询状态不溢出。
+          // 普通售价占自身宽度，左组填剩余；苹果价格/查询状态允许按右侧空间缩放。
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             crossAxisAlignment: CrossAxisAlignment.baseline,
             textBaseline: TextBaseline.alphabetic,
             children: [
@@ -630,17 +745,16 @@ class _SummaryCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              Text(
-                // 符号取后端按商品下发的 currencySymbol，别写死 —— 见 StarPackage.currencySymbol
-                applePrice ??
-                    '${package.currencySymbol}${package.price.toStringAsFixed(2)}',
-                style: const TextStyle(
-                  color: Color(0xFFF2621F),
-                  fontSize: 21,
-                  fontWeight: FontWeight.w700,
-                  height: 1,
+              if (applePrice == null)
+                price
+              else
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    alignment: Alignment.centerRight,
+                    child: price,
+                  ),
                 ),
-              ),
             ],
           ),
           if (package.gift > 0) ...[

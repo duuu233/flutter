@@ -86,6 +86,7 @@ class MethodChannelAppleIapBridge implements AppleIapBridge {
   Future<void> acknowledgeFailure(String accountToken) => channel
       .invokeMethod<void>('acknowledgeFailure', {'accountToken': accountToken});
   static const channel = MethodChannel('com.boltfox.boltstar/apple_iap');
+  String? bundleId;
 
   @override
   Future<bool> initialize(void Function(Map<String, dynamic>) onEvent) async {
@@ -96,8 +97,9 @@ class MethodChannelAppleIapBridge implements AppleIapBridge {
     });
     AppleIapDiagnostics.log('initialize.request', const {});
     final data = await channel.invokeMapMethod<String, dynamic>('initialize');
+    bundleId = data?['bundleId'] as String?;
     AppleIapDiagnostics.log('initialize.response', {
-      'bundleId': data?['bundleId'],
+      'bundleId': bundleId,
       'canMakePayments': data?['canMakePayments'] == true,
     });
     final device = '${data?['device'] ?? ''}';
@@ -375,6 +377,11 @@ class AppleIapController extends ChangeNotifier {
       stage = 'prepare.initialize';
       await _initialize();
       stage = 'prepare.permission';
+      AppleIapDiagnostics.log('prepare.initialized', {
+        'canMakePayments': _canPay,
+        if (bridge is MethodChannelAppleIapBridge)
+          'bundleId': (bridge as MethodChannelAppleIapBridge).bundleId,
+      });
       if (!_canPay) throw PlatformException(code: 'payment_not_allowed');
       stage = 'prepare.product';
       return await bridge.product(package.appleProductId);

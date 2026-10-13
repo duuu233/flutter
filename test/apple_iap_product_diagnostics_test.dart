@@ -1,9 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:BoltStar/src/features/star/apple_iap.dart';
 import 'package:BoltStar/src/features/star/star_coin_api.dart';
 import 'package:BoltStar/src/network/api_client.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:BoltStar/src/features/star/apple_iap_diagnostics.dart';
+import 'package:BoltStar/src/features/star/presentation/star_purchase_page.dart';
+import 'package:BoltStar/src/shared/l10n/app_l10n.dart';
+import 'package:BoltStar/src/state.dart';
+import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -55,6 +62,248 @@ void main() {
     });
     controller = AppleIapController(supported: true, store: _EmptyStore());
     addTearDown(controller.dispose);
+  });
+
+  Future<void> pumpPage(
+    WidgetTester tester, {
+    Size size = const Size(375, 812),
+    double scale = 1,
+  }) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: TextScaler.linear(scale)),
+          child: child!,
+        ),
+        home: AppLocalizationsScope(
+          language: AppLanguage.zh,
+          child: StarPurchasePage(package: _package, appleIap: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  String pageDetails(WidgetTester tester) => tester
+      .widget<SelectableText>(
+        find.byKey(const Key('apple-product-diagnostics-text')),
+      )
+      .data!;
+
+  testWidgets('底部显示任意商品错误详情，失败不再显示价格加载中，复制已脱敏', (tester) async {
+    native = (call) async {
+      if (call.method == 'initialize') {
+        return {'canMakePayments': true, 'bundleId': 'com.boltfox.boltstar'};
+      }
+      throw PlatformException(
+        code: 'product_unavailable',
+        message: 'StoreKit unavailable',
+        details: {
+          'invalidProductIds': ['xb2'],
+          'nativeErrorCode': 500,
+          'newAppleFailureReason': 'Storefront unavailable',
+          'userToken': 'secret-user',
+          'receiptData': 'secret-receipt',
+        },
+      );
+    };
+    await pumpPage(tester);
+    expect(find.text('苹果商品查询详情'), findsOneWidget);
+    expect(find.text('价格获取失败'), findsOneWidget);
+    expect(find.text('正在获取价格…'), findsNothing);
+    final details = pageDetails(tester);
+    expect(details, contains('xb2'));
+    expect(details, contains('product_unavailable'));
+    expect(details, contains('newAppleFailureReason'));
+    expect(details, contains('Storefront unavailable'));
+    expect(details, isNot(contains('secret-user')));
+    expect(details, isNot(contains('secret-receipt')));
+    expect(
+      tester
+          .widget<FigmaPrimaryButton>(find.byType(FigmaPrimaryButton))
+          .onPressed,
+      isNull,
+    );
+    String? copied;
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') {
+        copied = (call.arguments as Map)['text'] as String;
+      }
+      return null;
+    });
+    addTearDown(
+      () => messenger.setMockMethodCallHandler(SystemChannels.platform, null),
+    );
+    await tester.tap(find.byKey(const Key('copy-apple-product-diagnostics')));
+    await tester.pump();
+    expect(copied, details);
+    await tester.pump(const Duration(seconds: 4));
+    debugDefaultTargetPlatformOverride = null;
+    debugPrint = tester.binding.debugPrintOverride;
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('重试替换上次详情，缓存初始化仍能看到BundleID，成功显示苹果价格', (tester) async {
+    var failed = true;
+    native = (call) async {
+      if (call.method == 'initialize') {
+        return {'canMakePayments': true, 'bundleId': 'com.boltfox.boltstar'};
+      }
+      if (failed) {
+        throw PlatformException(
+          code: 'product_timeout',
+          details: {'reason': 'storekit_product_timeout'},
+        );
+      }
+      return {'productId': 'xb2', 'localizedPrice': r'$15.99'};
+    };
+    await pumpPage(tester);
+    expect(pageDetails(tester), contains('storekit_product_timeout'));
+    failed = false;
+    await tester.tap(find.text('重新获取商品'));
+    await tester.pumpAndSettle();
+    expect(find.text(r'$15.99'), findsOneWidget);
+    expect(find.text('价格获取失败'), findsNothing);
+    expect(pageDetails(tester), contains('com.boltfox.boltstar'));
+    expect(pageDetails(tester), contains('product.response'));
+    expect(pageDetails(tester), isNot(contains('storekit_product_timeout')));
+    debugDefaultTargetPlatformOverride = null;
+    debugPrint = tester.binding.debugPrintOverride;
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('短屏大字体与长系统错误：底部可滚动，购买及复制按钮不溢出', (tester) async {
+    native = (call) async {
+      if (call.method == 'initialize') return {'canMakePayments': true};
+      throw PlatformException(
+        code: 'unknown_store_error',
+        message: List.filled(100, 'long native error').join(' '),
+      );
+    };
+    await pumpPage(tester, size: const Size(375, 568), scale: 1.8);
+    expect(pageDetails(tester), contains('unknown_store_error'));
+    expect(
+      tester.getRect(find.byKey(const Key('apple-product-diagnostics'))).bottom,
+      lessThan(568),
+    );
+    expect(tester.getRect(find.text('立即购买')).bottom, lessThanOrEqualTo(568));
+    await tester.drag(
+      find.byKey(const Key('apple-product-diagnostics-scroll')),
+      const Offset(0, -250),
+    );
+    await tester.pumpAndSettle();
+    debugDefaultTargetPlatformOverride = null;
+    debugPrint = tester.binding.debugPrintOverride;
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('退出页面后查询才返回，不更新已销毁的页面', (tester) async {
+    final pending = Completer<Object?>();
+    native = (call) async => call.method == 'initialize'
+        ? {'canMakePayments': true}
+        : pending.future;
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: Text('root'))),
+    );
+    final navigator = tester.state<NavigatorState>(find.byType(Navigator));
+    unawaited(
+      navigator.push(
+        MaterialPageRoute<void>(
+          builder: (_) =>
+              StarPurchasePage(package: _package, appleIap: controller),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    navigator.pop();
+    await tester.pumpAndSettle();
+    pending.complete({'productId': 'xb2', 'localizedPrice': r'$15.99'});
+    await tester.pump();
+    expect(find.text('root'), findsOneWidget);
+    debugDefaultTargetPlatformOverride = null;
+    debugPrint = tester.binding.debugPrintOverride;
+    expect(tester.takeException(), isNull);
+  });
+
+  test('采集不依赖控制台，异步请求隔离，结束后不再持有页面回调', () async {
+    final first = <String>[];
+    final second = <String>[];
+    final pending = Completer<void>();
+    final late = Completer<void>();
+    final request = AppleIapDiagnostics.capture(() async {
+      AppleIapDiagnostics.log('product.request', {'productId': 'first'});
+      unawaited(
+        late.future.then(
+          (_) => AppleIapDiagnostics.log('late', {'productId': 'first'}),
+        ),
+      );
+      await pending.future;
+      AppleIapDiagnostics.log('product.response', {'productId': 'first'});
+    }, onEntry: first.add);
+    await AppleIapDiagnostics.capture(() async {
+      AppleIapDiagnostics.log('product.request', {'productId': 'second'});
+    }, onEntry: second.add);
+    pending.complete();
+    await request;
+    late.complete();
+    await Future<void>.delayed(Duration.zero);
+    expect(first, hasLength(2));
+    expect(first.join(), isNot(contains('second')));
+    expect(second, hasLength(1));
+    expect(second.single, contains('second'));
+  });
+
+  test('完整未知错误与长描述保留，敏感嵌套字段继续脱敏，四语文案完整', () {
+    final description = List.filled(100, 'native failure').join(' ');
+    final text = AppleIapDiagnostics.describeError(
+      PlatformException(
+        code: 'new_code',
+        message: description,
+        details: {
+          'vendorExtra': {
+            'futureField': 'retain me',
+            'applicationUsername': 'secret-account',
+            'userToken': 'secret-token',
+          },
+          'receiptData': 'secret-receipt',
+          'futureJson':
+              '{"userToken":"secret-json-token","receiptData":"secret-json-receipt"}',
+        },
+      ),
+    );
+    expect(text, contains(description));
+    expect(text, contains('retain me'));
+    for (final secret in [
+      'secret-account',
+      'secret-token',
+      'secret-receipt',
+      'secret-json-token',
+      'secret-json-receipt',
+    ]) {
+      expect(text, isNot(contains(secret)));
+    }
+    expect(
+      AppleIapDiagnostics.describeError(StateError('initialization failed')),
+      contains('initialization failed'),
+    );
+    for (final language in AppLanguage.values) {
+      final l10n = AppL10n(language);
+      expect(l10n.starApplePriceUnavailable, isNotEmpty);
+      expect(l10n.starAppleDiagnosticsTitle, isNotEmpty);
+      expect(l10n.starAppleDiagnosticsWaiting, isNotEmpty);
+    }
   });
 
   Map<String, dynamic> entry(String stage) {
