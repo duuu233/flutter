@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../network/boltfox_api.dart';
 import '../../network/api_session.dart';
 import 'star_coin_api.dart';
+import 'apple_iap_diagnostics.dart';
 
 enum AppleIapPhase {
   idle,
@@ -93,7 +94,12 @@ class MethodChannelAppleIapBridge implements AppleIapBridge {
         onEvent((call.arguments as Map).cast<String, dynamic>());
       }
     });
+    AppleIapDiagnostics.log('initialize.request', const {});
     final data = await channel.invokeMapMethod<String, dynamic>('initialize');
+    AppleIapDiagnostics.log('initialize.response', {
+      'bundleId': data?['bundleId'],
+      'canMakePayments': data?['canMakePayments'] == true,
+    });
     final device = '${data?['device'] ?? ''}';
     if (device.isNotEmpty) ApiSession.instance.device = device;
     return data?['canMakePayments'] == true;
@@ -101,13 +107,31 @@ class MethodChannelAppleIapBridge implements AppleIapBridge {
 
   @override
   Future<AppleIapProduct> product(String productId) async {
+    AppleIapDiagnostics.log('product.request', {'productId': productId});
     final data = await channel.invokeMapMethod<String, dynamic>('product', {
       'productId': productId,
     });
     final id = '${data?['productId'] ?? ''}';
     final price = '${data?['localizedPrice'] ?? ''}';
+    AppleIapDiagnostics.log('product.response', {
+      'requestedProductId': productId,
+      'returnedProductId': id,
+      'localizedPrice': price,
+      'hasPrice': price.isNotEmpty,
+    });
     if (id != productId || price.isEmpty) {
-      throw PlatformException(code: 'product_unavailable');
+      throw PlatformException(
+        code: 'product_unavailable',
+        message: 'StoreKit product response is missing or does not match.',
+        details: {
+          'reason': id != productId
+              ? 'product_id_mismatch'
+              : 'localized_price_empty',
+          'requestedProductId': productId,
+          'returnedProductId': id,
+          'hasPrice': price.isNotEmpty,
+        },
+      );
     }
     return AppleIapProduct(id: id, price: price);
   }
@@ -329,12 +353,35 @@ class AppleIapController extends ChangeNotifier {
   }
 
   Future<AppleIapProduct> prepare(StarPackage package) async {
-    if (!supported || package.appleProductId.isEmpty) {
-      throw PlatformException(code: 'product_unavailable');
+    final fields = <String, Object?>{
+      'goodsId': package.goodsId,
+      'tokens': package.tokens,
+      'productId': package.appleProductId,
+      'supported': supported,
+    };
+    var stage = 'prepare.validation';
+    AppleIapDiagnostics.log('prepare.request', fields);
+    try {
+      if (!supported || package.appleProductId.isEmpty) {
+        throw PlatformException(
+          code: 'product_unavailable',
+          details: {
+            'reason': !supported
+                ? 'platform_unsupported'
+                : 'apple_product_id_empty',
+          },
+        );
+      }
+      stage = 'prepare.initialize';
+      await _initialize();
+      stage = 'prepare.permission';
+      if (!_canPay) throw PlatformException(code: 'payment_not_allowed');
+      stage = 'prepare.product';
+      return await bridge.product(package.appleProductId);
+    } catch (error) {
+      AppleIapDiagnostics.failure(stage, error, fields);
+      rethrow;
     }
-    await _initialize();
-    if (!_canPay) throw PlatformException(code: 'payment_not_allowed');
-    return bridge.product(package.appleProductId);
   }
 
   static String _uuid() {

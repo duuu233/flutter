@@ -498,6 +498,7 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
   private var products: [String: SKProduct] = [:]
   private var productRequests: [ObjectIdentifier: SKProductsRequest] = [:]
   private var productResults: [ObjectIdentifier: FlutterResult] = [:]
+  private var productIds: [ObjectIdentifier: String] = [:]
   private var receiptRequest: SKReceiptRefreshRequest?
   private var receiptResult: FlutterResult?
   private static let requestKey = "boltstar.appleIap.requests.v1"
@@ -528,19 +529,25 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
         value.append(String(UnicodeScalar(UInt8(bitPattern: byte))))
       }
       result(["canMakePayments": SKPaymentQueue.canMakePayments(),
-        "device": model.isEmpty ? UIDevice.current.model : model])
+        "device": model.isEmpty ? UIDevice.current.model : model,
+        "bundleId": Bundle.main.bundleIdentifier ?? ""])
     case "product":
       guard let id = args["productId"] as? String, !id.isEmpty else {
-        result(error("product_unavailable")); return
+        result(productError("product_unavailable", message: "Missing Apple product ID",
+          details: ["reason": "apple_product_id_empty"])); return
       }
       let request = SKProductsRequest(productIdentifiers: [id])
       let key = ObjectIdentifier(request)
       productRequests[key] = request; productResults[key] = result
+      productIds[key] = id
+      logProduct("request", ["productId": id, "timeoutSeconds": 30])
       request.delegate = self; request.start()
       DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in
         guard let self = self, let callback = self.productResults.removeValue(forKey: key) else { return }
         self.productRequests.removeValue(forKey: key)?.cancel()
-        callback(self.error("product_timeout"))
+        let id = self.productIds.removeValue(forKey: key) ?? ""
+        callback(self.productError("product_timeout", message: "StoreKit product request timed out",
+          details: ["reason": "storekit_product_timeout", "productId": id, "timeoutSeconds": 30]))
       }
     case "buy":
       guard let id = args["productId"] as? String,
@@ -607,6 +614,36 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
     FlutterError(code: code, message: nil, details: nil)
   }
 
+  /// Product diagnostics exclude userInfo, receipts and payment/account identifiers.
+  private func productText(_ text: String) -> String {
+    var safe = text.replacingOccurrences(of: #"https?://\S+"#, with: "[url]", options: [.regularExpression, .caseInsensitive])
+    safe = safe.replacingOccurrences(of: #"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}"#, with: "[email]", options: .regularExpression)
+    safe = safe.replacingOccurrences(
+      of: #"(?i)(receiptData|latestReceipt|responseData|userToken|jwtToken|authorization|authentication|accountToken|password|token)\s*[:=]\s*("[^"]*"|\S+)"#,
+      with: "[redacted]", options: .regularExpression)
+    return String(safe.prefix(600))
+  }
+
+  private func logProduct(_ stage: String, _ fields: [String: Any]) {
+    #if DEBUG
+    var details = fields
+    details["bundleId"] = Bundle.main.bundleIdentifier ?? ""
+    if let data = try? JSONSerialization.data(withJSONObject: details, options: [.sortedKeys]),
+      let text = String(data: data, encoding: .utf8) {
+      NSLog("[AppleIAP][native] product.%@: %@", stage, text)
+    }
+    #endif
+  }
+
+  private func productError(_ code: String, message: String, details: [String: Any]) -> FlutterError {
+    var fields = details
+    fields["code"] = code
+    fields["bundleId"] = Bundle.main.bundleIdentifier ?? ""
+    fields["message"] = productText(message)
+    logProduct("failed", fields)
+    return FlutterError(code: code, message: productText(message), details: fields)
+  }
+
   private func readReceipt() -> String? {
     guard let url = Bundle.main.appStoreReceiptURL,
       let data = try? Data(contentsOf: url), !data.isEmpty else { return nil }
@@ -624,14 +661,24 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
       let key = ObjectIdentifier(request)
       guard let callback = self.productResults.removeValue(forKey: key) else { return }
       self.productRequests.removeValue(forKey: key)
+      let id = self.productIds.removeValue(forKey: key) ?? ""
+      let details: [String: Any] = [
+        "requestedProductId": id,
+        "returnedProductIds": response.products.map { $0.productIdentifier },
+        "invalidProductIds": response.invalidProductIdentifiers,
+      ]
+      self.logProduct("response", details)
       guard let product = response.products.first else {
-        callback(self.error("product_unavailable")); return
+        callback(self.productError("product_unavailable", message: "StoreKit returned no product",
+          details: details.merging(["reason": "storekit_empty_products"]) { _, new in new })); return
       }
       self.products[product.productIdentifier] = product
       let formatter = NumberFormatter()
       formatter.numberStyle = .currency; formatter.locale = product.priceLocale
-      callback(["productId": product.productIdentifier,
-        "localizedPrice": formatter.string(from: product.price) ?? ""])
+      let price = formatter.string(from: product.price) ?? ""
+      self.logProduct("loaded", ["productId": product.productIdentifier,
+        "localizedPrice": price, "priceLocale": product.priceLocale.identifier])
+      callback(["productId": product.productIdentifier, "localizedPrice": price])
     }
   }
 
@@ -649,7 +696,21 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
       if self.receiptRequest === request { self.completeReceipt(self.error("receipt_failed")); return }
       let key = ObjectIdentifier(request)
       self.productRequests.removeValue(forKey: key)
-      self.productResults.removeValue(forKey: key)?(self.error("product_unavailable"))
+      let id = self.productIds.removeValue(forKey: key) ?? ""
+      guard let callback = self.productResults.removeValue(forKey: key) else { return }
+      let native = error as NSError
+      var underlying: [[String: Any]] = []
+      var next = native.userInfo[NSUnderlyingErrorKey] as? NSError
+      while let item = next, underlying.count < 3 {
+        underlying.append(["domain": item.domain, "nativeErrorCode": item.code,
+          "nativeMessage": self.productText(item.localizedDescription)])
+        next = item.userInfo[NSUnderlyingErrorKey] as? NSError
+      }
+      callback(self.productError("product_unavailable", message: "StoreKit product request failed", details: [
+        "reason": "storekit_request_failed", "productId": id,
+        "nativeErrorDomain": native.domain, "nativeErrorCode": native.code,
+        "nativeMessage": self.productText(native.localizedDescription), "underlyingErrors": underlying,
+      ]))
     }
   }
 

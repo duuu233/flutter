@@ -2,7 +2,7 @@
 
 > 文档类型：Integration
 > 状态：Active
-> 最后核验：2026-10-12（源码、Swagger 与 Flutter 测试；未完成 iOS 真机联调）
+> 最后核验：2026-10-13（商品诊断日志、源码与 Flutter 回归；Swagger 契约核验仍为2026-10-12，未完成 iOS 真机联调）
 
 ## 1. 应用身份与商品
 
@@ -122,7 +122,7 @@ getGoodsList.appleProductId
 Flutter 基线保持 3.44.6 / Dart 3.12.2；未新增依赖或修改平台构建设置。
 
 ```powershell
-flutter test --no-pub test/apple_iap_test.dart test/star_purchase_test.dart test/star_package_amount_no_ellipsis_test.dart test/ai_token_short_dialog_l10n_test.dart
+flutter test --no-pub test/apple_iap_product_diagnostics_test.dart test/apple_iap_test.dart test/star_purchase_test.dart test/star_package_amount_no_ellipsis_test.dart test/ai_token_short_dialog_l10n_test.dart
 ```
 
 2026-10-12：61 项通过。覆盖商品/权限失败不建单、持久化失败不扣款、付款回执丢失不重复下单、
@@ -144,6 +144,38 @@ Mac 上须先编译 Runner，再使用当前 Bundle ID 对应的真实沙盒商�
 `latestReceipt` 或任意服务端错误正文；公共登录凭证继续脱敏。日志仅在 debug 构建开启，
 release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表发币完成，需结合订单和余额核对。
 本轮补充的日志在隔离 HTTP 测试中核对实际 body、摘要字段及收据不泄露；尚未真机采集。
+
+### 商品加载失败诊断（2026-10-13）
+
+商品业务列表仍取 `/Client/Order/getGoodsList`，`retData` 裸数组由 ApiClient 解包后归一；`appleProductId` 原值交给原生 StoreKit 查询。业务返回有值只证明商品映射存在，苹果实际商品可用性要看 StoreKit 回复。当前界面把预检异常统一显示为“暂时无法加载此苹果商品”；具体原因现在从日志核对。
+
+重新编译安装 **iOS debug 包**（原生有改动，不能只 hot reload），打开星币确认页或点击“重新获取商品”。Flutter / Xcode 控制台搜索 `[AppleIAP]`，从本次 `prepare.request` 到 `.failed` 的日志一起保留：
+
+```text
+[AppleIAP] prepare.request: {"goodsId":9,"tokens":7500,"productId":"xb2","supported":true}
+[AppleIAP] initialize.response: {"bundleId":"com.boltfox.boltstar","canMakePayments":true}
+[AppleIAP] product.request: {"productId":"xb2"}
+[AppleIAP][native] product.response: {"bundleId":"com.boltfox.boltstar","requestedProductId":"xb2","returnedProductIds":[],"invalidProductIds":["xb2"]}
+[AppleIAP] prepare.product.failed: {"reason":"storekit_empty_products","requestedProductId":"xb2","returnedProductIds":[],"invalidProductIds":["xb2"],"bundleId":"com.boltfox.boltstar","code":"product_unavailable",...}
+```
+
+以上是诊断格式示例，不是本次真机结论。Dart `AppleIapDiagnostics` 按字段白名单打印，原生 `AppleIapHandler` 补充具体错误详情；日志保持仅 debug，release / TestFlight 不打印这些调试日志。
+
+| 日志阶段 / reason | 说明与核对方向 |
+| --- | --- |
+| `prepare.validation.failed` / `apple_product_id_empty` | 选中套餐实际没有苹果商品 ID，核对本次客户端返回 |
+| `prepare.validation.failed` / `platform_unsupported` | 运行平台不支持当前内购桥接 |
+| `prepare.initialize.failed` / `native_bridge_missing` | 原生通道未注册或运行包尚未包含该实现；其它初始化异常保留 errorType/code，先看初始化阶段 |
+| `prepare.permission.failed` / `payment_not_allowed` | `canMakePayments=false`，当前系统不允许内购，尚未查询商品 |
+| `prepare.product.failed` / `storekit_empty_products` | 苹果返回无商品；同时核对 returnedProductIds 与 invalidProductIds。无效ID非空时核对苹果商品精确ID、运行Bundle ID与配置；无效ID也为空不能仅据此判定拼写错误 |
+| `prepare.product.failed` / `storekit_product_timeout` | 原生30秒未返回商品，核对测试网络及苹果服务 |
+| `prepare.product.failed` / `storekit_request_failed` | 输出 nativeErrorDomain/nativeErrorCode/nativeMessage，最多三层 underlyingErrors；按具体系统/网络错误定位 |
+| `prepare.product.failed` / `product_id_mismatch`、`localized_price_empty` | 原生返回ID与请求不一致或缺价格，查看 product.response |
+| `product.response` | 记录请求/实际商品ID与苹果本地化价格，确认原生查询成功 |
+
+原生请求保留请求对象与ID对应关系，成功/失败/超时均清理；错误仍按原PlatformException码返回，不改变确认页通用文案、购买权限、建单、扣款、收据或交付条件。不打印 NSError 的完整userInfo、收据、账户UUID或登录凭证；系统错误描述中的URL、邮箱及凭证文本脱敏并限制长度。
+
+新增商品诊断与原有支付回归合计 **70项通过**，三个本轮Dart文件analyze无问题。测试以模拟原生/HTTP返回验证错误传递、阶段、脱敏及商品解析；Windows未编译Swift/iOS，尚未确认实际手机的失败原因。
 
 真机检查：
 
