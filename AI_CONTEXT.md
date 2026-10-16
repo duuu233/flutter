@@ -110,8 +110,15 @@ OpenHarmony/HAP is not integrated.
   runtime bundle ID/payment permission, StoreKit returned/invalid product IDs and sanitized native
   error domain/code/message. The confirmation page shows/copies the current query and full redacted
   error at its bottom in all build modes, including release/TestFlight; only console printing is
-  debug-only. Failed price queries explicitly display price unavailable. The actual device failure
-  and iOS package compilation remain unverified here.
+  debug-only. Since 2026-10-16, the same panel also shows current-user purchase/receipt/verification/
+  delivery diagnostics (160-entry in-memory bound, cleared on account changes, no receipt or UUID
+  payloads). Pending purchases always have a verification-only retry action, separate from a
+  confirmation-gated new-order action. A new order is blocked by any native queued/requested entry
+  or local transaction/verification evidence; unmatched unverified records are retained with
+  supersededBy and can recover late transactions without completing the new order's UI. Failed
+  price queries explicitly display price unavailable. The new behavior and Swift changes still
+  require iOS compilation and device acceptance; screenshots establish an earlier sandbox purchase
+  success, not successful backend delivery or the cause of the current incomplete order.
 - `UIBackgroundModes` contains `bluetooth-central`.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.
 - The WeChat URL Scheme and mobile AppID are fixed to `wx4cf0c5f38a70d0bc`; the Universal Link

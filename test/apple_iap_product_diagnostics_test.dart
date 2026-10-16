@@ -116,7 +116,7 @@ void main() {
       );
     };
     await pumpPage(tester);
-    expect(find.text('苹果商品查询详情'), findsOneWidget);
+    expect(find.text('苹果支付诊断详情'), findsOneWidget);
     expect(find.text('价格获取失败'), findsOneWidget);
     expect(find.text('正在获取价格…'), findsNothing);
     final details = pageDetails(tester);

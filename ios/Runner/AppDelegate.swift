@@ -567,15 +567,15 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
       result(nil)
     case "pendingTransactions":
       var rows = queue.transactions.map(summary)
-      let seen = Set(rows.compactMap { $0["accountToken"] as? String })
-      for (token, product) in requests where !seen.contains(token) {
+      let seen = Set(rows.compactMap { ($0["accountToken"] as? String)?.lowercased() })
+      for (token, product) in requests where !seen.contains(token.lowercased()) {
         rows.append(["accountToken": token, "productId": product, "state": "requested"])
       }
       rows.append(contentsOf: failures.map { $0 as [String: Any] })
       result(rows)
     case "acknowledgeFailure":
       if let token = args["accountToken"] as? String {
-        failures = failures.filter { $0["accountToken"] != token }
+        failures = failures.filter { $0["accountToken"]?.lowercased() != token.lowercased() }
       }
       result(nil)
     case "receipt":
@@ -597,14 +597,16 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
         result(error("invalid_arguments")); return
       }
       if let transaction = queue.transactions.first(where: { $0.transactionIdentifier == id }) {
-        guard transaction.payment.applicationUsername == token,
+        guard let owner = transaction.payment.applicationUsername,
+          let ownerId = UUID(uuidString: owner), let expectedId = UUID(uuidString: token),
+          ownerId == expectedId,
           transaction.transactionState == .purchased || transaction.transactionState == .restored else {
           result(error("transaction_mismatch")); return
         }
         queue.finishTransaction(transaction)
       }
       // No queue entry can mean finish succeeded before Dart persisted removal.
-      var saved = requests; saved.removeValue(forKey: token); requests = saved
+      requests = requests.filter { $0.key.lowercased() != token.lowercased() }
       result(nil)
     default: result(FlutterMethodNotImplemented)
     }
@@ -693,7 +695,15 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
   func request(_ request: SKRequest, didFailWithError error: Error) {
     DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }
-      if self.receiptRequest === request { self.completeReceipt(self.error("receipt_failed")); return }
+      if self.receiptRequest === request {
+        let native = error as NSError
+        self.completeReceipt(FlutterError(code: "receipt_failed",
+          message: self.productText(native.localizedDescription), details: [
+            "reason": "storekit_receipt_request_failed", "nativeErrorDomain": native.domain,
+            "nativeErrorCode": native.code,
+          ]))
+        return
+      }
       let key = ObjectIdentifier(request)
       self.productRequests.removeValue(forKey: key)
       let id = self.productIds.removeValue(forKey: key) ?? ""
@@ -739,8 +749,8 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
         if transaction.transactionState == .failed {
           var saved = self.requests
           if let token = transaction.payment.applicationUsername {
-            saved.removeValue(forKey: token)
-            var failed = self.failures.filter { $0["accountToken"] != token }
+            saved = saved.filter { $0.key.lowercased() != token.lowercased() }
+            var failed = self.failures.filter { $0["accountToken"]?.lowercased() != token.lowercased() }
             failed.append(row.compactMapValues { $0 as? String }); self.failures = failed
           }
           self.requests = saved

@@ -35,6 +35,26 @@ abstract final class AppleIapDiagnostics {
     'priceLocale',
     'hasPrice',
     'timeoutSeconds',
+    'orderNo',
+    'transactionId',
+    'phase',
+    'state',
+    'manual',
+    'newOrder',
+    'pendingCount',
+    'matchedCount',
+    'receiptLength',
+    'verificationAttempted',
+    'receiptVerified',
+    'status',
+    'environment',
+    'hasResponseData',
+    'responseMatches',
+    'orderPaid',
+    'balance',
+    'baseline',
+    'expectedBalance',
+    'supersededBy',
   };
 
   static final _captureKey = Object();
@@ -57,10 +77,13 @@ abstract final class AppleIapDiagnostics {
   static void log(String stage, Map<String, Object?> fields) {
     final onEntry = (Zone.current[_captureKey] as _DiagnosticCapture?)?.onEntry;
     if (!kDebugMode && onEntry == null) return;
-    final line = '[AppleIAP] $stage: ${jsonEncode(_safe(fields))}';
+    final line = format(stage, fields);
     onEntry?.call(line);
     if (kDebugMode) debugPrint(line);
   }
+
+  static String format(String stage, Map<String, Object?> fields) =>
+      '[AppleIAP] $stage: ${jsonEncode(_safe(fields))}';
 
   /// Preserve unexpected error fields on the page while masking private payloads.
   static String describeError(Object error, {StackTrace? stackTrace}) =>

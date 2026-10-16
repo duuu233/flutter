@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../network/boltfox_api.dart';
 import '../../network/api_session.dart';
+import '../../network/api_exception.dart';
 import 'star_coin_api.dart';
 import 'apple_iap_diagnostics.dart';
 
@@ -26,6 +27,12 @@ enum AppleIapPhase {
   unavailable,
 }
 
+bool _sameAccountToken(Object? first, Object? second) =>
+    first is String &&
+    second is String &&
+    first.isNotEmpty &&
+    first.toLowerCase() == second.toLowerCase();
+
 class AppleIapProduct {
   const AppleIapProduct({required this.id, required this.price});
   final String id;
@@ -37,9 +44,13 @@ class AppleIapProduct {
 class AppleReceiptVerification {
   AppleReceiptVerification.fromJson(Map<String, dynamic> json)
     : valid = int.tryParse('${json['status']}') == 0,
+      status = int.tryParse('${json['status']}'),
+      environment = '${json['environment'] ?? ''}',
       response = _response(json['responseData']);
 
   final bool valid;
+  final int? status;
+  final String environment;
   final Map<String, dynamic> response;
 
   static Map<String, dynamic> _response(Object? value) {
@@ -287,7 +298,11 @@ class AppleIapController extends ChangeNotifier {
   int creditedTokens = 0;
 
   bool get busy => _working;
-  bool get hasPending => _records.any((row) => row['userId'] == _userId);
+  final _diagnostics = <String>[];
+  List<String> get diagnostics => List.unmodifiable(_diagnostics);
+  bool get hasPending => _records.any(
+    (row) => row['userId'] == _userId && row['supersededBy'] == null,
+  );
   bool get canBuy =>
       supported &&
       _canPay &&
@@ -301,6 +316,7 @@ class AppleIapController extends ChangeNotifier {
         : userId;
     if (_userId == next) return;
     _userId = next;
+    _diagnostics.clear();
     _epoch++;
     _setPhase(AppleIapPhase.idle);
     if (supported && next != null) unawaited(retry());
@@ -308,9 +324,45 @@ class AppleIapController extends ChangeNotifier {
 
   bool _current(int epoch) => epoch == _epoch && _userId != null;
 
+  void _diagnose(String stage, Map<String, Object?> fields) {
+    if (_userId == null) return;
+    _diagnostics.add(AppleIapDiagnostics.format(stage, fields));
+    if (_diagnostics.length > 160) _diagnostics.removeAt(0);
+    AppleIapDiagnostics.log(stage, fields);
+    notifyListeners();
+  }
+
+  void _diagnoseError(String stage, Object error, {String? orderNo}) {
+    _diagnose(stage, {
+      'orderNo': ?orderNo,
+      'errorType': error.runtimeType.toString(),
+      'code': error is PlatformException
+          ? error.code
+          : error is ApiException
+          ? '${error.code}'
+          : 'unexpected_error',
+      'message': error is PlatformException
+          ? error.message
+          : error is ApiException
+          ? error.message
+          : error.toString(),
+      if (error is PlatformException && error.details is Map)
+        ...(error.details as Map).map((key, value) => MapEntry('$key', value)),
+    });
+  }
+
+  void _recordPhase(
+    Map<String, dynamic> record,
+    AppleIapPhase value, [
+    String? code,
+  ]) {
+    if (record['supersededBy'] == null) _setPhase(value, code);
+  }
+
   void _setPhase(AppleIapPhase value, [String? code]) {
     phase = value;
     errorCode = code;
+    _diagnose('phase.changed', {'phase': value.name, 'code': ?code});
     notifyListeners();
   }
 
@@ -346,6 +398,18 @@ class AppleIapController extends ChangeNotifier {
       store.save(_records.map(Map<String, dynamic>.from).toList());
 
   void _onEvent(Map<String, dynamic> event) {
+    final owned = _records.any(
+      (record) =>
+          record['userId'] == _userId &&
+          _sameAccountToken(record['accountToken'], event['accountToken']) &&
+          record['productId'] == event['productId'],
+    );
+    _diagnose('transaction.updated', {
+      'reason': owned ? 'owned_transaction' : 'unmatched_transaction',
+      if (owned) 'state': event['state'],
+      if (owned) 'productId': event['productId'],
+      if (owned) 'transactionId': event['transactionId'],
+    });
     // Keep all mutations in the serialized retry pass, including cancellations.
     if (_working) {
       _rerun = true;
@@ -401,29 +465,72 @@ class AppleIapController extends ChangeNotifier {
         '${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
   }
 
-  Future<void> buy(StarPackage package) async {
+  Future<void> buy(StarPackage package, {bool newOrder = false}) async {
     if (_working || !supported || _userId == null) return;
     _working = true;
     final epoch = _epoch;
     Map<String, dynamic>? record;
+    var stage = 'purchase.prepare';
+    _diagnose('purchase.request', {
+      'productId': package.appleProductId,
+      'newOrder': newOrder,
+    });
     _setPhase(AppleIapPhase.loading);
     try {
       await prepare(package); // No business order for an invalid Apple SKU.
       if (!_current(epoch)) return;
       final existing = _records
-          .where((row) => row['userId'] == _userId)
+          .where(
+            (row) => row['userId'] == _userId && row['supersededBy'] == null,
+          )
           .toList();
-      if (existing.isNotEmpty) {
+      if (newOrder) {
+        stage = 'new_order.check';
+        final transactions = await bridge.pending();
+        if (!_current(epoch)) return;
+        final unresolved = _records.any(
+          (row) =>
+              row['userId'] == _userId &&
+              (row['transactionId'] != null ||
+                  row['verificationAttempted'] == true ||
+                  row['receiptVerified'] == true ||
+                  row['credited'] == true),
+        );
+        _diagnose(stage, {
+          'pendingCount': transactions.length,
+          'reason': unresolved
+              ? 'previous_verification_or_transaction'
+              : 'queue_checked',
+        });
+        if (transactions.isNotEmpty || unresolved) {
+          throw PlatformException(
+            code: 'new_order_blocked',
+            message:
+                'An Apple transaction still needs confirmation. Retry verification first.',
+          );
+        }
+      }
+      if (existing.isNotEmpty && !newOrder) {
         record = existing.first;
         if (record['productId'] != package.appleProductId ||
             record['transactionId'] != null) {
           throw PlatformException(code: 'unfinished_purchase');
         }
       } else {
+        stage = 'order.baseline';
         final baseline = await backend.balance();
         if (!_current(epoch)) return;
+        stage = 'order.create';
+        _diagnose('order.create.request', {
+          'goodsId': package.goodsId,
+          'newOrder': newOrder,
+        });
         final order = await backend.createOrder(package);
         if (!_current(epoch)) return;
+        _diagnose('order.create.response', {
+          'orderNo': order.orderNo,
+          'baseline': baseline,
+        });
         record = {
           'userId': _userId,
           'accountToken': _uuid(),
@@ -435,18 +542,44 @@ class AppleIapController extends ChangeNotifier {
           'receiptVerified': false,
           'credited': false,
         };
+        if (newOrder) {
+          for (final previous in existing) {
+            previous['supersededBy'] = order.orderNo;
+            _diagnose('order.superseded', {
+              'orderNo': previous['orderNo'],
+              'supersededBy': order.orderNo,
+              'reason': 'no_apple_transaction_found_record_retained',
+            });
+          }
+        }
         _records.add(record);
+        stage = 'order.persist';
         await _save(); // Durable mapping before StoreKit can charge the user.
       }
       if (!_current(epoch)) return;
       await _save();
       if (!_current(epoch)) return;
+      stage = 'payment.start';
+      _diagnose('payment.start.request', {
+        'orderNo': record['orderNo'],
+        'productId': record['productId'],
+      });
       await bridge.buy(
         record['productId'] as String,
         record['accountToken'] as String,
       );
+      if (_current(epoch)) {
+        _diagnose('payment.start.accepted', {'orderNo': record['orderNo']});
+      }
       if (_current(epoch)) _setPhase(AppleIapPhase.purchasing);
     } catch (error) {
+      if (_current(epoch)) {
+        _diagnoseError(
+          '$stage.failed',
+          error,
+          orderNo: record?['orderNo'] as String?,
+        );
+      }
       final code = error is PlatformException ? error.code : 'purchase_failed';
       // These native errors occur before add(payment). Ambiguous transport
       // failures retain the mapping, so a lost reply never creates another order.
@@ -482,25 +615,54 @@ class AppleIapController extends ChangeNotifier {
     }
     _working = true;
     final epoch = _epoch;
+    var stage = 'recovery.initialize';
+    Map<String, dynamic>? currentRecord;
+    _diagnose('recovery.request', {'manual': manual});
     try {
       await _initialize();
       if (!_current(epoch)) return;
+      stage = 'recovery.queue';
       final transactions = await bridge.pending();
       if (!_current(epoch)) return;
-      final mine = _records.where((r) => r['userId'] == _userId).toList();
+      _diagnose('recovery.queue.response', {
+        'pendingCount': transactions.length,
+      });
+      final mine =
+          _records.where((record) => record['userId'] == _userId).toList()
+            ..sort(
+              (first, second) => (first['supersededBy'] == null ? 0 : 1)
+                  .compareTo(second['supersededBy'] == null ? 0 : 1),
+            );
       for (final record in mine) {
+        currentRecord = record;
+        stage = 'recovery.match';
         final matches = transactions
             .where(
               (tx) =>
-                  tx['accountToken'] == record['accountToken'] &&
+                  _sameAccountToken(
+                    tx['accountToken'],
+                    record['accountToken'],
+                  ) &&
                   tx['productId'] == record['productId'],
             )
             .toList();
+        _diagnose('recovery.match.response', {
+          'orderNo': record['orderNo'],
+          'productId': record['productId'],
+          'matchedCount': matches.length,
+          'verificationAttempted': record['verificationAttempted'],
+          'receiptVerified': record['receiptVerified'],
+          if (record['supersededBy'] != null)
+            'supersededBy': record['supersededBy'],
+        });
         if (matches.isEmpty) {
+          if (record['supersededBy'] != null) continue;
           if (record['credited'] == true) {
+            stage = 'transaction.finish';
             await _finish(record, epoch);
           } else {
-            _setPhase(
+            _recordPhase(
+              record,
               record['transactionId'] == null
                   ? AppleIapPhase.resume
                   : AppleIapPhase.pending,
@@ -520,7 +682,8 @@ class AppleIapController extends ChangeNotifier {
           }
           await bridge.acknowledgeFailure(record['accountToken'] as String);
           if (_current(epoch)) {
-            _setPhase(
+            _recordPhase(
+              record,
               state == 'canceled'
                   ? AppleIapPhase.canceled
                   : AppleIapPhase.failed,
@@ -530,7 +693,8 @@ class AppleIapController extends ChangeNotifier {
           continue;
         }
         if (state != 'purchased') {
-          _setPhase(
+          _recordPhase(
+            record,
             state == 'deferred'
                 ? AppleIapPhase.deferred
                 : AppleIapPhase.purchasing,
@@ -541,35 +705,74 @@ class AppleIapController extends ChangeNotifier {
         if (transactionId.isEmpty ||
             (record['transactionId'] != null &&
                 record['transactionId'] != transactionId)) {
-          _setPhase(AppleIapPhase.pending, 'transaction_mismatch');
+          _recordPhase(record, AppleIapPhase.pending, 'transaction_mismatch');
           continue;
         }
         record['transactionId'] = transactionId;
+        _diagnose('transaction.purchased', {
+          'orderNo': record['orderNo'],
+          'transactionId': transactionId,
+          'productId': record['productId'],
+        });
+        stage = 'transaction.persist';
         await _save();
         if (!_current(epoch)) return;
         if (record['credited'] == true) {
+          stage = 'transaction.finish';
           await _finish(record, epoch);
           continue;
         }
         if (record['receiptVerified'] != true) {
           if (!manual && record['verificationAttempted'] == true) {
-            _setPhase(AppleIapPhase.pending);
+            _diagnose('verify.skipped', {
+              'orderNo': record['orderNo'],
+              'reason': 'previous_submission_requires_manual_retry',
+            });
+            _recordPhase(record, AppleIapPhase.pending);
             continue;
           }
-          _setPhase(AppleIapPhase.verifying);
+          _recordPhase(record, AppleIapPhase.verifying);
+          stage = 'receipt.read';
+          _diagnose('receipt.request', {
+            'orderNo': record['orderNo'],
+            'manual': manual,
+          });
           final receipt = await bridge.receipt(refreshIfMissing: manual);
           if (!_current(epoch)) return;
+          _diagnose('receipt.response', {
+            'orderNo': record['orderNo'],
+            'receiptLength': receipt.length,
+          });
           record['verificationAttempted'] = true;
+          stage = 'verify.persist';
           await _save();
           if (!_current(epoch)) return;
+          stage = 'verify';
+          _diagnose('verify.request', {
+            'orderNo': record['orderNo'],
+            'transactionId': transactionId,
+            'receiptLength': receipt.length,
+          });
           final verified = await backend.verify(
             receipt: receipt,
             orderNo: record['orderNo'] as String,
             transactionId: transactionId,
           );
           if (!_current(epoch)) return;
-          if (!verified.matches(transactionId, record['productId'] as String)) {
-            _setPhase(AppleIapPhase.pending, 'receipt_unverified');
+          final matchesReceipt = verified.matches(
+            transactionId,
+            record['productId'] as String,
+          );
+          _diagnose('verify.response', {
+            'orderNo': record['orderNo'],
+            'transactionId': transactionId,
+            'status': verified.status,
+            'environment': verified.environment,
+            'hasResponseData': verified.response.isNotEmpty,
+            'responseMatches': matchesReceipt,
+          });
+          if (!matchesReceipt) {
+            _recordPhase(record, AppleIapPhase.pending, 'receipt_unverified');
             continue;
           }
           record['receiptVerified'] = true;
@@ -578,12 +781,25 @@ class AppleIapController extends ChangeNotifier {
         for (final delay in confirmationDelays) {
           await Future<void>.delayed(delay);
           if (!_current(epoch)) return;
+          stage = 'delivery.order';
           final paid = await backend.orderPaid(record['orderNo'] as String);
           if (!_current(epoch)) return;
+          _diagnose('delivery.order.response', {
+            'orderNo': record['orderNo'],
+            'orderPaid': paid,
+          });
+          stage = 'delivery.balance';
           final balance = await backend.balance();
           if (!_current(epoch)) return;
           final baseline = record['baseline'];
           final tokens = record['tokens'];
+          _diagnose('delivery.balance.response', {
+            'orderNo': record['orderNo'],
+            'balance': balance,
+            'baseline': baseline,
+            if (baseline is int && tokens is int)
+              'expectedBalance': baseline + tokens,
+          });
           if (paid &&
               baseline is int &&
               tokens is int &&
@@ -591,22 +807,31 @@ class AppleIapController extends ChangeNotifier {
               balance != null &&
               balance >= baseline + tokens) {
             record['credited'] = true;
+            stage = 'delivery.persist';
             await _save();
             if (!_current(epoch)) return;
+            stage = 'transaction.finish';
             await _finish(record, epoch);
             break;
           }
         }
         if (_current(epoch) && _records.contains(record)) {
-          _setPhase(AppleIapPhase.pending);
+          _recordPhase(record, AppleIapPhase.pending, 'delivery_unconfirmed');
         }
       }
     } catch (error) {
       if (_current(epoch)) {
-        _setPhase(
-          AppleIapPhase.pending,
-          error is PlatformException ? error.code : 'confirmation_failed',
+        _diagnoseError(
+          '$stage.failed',
+          error,
+          orderNo: currentRecord?['orderNo'] as String?,
         );
+        if (currentRecord == null || currentRecord['supersededBy'] == null) {
+          _setPhase(
+            AppleIapPhase.pending,
+            error is PlatformException ? error.code : 'confirmation_failed',
+          );
+        }
       }
     } finally {
       _working = false;
@@ -622,6 +847,11 @@ class AppleIapController extends ChangeNotifier {
       record['transactionId'] as String,
       record['accountToken'] as String,
     );
+    if (!_current(epoch)) return;
+    _diagnose('transaction.finished', {
+      'orderNo': record['orderNo'],
+      'transactionId': record['transactionId'],
+    });
     _records.remove(record);
     try {
       await _save();
@@ -629,8 +859,10 @@ class AppleIapController extends ChangeNotifier {
       _records.add(record);
       rethrow;
     }
-    creditedTokens = record['tokens'] as int;
-    if (_current(epoch)) _setPhase(AppleIapPhase.credited);
+    if (record['supersededBy'] == null) {
+      creditedTokens = record['tokens'] as int;
+      if (_current(epoch)) _setPhase(AppleIapPhase.credited);
+    }
   }
 
   void _runQueued() {

@@ -119,13 +119,18 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     }
   }
 
-  Future<void> _buyApple() async {
-    if (_busy || !_apple.canBuy || _appleProduct == null) return;
+  Future<void> _buyApple({bool newOrder = false}) async {
+    if (_busy ||
+        _apple.busy ||
+        (!newOrder && !_apple.canBuy) ||
+        _appleProduct == null) {
+      return;
+    }
     _appleStarted = true;
     setState(() => _busy = true);
     AppLoadingDialog.show(context, AppL10n.of(context).starBuyStagePay);
     try {
-      await _apple.buy(widget.package);
+      await _apple.buy(widget.package, newOrder: newOrder);
     } finally {
       if (mounted) {
         AppLoadingDialog.hide(context);
@@ -139,8 +144,24 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     await _apple.retry(manual: true);
   }
 
+  Future<void> _newAppleOrder() async {
+    if (_busy || _apple.busy || _appleProduct == null) return;
+    final l10n = AppL10n.of(context);
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: l10n.starAppleNewOrder,
+      message: l10n.starAppleNewOrderConfirm,
+      confirmLabel: l10n.starAppleNewOrder,
+    );
+    if (confirmed != true || !mounted) return;
+    await _buyApple(newOrder: true);
+  }
+
   String _appleMessage(AppL10n l10n) {
     if (_appleProductError != null) return l10n.starAppleUnavailable;
+    if (_apple.errorCode == 'new_order_blocked') {
+      return l10n.starAppleNewOrderBlocked;
+    }
     return switch (_apple.phase) {
       AppleIapPhase.purchasing => l10n.starAppleWaiting,
       AppleIapPhase.deferred => l10n.starAppleDeferred,
@@ -448,6 +469,19 @@ class _StarPurchasePageState extends State<StarPurchasePage>
             _ApprovingCard(l10n: l10n),
           ],
           const SizedBox(height: 28),
+          if (_isApple && _apple.hasPending) ...[
+            Text(
+              l10n.starAppleNewOrderNote,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF6F7782)),
+            ),
+            TextButton(
+              key: const Key('apple-new-order'),
+              onPressed: _busy || _apple.busy || _appleProduct == null
+                  ? null
+                  : _newAppleOrder,
+              child: Text(l10n.starAppleNewOrder),
+            ),
+          ],
         ],
       ),
       bottom: _isApple
@@ -459,22 +493,17 @@ class _StarPurchasePageState extends State<StarPurchasePage>
                 children: [
                   _AppleProductDiagnostics(
                     key: ValueKey(_appleDiagnosticAttempt),
-                    lines: _appleDiagnostics,
+                    lines: [..._appleDiagnostics, ..._apple.diagnostics],
                     l10n: l10n,
                   ),
                   const SizedBox(height: 12),
                   FigmaPrimaryButton(
-                    label:
-                        _apple.hasPending &&
-                            _apple.phase != AppleIapPhase.resume
+                    label: _apple.hasPending
                         ? l10n.starAppleRetry
-                        : _apple.phase == AppleIapPhase.resume
-                        ? l10n.starAppleContinue
                         : l10n.starBuyNow,
                     onPressed: _busy || _apple.busy
                         ? null
-                        : _apple.hasPending &&
-                              _apple.phase != AppleIapPhase.resume
+                        : _apple.hasPending
                         ? _retryApple
                         : _appleProduct != null && _apple.canBuy
                         ? _buy

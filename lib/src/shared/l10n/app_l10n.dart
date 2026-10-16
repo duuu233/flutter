@@ -2109,7 +2109,7 @@ class AppL10n {
   String get starApplePriceUnavailable =>
       _pick('价格获取失败', 'Price unavailable', '価格を取得できません');
   String get starAppleDiagnosticsTitle =>
-      _pick('苹果商品查询详情', 'App Store product details', 'App Store 商品照会の詳細');
+      _pick('苹果支付诊断详情', 'Apple payment diagnostics', 'Apple決済診断の詳細');
   String get starAppleDiagnosticsWaiting =>
       _pick('正在查询，请稍候…', 'Querying product, please wait…', '商品を照会中です…');
   String get starAppleUnavailable => _pick(
@@ -2142,6 +2142,22 @@ class AppL10n {
   String get starAppleRetry =>
       _pick('重新确认支付', 'Check purchase again', '購入を再確認');
   String get starAppleContinue => _pick('继续支付', 'Continue payment', '支払いを続ける');
+  String get starAppleNewOrder => _pick('重新下单支付', 'Create a new purchase', '新しい注文で購入');
+  String get starAppleNewOrderNote => _pick(
+    '重新确认只处理原交易，不会再次付款。需要新订单时，请使用下方入口。',
+    'Retry confirmation only checks the existing purchase. Use the option below for a new order.',
+    '再確認では既存の購入のみを確認します。新しい注文には以下の操作を使用してください。',
+  );
+  String get starAppleNewOrderConfirm => _pick(
+    '这会创建新订单并再次发起苹果付款。仅在未发现旧苹果交易且旧单没有验单记录时允许继续；旧订单记录会保留。已支付或处理中请先重新确认。',
+    'This creates a new order and starts another Apple payment. It is allowed only when no Apple transaction or previous verification is found. Old order records are retained. Confirm paid or processing purchases first.',
+    '新しい注文を作成し、Appleの支払いを再度開始します。既存のApple取引や検証記録がない場合のみ実行でき、旧注文の記録は保持されます。支払済み・処理中の場合は先に再確認してください。',
+  );
+  String get starAppleNewOrderBlocked => _pick(
+    '检测到待确认的苹果交易或验单记录，暂不能重新下单。请点重新确认支付，并复制诊断日志排查。',
+    'An Apple transaction or verification still needs confirmation. Retry confirmation and copy the diagnostics before creating another order.',
+    '未確認のApple取引または検証記録があります。再確認し、診断ログをコピーしてから新しい注文をお試しください。',
+  );
   String get starAppleReload => _pick('重新获取商品', 'Reload product', '商品を再読み込み');
   String get starAppleFailed => _pick(
     '本次支付未完成，请重试确认。',
