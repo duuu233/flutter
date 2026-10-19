@@ -12,6 +12,8 @@
 
 ## 1. 阅读入口
 
+依赖与构建本轮核对：[2026-10-19 恢复 SDK 锁定基线并忽略 Android 报告](history/2026-10/2026-10-19-dependency-lock-baseline.md)。当前跨机命令与约定见 `runbooks/BUILD_RELEASE.md` 〇.6a；Android 构建通过不代表全量测试或 iOS 验收通过。
+
 | 目标 | 文档 |
 | --- | --- |
 | 快速了解项目 | [`PROJECT_OVERVIEW.md`](PROJECT_OVERVIEW.md) |

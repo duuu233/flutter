@@ -43,6 +43,8 @@ OpenHarmony/HAP is not integrated.
 - Flutter application with Dart SDK constraint `^3.11.5`.
 - Package/application name: `BoltStar`; repository version: `1.0.0+1`.
 - Flutter channel recorded by `.metadata`: `stable`.
+- Maintained toolchain: Flutter 3.44.6 stable / Dart 3.12.2. On 2026-10-19, the five SDK-pinned lock versions drifted by `960d2f3` are intentionally restored to the approved `a84ea3f` resolution; 127 locked packages pass enforced resolution and Android release compilation. Keep exact lock versions, not a deleted or widened lockfile; see `docs/runbooks/BUILD_RELEASE.md` section 〇.6a for verification and remaining test/iOS limits.
+- `android/build/` is generated output ignored by `android/.gitignore`; its HTML problems report is no longer versioned. Keep generated reports and APKs local, not in source commits.
 - State is owned at the application root through the shared `PhotoFrameState` and `BleController`;
   the project does not declare a third-party state-management framework.
 - UI uses Flutter Material/Cupertino components and `flutter_localizations`.

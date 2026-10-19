@@ -2,7 +2,7 @@
 
 > 文档类型：Release Runbook
 > 状态：Active
-> 最后核验：2026-09-21
+> 最后核验：2026-10-19（依赖锁定与 Android release；其它条目保留各自日期）
 > 微信登录的完整平台配置见 `../integration/WECHAT_LOGIN_SETUP.md`。
 > 2026-07-16 全面审查后整理。本次审查已修复的构建阻断项：
 > ① 主 Manifest 缺 `INTERNET` 权限（release 包全部网络请求失败）；
@@ -14,6 +14,7 @@
 
 | 日期 | 主题 | 落点 |
 | --- | --- | --- |
+| 2026-10-19 | 修复 960d2f3 再次带入的五项 SDK 钉版本漂移，保留精确锁定；停止跟踪 Android 构建报告 | 〇.6a、同日依赖核对记录 |
 | 2026-09-21 | 基线定为 Flutter 3.44.6；依赖部分已回退（`a84ea3f`），iOS 部分待 ltt；新增「本机环境带出来的改动一律不提交」 | 〇.6 第 6 条、〇.7 重写 |
 | 2026-09-21 | 回退推上去之前，3.44 机器临时打安卓包的本地办法（不提交）——已被 `a84ea3f` 取代 | 〇.7 |
 | 2026-09-21 | Windows 打包报 `Could not delete …caches-jvm` 导致构建失败的处理办法 | 「一、Android」末尾新增小节 |
@@ -84,10 +85,33 @@ setx FLUTTER_STORAGE_BASE_URL "https://storage.flutter-io.cn"
 这个坏版本（所有 iOS 构建失败），于是加了 `objective_c: 9.6.0` 强制版本；这个版本又把 `meta` 拉到 1.19，
 3.44 解不开，结果安卓打包机被迫跟着升 Flutter。整条链没有一个功能需要它，见 〇.7。
 
+## 〇.6a、依赖锁定复核与生成报告（2026-10-19）
+
+`pubspec.lock` 保留并正常提交，不删除、不加入忽略、不手写宽松版本。允许范围放在 `pubspec.yaml`；多数直接依赖已有 caret 或显式区间，本轮不放宽 `image: 4.9.1` 等已有有意约束，也不运行 `pub upgrade` 或加入 overrides。删除锁文件可能一次改变大量传递依赖，单次打包成功不能证明后续重新解析或全部平台都兼容。[Pub 官方说明](https://dart.dev/tools/pub/cmd/pub-get)。
+
+核对当前 main 至 `2e3a72b` 的提交：`960d2f3` 在修改构建号时带入以下五项版本变化，之后的依赖清单变化仅为构建号，最近支付实现未新增依赖要求。本轮按用户明确要求有意修复锁定基线，而不是提交未核实的工具链副作用。
+
+| 包 | 修复前锁定 | Flutter 3.44.6 要求及本轮锁定 |
+| --- | --- | --- |
+| intl | 0.20.3 | 0.20.2 |
+| matcher | 0.12.20 | 0.12.19 |
+| meta | 1.19.0 | 1.18.0 |
+| test_api | 0.7.12 | 0.7.11 |
+| vector_math | 2.4.3 | 2.2.0 |
+
+本轮锁文件与已批准回退 `a84ea3f` 的锁文件 Git blob 完全一致。Flutter 3.44.6 / Dart 3.12.2 下，127 个锁定包、188 项 SDK 环境约束、319 条实际依赖版本边与 SDK 的 14 个精确钉版本逐项核验通过；`flutter pub get --enforce-lockfile` 成功，锁文件未被改写。提示有更新可用不等于当前依赖不兼容，无需为清除提示升级。
+
+其它机器先核对 `flutter --version` 为约定基线，再拉代码，运行 `flutter pub get --enforce-lockfile`。若失败，保留完整错误、核对 SDK 及镜像/网络/缓存；不要删除锁文件或升级 Flutter 掩盖原因。普通 `pub get` 在 SDK 不同或约束变化时可能重新解析，因此跨机验收优先使用强制锁定校验。
+
+Android 的 `build/reports/problems/problems-report.html` 是 Gradle 生成的诊断报告；`android/.gitignore` 的 `/build/` 排除本机 Android 构建输出，已停止跟踪原报告，文件可保留在本机排障，不提交报告或 APK。增加忽略规则本身不会移除已跟踪文件，所以本轮同时移除报告索引，不清理 Git 历史。
+
+实测 Android 三 ABI release APK 构建成功，近期支付专项 95 项通过；全量测试 308 通过、5 失败，静态分析 1 error / 10 warning / 57 info，详见 [同日记录](../history/2026-10/2026-10-19-dependency-lock-baseline.md)。这些全量检查不是全绿，本轮不修改无关源码/测试。Windows 未构建 iOS，不能以 Android 通过替代 iOS 原生、签名或真实支付验收；原 iOS 配置回退待办仍保留。
+
 ## 〇.7、回退 9-18 的 Flutter 3.47 连带改动
 
 > 状态：**依赖部分已回退**（`a84ea3f`，2026-09-21：删掉 `objective_c: 9.6.0` 强制版本，`pubspec.lock` 恢复为 9-18 之前的版本，
 > `meta 1.18.0` / `objective_c 9.4.1`；lock 里被 Flutter SDK 钉版本的 14 个包与 3.44.6 逐个核对一致）。
+> 2026-10-19 补充：后续 `960d2f3` 再次改动五项 SDK 钉版本，本轮重新修复并验证，当前口径见 〇.6a；此处 2026-09-21 的状态描述保留为历史背景。
 > **iOS 部分待 ltt 执行**，做完把这里改成「已完成（提交号）」。
 
 **已核实不是必须（2026-09-21）：**
