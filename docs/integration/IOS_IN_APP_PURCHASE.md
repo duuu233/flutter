@@ -1,4 +1,4 @@
-# iOS 星币内购与传统收据验证
+﻿# iOS 星币内购与传统收据验证
 
 > 文档类型：Integration
 > 状态：Active
@@ -178,7 +178,7 @@ release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表
 
 安装包含本轮改动的**新iOS包**（普通Release、TestFlight、debug均可），尽量覆盖安装保留原映射，打开确认购买页，底部“苹果支付诊断详情”显示本次商品预检与当前账号的购买后诊断。商品预检错误保留实际code/message/details及可用栈；未知错误字段不因白名单而丢弃，敏感内容脱敏。详情可上下滚动、选择或点“复制日志”复制，不需要连接控制台。
 
-购买后诊断由进程级 controller 持有，独立于商品预检的异步 capture，在 Release/TestFlight 同样可见，保留当前账号最近160项，账号切换清空；离开页面不保留页面回调，重新进入仍可看当前账号尚在内存中的记录，杀进程后不保留诊断。预检重新获取只清预检，不删除交易诊断或待处理订单。记录允许关联的 orderNo/transactionId、状态与数量，不记录账户UUID、用户ID、密码、登录凭证、收据正文、responseData/latestReceipt；收据只记长度。原生收据刷新错误补充脱敏系统描述和 domain/code，仍保留原错误码。
+购买后诊断由进程级 controller 持有，独立于商品预检的异步 capture，在 Release/TestFlight 同样可见，保留当前账号最近160项，账号切换清空；离开页面不保留页面回调，重新进入仍可看当前账号尚在内存中的记录，杀进程后不保留诊断。预检重新获取只清预检，不删除交易诊断或待处理订单。记录允许关联的 orderNo/transactionId、状态与数量，不记录账户UUID、用户ID、密码、登录凭证；为支持联调自测，erify.request 显式输出 eceiptData 明文，erify.response 显式输出 esponseData 与 exceptionMsg 明文供复制排查。原生收据刷新错误补充脱敏系统描述和 domain/code，仍保留原错误码。
 
 | 阶段 | 用于判断 |
 | --- | --- |

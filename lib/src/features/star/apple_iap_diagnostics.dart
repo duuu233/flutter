@@ -57,6 +57,12 @@ abstract final class AppleIapDiagnostics {
     'supersededBy',
   };
 
+  static const _verifyKeys = {
+    'receiptData',
+    'responseData',
+    'exceptionMsg',
+  };
+
   static final _captureKey = Object();
 
   /// Only this asynchronous preflight is collected, including in release builds.
@@ -82,8 +88,10 @@ abstract final class AppleIapDiagnostics {
     if (kDebugMode) debugPrint(line);
   }
 
-  static String format(String stage, Map<String, Object?> fields) =>
-      '[AppleIAP] $stage: ${jsonEncode(_safe(fields))}';
+  static String format(String stage, Map<String, Object?> fields) {
+    final allowVerify = stage == 'verify.request' || stage == 'verify.response';
+    return '[AppleIAP] $stage: ${jsonEncode(_safe(fields, allowVerify: allowVerify))}';
+  }
 
   /// Preserve unexpected error fields on the page while masking private payloads.
   static String describeError(Object error, {StackTrace? stackTrace}) =>
@@ -150,15 +158,33 @@ abstract final class AppleIapDiagnostics {
     });
   }
 
-  static Object? _safe(Object? value) {
+  static Object? _safe(
+    Object? value, {
+    String? key,
+    bool allowVerify = false,
+  }) {
     if (value is Map) {
       return {
         for (final entry in value.entries)
-          if (_keys.contains(entry.key)) '${entry.key}': _safe(entry.value),
+          if (_keys.contains(entry.key) ||
+              (allowVerify && _verifyKeys.contains(entry.key)))
+            '${entry.key}': _safe(
+              entry.value,
+              key: '${entry.key}',
+              allowVerify: allowVerify,
+            ),
       };
     }
-    if (value is Iterable) return value.take(20).map(_safe).toList();
+    if (value is Iterable) {
+      return value
+          .take(20)
+          .map((item) => _safe(item, key: key, allowVerify: allowVerify))
+          .toList();
+    }
     if (value is String) {
+      if (allowVerify && _verifyKeys.contains(key)) {
+        return value;
+      }
       final text = _text(value);
       return text.length > 600 ? '${text.substring(0, 600)}…' : text;
     }

@@ -46,12 +46,20 @@ class AppleReceiptVerification {
     : valid = int.tryParse('${json['status']}') == 0,
       status = int.tryParse('${json['status']}'),
       environment = '${json['environment'] ?? ''}',
-      response = _response(json['responseData']);
+      response = _response(json['responseData']),
+      rawResponseData = json['responseData'] is String
+          ? json['responseData'] as String
+          : json['responseData'] != null
+              ? jsonEncode(json['responseData'])
+              : '',
+      exceptionMsg = '${json['exceptionMsg'] ?? ''}';
 
   final bool valid;
   final int? status;
   final String environment;
   final Map<String, dynamic> response;
+  final String rawResponseData;
+  final String exceptionMsg;
 
   static Map<String, dynamic> _response(Object? value) {
     try {
@@ -752,6 +760,7 @@ class AppleIapController extends ChangeNotifier {
             'orderNo': record['orderNo'],
             'transactionId': transactionId,
             'receiptLength': receipt.length,
+            'receiptData': receipt,
           });
           final verified = await backend.verify(
             receipt: receipt,
@@ -770,6 +779,9 @@ class AppleIapController extends ChangeNotifier {
             'environment': verified.environment,
             'hasResponseData': verified.response.isNotEmpty,
             'responseMatches': matchesReceipt,
+            'responseData': verified.rawResponseData,
+            if (verified.exceptionMsg.isNotEmpty)
+              'exceptionMsg': verified.exceptionMsg,
           });
           if (!matchesReceipt) {
             _recordPhase(record, AppleIapPhase.pending, 'receipt_unverified');

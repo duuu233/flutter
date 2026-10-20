@@ -224,7 +224,7 @@ void main() {
       expect(logs, contains('order-1'));
       expect(logs, contains('tx-1'));
       expect(logs, contains('"receiptLength":4'));
-      expect(logs, isNot(contains('AQID')));
+      expect(logs, contains('AQID'));
       expect(logs, isNot(contains(fixture.bridge.accountToken!)));
       expect(logs, isNot(contains('user-A')));
     },
