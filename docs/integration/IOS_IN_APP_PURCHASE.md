@@ -2,7 +2,7 @@
 
 > 文档类型：Integration
 > 状态：Active
-> 最后核验：2026-10-16（独立重新验单、受保护的新下单及购买后诊断；Swagger 契约核验仍为2026-10-12，新实现未完成 iOS 编译与真机验收）
+> 最后核验：2026-10-20（购买后日志定位与线上 Swagger 复核；未完成 iOS 编译及端到端交付验收）
 
 ## 1. 应用身份与商品
 
@@ -85,6 +85,24 @@ getGoodsList.appleProductId
 都会停在待确认。读取不到购买前余额时也不猜测到账。余额确认窗口为 0/1/2/3 秒间隔，之后可手动确认。
 这些是交付语义尚未确认时保留的保守条件。新后端若只返回业务成功/发币结果，当前实现可能继续
 显示待确认，需在发布后按明确的交易交付返回和查单语义调整，不能直接把 HTTP 200 当作完成依据。
+
+### 3.1 收据有效但缺少可匹配明细的现场定位（2026-10-20）
+
+用户提供的购买后日志已出现 `transaction.updated(state=purchased)`、`transaction.purchased`、收据读取及 `verify.response`，因此本次不是缺少原生购买成功回调，也不是停在商品查询。验单返回摘要为 `status=0/environment=Sandbox/hasResponseData=false/responseMatches=false`，随后是 `pending/receipt_unverified`；手动重验仍得到同样结果。
+
+这里的 controller 日志 `hasResponseData` 表示 `responseData` 解析后是否为非空 JSON 对象，不只是字段是否存在。缺字段、null、空字符串、空对象、非法 JSON 或非对象类型均可能得到 false；仅凭摘要不能断定服务端没有返回该字段，更不能判断实际是否已发币。需要后端核对同一订单实际 HTTP 响应的字段位置、类型和脱敏结构，不能索取或输出收据正文、token、latestReceipt 或其它凭证。
+
+当前代码在明细匹配失败后立即停止本轮恢复，不会进入 `getPayQuery` 和余额确认，也不会 finish。该日志中没有 `delivery.order.response/delivery.balance.response` 与这一路径一致；这不是查单一直返回未支付的证据。`status=0` 只表示收据整体有效，不证明本笔商品/交易对应且已交付。
+
+2026-10-20只读复核线上 Swagger：请求仍是 `receiptData/orderNo/transactionId`；输出仍声明 `status/environment/latestReceipt/responseData/exceptionMsg`，`responseData` 为 string、原始返回数据，没有新增订单/交易交付完成字段，也未声明 required。接口声明与客户端的明细保护条件尚未形成必返保证，不能把字段缺失直接归结为后端违反 required。
+
+后端排查顺序：
+
+1. 核对实际 `retData.responseData` 是否包含苹果验证后的合法 JSON，且同一条 `receipt.in_app`（或兼容 `latest_receipt_info`）中的 `transaction_id/product_id` 对应本次真实交易与 SKU，数量和撤销状态符合原契约。不要临时拼造明细来通过前端检查；应用、环境、商品和交易验证仍由服务端执行。
+2. 核对这笔订单实际的支付记录、异步发币任务与幂等交付状态；同用户/同订单/同交易重试必须返回原处理结果，不能重复发币、要求更换 transactionId 或再买一笔。
+3. 若不返回苹果明细，须先提供并确认可验证当前订单/交易归属及实际交付的可信查询契约，再调整客户端；不可仅用 `status=0`、HTTP成功或无关余额增长放行。
+
+后端补齐原契约后，保留现有安装与未完成交易，用原订单点击重新确认支付。应先出现 `hasResponseData=true/responseMatches=true`，再观察同订单的 `delivery.order.response`、`delivery.balance.response`，满足原交付条件后才出现 `transaction.finished/credited`。隔离复现确认这条恢复路径无需新建订单或再次付款；真实明细与交付尚待后端/设备联调，不能宣称已修复线上支付。
 
 ## 4. 重试与账号隔离
 

@@ -12,6 +12,8 @@
 
 ## 1. 阅读入口
 
+本次核查：[2026-10-20 iOS 购买成功后缺少可匹配验单明细](history/2026-10/2026-10-20-ios-iap-receipt-details-diagnosis.md)。当前定位及后端排查步骤见 [iOS 内购契约](integration/IOS_IN_APP_PURCHASE.md) §3.1；本轮未修改支付逻辑或解除真实交付阻塞。
+
 依赖与构建本轮核对：[2026-10-19 恢复 SDK 锁定基线并忽略 Android 报告](history/2026-10/2026-10-19-dependency-lock-baseline.md)。当前跨机命令与约定见 `runbooks/BUILD_RELEASE.md` 〇.6a；Android 构建通过不代表全量测试或 iOS 验收通过。
 
 | 目标 | 文档 |
