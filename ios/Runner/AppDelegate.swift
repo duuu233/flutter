@@ -501,6 +501,19 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
   private var productIds: [ObjectIdentifier: String] = [:]
   private var receiptRequest: SKReceiptRefreshRequest?
   private var receiptResult: FlutterResult?
+  private var sandboxDiscardedTransactions: [SKPaymentTransaction] = []
+  private var discardedSandboxIds: Set<String> {
+    let archive = UserDefaults.standard.array(forKey: "boltstar.appleIap.sandboxResetArchive.v1")
+      as? [[String: Any]] ?? []
+    return Set(archive.flatMap { entry -> [String] in
+      let rows = entry["transactions"] as? [[String: Any]] ?? []
+      return rows.compactMap { $0["transactionId"] as? String }.filter { !$0.isEmpty }
+    })
+  }
+  private var isSandboxReceipt: Bool {
+    // The sandbox receipt location identifies the environment even after history cleanup.
+    Bundle.main.appStoreReceiptURL?.lastPathComponent == "sandboxReceipt"
+  }
   private static let requestKey = "boltstar.appleIap.requests.v1"
   private static let failureKey = "boltstar.appleIap.failures.v1"
 
@@ -530,7 +543,8 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
       }
       result(["canMakePayments": SKPaymentQueue.canMakePayments(),
         "device": model.isEmpty ? UIDevice.current.model : model,
-        "bundleId": Bundle.main.bundleIdentifier ?? ""])
+        "bundleId": Bundle.main.bundleIdentifier ?? "",
+        "sandboxResetAvailable": isSandboxReceipt])
     case "product":
       guard let id = args["productId"] as? String, !id.isEmpty else {
         result(productError("product_unavailable", message: "Missing Apple product ID",
@@ -566,13 +580,60 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
       queue.add(payment)
       result(nil)
     case "pendingTransactions":
-      var rows = queue.transactions.map(summary)
+      var rows = queue.transactions.map { transaction -> [String: Any] in
+        var row = summary(transaction); row["source"] = "storekit"; return row
+      }
       let seen = Set(rows.compactMap { ($0["accountToken"] as? String)?.lowercased() })
       for (token, product) in requests where !seen.contains(token.lowercased()) {
-        rows.append(["accountToken": token, "productId": product, "state": "requested"])
+        rows.append(["accountToken": token, "productId": product, "state": "requested", "source": "request"])
       }
-      rows.append(contentsOf: failures.map { $0 as [String: Any] })
+      rows.append(contentsOf: failures.map { failure -> [String: Any] in
+        var row = failure as [String: Any]; row["source"] = "failure"; return row
+      })
       result(rows)
+    case "resetSandbox":
+      // Recheck here: a Dart flag or a forged channel call cannot enable production cleanup.
+      guard isSandboxReceipt else { result(error("sandbox_reset_unavailable")); return }
+      guard receiptRequest == nil else { result(error("receipt_busy")); return }
+      guard let productId = args["productId"] as? String, !productId.isEmpty,
+        let protectedTokens = args["protectedAccountTokens"] as? [String] else {
+        result(error("invalid_arguments")); return
+      }
+      let protected = Set(protectedTokens.map { $0.lowercased() })
+      func eligible(_ product: String, _ token: String) -> Bool {
+        product == productId && !protected.contains(token.lowercased())
+      }
+      let transactions = queue.transactions.filter {
+        eligible($0.payment.productIdentifier, $0.payment.applicationUsername ?? "")
+      }
+      guard transactions.allSatisfy({ transaction in
+        switch transaction.transactionState {
+        case .purchased, .restored, .failed: return true
+        default: return false
+        }
+      }) else {
+        result(FlutterError(code: "sandbox_reset_active", message:
+          "A payment is still purchasing or awaiting approval. Complete or cancel it in Apple first.",
+          details: nil)); return
+      }
+      let selectedRequests = requests.filter { eligible($0.value, $0.key) }
+      let selectedFailures = failures.filter {
+        eligible($0["productId"] ?? "", $0["accountToken"] ?? "")
+      }
+      let archiveKey = "boltstar.appleIap.sandboxResetArchive.v1"
+      var archive = UserDefaults.standard.array(forKey: archiveKey) as? [[String: Any]] ?? []
+      archive.append(["productId": productId, "transactions": transactions.map(summary),
+        "requests": selectedRequests, "failures": selectedFailures,
+        "time": Date().timeIntervalSince1970])
+      UserDefaults.standard.set(archive, forKey: archiveKey)
+      sandboxDiscardedTransactions.append(contentsOf: transactions)
+      for transaction in transactions { queue.finishTransaction(transaction) }
+      requests = requests.filter { !eligible($0.value, $0.key) }
+      failures = failures.filter {
+        !eligible($0["productId"] ?? "", $0["accountToken"] ?? "")
+      }
+      result(["finishedCount": transactions.count, "clearedRequestCount": selectedRequests.count,
+        "clearedFailureCount": selectedFailures.count])
     case "acknowledgeFailure":
       if let token = args["accountToken"] as? String {
         failures = failures.filter { $0["accountToken"]?.lowercased() != token.lowercased() }
@@ -745,6 +806,16 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
     DispatchQueue.main.async { [weak self] in
       guard let self = self else { return }
       for transaction in transactions {
+        if self.sandboxDiscardedTransactions.contains(where: { $0 === transaction }) { continue }
+        // A cleared sandbox transaction may be replayed as a new object after relaunch.
+        if self.isSandboxReceipt, let id = transaction.transactionIdentifier,
+          self.discardedSandboxIds.contains(id) {
+          switch transaction.transactionState {
+          case .purchased, .restored, .failed:
+            queue.finishTransaction(transaction); continue
+          default: break
+          }
+        }
         let row = self.summary(transaction)
         if transaction.transactionState == .failed {
           var saved = self.requests

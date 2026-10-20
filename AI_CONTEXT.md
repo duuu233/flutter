@@ -121,6 +121,15 @@ OpenHarmony/HAP is not integrated.
   price queries explicitly display price unavailable. The new behavior and Swift changes still
   require iOS compilation and device acceptance; screenshots establish an earlier sandbox purchase
   success, not successful backend delivery or the cause of the current incomplete order.
+- Since 2026-10-20, the purchase diagnostics panel has a confirmation-gated sandbox reset
+  action in all build modes, enabled only for a native sandboxReceipt location. It discards
+  eligible current-product test transactions and local placeholders, archives the current
+  user's recovery mappings, and protects known other-account transactions. Production/unknown
+  environments and active/deferred payments are refused. Success requires an empty native queue
+  and saved local archive; it does not grant stars or delete backend orders. Ordinary purchases
+  now check the queue before order creation. Source/state diagnostics distinguish StoreKit,
+  request placeholders and retained failures. Swift compilation and device acceptance remain
+  pending; see docs/history/2026-10/2026-10-20-ios-iap-sandbox-reset.md.
 - `UIBackgroundModes` contains `bluetooth-central`.
 - Bluetooth, photo-library, camera, and location usage descriptions are present.
 - The WeChat URL Scheme and mobile AppID are fixed to `wx4cf0c5f38a70d0bc`; the Universal Link

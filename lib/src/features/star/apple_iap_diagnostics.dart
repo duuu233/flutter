@@ -9,13 +9,19 @@ class _DiagnosticCapture {
   void Function(String)? onEntry;
 }
 
-/// Product preflight diagnostics only; receipt and account payloads are excluded.
+/// Purchase diagnostics; only explicit verification stages include raw receipts.
 abstract final class AppleIapDiagnostics {
   static const _keys = {
     'goodsId',
     'tokens',
     'productId',
     'supported',
+    'sandboxResetAvailable',
+    'source',
+    'finishedCount',
+    'clearedRequestCount',
+    'clearedFailureCount',
+    'removedCount',
     'canMakePayments',
     'bundleId',
     'code',
@@ -57,11 +63,7 @@ abstract final class AppleIapDiagnostics {
     'supersededBy',
   };
 
-  static const _verifyKeys = {
-    'receiptData',
-    'responseData',
-    'exceptionMsg',
-  };
+  static const _verifyKeys = {'receiptData', 'responseData', 'exceptionMsg'};
 
   static final _captureKey = Object();
 
@@ -158,11 +160,7 @@ abstract final class AppleIapDiagnostics {
     });
   }
 
-  static Object? _safe(
-    Object? value, {
-    String? key,
-    bool allowVerify = false,
-  }) {
+  static Object? _safe(Object? value, {String? key, bool allowVerify = false}) {
     if (value is Map) {
       return {
         for (final entry in value.entries)

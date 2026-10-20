@@ -50,8 +50,8 @@ class AppleReceiptVerification {
       rawResponseData = json['responseData'] is String
           ? json['responseData'] as String
           : json['responseData'] != null
-              ? jsonEncode(json['responseData'])
-              : '',
+          ? jsonEncode(json['responseData'])
+          : '',
       exceptionMsg = '${json['exceptionMsg'] ?? ''}';
 
   final bool valid;
@@ -100,7 +100,31 @@ abstract class AppleIapBridge {
   Future<void> acknowledgeFailure(String accountToken);
 }
 
-class MethodChannelAppleIapBridge implements AppleIapBridge {
+/// Device-wide sandbox maintenance; never used for normal purchase delivery.
+abstract interface class AppleIapSandboxReset {
+  bool get isSandbox;
+  Future<Map<String, dynamic>> resetSandbox({
+    required String productId,
+    required List<String> protectedAccountTokens,
+  });
+}
+
+class MethodChannelAppleIapBridge
+    implements AppleIapBridge, AppleIapSandboxReset {
+  @override
+  bool isSandbox = false;
+
+  @override
+  Future<Map<String, dynamic>> resetSandbox({
+    required String productId,
+    required List<String> protectedAccountTokens,
+  }) async =>
+      await channel.invokeMapMethod<String, dynamic>('resetSandbox', {
+        'productId': productId,
+        'protectedAccountTokens': protectedAccountTokens,
+      }) ??
+      {};
+
   @override
   Future<void> acknowledgeFailure(String accountToken) => channel
       .invokeMethod<void>('acknowledgeFailure', {'accountToken': accountToken});
@@ -117,8 +141,10 @@ class MethodChannelAppleIapBridge implements AppleIapBridge {
     AppleIapDiagnostics.log('initialize.request', const {});
     final data = await channel.invokeMapMethod<String, dynamic>('initialize');
     bundleId = data?['bundleId'] as String?;
+    isSandbox = data?['sandboxResetAvailable'] == true;
     AppleIapDiagnostics.log('initialize.response', {
       'bundleId': bundleId,
+      'sandboxResetAvailable': isSandbox,
       'canMakePayments': data?['canMakePayments'] == true,
     });
     final device = '${data?['device'] ?? ''}';
@@ -306,10 +332,18 @@ class AppleIapController extends ChangeNotifier {
   int creditedTokens = 0;
 
   bool get busy => _working;
+  bool get canResetSandbox =>
+      supported &&
+      _userId != null &&
+      bridge is AppleIapSandboxReset &&
+      (bridge as AppleIapSandboxReset).isSandbox;
   final _diagnostics = <String>[];
   List<String> get diagnostics => List.unmodifiable(_diagnostics);
   bool get hasPending => _records.any(
-    (row) => row['userId'] == _userId && row['supersededBy'] == null,
+    (row) =>
+        row['userId'] == _userId &&
+        row['sandboxDiscarded'] != true &&
+        row['supersededBy'] == null,
   );
   bool get canBuy =>
       supported &&
@@ -409,6 +443,7 @@ class AppleIapController extends ChangeNotifier {
     final owned = _records.any(
       (record) =>
           record['userId'] == _userId &&
+          record['sandboxDiscarded'] != true &&
           _sameAccountToken(record['accountToken'], event['accountToken']) &&
           record['productId'] == event['productId'],
     );
@@ -463,6 +498,130 @@ class AppleIapController extends ChangeNotifier {
     }
   }
 
+  void _diagnoseQueue(String stage, List<Map<String, dynamic>> rows) {
+    for (final row in rows) {
+      final otherAccount = _records.any(
+        (record) =>
+            record['userId'] != _userId &&
+            _sameAccountToken(record['accountToken'], row['accountToken']) &&
+            record['productId'] == row['productId'],
+      );
+      _diagnose(stage, {
+        'reason': otherAccount ? 'other_account_transaction' : 'queue_entry',
+        'source': row['source'] ?? 'unknown',
+        'state': row['state'],
+        'productId': row['productId'],
+        if (!otherAccount) 'transactionId': row['transactionId'],
+        'matchedCount': _records
+            .where(
+              (record) =>
+                  record['userId'] == _userId &&
+                  record['sandboxDiscarded'] != true &&
+                  _sameAccountToken(
+                    record['accountToken'],
+                    row['accountToken'],
+                  ) &&
+                  record['productId'] == row['productId'],
+            )
+            .length,
+      });
+    }
+  }
+
+  /// Discards current-product sandbox recovery, preserving an archive locally.
+  /// No order creation, receipt verification, balance change or backend deletion.
+  Future<bool> resetSandbox(StarPackage package) async {
+    if (_working || !supported || _userId == null) return false;
+    _working = true;
+    final resetUser = _userId;
+    final epoch = _epoch;
+    var stage = 'sandbox.reset';
+    _diagnose('sandbox.reset.request', const {});
+    _setPhase(AppleIapPhase.loading);
+    try {
+      await _initialize();
+      if (!_current(epoch)) return false;
+      if (!canResetSandbox) {
+        throw PlatformException(code: 'sandbox_reset_unavailable');
+      }
+      if (_records.any(
+        (row) =>
+            row['userId'] == resetUser &&
+            row['productId'] != package.appleProductId &&
+            row['sandboxDiscarded'] != true &&
+            row['supersededBy'] == null,
+      )) {
+        throw PlatformException(
+          code: 'sandbox_reset_other_order',
+          message:
+              'A different product has a pending order. Open that product to clear it first.',
+        );
+      }
+      final before = await bridge.pending();
+      if (!_current(epoch)) return false;
+      _diagnoseQueue('sandbox.reset.before', before);
+      final result = await (bridge as AppleIapSandboxReset).resetSandbox(
+        productId: package.appleProductId,
+        protectedAccountTokens: _records
+            .where((row) => row['userId'] != resetUser)
+            .map((row) => row['accountToken'] as String)
+            .toList(),
+      );
+      _diagnose('sandbox.reset.native', result);
+      // Native finish can be asynchronous. Never claim success with entries left.
+      final remaining = await bridge.pending();
+      _diagnoseQueue('sandbox.reset.remaining', remaining);
+      if (remaining.isNotEmpty) {
+        throw PlatformException(
+          code: 'sandbox_reset_incomplete',
+          message:
+              'Apple transactions are still pending. Wait and try clearing again.',
+        );
+      }
+      stage = 'sandbox.reset.persist';
+      final discarded = _records
+          .where(
+            (row) =>
+                row['userId'] == resetUser &&
+                row['productId'] == package.appleProductId &&
+                row['sandboxDiscarded'] != true,
+          )
+          .toList();
+      final archived = _records
+          .map(
+            (row) => <String, dynamic>{
+              ...row,
+              if (discarded.contains(row)) 'sandboxDiscarded': true,
+            },
+          )
+          .toList();
+      await store.save(archived);
+      _records
+        ..clear()
+        ..addAll(archived);
+      creditedTokens = 0;
+      _diagnose('sandbox.reset.completed', {
+        'pendingCount': 0,
+        'removedCount': discarded.length,
+      });
+      if (_current(epoch)) _setPhase(AppleIapPhase.idle);
+      return true;
+    } catch (error) {
+      _diagnoseError('$stage.failed', error);
+      if (_current(epoch)) {
+        _setPhase(
+          AppleIapPhase.failed,
+          error is PlatformException ? error.code : 'sandbox_reset_failed',
+        );
+      }
+      return false;
+    } finally {
+      _working = false;
+      notifyListeners();
+      _runQueued();
+    }
+  }
+
   static String _uuid() {
     final random = Random.secure();
     final bytes = List.generate(16, (_) => random.nextInt(256));
@@ -489,16 +648,27 @@ class AppleIapController extends ChangeNotifier {
       if (!_current(epoch)) return;
       final existing = _records
           .where(
-            (row) => row['userId'] == _userId && row['supersededBy'] == null,
+            (row) =>
+                row['userId'] == _userId &&
+                row['sandboxDiscarded'] != true &&
+                row['supersededBy'] == null,
           )
           .toList();
+      stage = newOrder ? 'new_order.check' : 'purchase.queue';
+      final transactions = await bridge.pending();
+      if (!_current(epoch)) return;
+      _diagnoseQueue('purchase.queue.entry', transactions);
+      if (!newOrder && transactions.isNotEmpty) {
+        _diagnose('purchase.queue.blocked', {
+          'pendingCount': transactions.length,
+        });
+        throw PlatformException(code: 'payment_busy');
+      }
       if (newOrder) {
-        stage = 'new_order.check';
-        final transactions = await bridge.pending();
-        if (!_current(epoch)) return;
         final unresolved = _records.any(
           (row) =>
               row['userId'] == _userId &&
+              row['sandboxDiscarded'] != true &&
               (row['transactionId'] != null ||
                   row['verificationAttempted'] == true ||
                   row['receiptVerified'] == true ||
@@ -635,8 +805,15 @@ class AppleIapController extends ChangeNotifier {
       _diagnose('recovery.queue.response', {
         'pendingCount': transactions.length,
       });
+      _diagnoseQueue('recovery.queue.entry', transactions);
       final mine =
-          _records.where((record) => record['userId'] == _userId).toList()
+          _records
+              .where(
+                (record) =>
+                    record['userId'] == _userId &&
+                    record['sandboxDiscarded'] != true,
+              )
+              .toList()
             ..sort(
               (first, second) => (first['supersededBy'] == null ? 0 : 1)
                   .compareTo(second['supersededBy'] == null ? 0 : 1),

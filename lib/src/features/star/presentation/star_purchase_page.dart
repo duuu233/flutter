@@ -157,6 +157,29 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     await _buyApple(newOrder: true);
   }
 
+  Future<void> _resetAppleSandbox() async {
+    if (_busy || _apple.busy || !_apple.canResetSandbox) return;
+    final l10n = AppL10n.of(context);
+    final confirmed = await showAppConfirmDialog(
+      context,
+      title: l10n.starAppleSandboxReset,
+      message: l10n.starAppleSandboxResetConfirm,
+      confirmLabel: l10n.starAppleSandboxReset,
+    );
+    if (confirmed != true || !mounted || _busy || _apple.busy) return;
+    _appleStarted = false;
+    final cleared = await _apple.resetSandbox(widget.package);
+    if (!mounted) return;
+    await showAppNoticeDialog(
+      context,
+      title: cleared
+          ? l10n.starAppleSandboxResetDone
+          : _apple.errorCode == 'sandbox_reset_active'
+          ? l10n.starAppleSandboxResetActive
+          : l10n.starAppleSandboxResetFailed,
+    );
+  }
+
   String _appleMessage(AppL10n l10n) {
     if (_appleProductError != null) return l10n.starAppleUnavailable;
     if (_apple.errorCode == 'new_order_blocked') {
@@ -495,6 +518,10 @@ class _StarPurchasePageState extends State<StarPurchasePage>
                     key: ValueKey(_appleDiagnosticAttempt),
                     lines: [..._appleDiagnostics, ..._apple.diagnostics],
                     l10n: l10n,
+                    showSandboxReset: _apple.canResetSandbox,
+                    onSandboxReset: _busy || _apple.busy
+                        ? null
+                        : _resetAppleSandbox,
                   ),
                   const SizedBox(height: 12),
                   FigmaPrimaryButton(
@@ -526,16 +553,20 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   }
 }
 
-/// Current product preflight only; available on physical release/TestFlight builds.
+/// Purchase diagnostics and sandbox maintenance, including release/TestFlight.
 class _AppleProductDiagnostics extends StatelessWidget {
   const _AppleProductDiagnostics({
     super.key,
     required this.lines,
     required this.l10n,
+    required this.showSandboxReset,
+    this.onSandboxReset,
   });
 
   final List<String> lines;
   final AppL10n l10n;
+  final bool showSandboxReset;
+  final VoidCallback? onSandboxReset;
 
   @override
   Widget build(BuildContext context) {
@@ -577,6 +608,16 @@ class _AppleProductDiagnostics extends StatelessWidget {
               ),
             ],
           ),
+          if (showSandboxReset)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                key: const Key('apple-sandbox-reset'),
+                onPressed: onSandboxReset,
+                icon: const Icon(Icons.restart_alt, size: 18),
+                label: Text(l10n.starAppleSandboxReset),
+              ),
+            ),
           SizedBox(
             height: MediaQuery.sizeOf(context).height < 650 ? 100 : 150,
             child: SingleChildScrollView(

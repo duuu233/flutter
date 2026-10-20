@@ -235,3 +235,9 @@ release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表
 官方依据：[收据验证](https://developer.apple.com/documentation/storekit/validating-receipts-with-the-app-store)、
 [结束交易](https://developer.apple.com/documentation/storekit/finishing-a-transaction)。原始 API 及
 `verifyReceipt` 已被苹果标为弃用；本次按已确认的传统收据后端兼容。迁移到现代签名交易协议需要双方另行约定。
+
+### 沙盒支付强制清理（2026-10-20）
+
+非 debug 包也可在支付确认页底部“苹果支付诊断详情”点击“清除沙盒支付记录”。仅原生收据位置识别为 sandboxReceipt 时显示，正式或未知环境拒绝调用。确认后仅处理当前商品，保留其他账号已关联交易；当前账号当前商品恢复记录归档，原生交易摘要/请求占位/失败记录备份保留。购买中或待批准不可强行结束，有其他账号/商品阻塞则不显示清理成功。
+
+仅重新查询队列为空、归档成功才输出 sandbox.reset.completed / pendingCount=0；随后可重新购买，不自动付款、不发币、不删除后台订单。普通购买也在建单前检查队列，recovery.queue.entry 会区分 storekit/request/failure，避免把本地占位误认为苹果历史未清空。完整范围、重投递及真机限制见[实施记录](../history/2026-10/2026-10-20-ios-iap-sandbox-reset.md)。

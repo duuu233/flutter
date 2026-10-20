@@ -2158,6 +2158,28 @@ class AppL10n {
     'An Apple transaction or verification still needs confirmation. Retry confirmation and copy the diagnostics before creating another order.',
     '未確認のApple取引または検証記録があります。再確認し、診断ログをコピーしてから新しい注文をお試しください。',
   );
+  String get starAppleSandboxReset =>
+      _pick('清除沙盒支付记录', 'Clear sandbox purchases', 'サンドボックス購入をクリア');
+  String get starAppleSandboxResetConfirm => _pick(
+    '仅用于当前商品的沙盒测试：结束可结束的苹果测试交易，清理支付占位，并将当前账号的订单恢复记录归档。其他账号已关联的交易保留。苹果交易结束后不可恢复；此操作不发放星币，也不删除后台订单。确定清除？',
+    'Sandbox testing for this product only: finish eligible Apple test transactions, clear payment requests and archive order recovery records for the current account. Transactions linked to other accounts are kept. Finished Apple transactions cannot be restored. This grants no stars and does not delete server orders. Continue?',
+    '現在の商品のサンドボックステスト専用です。終了可能なAppleテスト取引と購入要求をクリアし、現在のアカウントの注文復旧記録を保管します。他のアカウントに紐づく取引は保持します。終了したApple取引は復元できません。スター付与やサーバー注文削除は行いません。続行しますか？',
+  );
+  String get starAppleSandboxResetDone => _pick(
+    '沙盒支付记录已清除，可以重新购买。',
+    'Sandbox purchases cleared. You can purchase again.',
+    'サンドボックス購入をクリアしました。再購入できます。',
+  );
+  String get starAppleSandboxResetActive => _pick(
+    '苹果仍有正在付款或等待批准的交易，请先在苹果支付中完成或取消，再清理。',
+    'An Apple payment is still in progress or awaiting approval. Complete or cancel it in Apple before clearing.',
+    'Appleで支払い処理中または承認待ちの取引があります。先に完了またはキャンセルしてからクリアしてください。',
+  );
+  String get starAppleSandboxResetFailed => _pick(
+    '沙盒记录尚未清除完成，请查看下方日志，稍后重试。',
+    'Sandbox cleanup is incomplete. Check the diagnostics and try again later.',
+    'サンドボックスのクリアが完了していません。診断ログを確認し、後でもう一度お試しください。',
+  );
   String get starAppleReload => _pick('重新获取商品', 'Reload product', '商品を再読み込み');
   String get starAppleFailed => _pick(
     '本次支付未完成，请重试确认。',
