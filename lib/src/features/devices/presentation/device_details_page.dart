@@ -52,7 +52,7 @@ String _liveFirmwareVersion(DeviceItem device, bool connected) {
   final live =
       BleController.instance.sessionMatchesSerial(
         device.serialNumber,
-        screenCode: device.screenType.code,
+        screenCode: device.screenCode,
       )
       ? (BleController.instance.info?.firmwareVersion ?? '')
       : '';
@@ -227,6 +227,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       context,
       initialValue: device.name,
       title: AppL10n.of(context).devRenameTitle,
+      thumbAsset: device.thumbAsset,
     );
     if (name == null || name == device.name) {
       return;
@@ -466,14 +467,15 @@ class DeviceDetailsBody extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 13),
           child: Row(
             children: [
-              // 设备图统一用首页那张 home-icon02（原来是 device-list-icon01，另一张小图）。
+              // 设备图与首页同口径（原来是 device-list-icon01，另一张小图）；
+              // 2026-10-22 起按机型区分，见 DeviceThumb。
               // 该图四角 alpha=0 自带圆角，故去掉原先的橙色底色容器与圆角裁剪——
               // 首页没有底色，留着会在四角露出色晕，三处就不一致了。
               SizedBox(
                 width: 46,
                 height: 46,
                 child: Image.asset(
-                  'assets/images/home-device-thumb.png',
+                  device.thumbAsset,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(
                     Icons.photo_library_outlined,

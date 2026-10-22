@@ -420,10 +420,19 @@ class _CastPreviewPageState extends State<CastPreviewPage>
 
   /// 设备屏幕分辨率 → 取景比例与导出画布尺寸。
   ///
-  /// 取 [FrameProtocol.screenTypes]（3.7寸 480×720 / 5.89寸 680×960）——这是权威表。
+  /// 2026-10-22（同步小程序 10-19）：优先用设备列表下发的物理宽高（如 EB-169 圆屏 400×400），
+  /// 与投屏时的出帧尺寸同一来源；后台没下发宽高时才回落 [FrameProtocol.screenTypes]
+  /// （3.7寸 480×720 / 5.89寸 680×960）。新机型若仍按回落的 5.89 寸裁图，帧字节数必然对不上。
   /// **不要**用 `FrameScreenTypeDetails.width/height`：那是一组陈旧的错值（416×240 / 600×448）。
   ({int width, int height}) get _deviceSize {
-    final screen = FrameProtocol.screenTypes[widget.device.screenType.code];
+    final device = widget.device;
+    if (device.screenWidth > 0 &&
+        device.screenHeight > 0 &&
+        device.screenWidth <= 0xFFFF &&
+        device.screenHeight <= 0xFFFF) {
+      return (width: device.screenWidth, height: device.screenHeight);
+    }
+    final screen = FrameProtocol.screenTypes[device.screenType.code];
     final w = screen?.width ?? 0;
     final h = screen?.height ?? 0;
     if (w > 0 && h > 0) {

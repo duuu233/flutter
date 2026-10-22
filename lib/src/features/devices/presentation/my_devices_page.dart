@@ -4,6 +4,7 @@ import 'package:BoltStar/src/shared/widgets/app_widgets.dart';
 import 'package:BoltStar/src/shared/widgets/device_name_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../device/device_thumb.dart';
 
 /// 我的设备列表页面，对应 UI 稿「我的设备」。
 ///
@@ -60,6 +61,7 @@ class MyDeviceOverview {
     required this.name,
     required this.connected,
     required this.battery,
+    this.thumbAsset = DeviceThumb.defaultAsset,
   });
 
   final String id;
@@ -67,11 +69,15 @@ class MyDeviceOverview {
   bool connected;
   String battery;
 
+  /// 设备图（按机型区分，见 [DeviceThumb]）。
+  final String thumbAsset;
+
   MyDeviceOverview copy() => MyDeviceOverview(
     id: id,
     name: name,
     connected: connected,
     battery: battery,
+    thumbAsset: thumbAsset,
   );
 }
 
@@ -156,6 +162,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
       context,
       initialValue: device.name,
       title: AppL10n.of(context).devDeviceNameTitle,
+      thumbAsset: device.thumbAsset,
     );
     if (name != null && name != device.name) {
       // 通过回调走真实接口（上层带保存中 loading）；列表名称由 state 更新后重建。
@@ -489,13 +496,13 @@ class _DeviceCard extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 24, 17, 0),
               child: Row(
                 children: [
-                  // 设备图统一用首页那张 home-icon02（2026-07-19 产品要求：
-                  // 首页/设备列表/设备详情三处用同一张，且**不区分连接状态**，
-                  // 连接状态由蓝牙角标与状态文案表达）。
+                  // 设备图与首页同口径（2026-07-19 产品要求：首页/设备列表/设备详情同一张，
+                  // 且**不区分连接状态**，连接状态由蓝牙角标与状态文案表达）。
+                  // 2026-10-22 起按机型区分（EB-169 圆屏 / EC-370 / 其余默认），见 DeviceThumb。
                   // 该图 166×166、四角 alpha=0 自带圆角，所以**不再加底色容器**——
                   // 首页本身就没有底色，加了会在四角露出色晕，三处就不一致了。
                   Image.asset(
-                    'assets/images/home-device-thumb.png',
+                    device.thumbAsset,
                     width: 60,
                     height: 60,
                     fit: BoxFit.contain,

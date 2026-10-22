@@ -4,120 +4,80 @@ import 'package:BoltStar/src/device/ble/frame_protocol.dart';
 
 /// 广播厂商数据解析（[FrameProtocol.parseAdvertising]，协议 6.10.7）。
 ///
-/// 2026-08-04：Device_ID 由 4 字节扩到 6 字节（完整 MAC），灰度期新老固件并存，
-/// 解析必须两种布局都认。锁成回归用例的原因：把 Device_ID 的第 5 个字节当电量时，
-/// **校验碰巧通过就会静默给出错误的设备ID + 错误的电量**，没有任何报错，线上极难发现。
+/// 布局：Company_ID(2=0xFFFF) + 屏型(1) + Device_ID(6) + 电量(1)。2026-10-22 起只认 6 字节
+/// Device_ID，4 字节老格式不再兼容；设备ID按广播原顺序取，且**不受屏型/电量是否认识影响**
+///（此前屏型不认识就整条丢弃，EB-169 的 0x04 因此连设备ID一起丢失）。
 ///
 /// 与小程序 `tests/advertising-parse.test.js` 同一组用例，两端结果必须一致。
 void main() {
   // 屏型 0x02 = 5.89寸 EF6-589（与设备广播名 EF6-589 对应）
   const screen589 = 0x02;
-  const screen370 = 0x01;
 
-  test('老固件：Company_ID + 屏型 + 4 字节 ID + 电量', () {
-    // 取自真机抓包：<FFFF> 0200 C1B4 592E（设备名 EF6-589、电量 0x2E=46%）
-    final parsed = FrameProtocol.parseAdvertising([
-      0xFF, 0xFF, screen589, 0x00, 0xC1, 0xB4, 0x59, 0x2E,
-    ]);
+  // EB-169 实测：第三方蓝牙工具 Manufacturer data <0xFFFF> 0x04370B00D0445A61。
+  // 正确设备ID为 37:0B:00:D0:44:5A（产品确认）；手机系统给的蓝牙地址 5A:44:D0:00:0B:37 是它的倒序。
+  const eb169 = [0xFF, 0xFF, 0x04, 0x37, 0x0B, 0x00, 0xD0, 0x44, 0x5A, 0x61];
 
+  test('EB-169：屏型 0x04 不认识也解析出设备ID，按广播原顺序', () {
+    final parsed = FrameProtocol.parseAdvertising(eb169);
     expect(parsed, isNotNull);
+    expect(parsed!.deviceId, '37:0B:00:D0:44:5A');
+    expect(parsed.battery, 97);
+    expect(parsed.companyMatched, isTrue);
+    expect(parsed.screenType, 0, reason: '不认识的屏型记 0，只是不给尺寸/型号');
+    expect(parsed.screen, '');
+    expect(parsed.model, '');
+  });
+
+  test('不带 Company_ID 前缀：恰好 8 字节', () {
+    final parsed = FrameProtocol.parseAdvertising(eb169.sublist(2));
+    expect(parsed, isNotNull);
+    expect(parsed!.deviceId, '37:0B:00:D0:44:5A');
+    expect(parsed.battery, 97);
+    expect(parsed.companyMatched, isFalse);
+  });
+
+  test('已知屏型照常给出尺寸/型号，电量边界 100 合法', () {
+    final parsed = FrameProtocol.parseAdvertising([
+      0xFF, 0xFF, screen589, 0xE9, 0x48, 0xC2, 0x1E, 0xD4, 0x28, 0x5A,
+    ]);
     expect(parsed!.screenType, screen589);
     expect(parsed.model, 'EF6-589');
-    expect(parsed.deviceId, '00:C1:B4:59');
-    expect(parsed.battery, 46);
-    // 4 字节不是完整身份，展示层据此知道它还不能与详情页对齐
-    expect(parsed.deviceIdComplete, isFalse);
-  });
-
-  test('新固件：Company_ID + 屏型 + 6 字节 ID + 电量', () {
-    final parsed = FrameProtocol.parseAdvertising([
-      0xFF, 0xFF, screen589, 0xE9, 0x48, 0xC2, 0x1E, 0xD4, 0x28, 0x5A,
-    ]);
-
-    expect(parsed, isNotNull);
-    expect(parsed!.deviceId, 'E9:48:C2:1E:D4:28');
-    expect(parsed.battery, 0x5A); // 90%
-    expect(parsed.deviceIdComplete, isTrue);
-  });
-
-  test('新旧两种布局都解得通时，绝不回退老版（否则静默给出错值）', () {
-    // 若回退成 4 字节布局，会把 ID 第 5 字节(0x28=40)当电量、校验还能通过，
-    // 悄悄给出 deviceId=E9:48:C2:1E、battery=40，全错且无任何报错。
-    final parsed = FrameProtocol.parseAdvertising([
-      0xFF, 0xFF, screen589, 0xE9, 0x48, 0xC2, 0x1E, 0x28, 0x99, 0x5A,
-    ]);
-
-    expect(parsed, isNotNull);
-    expect(parsed!.deviceId, 'E9:48:C2:1E:28:99');
+    expect(parsed.deviceId, 'E9:48:C2:1E:D4:28');
     expect(parsed.battery, 0x5A);
+
+    final full = FrameProtocol.parseAdvertising([
+      0xFF, 0xFF, screen589, 0xE9, 0x48, 0xC2, 0x1E, 0xD4, 0x28, 0x64,
+    ]);
+    expect(full!.battery, 100);
   });
 
-  test('不带 Company_ID 前缀的平台同样支持两种长度', () {
-    final old = FrameProtocol.parseAdvertising([
-      screen370, 0x00, 0xC1, 0xB4, 0x59, 0x2E,
-    ]);
-    expect(old, isNotNull);
-    expect(old!.model, 'EF6-370');
-    expect(old.deviceId, '00:C1:B4:59');
-    expect(old.deviceIdComplete, isFalse);
-
-    final fresh = FrameProtocol.parseAdvertising([
-      screen370, 0xE9, 0x48, 0xC2, 0x1E, 0xD4, 0x28, 0x64,
-    ]);
-    expect(fresh, isNotNull);
-    expect(fresh!.deviceId, 'E9:48:C2:1E:D4:28');
-    expect(fresh.battery, 100); // 0x64，边界值合法
-    expect(fresh.deviceIdComplete, isTrue);
-  });
-
-  test('优选布局解不通时才回退老布局，并带上 layoutFallback 标记', () {
-    // 2026-08-11：固件把广播 ID 换成 6 字节后，若字段顺序与我们的假设不同，
-    // 按新布局取到的「电量」会落在 ID 的字节上（这里 0xFF=255 > 100）→ 整条广播作废，
-    // 设备在列表里连屏型/电量都没有，也排不进候选。现在改为：优选布局解不通才回退。
+  test('电量非法只置空电量，设备ID照常', () {
     final parsed = FrameProtocol.parseAdvertising([
-      0xFF, 0xFF, screen589, 0x00, 0xC1, 0xB4, 0x59, 0x2E, 0x99, 0xFF,
+      0xFF, 0xFF, screen589, 0xE9, 0x48, 0xC2, 0x1E, 0xD4, 0x28, 0x65,
     ]);
-
-    expect(parsed, isNotNull, reason: '优选布局解不通不该整条丢弃');
-    expect(parsed!.deviceId, '00:C1:B4:59');
-    expect(parsed.battery, 46);
-    expect(parsed.deviceIdComplete, isFalse);
-    expect(parsed.deviceIdLayoutFallback, isTrue);
-
-    // 正常解得通的那条不许带回退标记
-    final normal = FrameProtocol.parseAdvertising([
-      0xFF, 0xFF, screen589, 0xE9, 0x48, 0xC2, 0x1E, 0xD4, 0x28, 0x5A,
-    ]);
-    expect(normal!.deviceIdLayoutFallback, isFalse);
+    expect(parsed, isNotNull);
+    expect(parsed!.battery, isNull, reason: '电量 0x65=101 超出合法范围');
+    expect(parsed.deviceId, 'E9:48:C2:1E:D4:28');
   });
 
-  test('厂商数据带 0xFFFF Company_ID 时置 companyMatched（扫描白名单与兜底候选都靠它）', () {
-    final withCompany = FrameProtocol.parseAdvertising([
-      0xFF, 0xFF, screen589, 0xE9, 0x48, 0xC2, 0x1E, 0xD4, 0x28, 0x5A,
-    ]);
-    expect(withCompany!.companyMatched, isTrue);
-
-    final without = FrameProtocol.parseAdvertising([
-      screen370, 0x00, 0xC1, 0xB4, 0x59, 0x2E,
-    ]);
-    expect(without!.companyMatched, isFalse);
-  });
-
-  test('非相框广播返回 null（屏型不认识 / 电量非法 / 长度不够）', () {
+  test('4 字节老格式不再解析，避免给出错误的设备ID', () {
+    // 带前缀的老包整包 8 字节，与不带前缀的新包等长：以 0xFFFF 开头的必须按带前缀处理、返回 null，
+    // 不能被误读成 FF:02:00:C1:B4:59 这种错误ID。
     expect(
       FrameProtocol.parseAdvertising([
-        0xFF, 0xFF, 0x09, 0x01, 0x02, 0x03, 0x04, 0x05,
+        0xFF, 0xFF, screen589, 0x00, 0xC1, 0xB4, 0x59, 0x2E,
       ]),
       isNull,
     );
     expect(
-      FrameProtocol.parseAdvertising([
-        0xFF, 0xFF, screen589, 0x00, 0xC1, 0xB4, 0x59, 0x65,
-      ]),
+      FrameProtocol.parseAdvertising([screen589, 0x00, 0xC1, 0xB4, 0x59, 0x2E]),
       isNull,
-      reason: '电量 0x65=101 超出合法范围，不是本产品广播',
     );
+  });
+
+  test('长度不符一律返回 null', () {
     expect(FrameProtocol.parseAdvertising([0xFF, 0xFF, screen589]), isNull);
+    expect(FrameProtocol.parseAdvertising([1, 2, 3, 4, 5, 6, 7]), isNull);
     expect(FrameProtocol.parseAdvertising(<int>[]), isNull);
   });
 }

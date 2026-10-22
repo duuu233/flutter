@@ -855,11 +855,10 @@ class FrameBleClient {
       Future<void>.delayed(scanSettleDelay);
 
   /// 广播厂商数据是否就是相框自己那套布局（6.10.7）：Company_ID 必须是 0xFFFF，
-  /// 且其后的 Screen_Type / Device_ID / 电量能被 [FrameProtocol.parseAdvertising] 解出来。
+  /// 且其后长度符合 Screen_Type(1) + Device_ID(6) + 电量(1)（[FrameProtocol.parseAdvertising]）。
   ///
-  /// 卡死 Company_ID=0xFFFF 是为了收紧误判：只看「能不能解析」的话，任意 6 字节里
-  /// 约 0.5% 会碰巧满足 Screen_Type∈{1,2,3} 且电量≤100。加上 Company_ID 这道闸后，
-  /// 非相框设备几乎不可能进来；真进来了也只是多列一行，连接时没有 FF00 服务会被拒。
+  /// 2026-10-22（同步小程序）起不再要求屏型认识：新屏型（如 EB-169 的 0x04）设备名缺席时照样放行。
+  /// 卡死 Company_ID=0xFFFF 收紧误判；真有别家设备进来也只是多列一行，连接时没有 FF00 服务会被拒。
   static bool _looksLikeFrame(ScanResult r) {
     for (final entry in r.advertisementData.manufacturerData.entries) {
       if ((entry.key & 0xFFFF) != 0xFFFF) {

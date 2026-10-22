@@ -21,6 +21,7 @@ import '../../../state.dart';
 import 'bind_device_found.dart';
 import 'bind_device_not_found.dart';
 import 'bind_device_searching.dart';
+import '../../../device/device_thumb.dart';
 
 /// 绑定设备流程编排页：权限 → 扫描 → 发现 / 未发现 → 连接 → 绑定。
 ///
@@ -268,45 +269,29 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       name: BleController.displayName(result),
       subtitle: parts.join(' · '),
       deviceId: _displayDeviceCode(result),
+      // 设备图按本次广播名区分机型（name 与广播包里的 advName 都看，与扫描白名单同口径）。
+      thumbAsset: DeviceThumb.ofScanName(
+        '${result.device.platformName} ${result.advertisementData.advName}',
+      ),
     );
   }
 
-  /// 展示用「设备ID」：取广播里的 Device_ID，**带冒号**展示（如 `AA:BB:CC:DD:EE:FF`），
-  /// 与设备详情页、设备列表同一套格式。
+  /// 展示用「设备ID」：只取本次广播厂商数据里的完整 6 字节 Device_ID，按原顺序带冒号展示
+  /// （如 `37:0B:00:D0:44:5A`），与设备详情页（连上后 0x01 读到的值）一致；安卓、iOS 同一来源。
   ///
-  /// 2026-08-04 两处修正：
-  ///   ① **不再截断**——新固件广播 6 字节，旧代码无脑取末 8 位会把完整 ID 砍掉一半，
-  ///      正是用户反馈的「和详情页不一致、看着像被裁剪」；老固件仍只有 4 字节，如实显示；
-  ///   ② **补上冒号**——本页原来显示 `1A2B3C4D`，而详情页是 `AA:BB:CC:DD:EE:FF`，
-  ///      同一个东西两种写法，本身就是不一致。
+  /// 取不到合法的完整 6 字节时统一显示 `--`（2026-10-22 同步小程序 `bind.js displayDeviceCode`）。
+  /// 不再拿系统给的 `remoteId` 兜底：
+  ///   · 安卓的 `remoteId` 是手机系统给的蓝牙地址，字节序与设备ID相反（EB-169 实测：
+  ///     设备ID 37:0B:00:D0:44:5A，系统地址 5A:44:D0:00:0B:37），显示出来就是错的；
+  ///   · iOS 的 `remoteId` 是手机生成的随机 UUID，与设备无关。
   ///
   /// 为什么要展示：默认设备名 = 产品广播名，同型号设备必然重名，绑定前这是唯一能把两台区分开的标识。
-  /// 展示放宽不等于身份放宽：判重、认领会话、绑定入库一律仍只认连上后 0x01 读到的完整 ID。
-  /// 与小程序 `bind.js` 的 `displayDeviceCode()` 同规则，两端展示的值要一致。
-  ///
-  /// 兜底（广播厂商数据解析不出来时）：
-  ///   · 安卓的 `remoteId` 就是 MAC（12 hex）——设备方口径里它就是那个完整身份，整串显示；
-  ///   · iOS 给的是与设备无关、换台手机就变的随机 UUID（32 hex），它根本不是设备ID，
-  ///     以前截成 8 位显示只会让用户以为「设备ID 被裁了」，现在直接不显示（该行有空值判断）。
+  /// 展示不等于身份：判重、认领会话、绑定入库一律仍只认连上后 0x01 读到的完整 ID。
   static String _displayDeviceCode(ScanResult result) {
-    final broadcast = normalizeSerial(
+    final id = canonicalDeviceSerial(
       BleController.advertisingOf(result)?.deviceId,
     );
-    if (broadcast.isNotEmpty) {
-      return _withColons(broadcast);
-    }
-    final handle = normalizeSerial(result.device.remoteId.str);
-    return RegExp(r'^[0-9A-F]{12}$').hasMatch(handle)
-        ? _withColons(handle)
-        : '';
-  }
-
-  /// 十六进制串按字节补冒号（`AABBCC` → `AA:BB:CC`）；长度为奇数等异常输入返回空串。
-  static String _withColons(String hex) {
-    if (hex.isEmpty || hex.length.isOdd) return '';
-    return <String>[
-      for (var i = 0; i < hex.length; i += 2) hex.substring(i, i + 2),
-    ].join(':');
+    return id.isEmpty ? '--' : id;
   }
 
   /// 蓝牙未开启 / 权限未授予时的引导弹窗：给一个「去设置 / 去打开蓝牙」的直达按钮
@@ -482,12 +467,15 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       return;
     }
     final l10n = AppL10n.of(context);
-    final current = widget.state.deviceById(userProductId).name;
+    final bound = widget.state.deviceById(userProductId);
+    final current = bound.name;
     final name = await showDeviceNameDialog(
       context,
       initialValue: current,
       title: l10n.devBindNameTitle,
       cancelLabel: l10n.devBindNameLater,
+      // 与之后「我的设备」里显示的同一张：刚绑定记录按所属产品算出的图。
+      thumbAsset: bound.thumbAsset,
     );
     if (!mounted || name == null || name == current) {
       return;
@@ -515,7 +503,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       return null;
     }
     for (final device in widget.state.devices) {
-      if (!sameScreenCode(scannedScreen, device.screenType.code)) {
+      if (!sameScreenCode(scannedScreen, device.screenCode)) {
         continue;
       }
       if (completeSerials.any(

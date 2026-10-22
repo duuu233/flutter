@@ -11,6 +11,7 @@ import 'device/ble/frame_protocol.dart';
 import 'device/battery_cache.dart';
 import 'device/device_identity_registry.dart';
 import 'device/device_interaction_trace.dart';
+import 'device/device_thumb.dart';
 import 'device/frame_device_protocol.dart';
 import 'device/recently_bound_device.dart';
 import 'device/serial_match.dart';
@@ -158,6 +159,9 @@ class DeviceItem {
     required this.carouselEnabled,
     this.screenWidth = 0,
     this.screenHeight = 0,
+    this.productId = 0,
+    this.broadcastId = '',
+    this.shapeType,
     this.verticalRotation = DeviceRotation.verticalFallbackDeg,
     this.rotationDegree = DeviceRotation.landscapeFallbackDeg,
     this.isUpdate = 0,
@@ -208,6 +212,37 @@ class DeviceItem {
   /// 没下发尺寸时会**回落 5.89 寸**，反查就会显示一个臆造的 `680*960`。原始宽高为 0 就老实显示 `--`。
   int screenWidth;
   int screenHeight;
+
+  // ── 产品信息（设备列表接口下发 `productId` / `broadcastId` / `shapeType`，2026-10-22）──
+  /// 所属产品 ID；未下发为 0。
+  int productId;
+
+  /// 所属产品的广播名（如 `EB-169`），设备图按它区分机型（见 [thumbAsset]）。
+  String broadcastId;
+
+  /// 后台产品「形状类型」：1 = 圆形，0 = 方形；未下发为 null。只认整数 1 为圆形。
+  int? shapeType;
+
+  /// 设备图（按机型区分，见 [DeviceThumb]）。
+  String get thumbAsset =>
+      DeviceThumb.ofRecord(broadcastId: broadcastId, shapeType: shapeType);
+
+  /// 型号防串台用的屏幕类型码（[FrameScreenType.code]），交给 `sameScreenCode` 做一票否决。
+  ///
+  /// 后端宽高对得上旧机型（3.7 寸 480×720 / 5.89 寸 680×960，方向不限）才给码；
+  /// **新机型尺寸**（如 EB-169 的 400×400）给 0，不参与型号否决——[screenType] 对它只是回落的
+  /// 5.89 寸，拿去比会把真机 0x01 报的新屏型判成「不是这台」，表现为连不上、提示未连接
+  /// （2026-10-22 同步小程序 10-19：新分辨率不再被旧机型尺寸筛选挡住，旧机型之间仍筛）。
+  /// 后端没下发宽高时保持原行为（回落 5.89 寸的码）。
+  int get screenCode {
+    if (screenWidth <= 0 && screenHeight <= 0) return screenType.code;
+    final lo = screenWidth < screenHeight ? screenWidth : screenHeight;
+    final hi = screenWidth < screenHeight ? screenHeight : screenWidth;
+    if ((lo == 480 && hi == 720) || (lo == 680 && hi == 960)) {
+      return screenType.code;
+    }
+    return 0;
+  }
 
   /// **竖向**构图导出时整幅画面的顺时针旋转角（度）。后端设备字段 `verticalRotation`
   /// （2026-08-04 新增），投屏预览页据此旋转上传给抖动接口、随后图传到设备的成品图。
@@ -722,7 +757,7 @@ class PhotoFrameState extends ChangeNotifier {
     final error = await ble.connectBoundDevice(
       serial: device.serialNumber,
       name: device.name,
-      screenCode: device.screenType.code,
+      screenCode: device.screenCode,
     );
     // await 期间 refreshDevices 可能并发完成并整体替换了 _devices（新对象列表），
     // 进场拿到的 device 引用已成孤儿——往孤儿上写标记 UI 看不见（表现为
@@ -785,7 +820,7 @@ class PhotoFrameState extends ChangeNotifier {
         // 可能在切页/刷新期间过期，不能据此断开当前属于另一台设备的会话。
         if (ble.sessionMatchesSerial(
           device.serialNumber,
-          screenCode: device.screenType.code,
+          screenCode: device.screenCode,
         )) {
           await trace.measure('ble-disconnect', ble.disconnect);
         } else {
@@ -825,7 +860,7 @@ class PhotoFrameState extends ChangeNotifier {
   bool _sessionMatches(DeviceItem device) =>
       BleController.instance.sessionMatchesSerial(
         device.serialNumber,
-        screenCode: device.screenType.code,
+        screenCode: device.screenCode,
       );
 
   /// [deviceId] 对应的后端设备记录是否正是当前 BLE 活动会话的物理设备。
@@ -2536,8 +2571,19 @@ class PhotoFrameState extends ChangeNotifier {
         product['width'],
         product['height'],
       ].map((v) => (v ?? '').toString()).join(' ').toLowerCase();
+      // 蓝牙广播名里含产品列表的 broadcastId，是最直接的机型依据，权重压过名称/型号的零散命中
+      //（2026-10-22 同步小程序 bindDevice/productScore）：与扫描白名单同口径（去首尾空白、
+      // 大小写不敏感的包含匹配），广播名带后缀（EC-370-XXXX）也认得出；也不再靠列表顺序打破
+      // 平分（EC-370 的屏型若按 3.7 寸上报，型号会同时命中 EF6-370）。
+      final broadcastId = (product['broadcastId'] ?? '')
+          .toString()
+          .trim()
+          .toLowerCase();
+      final broadcastHit =
+          broadcastId.isNotEmpty &&
+          scanName.toLowerCase().contains(broadcastId);
       return terms.fold(
-        0,
+        broadcastHit ? 10 : 0,
         (score, term) => score + (text.contains(term) ? 1 : 0),
       );
     }
@@ -3240,6 +3286,13 @@ class PhotoFrameState extends ChangeNotifier {
       // 原始宽高另存一份：屏型是「归一化后的枚举」，未下发时会回落 589，不能拿来展示分辨率。
       screenWidth: _asInt(data['width']),
       screenHeight: _asInt(data['height']),
+      // 产品信息：设备列表接口下发（2026-10-22 用户确认），设备图与圆屏判断用。
+      productId: _asInt(data['productId']),
+      broadcastId: (data['broadcastId'] ?? '').toString().trim(),
+      // 只认数字（与小程序 `shapeType === 1` 同口径），字符串 "1" 不算圆形。
+      shapeType: data['shapeType'] is num
+          ? (data['shapeType'] as num).toInt()
+          : null,
       // 两个导出角都走 [DeviceRotation]，与小程序 utils/device-rotation.js 同口径：
       // 竖向缺省 0（不旋转），横向缺省 270（历史行为）。⚠️ 不能改用 _asInt——
       // 它对缺失返回 0，横向那条会把「没下发」当成「不旋转」，正好丢掉历史兜底角。

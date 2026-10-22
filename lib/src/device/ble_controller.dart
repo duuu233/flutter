@@ -339,7 +339,7 @@ class BleController extends ChangeNotifier {
     return FrameProtocol.screenTypes[ad.screenType]?.model ?? '';
   }
 
-  /// 解析扫描结果广播里的厂商数据（Screen_Type + 4 字节 Device_ID + 电量）。
+  /// 解析扫描结果广播里的厂商数据（Screen_Type + 6 字节 Device_ID + 电量）。
   /// flutter_blue_plus 把厂商数据按 Company_ID 拆成 map，这里还原成
   /// [CompanyID(2 小端), ...payload] 的原始字节序喂给协议层（小程序侧拿到的就是这个布局）。
   static FrameAdvertising? advertisingOf(ScanResult result) {

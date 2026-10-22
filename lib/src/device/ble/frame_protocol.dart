@@ -30,9 +30,11 @@ class FrameScreen {
 }
 
 /// 广播厂商数据解析结果（6.10.7）—— 由小程序 `frame-protocol.parseAdvertising` 移植。
-/// [deviceId] 为广播里的 4 字节 Device_ID（`AA:BB:CC:DD` 形式）：跨扫描会话稳定，
-/// 是「连接前」就能拿到的硬件序列号，用于把扫描结果和后端已绑定记录容错匹配
-///（与连上后 0x01 读到的 6 字节 Device_ID 互为子串，见 serial_match.dart）。
+/// [deviceId] 为广播里的 6 字节 Device_ID（`AA:BB:CC:DD:EE:FF` 形式，按广播原顺序）：
+/// 跨扫描会话稳定，是「连接前」就能拿到的硬件序列号，与连上后 0x01 读到的值一致。
+///
+/// 2026-10-22（同步小程序）：字段各自独立。屏型不认识（如 EB-169 的 0x04）只是
+/// [screenType] 记 0、不给尺寸/型号；电量超出 0~100 时 [battery] 为 null；设备ID照样给出。
 class FrameAdvertising {
   const FrameAdvertising({
     required this.screenType,
@@ -40,33 +42,25 @@ class FrameAdvertising {
     required this.model,
     required this.deviceId,
     required this.battery,
-    this.deviceIdComplete = false,
-    this.deviceIdLayoutFallback = false,
     this.companyMatched = false,
   });
 
+  /// 认识的屏型（[FrameProtocol.screenTypes] 里有）才是原值，否则为 0。
   final int screenType;
   final String screen;
   final String model;
 
-  /// 广播里的 Device_ID：老固件 4 字节、新固件 6 字节（见 [FrameProtocol.parseAdvertising]）。
-  final String deviceId;
-
-  /// [deviceId] 是否已是完整 6 字节（新固件）。展示层据此决定能否与设备详情页对齐；
+  /// 广播里的 6 字节 Device_ID（见 [FrameProtocol.parseAdvertising]）。
   /// ⚠️ **身份判定不看它**——判重、认领会话、绑定入库一律仍只认连上后 0x01 读到的值，
   /// 广播是明文、可被伪造重放。见 `docs/architecture/BLE_CONNECTION_AND_IDENTITY.md`。
-  final bool deviceIdComplete;
-
-  /// 优选布局（长度够就先按 6 字节解）解不通、**回退**另一种布局才解出来的
-  /// （2026-08-11 同步小程序）。上层可据此把这条结果看得轻一点，但不必丢弃：
-  /// 丢了这台设备在列表里连屏型/电量都没有，也排不进候选。
-  final bool deviceIdLayoutFallback;
+  final String deviceId;
 
   /// 厂商数据带 `0xFFFF` Company_ID —— 即「确认是本产品的广播」。
   /// 扫描白名单在设备名缺席时靠它放行；兜底候选也只在它为真的设备里挑。
   final bool companyMatched;
 
-  final int battery;
+  /// 广播里的电量 0~100；超出范围为 null。
+  final int? battery;
 }
 
 /// 解析出的一帧。
@@ -617,80 +611,45 @@ class FrameProtocol {
     );
   }
 
-  /// 广播厂商数据里 Device_ID 的两种长度（6.10.7）。
-  ///
-  /// 老固件 4 字节（MAC 中的 4 个字节）；**2026-08-04 起新固件改播完整 6 字节 MAC**，
-  /// 使扫描阶段就能拿到与 0x01 GET_INFO 一致的完整设备 ID——这条路对 iOS 同样成立
-  /// （iOS 系统不给外设 MAC，但厂商广播数据两端都拿得到）。
-  static const int adDeviceIdLenV2 = 6;
-  static const int adDeviceIdLenV1 = 4;
+  /// 广播厂商数据里 Device_ID 的长度（6.10.7）。现有设备均为 6 字节，
+  /// 4 字节老格式 2026-10-22 起不再兼容（同步小程序）。
+  static const int adDeviceIdLen = 6;
 
-  /// 解析广播厂商数据（6.10.7）：Screen_Type(1) + Device_ID(**4 或 6**) + Battery(1)，
-  /// 可能带 0xFF 0xFF Company_ID 前缀（此时从第 2 字节起为 Screen_Type）。
-  /// 屏型不认识或电量非法（>100）视为非相框广播，返回 null。
+  /// Company_ID 之后的长度：屏型1 + Device_ID6 + 电量1。
+  static const int adPayloadLen = 1 + adDeviceIdLen + 1;
+
+  /// 解析广播厂商数据（6.10.7）：Company_ID(2=0xFFFF) + Screen_Type(1) + Device_ID(6) + Battery(1)。
+  /// 不是本产品格式返回 null。
   ///
-  /// ⚠️ 新旧固件必须同时支持（灰度期两种设备并存）：靠「Company_ID 之后的剩余长度」区分，
-  /// 老包恒为 6 字节(1+4+1)、新包恒为 8 字节(1+6+1)，长度够就**优选**新布局。
+  /// 字段各自独立：设备ID只看固定位置，**不受屏型、电量是否认识影响**。此前屏型不在
+  /// [screenTypes] 里就整条丢弃，新屏型（如 EB-169 的 0x04）连设备ID一起丢失。
+  /// 实测 EB-169：`<FFFF> 04 37 0B 00 D0 44 5A 61` → 屏型 0x04、设备ID 37:0B:00:D0:44:5A、电量 97%；
+  /// 同一台设备手机系统给出的蓝牙地址是 5A:44:D0:00:0B:37（字节序相反），不能拿来当设备ID。
   ///
-  /// 2026-08-11（同步小程序）：优选布局**解不通时才回退**另一种。原实现是「长度够 8 就只按
-  /// 新版解、绝不回退」，理由是「回退会把 Device_ID 的第 5 个字节当成电量，校验碰巧通过就
-  /// 静默给出错误的 ID 和电量」——那条约束针对的是「**两种都解得通**时不许回退」；而这里的
-  /// 前提是优选布局**已经作废**（屏型不认识或电量 >100），原本整条广播就要丢掉，设备在列表里
-  /// 连屏型/电量都没有、也排不进候选。回退出来的结果带 [FrameAdvertising.deviceIdLayoutFallback]
-  /// 标记，供上层辨别。
+  /// 带 0xFFFF 前缀 → 前缀之后至少 8 字节，`companyMatched=true`；
+  /// 不带前缀 → 只接受长度恰好 8 字节。以 0xFFFF 开头的一律按带前缀处理：老固件「前缀 + 4 字节ID」
+  /// 整包也是 8 字节，不能被当成不带前缀的格式误读出一个错误的设备ID。
   /// 与小程序 `frame-protocol.js parseAdvertising` 逐条对齐，改一端必须同步另一端。
   static FrameAdvertising? parseAdvertising(List<int> bytes) {
     final companyMatched =
         bytes.length >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFF;
-
-    FrameAdvertising? attempt(
-      int offset,
-      int idLength, {
-      bool layoutFallback = false,
-    }) {
-      // 屏型(1) + ID(idLength) + 电量(1)
-      if (bytes.length < offset + idLength + 2) return null;
-      final screenType = bytes[offset] & 0xFF;
-      // 电量紧跟在 Device_ID 之后，位置随 ID 长度浮动
-      final battery = bytes[offset + 1 + idLength] & 0xFF;
-      final screen = screenTypes[screenType];
-      if (screen == null || battery > 100) return null;
-      return FrameAdvertising(
-        screenType: screenType,
-        screen: screen.label,
-        model: screen.model,
-        deviceId: _bytesToId(bytes, offset + 1, idLength),
-        deviceIdComplete: idLength == adDeviceIdLenV2,
-        deviceIdLayoutFallback: layoutFallback,
-        companyMatched: companyMatched,
-        battery: battery,
-      );
-    }
-
-    FrameAdvertising? attemptAt(int offset) {
-      final rest = bytes.length - offset;
-      if (rest >= adDeviceIdLenV2 + 2) {
-        // 新固件：屏型1 + ID6 + 电量1
-        final preferred = attempt(offset, adDeviceIdLenV2);
-        if (preferred != null) return preferred;
-        // 优选布局解不通（屏型/电量校验没过）→ 这条本来要整个丢掉，此时才试老布局
-        if (rest >= adDeviceIdLenV1 + 2) {
-          return attempt(offset, adDeviceIdLenV1, layoutFallback: true);
-        }
-        return null;
-      }
-      if (rest >= adDeviceIdLenV1 + 2) {
-        return attempt(offset, adDeviceIdLenV1); // 老固件：屏型1 + ID4 + 电量1
-      }
+    if (companyMatched
+        ? bytes.length < 2 + adPayloadLen
+        : bytes.length != adPayloadLen) {
       return null;
     }
-
-    // 含 Company_ID：前两字节为 0xFF 0xFF，则从第 2 字节起为 Screen_Type
-    if (companyMatched) {
-      final withId = attemptAt(2);
-      if (withId != null) return withId;
-    }
-    return attemptAt(0);
+    final offset = companyMatched ? 2 : 0;
+    final rawScreenType = bytes[offset] & 0xFF;
+    final screen = screenTypes[rawScreenType];
+    final battery = bytes[offset + 1 + adDeviceIdLen] & 0xFF;
+    return FrameAdvertising(
+      screenType: screen == null ? 0 : rawScreenType,
+      screen: screen?.label ?? '',
+      model: screen?.model ?? '',
+      deviceId: _bytesToId(bytes, offset + 1, adDeviceIdLen),
+      companyMatched: companyMatched,
+      battery: battery <= 100 ? battery : null,
+    );
   }
 
   /// CMD=0x03 软件版本：ASCII，遇 \0 截断(6.7.5)。

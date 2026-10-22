@@ -545,6 +545,14 @@ Logout / successful account deletion / session expiry
    deduplication, and active-session ownership require the valid six-byte ID returned by command
    `0x01`. Broadcast short ID and screen type only select candidates; old short-ID backend records
    must be removed and rebound.
+   Since 2026-10-22 (synced with the mini program) advertising carries only the 6-byte ID in
+   original order; an unknown screen type (EB-169 reports 0x04) no longer drops the ID, and the
+   search list shows `--` instead of falling back to `remoteId`. Device records keep
+   `productId/broadcastId/shapeType`; `DeviceItem.screenCode` is 0 for non-legacy sizes so new
+   models skip the model veto. Projection and preview take width/height from the device list
+   (`features/cast/projection_device.dart`), unknown capacity uses the IMG_MASK slot limit, and
+   size/identity configuration errors are no longer reported as "not connected". Device images
+   come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default).
 3. **The selected target is immutable during an async operation.** Connection, projection, delete,
    clear, and OTA flows snapshot the backend device ID and must not silently switch when UI selection
    changes.

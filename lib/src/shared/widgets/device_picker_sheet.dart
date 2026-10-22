@@ -174,12 +174,13 @@ class _DevicePickerRow extends StatelessWidget {
           ),
           child: Row(
             children: [
-              // 设备图与首页/设备列表/详情/搜索四处同一张（该图四角透明自带圆角，别再套底色块）
+              // 设备图与首页/设备列表/详情/搜索同口径，按机型区分（见 DeviceThumb；
+              // 该图四角透明自带圆角，别再套底色块）
               SizedBox(
                 width: 44,
                 height: 44,
                 child: Image.asset(
-                  'assets/images/home-device-thumb.png',
+                  device.thumbAsset,
                   fit: BoxFit.contain,
                   errorBuilder: (context, error, stackTrace) => const Icon(
                     Icons.photo_library_outlined,

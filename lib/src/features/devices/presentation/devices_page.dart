@@ -179,6 +179,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
                   name: device.name,
                   connected: device.connected,
                   battery: device.batteryLabel,
+                  thumbAsset: device.thumbAsset,
                 ),
               )
               .toList(),

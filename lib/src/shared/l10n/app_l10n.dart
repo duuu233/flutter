@@ -605,6 +605,13 @@ class AppL10n {
     'E-paper device not connected. Check the phone or e-paper device connection and continue.',
     '電子ペーパーが接続されていません。スマートフォンまたは電子ペーパーの接続を確認して続行してください。',
   );
+  /// 型号/尺寸/身份/协议拒绝（不是断连）：中文直接给服务层的具体原因，其它语言给通用说明
+  /// （2026-10-22 同步小程序：这类问题不再统一说成「未连接」）。
+  String castFailureDeviceConfig(String detail) => _pick(
+    detail,
+    'The e-paper device information does not match this cast. Check the device settings and try again.',
+    '電子ペーパーの設定情報が一致しません。デバイス情報を確認して再試行してください。',
+  );
   String get castFailureTimeout => _pick(
     '传输超时，请将手机靠近电子纸设备后重试',
     'Transfer timed out. Move the phone closer to the e-paper device and try again.',

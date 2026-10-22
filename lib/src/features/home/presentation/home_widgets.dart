@@ -841,9 +841,9 @@ class _ConnectedDeviceCard extends StatelessWidget {
             return Row(
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
-                // 左侧圆环图标（home-device-thumb.png，166rpx≈83）。
+                // 左侧圆环图标（166rpx≈83），2026-10-22 起按机型区分（见 DeviceThumb）。
                 Image.asset(
-                  'assets/images/home-device-thumb.png',
+                  device.thumbAsset,
                   width: _kCardOrbit,
                   height: _kCardOrbit,
                   fit: BoxFit.contain,

@@ -4,12 +4,13 @@ import 'package:BoltStar/src/shared/widgets/home_figma_common.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import 'bind_device_debug_entry.dart';
+import '../../../device/device_thumb.dart';
 
 /// 绑定设备-发现设备页里展示的单台设备视图模型。
 ///
 /// [id]：本次扫描会话内稳定的设备标识（BLE remoteId），用于单选与回传绑定/调试目标；
 /// [name]：展示名（广播名/平台名）；[subtitle]：尺寸 · 电量XX% · 信号XX（对齐小程序 `nearby-sub`）；
-/// [deviceId]：展示用设备ID（广播 Device_ID，带冒号；新固件 6 字节、老固件 4 字节，不截断）——
+/// [deviceId]：展示用设备ID（广播完整 6 字节 Device_ID，带冒号；取不到为 `--`）——
 /// **与 [id] 不是一回事**，[id] 是平台给的 MAC/UUID、只作选中键从不展示，
 /// [deviceId] 才是给用户看、用来区分同型号同名设备的那个。
 class BindDeviceEntry {
@@ -18,12 +19,16 @@ class BindDeviceEntry {
     required this.name,
     required this.subtitle,
     this.deviceId = '',
+    this.thumbAsset = DeviceThumb.defaultAsset,
   });
 
   final String id;
   final String name;
   final String subtitle;
   final String deviceId;
+
+  /// 设备图（按本次扫描的蓝牙广播名区分机型，见 [DeviceThumb.ofScanName]）。
+  final String thumbAsset;
 }
 
 /// 绑定设备-发现设备页：展示搜索到的设备并发起绑定，对应 UI 稿「绑定设备-发现设备」。
@@ -227,6 +232,7 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                                 name: entries[i].name,
                                 subtitle: entries[i].subtitle,
                                 deviceId: entries[i].deviceId,
+                                thumbAsset: entries[i].thumbAsset,
                                 selected: entries[i].id == selectedId,
                                 onTap: () {
                                   setState(() {

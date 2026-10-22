@@ -27,6 +27,7 @@ import '../../device/device_interaction_trace.dart';
 import '../../network/boltfox_api.dart';
 import '../../network/dithering_api.dart';
 import '../../shared/l10n/app_l10n.dart';
+import 'projection_device.dart';
 import 'smooth_progress.dart';
 
 /// IMG_MASK 字节串 → 十六进制串（诊断日志用；字节序与协议一致，低字节在前）。
@@ -124,6 +125,11 @@ class ServerImageProjectionService {
     List<String>? recordFilePaths,
     void Function(CastProgress)? onProgress,
     bool Function()? shouldAbort,
+    // 设备列表记录的物理宽高与形状（2026-10-22 同步小程序 10-19）：新机型（如 EB-169 400×400）
+    // 的尺寸只能从这里来，0x01 型号表里没有。都为 0 时兼容旧的 0x01 型号表。
+    int deviceWidth = 0,
+    int deviceHeight = 0,
+    int? deviceShapeType,
   }) async {
     final client = _ble.client;
     // [filePaths]=预览处理后的设备分辨率图（喂抖动接口出帧）；[recordFilePaths]=对应的原图
@@ -244,16 +250,24 @@ class ServerImageProjectionService {
               emit(0, _l10n?.castDeviceRefreshing ?? '设备正在刷新，请稍候…'),
         ),
       );
-      // 机型/尺寸分开判（对齐小程序 result.js:367-375）：只有 0x03 才是「该型号暂不支持图传」；
-      // 读到 0 尺寸多半是刷屏后短暂断连，应提示「重新连接」而非误报机型不支持。
-      if (info.screenType == 0x03) {
+      // 投屏尺寸取设备列表记录，身份/尺寸/槽位由 resolveProjectionTransfer 统一判定
+      // （2026-10-22 同步小程序 10-19 projection-device）。旧实现只认 0x01 型号表：
+      // EB-169 这类新尺寸读出 0×0，被当成「未连接」报给用户——现在尺寸、型号问题各报各的原因。
+      // 只有记录没下发宽高、兼容旧型号表时，7.3 寸 0x03 仍按「该型号暂不支持图传」。
+      if (deviceWidth <= 0 && deviceHeight <= 0 && info.screenType == 0x03) {
         throw FrameBleException('该型号暂不支持图传', kind: FrameBleErrorKind.unsupported);
       }
-      if (info.width == 0 || info.height == 0) {
-        throw FrameBleException('电子纸设备未连接或信息读取异常，请重新连接电子纸设备后再投屏', kind: FrameBleErrorKind.disconnected);
-      }
+      final transfer = resolveProjectionTransfer(
+        expectedSerial: expectedSerial,
+        info: info,
+        deviceWidth: deviceWidth,
+        deviceHeight: deviceHeight,
+        shapeType: deviceShapeType,
+      );
+      final width = transfer.width;
+      final height = transfer.height;
       final expected4bpp =
-          (info.width * info.height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2（向上取整）
+          (width * height + 1) ~/ 2; // 六色 4bpp = 宽×高÷2（向上取整）
 
       // 设备空间：不做整单预检（对齐小程序 result.js —— 逐张选空闲槽位，放满为止）。
       // 只差 N 张空间时也把能放下的都投进去(部分成功)，而不是一张不投直接整单失败。
@@ -265,7 +279,9 @@ class ServerImageProjectionService {
       // 排查「投完屏设备显示的不是这张」时，先看它是不是上次刷屏指过去的那个槽位。
       debugPrint(
         '[投屏] 设备信息：屏型=0x${info.screenType.toRadixString(16)} '
-        '${info.width}x${info.height} 当前显示槽位=${info.curImgIndex} '
+        '$width×$height（${transfer.fromDeviceList ? '设备列表' : '旧型号表'}；'
+        '0x01=${info.width}x${info.height}） 容量=${transfer.capacity} '
+        '槽位上限=${transfer.slotLimit} 当前显示槽位=${info.curImgIndex} '
         'imgMask=${_maskHex(info.imgMask)} '
         '已存槽位=$usedIndexes',
       );
@@ -284,8 +300,8 @@ class ServerImageProjectionService {
             filePath: images[idx],
             originalPath: originals[idx],
             userProductId: userProductId,
-            width: info.width,
-            height: info.height,
+            width: width,
+            height: height,
           ),
         );
         // 预取失败的错误仍留到主循环 await 时按原流程抛出（ignore 只是挂一个丢弃
@@ -345,7 +361,7 @@ class ServerImageProjectionService {
         if (frameData.length != expected4bpp) {
           debugPrint(
             '[投屏] 出帧尺寸不符：第三方抖动接口返回 ${frameData.length} 字节(头16=$head)，'
-            '设备 ${info.width}×${info.height} 需要 $expected4bpp 字节'
+            '设备 $width×$height 需要 $expected4bpp 字节'
             '（帧字节数跟着上传图像素走，先查上传给抖动接口的图是不是设备物理分辨率）',
           );
           throw FrameBleException(
@@ -355,7 +371,7 @@ class ServerImageProjectionService {
 
         final index = FrameProtocol.firstFreeIndex(
           FrameProtocol.indexesToMask(usedIndexes),
-          info.capacity,
+          transfer.slotLimit,
         );
         if (index < 0) throw FrameBleException('电子纸设备已存满', kind: FrameBleErrorKind.storageFull);
 
@@ -388,8 +404,8 @@ class ServerImageProjectionService {
             () => client.uploadImage(
               screenType: info.screenType,
               index: index,
-              width: info.width,
-              height: info.height,
+              width: width,
+              height: height,
               data: frameData,
               pace: FrameBleClient.transferPacketPaceMs,
               window: FrameBleClient.transferWindowPackets,

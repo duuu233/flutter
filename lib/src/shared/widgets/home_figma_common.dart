@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 
 import '../l10n/app_l10n.dart';
+import '../../device/device_thumb.dart';
 
 /// Figma 首页 / 绑定设备流程的公共组件库（非页面）：投屏方式卡片、蓝牙雷达、
 /// 绑定设备卡片等通用控件，被首页及绑定相关页面复用。
@@ -466,6 +467,7 @@ class FigmaBindDeviceCard extends StatelessWidget {
     required this.name,
     this.subtitle = '',
     this.deviceId = '',
+    this.thumbAsset = DeviceThumb.defaultAsset,
     this.selected = false,
     this.onTap,
     this.onLongPress,
@@ -473,10 +475,13 @@ class FigmaBindDeviceCard extends StatelessWidget {
 
   final String name;
 
+  /// 设备图（按本次扫描的蓝牙广播名区分机型，见 [DeviceThumb.ofScanName]）。
+  final String thumbAsset;
+
   /// 副标题：尺寸 · 电量XX% · 信号XX（对齐小程序 `nearby-sub`）。空串则不显示。
   final String subtitle;
 
-  /// 设备ID（广播 Device_ID 归一化后的 8 位十六进制）。空串则不显示。
+  /// 设备ID（广播里的完整 6 字节 Device_ID，带冒号；取不到为 `--`）。空串则不显示。
   /// 为什么要单独一行而不是拼进 subtitle：同型号设备默认名相同（默认名=产品广播名），
   /// 绑定前这是唯一能区分两台的标识；而 subtitle 在英文下本就已被 ellipsis 截断
   /// （"5.89in · Battery 88% · Signal Excellent" 已超出可用宽度），拼进去等于直接被截没。
@@ -518,8 +523,9 @@ class FigmaBindDeviceCard extends StatelessWidget {
             // 该图四角 alpha=0 自带圆角，所以**不加底色容器**——加了会在四角露出色晕。
             // 原实现更离谱：不是资源图而是 Material 的 videocam 字形，还按列表下标染成橙/绿/蓝，
             // 同一列表里几台设备图标颜色各不相同，与首页毫无关系。
+            // 2026-10-22 起按机型区分（EB-169 圆屏 / EC-370 / 其余默认），见 DeviceThumb。
             Image.asset(
-              'assets/images/home-device-thumb.png',
+              thumbAsset,
               width: 48,
               height: 48,
               fit: BoxFit.contain,

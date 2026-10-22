@@ -140,7 +140,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       }
     }
     final targetSerial = target?.serialNumber ?? '';
-    final targetScreenCode = target?.screenType.code ?? 0;
+    final targetScreenCode = target?.screenCode ?? 0;
     String? connectError;
     if (target == null || targetSerial.trim().isEmpty) {
       connectError = AppL10n.of(context).castFailureDisconnected;
@@ -175,6 +175,10 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             userProductId: widget.userProductId!,
             expectedSerial: targetSerial,
             expectedScreenCode: targetScreenCode,
+            // 出帧尺寸取设备列表记录（新机型如 EB-169 400×400 只能从这里来）。
+            deviceWidth: target?.screenWidth ?? 0,
+            deviceHeight: target?.screenHeight ?? 0,
+            deviceShapeType: target?.shapeType,
             filePaths: widget.imagePaths,
             recordFilePaths: widget.originalPaths.isEmpty
                 ? null
@@ -247,9 +251,12 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
       case FrameBleErrorKind.storageFull:
         return l10n.castFailureStorageFull;
       case FrameBleErrorKind.disconnected:
-      case FrameBleErrorKind.unsupported: // 沿用原逻辑：不支持机型与断连同一话术桶
       case FrameBleErrorKind.connectFailed: // GATT 连接失败，同断连话术桶（靠近设备重试）
         return l10n.castFailureDisconnected;
+      // 型号、尺寸、身份不一致等不是断连：保留具体原因，不再落进「未连接」话术桶
+      // （2026-10-22 同步小程序 10-19；新机型 EB-169 原来就是在这里被说成未连接）。
+      case FrameBleErrorKind.unsupported:
+        return l10n.castFailureDeviceConfig(raw);
       case FrameBleErrorKind.timeout:
         return l10n.castFailureTimeout;
       case FrameBleErrorKind.aborted:

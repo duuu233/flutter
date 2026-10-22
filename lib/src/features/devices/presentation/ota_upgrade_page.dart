@@ -561,11 +561,11 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
       final result = await _ble.upgradeFirmware(
         _buildPackage(),
         expectedSerial: target.serialNumber,
-        expectedScreenCode: target.screenType.code,
+        expectedScreenCode: target.screenCode,
         pace: 3,
         // 传错包/下载截断/刷错面板在发第一帧前就本地拦住：刷错固件不可逆，不能等设备回错误码。
         // 判不出面板时 otaPanelOfDevice 返回 0，预检自动跳过这一项，不误伤。
-        expectPanel: otaPanelOfDevice(screenCode: target.screenType.code),
+        expectPanel: otaPanelOfDevice(screenCode: target.screenCode),
         expectVersion: target.newVersionNo,
         onProgress: _onProgress,
         shouldAbort: () => _aborted,

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import '../l10n/app_l10n.dart';
 import 'app_toast.dart';
+import '../../device/device_thumb.dart';
 
 /// 设备名称长度上限，按 Unicode 码点计（emoji / 生僻字算 1 个）。
 ///
@@ -32,6 +33,8 @@ Future<String?> showDeviceNameDialog(
   String? cancelLabel,
   String? confirmLabel,
   bool barrierDismissible = true,
+  // 设备图（按机型区分，传设备的 thumbAsset；不传用默认图）。
+  String thumbAsset = DeviceThumb.defaultAsset,
 }) {
   return showDialog<String>(
     context: context,
@@ -43,6 +46,7 @@ Future<String?> showDeviceNameDialog(
       subtitle: subtitle,
       cancelLabel: cancelLabel,
       confirmLabel: confirmLabel,
+      thumbAsset: thumbAsset,
     ),
   );
 }
@@ -54,9 +58,11 @@ class _DeviceNameDialog extends StatefulWidget {
     this.subtitle,
     this.cancelLabel,
     this.confirmLabel,
+    this.thumbAsset = DeviceThumb.defaultAsset,
   });
 
   final String initialValue;
+  final String thumbAsset;
   final String? title;
   final String? subtitle;
   final String? cancelLabel;
@@ -158,7 +164,7 @@ class _DeviceNameDialogState extends State<_DeviceNameDialog> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const _DeviceNameMark(),
+                  _DeviceNameMark(asset: widget.thumbAsset),
                   const SizedBox(width: 8),
                   Flexible(
                     child: Text(
@@ -301,7 +307,10 @@ class _DeviceNameDialogState extends State<_DeviceNameDialog> {
 /// 该图四角 alpha=0 自带圆角，故不加底色容器与圆角裁剪，否则四角会露出色晕。
 /// 2026-08-01：由独占一行的 76 缩到与标题同行的 32（小程序 `.name-dialog__device` 64rpx）。
 class _DeviceNameMark extends StatelessWidget {
-  const _DeviceNameMark();
+  const _DeviceNameMark({required this.asset});
+
+  /// 2026-10-22 起按机型区分（见 DeviceThumb）。
+  final String asset;
 
   @override
   Widget build(BuildContext context) {
@@ -309,7 +318,7 @@ class _DeviceNameMark extends StatelessWidget {
       width: 32,
       height: 32,
       child: Image.asset(
-        'assets/images/home-device-thumb.png',
+        asset,
         fit: BoxFit.contain,
         errorBuilder: (context, error, stackTrace) => const Icon(
           Icons.photo_library_outlined,
