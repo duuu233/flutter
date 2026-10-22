@@ -246,10 +246,66 @@ class PreferencesAppleIapStore implements AppleIapStore {
   }
 }
 
+/// 一次 `getPayQuery` 查单的结果，原始字段原样留给诊断（2026-10-22：后端排查
+/// 「验单成功、余额到账但查单一直未支付」需要看到实际返回）。
+///
+/// 判定口径不变：只有 `payState` 按整数解析为 1 才算已支付；查单报错仍按未支付处理，
+/// 但错误类型/码/信息单独记下，不再和「后端返回未支付」混在一起。
+class AppleOrderQuery {
+  const AppleOrderQuery({
+    required this.paid,
+    this.responded = false,
+    this.payState,
+    this.payNo = '',
+    this.exceptionMsg = '',
+    this.errorType,
+    this.errorCode,
+    this.errorMessage,
+  });
+
+  factory AppleOrderQuery.fromResponse(Object? data) {
+    final json = data is Map
+        ? data.cast<String, dynamic>()
+        : const <String, dynamic>{};
+    final parsed = StarPayQuery.fromJson(json);
+    return AppleOrderQuery(
+      paid: parsed.paid,
+      responded: true,
+      payState: json['payState'],
+      payNo: parsed.payNo,
+      exceptionMsg: parsed.exceptionMsg,
+    );
+  }
+
+  factory AppleOrderQuery.failed(Object error) => AppleOrderQuery(
+    paid: false,
+    errorType: error.runtimeType.toString(),
+    errorCode: error is ApiException ? error.code : null,
+    errorMessage: error is ApiException ? error.message : error.toString(),
+  );
+
+  final bool paid;
+
+  /// 后端有业务返回（不论 payState 是什么）；false 表示查单本身失败。
+  final bool responded;
+
+  /// 后端返回的 `payState` 原值（数字、字符串或缺失时为 null），不做转换。
+  final Object? payState;
+  final String payNo;
+  final String exceptionMsg;
+  final String? errorType;
+  final Object? errorCode;
+  final String? errorMessage;
+
+  Map<String, Object?> get diagnostics => responded
+      ? {'payState': payState, 'payNo': payNo, 'exceptionMsg': exceptionMsg}
+      : {'errorType': errorType, 'code': errorCode, 'message': errorMessage};
+}
+
 abstract class AppleIapBackend {
   Future<StarOrder> createOrder(StarPackage package);
   Future<int?> balance();
-  Future<bool> orderPaid(String orderNo);
+  Future<AppleOrderQuery> orderQuery(String orderNo);
   Future<AppleReceiptVerification> verify({
     required String receipt,
     required String orderNo,
@@ -272,12 +328,18 @@ class ApiAppleIapBackend implements AppleIapBackend {
   }
 
   @override
-  Future<bool> orderPaid(String orderNo) async =>
-      (await StarCoinApi.queryPay(
-        orderNo: orderNo,
-        payType: StarPayType.apple,
-      ))?.paid ??
-      false;
+  Future<AppleOrderQuery> orderQuery(String orderNo) async {
+    try {
+      return AppleOrderQuery.fromResponse(
+        await BoltFoxApi.getPayQuery(
+          orderNo: orderNo,
+          payType: StarPayType.apple,
+        ),
+      );
+    } catch (error) {
+      return AppleOrderQuery.failed(error);
+    }
+  }
 
   @override
   Future<AppleReceiptVerification> verify({
@@ -1072,11 +1134,13 @@ class AppleIapController extends ChangeNotifier {
           await Future<void>.delayed(delay);
           if (!_current(epoch)) return;
           stage = 'delivery.order';
-          final paid = await backend.orderPaid(record['orderNo'] as String);
+          final query = await backend.orderQuery(record['orderNo'] as String);
           if (!_current(epoch)) return;
+          final paid = query.paid;
           _diagnose('delivery.order.response', {
             'orderNo': record['orderNo'],
             'orderPaid': paid,
+            ...query.diagnostics,
           });
           stage = 'delivery.balance';
           final balance = await backend.balance();

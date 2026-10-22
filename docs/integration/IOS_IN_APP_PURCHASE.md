@@ -191,7 +191,7 @@ release / TestFlight 包没有这些通用控制台摘要，但包含下述页�
 | `verify.request/response/failed/skipped` | 是否进入客户端验单逻辑，以及业务状态、明细匹配和手动重验限制 |
 | `verify.http.request/response/failed` | 实际调用 HTTP 客户端、收到 HTTP/retCode 或传输异常；包含 host/scheme/path、次数与耗时，不含 query、header、body |
 | `verify.blocked` | 尚未发验单请求时明确标记 backendCalled=false：交易未匹配、仍购买中、苹果失败、交易号不符或收据不可用 |
-| `delivery.order.response`、`delivery.balance.response` | 对应订单是否已支付、当前/基线/预期余额；只有验单成功仍不足以完成 |
+| `delivery.order.response`、`delivery.balance.response` | 对应订单是否已支付、当前/基线/预期余额；只有验单成功仍不足以完成。查单行另带 `getPayQuery` 原始返回 `payState`（原值）/`payNo`/`exceptionMsg`，查单失败时改带 `errorType/code/message`（2026-10-22） |
 | `transaction.finished`、`phase.changed` | 是否实际完成交付收尾，或以哪种错误停在 pending |
 
 `verify.request` 只表示进入业务验单，`verify.http.request` 进一步证明交给 HTTP 客户端，均不单独证明服务端已收到。`verify.http.response` 记录实际响应的 HTTP 状态与 retCode，仍可用同一 orderNo/transactionId 对照网关及服务端日志；这不是 Apple 主动向业务后台发通知。`status=21007` 应由后端按现有传统收据协议处理沙盒回退。发生问题先复制本轮日志及查询同一订单，不新买一笔冒充重验。

@@ -117,7 +117,9 @@ OpenHarmony/HAP is not integrated.
   payloads). Verification stages retain raw receipt/response data for integration; since 2026-10-22
   a default-off receiptData switch controls page display and copying without altering submitted bytes.
   Clipboard failures/timeouts show feedback. Verification-scoped HTTP diagnostics show host/path,
-  status/retCode, transport failure and duration without query/headers/body. Passive local receipt
+  status/retCode, transport failure and duration without query/headers/body. Since 2026-10-22 the
+  delivery order-query line also carries the raw getPayQuery payState/payNo/exceptionMsg, or the
+  query error type/code/message, with unchanged paid rule (payState=1). Passive local receipt
   reads are bounded; only explicit manual retry may refresh a missing receipt once. A queued manual
   retry retains its intent and is cleared on account changes. Pending purchases always have a verification-only retry action, separate from a
   confirmation-gated new-order action. A new order is blocked by any native queued/requested entry

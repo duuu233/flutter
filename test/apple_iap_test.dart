@@ -15,6 +15,7 @@ import 'package:http/testing.dart';
 import 'package:BoltStar/src/features/star/apple_iap.dart';
 import 'package:BoltStar/src/features/star/star_coin_api.dart';
 import 'package:BoltStar/src/network/api_client.dart';
+import 'package:BoltStar/src/network/api_exception.dart';
 import 'package:BoltStar/src/network/boltfox_api.dart';
 
 const package = StarPackage(
@@ -159,8 +160,12 @@ class FakeBackend implements AppleIapBackend {
 
   @override
   Future<int?> balance() async => currentBalance;
+  /// 非 null 时直接作为查单结果（覆盖 [paid]），用于检查诊断里的原始返回。
+  AppleOrderQuery? orderQueryResult;
   @override
-  Future<bool> orderPaid(String orderNo) async => paid;
+  Future<AppleOrderQuery> orderQuery(String orderNo) async =>
+      orderQueryResult ??
+      AppleOrderQuery.fromResponse({'payState': paid ? 1 : 0});
   @override
   Future<AppleReceiptVerification> verify({
     required String receipt,
@@ -334,6 +339,53 @@ void main() {
       await f.controller.retry();
       expect(f.bridge.finishCalls, 0);
       expect(f.controller.phase, AppleIapPhase.pending);
+    },
+  );
+
+  test(
+    'delivery diagnostics keep raw getPayQuery fields and query errors',
+    () async {
+      final f = Fixture();
+      await f.start();
+      f.bridge.purchased();
+      f.backend.currentBalance = 350;
+      f.backend.orderQueryResult = AppleOrderQuery.fromResponse({
+        'payState': '0',
+        'payNo': 'pay-1',
+        'exceptionMsg': '订单未支付',
+      });
+      await f.controller.retry();
+      expect(
+        f.controller.diagnostics.join('\n'),
+        contains(
+          '"orderPaid":false,"payState":"0","payNo":"pay-1",'
+          '"exceptionMsg":"订单未支付"',
+        ),
+      );
+      expect(f.bridge.finishCalls, 0);
+      expect(f.controller.phase, AppleIapPhase.pending);
+
+      f.backend.orderQueryResult = AppleOrderQuery.failed(
+        ApiException(500, '服务异常'),
+      );
+      await f.controller.retry();
+      expect(
+        f.controller.diagnostics.join('\n'),
+        contains(
+          '"orderPaid":false,"errorType":"ApiException","code":500,'
+          '"message":"服务异常"',
+        ),
+      );
+      expect(f.bridge.finishCalls, 0);
+
+      // 判定口径不变：字符串 "1" 仍按已支付。
+      f.backend.orderQueryResult = AppleOrderQuery.fromResponse({
+        'payState': '1',
+      });
+      await f.controller.retry();
+      expect(f.controller.phase, AppleIapPhase.credited);
+      expect(f.bridge.finishCalls, 1);
+      expect(f.backend.verifyCalls, 1);
     },
   );
 
