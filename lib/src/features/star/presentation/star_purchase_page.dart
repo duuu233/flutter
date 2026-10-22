@@ -90,8 +90,8 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       if (mounted) {
         setState(() {
           _appleProductError = 'product_unavailable';
-          _appleDiagnostics.insert(
-            0,
+          // 按发生顺序追加；面板倒序展示，错误会排在本次商品查询各行之上。
+          _appleDiagnostics.add(
             'product.error:\n${AppleIapDiagnostics.describeError(error, stackTrace: stackTrace)}',
           );
         });
@@ -577,13 +577,22 @@ class _AppleProductDiagnosticsState extends State<_AppleProductDiagnostics> {
   bool _showReceiptData = false;
   bool _copying = false;
 
-  Future<void> _copy(String text) async {
+  /// 只复制最新的若干条（[AppleIapDiagnostics.copyBudget]），新的在前，与面板顺序一致。
+  Future<void> _copy(List<String> newestFirst) async {
+    final picked = AppleIapDiagnostics.latestForCopy(newestFirst);
     setState(() => _copying = true);
     try {
       await Clipboard.setData(
-        ClipboardData(text: text),
+        ClipboardData(text: picked.join('\n\n')),
       ).timeout(const Duration(seconds: 5));
-      if (mounted) AppToast.show(context, widget.l10n.crashReportCopied);
+      if (mounted) {
+        AppToast.show(
+          context,
+          picked.length < newestFirst.length
+              ? widget.l10n.starAppleDiagnosticsCopiedLatest(picked.length)
+              : widget.l10n.crashReportCopied,
+        );
+      }
     } catch (_) {
       if (mounted) {
         AppToast.show(context, widget.l10n.starAppleDiagnosticsCopyFailed);
@@ -596,14 +605,15 @@ class _AppleProductDiagnosticsState extends State<_AppleProductDiagnostics> {
   @override
   Widget build(BuildContext context) {
     final l10n = widget.l10n;
-    final text = widget.lines
-        .map(
-          (line) => AppleIapDiagnostics.displayLine(
-            line,
-            includeReceiptData: _showReceiptData,
-          ),
-        )
-        .join('\n\n');
+    // 最新的放最上面（2026-10-22）：诊断按发生顺序记录，展示时倒过来。
+    final shown = [
+      for (final line in widget.lines.reversed)
+        AppleIapDiagnostics.displayLine(
+          line,
+          includeReceiptData: _showReceiptData,
+        ),
+    ];
+    final text = shown.join('\n\n');
     return Container(
       key: const Key('apple-product-diagnostics'),
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
@@ -652,7 +662,7 @@ class _AppleProductDiagnosticsState extends State<_AppleProductDiagnostics> {
               ),
               TextButton(
                 key: const Key('copy-apple-product-diagnostics'),
-                onPressed: text.isEmpty || _copying ? null : () => _copy(text),
+                onPressed: text.isEmpty || _copying ? null : () => _copy(shown),
                 child: _copying
                     ? const SizedBox(
                         width: 16,

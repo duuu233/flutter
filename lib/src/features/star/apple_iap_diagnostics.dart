@@ -108,6 +108,27 @@ abstract final class AppleIapDiagnostics {
     return '[AppleIAP] $stage: ${jsonEncode(_safe(fields, allowVerify: allowVerify))}';
   }
 
+  /// 复制上限（字符）。整段诊断加上收据、苹果明细后可达数万字符，iOS 剪贴板或聊天软件
+  /// 粘贴会没有反应（2026-10-22 真机反馈），所以复制只取最新的若干条。
+  static const copyBudget = 8000;
+
+  /// [newestFirst] 为新的在前的展示行；从最新开始取，累计（含两行之间的空行）不超过 [budget]。
+  /// 最新一条无论多长都完整保留，保证至少能复制到当前这一步。
+  static List<String> latestForCopy(
+    List<String> newestFirst, {
+    int budget = copyBudget,
+  }) {
+    final picked = <String>[];
+    var length = 0;
+    for (final line in newestFirst) {
+      final next = length + (picked.isEmpty ? 0 : 2) + line.length;
+      if (picked.isNotEmpty && next > budget) break;
+      picked.add(line);
+      length = next;
+    }
+    return picked;
+  }
+
   /// The page and clipboard share this projection; stored/request bytes stay intact.
   static String displayLine(String line, {required bool includeReceiptData}) {
     const prefix = '[AppleIAP] verify.request: ';

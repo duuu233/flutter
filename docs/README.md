@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次更新：[2026-10-22 iOS 查单诊断记录原始返回](history/2026-10/2026-10-22-ios-iap-pay-query-diagnostics.md)。此前更新：[2026-10-22 iOS 验单阶段诊断与收据显示开关](history/2026-10/2026-10-22-ios-iap-trace-receipt-toggle.md)、[2026-10-16 iOS 独立重验、重新下单与购买后诊断](history/2026-10/2026-10-16-ios-iap-reorder-diagnostics.md)。此前更新：[2026-10-13 iOS 商品查询详情在真机页面展示](history/2026-10/2026-10-13-ios-iap-product-diagnostics-panel.md)、[2026-10-13 iOS 商品加载诊断日志](history/2026-10/2026-10-13-ios-iap-product-diagnostics.md)。此前审查：[2026-10-12 iOS 支付后端文档审查](history/2026-10/2026-10-12-ios-iap-backend-document-review.md)。
+本次更新：[2026-10-22 iOS 查单诊断记录原始返回、诊断台最新在上与复制限量](history/2026-10/2026-10-22-ios-iap-pay-query-diagnostics.md)。此前更新：[2026-10-22 iOS 验单阶段诊断与收据显示开关](history/2026-10/2026-10-22-ios-iap-trace-receipt-toggle.md)、[2026-10-16 iOS 独立重验、重新下单与购买后诊断](history/2026-10/2026-10-16-ios-iap-reorder-diagnostics.md)。此前更新：[2026-10-13 iOS 商品查询详情在真机页面展示](history/2026-10/2026-10-13-ios-iap-product-diagnostics-panel.md)、[2026-10-13 iOS 商品加载诊断日志](history/2026-10/2026-10-13-ios-iap-product-diagnostics.md)。此前审查：[2026-10-12 iOS 支付后端文档审查](history/2026-10/2026-10-12-ios-iap-backend-document-review.md)。
 
 ## 1. 阅读入口
 

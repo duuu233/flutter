@@ -116,6 +116,8 @@ OpenHarmony/HAP is not integrated.
   delivery diagnostics (160-entry in-memory bound, cleared on account changes, no UUID/login
   payloads). Verification stages retain raw receipt/response data for integration; since 2026-10-22
   a default-off receiptData switch controls page display and copying without altering submitted bytes.
+  The panel lists newest entries first; copy takes only the newest entries up to 8,000 characters
+  (newest always whole) and says how many were copied.
   Clipboard failures/timeouts show feedback. Verification-scoped HTTP diagnostics show host/path,
   status/retCode, transport failure and duration without query/headers/body. Since 2026-10-22 the
   delivery order-query line also carries the raw getPayQuery payState/payNo/exceptionMsg, or the

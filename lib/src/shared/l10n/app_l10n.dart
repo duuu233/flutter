@@ -2097,6 +2097,11 @@ class AppL10n {
     'Copy failed. Try again or hide receiptData before copying.',
     'コピーできません。再試行するか receiptData を非表示にしてください。',
   );
+  String starAppleDiagnosticsCopiedLatest(int count) => _pick(
+    '已复制最新 $count 条',
+    'Copied the latest $count entries',
+    '最新 $count 件をコピーしました',
+  );
   String get starAppleDiagnosticsWaiting =>
       _pick('正在查询，请稍候…', 'Querying product, please wait…', '商品を照会中です…');
   String get starAppleUnavailable => _pick(

@@ -225,7 +225,7 @@ void main() {
   );
 
   testWidgets(
-    'receipt switch hides by default and copying follows visible complete data',
+    'receipt switch hides by default; newest first, copy keeps only the latest',
     (tester) async {
       final receipt = base64Encode(List<int>.filled(12000, 97));
       final bridge = ReceiptBridge()..value = receipt;
@@ -261,18 +261,28 @@ void main() {
       expect(details(), contains('"receiptLength":16000'));
       expect(details(), contains('"orderNo":"order-1"'));
       expect(details(), contains('"transactionId":"tx-1"'));
+      // 最新的在最上面：后发生的 verify.response 排在 verify.request 之前。
+      expect(
+        details().indexOf('verify.response'),
+        lessThan(details().indexOf('verify.request')),
+      );
       final copy = find.byKey(const Key('copy-apple-product-diagnostics'));
       await tester.tap(copy);
       await tester.pump();
-      expect(copied, details());
+      // 复制只取最新的若干条：从最上面开始的连续一段，且不超过上限。
+      expect(details().startsWith(copied!), isTrue);
+      expect(copied!.length, lessThanOrEqualTo(AppleIapDiagnostics.copyBudget));
+      expect(copied, contains('"orderNo":"order-1"'));
       final toggle = find.byKey(const Key('toggle-apple-receipt-data'));
       await tester.tap(toggle);
       await tester.pumpAndSettle();
       expect(details(), contains(receipt));
       await tester.tap(copy);
       await tester.pump();
-      expect(copied, details());
-      expect(copied, contains(receipt));
+      // 收据整行 16,000 字符超过上限且不是最新一条：显示里有，复制不带。
+      expect(details().startsWith(copied!), isTrue);
+      expect(copied!.length, lessThanOrEqualTo(AppleIapDiagnostics.copyBudget));
+      expect(copied, isNot(contains(receipt)));
       await tester.tap(toggle);
       await tester.pumpAndSettle();
       expect(details(), isNot(contains(receipt)));
@@ -319,6 +329,31 @@ void main() {
     await tester.pump(const Duration(seconds: 6));
     debugDefaultTargetPlatformOverride = null;
   });
+
+  test(
+    'copy keeps the newest entries within the budget, newest always kept',
+    () {
+      expect(AppleIapDiagnostics.latestForCopy(const []), isEmpty);
+      expect(
+        AppleIapDiagnostics.latestForCopy([
+          'a' * 6,
+          'b' * 4,
+          'c' * 3,
+        ], budget: 12),
+        ['a' * 6, 'b' * 4],
+      );
+      expect(
+        AppleIapDiagnostics.latestForCopy(['x' * 50, 'y'], budget: 10),
+        ['x' * 50],
+      );
+      for (final language in AppLanguage.values) {
+        expect(
+          AppL10n(language).starAppleDiagnosticsCopiedLatest(3),
+          contains('3'),
+        );
+      }
+    },
+  );
 
   test(
     'hidden projection suppresses malformed receipts and retains other stages',
