@@ -645,12 +645,28 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     _states[_activeIndex] = g.copy();
   }
 
+  /// 圆形设备（后台产品「形状类型」）：只认数字 `shapeType == 1`，方形/缺失/其它值一律按原方形处理。
+  ///
+  /// 2026-10-22 同步小程序 10-16「恢复圆形设备预览」「圆屏方向禁用」：
+  /// - 预览底图与编辑取景框裁成圆形（圆屏物理分辨率为正方形，见 [_deviceSize]）；
+  /// - 竖向/横向置灰、不可点，[_setOrientation] 也直接返回——圆屏没有取景方向之分；
+  /// - **只是预览遮罩**：导出、烘焙、旋转角、手势与「原图」都不变，设备收到的仍是物理分辨率的完整画面。
+  bool get _round => widget.device.shapeType == 1;
+
+  /// 预览图/取景框的裁剪：圆形设备裁圆，其余沿用原圆角矩形。
+  Widget _clipFrame(Widget child) => _round
+      ? ClipOval(child: child)
+      : ClipRRect(
+          borderRadius: BorderRadius.circular(_kClipRadius),
+          child: child,
+        );
+
   /// 「竖向 / 横向」：只换取景框（可视区域），图片的位置/大小/角度原地保持不变——
   /// 需求语义是「横竖切换改变的只是可视区域，对图片本身没有改动」。换框后 baseScale 变了，
   /// 用 zoom 反向补偿保住绝对显示尺寸。新框盖不满时**不再自动放大**——2026-07-31 起允许
   /// 自由缩小，露出的地方就是白色画布（见 [_clampTransform]）。
   void _setOrientation(_Orientation orientation) {
-    if (orientation == _orientation) {
+    if (_round || orientation == _orientation) {
       return;
     }
     final g = _edit;
@@ -1537,10 +1553,9 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         return Center(
           child: AspectRatio(
             aspectRatio: ratio,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(_kClipRadius),
-              // 与编辑层取景框、导出画布同为白底（需求第 4 项「所见即所得」）。
-              child: ColoredBox(color: const Color(0xFFFFFFFF), child: image),
+            // 与编辑层取景框、导出画布同为白底（需求第 4 项「所见即所得」）；圆形设备裁圆。
+            child: _clipFrame(
+              ColoredBox(color: const Color(0xFFFFFFFF), child: image),
             ),
           ),
         );
@@ -1575,7 +1590,11 @@ class _CastPreviewPageState extends State<CastPreviewPage>
                   Transform.scale(scale: _pickupScale.value, child: child),
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(_kClipRadius),
+                  // 圆形设备阴影跟着取景框走圆形（BoxShape.circle 不能再带 borderRadius）。
+                  shape: _round ? BoxShape.circle : BoxShape.rectangle,
+                  borderRadius: _round
+                      ? null
+                      : BorderRadius.circular(_kClipRadius),
                   // 拖拽进行中加一点浮起阴影，强调「已拿起、可拖动」
                   boxShadow: _dragging
                       ? const [
@@ -1587,9 +1606,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
                         ]
                       : null,
                 ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(_kClipRadius),
-                  child: ColoredBox(
+                child: _clipFrame(
+                  ColoredBox(
                     // 取景框底色必须是**白色**，与 [_bake] 导出前铺的白底一致：
                     // 自由缩小后露出的留白就是最终会写进设备的那块白（需求第 4 项「所见即所得」）。
                     // 原来是浅蓝灰 #E6ECF4，缩小后预览留白与导出留白颜色对不上。
@@ -1704,18 +1722,23 @@ class _CastPreviewPageState extends State<CastPreviewPage>
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceAround,
           children: [
+            // 圆形设备没有取景方向之分：竖向/横向置灰、不高亮、不可点（原图照常）。
             _ToolButton(
+              key: const Key('cast-orientation-portrait'),
               label: l10n.castPortrait,
               asset: 'assets/images/preview-icon01.png',
               activeAsset: 'assets/images/preview-icon01-selected.png',
-              active: _orientation == _Orientation.portrait,
+              active: !_round && _orientation == _Orientation.portrait,
+              enabled: !_round,
               onTap: () => _setOrientation(_Orientation.portrait),
             ),
             _ToolButton(
+              key: const Key('cast-orientation-landscape'),
               label: l10n.castLandscape,
               asset: 'assets/images/preview-icon02.png',
               activeAsset: 'assets/images/preview-icon02-selected.png',
-              active: _orientation == _Orientation.landscape,
+              active: !_round && _orientation == _Orientation.landscape,
+              enabled: !_round,
               onTap: () => _setOrientation(_Orientation.landscape),
             ),
             _ToolButton(
@@ -1754,11 +1777,13 @@ class _CastPreviewPageState extends State<CastPreviewPage>
 
 class _ToolButton extends StatelessWidget {
   const _ToolButton({
+    super.key,
     required this.label,
     required this.asset,
     required this.activeAsset,
     required this.active,
     required this.onTap,
+    this.enabled = true,
   });
 
   final String label;
@@ -1767,29 +1792,35 @@ class _ToolButton extends StatelessWidget {
   final bool active;
   final VoidCallback onTap;
 
+  /// false：置灰、不响应点击（圆形设备的竖向/横向）。
+  final bool enabled;
+
   @override
   Widget build(BuildContext context) {
     final color = active ? const Color(0xFFFF5F1F) : const Color(0xFF777E88);
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Padding(
-        // 点击区就是这个盒子（2026-07-25 用户反馈「点击区域放大一点」，两端同步）：
-        // 对齐小程序 .tool 的 padding 20rpx 56rpx = 10×28（图标/文字视觉位置不变）。
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Image.asset(
-              active ? activeAsset : asset,
-              width: 22,
-              height: 22,
-              errorBuilder: (context, error, stackTrace) =>
-                  Icon(Icons.crop_rounded, size: 22, color: color),
-            ),
-            const SizedBox(height: 7),
-            Text(label, style: TextStyle(color: color, fontSize: 12)),
-          ],
+    return Opacity(
+      opacity: enabled ? 1 : 0.4,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: enabled ? onTap : null,
+        child: Padding(
+          // 点击区就是这个盒子（2026-07-25 用户反馈「点击区域放大一点」，两端同步）：
+          // 对齐小程序 .tool 的 padding 20rpx 56rpx = 10×28（图标/文字视觉位置不变）。
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Image.asset(
+                active ? activeAsset : asset,
+                width: 22,
+                height: 22,
+                errorBuilder: (context, error, stackTrace) =>
+                    Icon(Icons.crop_rounded, size: 22, color: color),
+              ),
+              const SizedBox(height: 7),
+              Text(label, style: TextStyle(color: color, fontSize: 12)),
+            ],
+          ),
         ),
       ),
     );
