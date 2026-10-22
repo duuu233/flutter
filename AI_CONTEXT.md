@@ -113,8 +113,13 @@ OpenHarmony/HAP is not integrated.
   error domain/code/message. The confirmation page shows/copies the current query and full redacted
   error at its bottom in all build modes, including release/TestFlight; only console printing is
   debug-only. Since 2026-10-16, the same panel also shows current-user purchase/receipt/verification/
-  delivery diagnostics (160-entry in-memory bound, cleared on account changes, no receipt or UUID
-  payloads). Pending purchases always have a verification-only retry action, separate from a
+  delivery diagnostics (160-entry in-memory bound, cleared on account changes, no UUID/login
+  payloads). Verification stages retain raw receipt/response data for integration; since 2026-10-22
+  a default-off receiptData switch controls page display and copying without altering submitted bytes.
+  Clipboard failures/timeouts show feedback. Verification-scoped HTTP diagnostics show host/path,
+  status/retCode, transport failure and duration without query/headers/body. Passive local receipt
+  reads are bounded; only explicit manual retry may refresh a missing receipt once. A queued manual
+  retry retains its intent and is cleared on account changes. Pending purchases always have a verification-only retry action, separate from a
   confirmation-gated new-order action. A new order is blocked by any native queued/requested entry
   or local transaction/verification evidence; unmatched unverified records are retained with
   supersededBy and can recover late transactions without completing the new order's UI. Failed

@@ -10,6 +10,11 @@ import 'api_config.dart';
 import 'api_exception.dart';
 import 'api_session.dart';
 
+class _RequestDiagnosticCapture {
+  _RequestDiagnosticCapture(this.onEvent);
+  void Function(String, Map<String, Object?>)? onEvent;
+}
+
 /// 全局请求入口（App 版），对齐小程序端 `utils/request.js`。
 ///
 /// 职责：
@@ -23,6 +28,44 @@ class ApiClient {
   ApiClient._();
 
   static final ApiClient instance = ApiClient._();
+  static final _diagnosticKey = Object();
+
+  /// Scoped transport evidence, without URLs containing credentials or payloads.
+  static Future<T> captureDiagnostics<T>(
+    Future<T> Function() action, {
+    required void Function(String, Map<String, Object?>) onEvent,
+  }) {
+    final capture = _RequestDiagnosticCapture(onEvent);
+    return runZoned(() async {
+      try {
+        return await action();
+      } finally {
+        capture.onEvent = null;
+      }
+    }, zoneValues: {_diagnosticKey: capture});
+  }
+
+  static bool get _diagnosticsActive =>
+      (Zone.current[_diagnosticKey] as _RequestDiagnosticCapture?)?.onEvent !=
+      null;
+
+  static void _trace(String stage, Map<String, Object?> fields) {
+    try {
+      (Zone.current[_diagnosticKey] as _RequestDiagnosticCapture?)?.onEvent
+          ?.call(stage, fields);
+    } catch (_) {
+      // Diagnostic observers must not prevent or repeat a payment request.
+    }
+  }
+
+  static int? _responseCode(http.Response response) {
+    try {
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      return data is Map ? int.tryParse(data['retCode'].toString()) : null;
+    } catch (_) {
+      return null;
+    }
+  }
 
   /// 全局共享的 HTTP 客户端：keep-alive 复用 TCP+TLS 连接。
   /// 之前用顶层 http.get/post（每个请求新建一次性 Client），每次都重付
@@ -252,13 +295,41 @@ class ApiClient {
   }) async {
     var attempt = 0;
     while (true) {
+      final watch = Stopwatch()..start();
+      final traceFields = <String, Object?>{
+        'method': method,
+        'host': uri.host,
+        'scheme': uri.scheme,
+        'path': uri.path,
+        'attempt': attempt + 1,
+      };
+      _trace('http.request', traceFields);
       try {
         final response = await send();
+        if (_diagnosticsActive) {
+          _trace('http.response', {
+            ...traceFields,
+            'httpStatus': response.statusCode,
+            'retCode': _responseCode(response),
+            'durationMs': watch.elapsedMilliseconds,
+          });
+        }
         _logResponse(method, uri, response);
         return _parse(response);
-      } on ApiException {
+      } on ApiException catch (error) {
+        _trace('http.failed', {
+          ...traceFields,
+          'code': error.code.toString(),
+          'reason': 'response_rejected',
+          'durationMs': watch.elapsedMilliseconds,
+        });
         rethrow; // 业务/服务器错误：不重试
       } on TimeoutException {
+        _trace('http.failed', {
+          ...traceFields,
+          'reason': 'timeout',
+          'durationMs': watch.elapsedMilliseconds,
+        });
         // 超时时请求可能已被服务端执行（见 postJson.retryOnTimeout 注释）。
         if (retryOnTimeout && attempt < ApiConfig.networkRetryMax) {
           attempt++;
@@ -267,6 +338,11 @@ class ApiClient {
         }
         throw ApiException('NETWORK_TIMEOUT', _l10n.netTimeout);
       } on http.ClientException {
+        _trace('http.failed', {
+          ...traceFields,
+          'reason': 'connection_error',
+          'durationMs': watch.elapsedMilliseconds,
+        });
         // 连接层失败（DNS/拒连/连接中断）：请求未到达服务端，重试无副作用。
         // 例外见 [retryOnConnectionError]：一次性凭证接口不赌「连接中断=没送达」。
         if (retryOnConnectionError && attempt < ApiConfig.networkRetryMax) {
@@ -276,6 +352,11 @@ class ApiClient {
         }
         throw ApiException('NETWORK_UNREACHABLE', _l10n.netConnectFailed);
       } on IOException {
+        _trace('http.failed', {
+          ...traceFields,
+          'reason': 'io_error',
+          'durationMs': watch.elapsedMilliseconds,
+        });
         // SocketException / TLS 握手失败等，同上可安全重试。
         if (retryOnConnectionError && attempt < ApiConfig.networkRetryMax) {
           attempt++;
@@ -284,6 +365,11 @@ class ApiClient {
         }
         throw ApiException('NETWORK_UNREACHABLE', _l10n.netConnectFailed);
       } on Exception {
+        _trace('http.failed', {
+          ...traceFields,
+          'reason': 'client_error',
+          'durationMs': watch.elapsedMilliseconds,
+        });
         // 非网络异常（如 jsonEncode 对不可序列化对象抛错）：重试无意义，也不该被
         // 报成「网络连接失败」误导用户查网络。原实现的兜底 catch 会把它重试 2 次
         // 再谎报网络错误。Error（编程缺陷）不捕获，让全局 onError 如实记录。

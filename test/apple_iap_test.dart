@@ -181,18 +181,24 @@ class FakeBackend implements AppleIapBackend {
 }
 
 class Fixture {
-  Fixture() {
+  Fixture({
+    FakeBridge? bridge,
+    FakeBackend? backend,
+    List<Duration> receiptReadDelays = const [Duration.zero],
+  }) : bridge = bridge ?? FakeBridge(),
+       backend = backend ?? FakeBackend() {
     controller = AppleIapController(
-      bridge: bridge,
+      bridge: this.bridge,
       store: store,
-      backend: backend,
+      backend: this.backend,
       supported: true,
       confirmationDelays: const [Duration.zero],
+      receiptReadDelays: receiptReadDelays,
     );
   }
-  final bridge = FakeBridge();
+  final FakeBridge bridge;
   final store = MemoryStore();
-  final backend = FakeBackend();
+  final FakeBackend backend;
   late final AppleIapController controller;
   Future<void> login([String user = 'user-A']) async {
     controller.setUser(user);
@@ -382,7 +388,7 @@ void main() {
     await f.controller.retry();
     expect(f.backend.verifyCalls, 0);
     await f.controller.retry(manual: true);
-    expect(f.bridge.receiptRefreshes, [false, true]);
+    expect(f.bridge.receiptRefreshes, [false, false, true]);
     expect(f.backend.verifyCalls, 1);
   });
 

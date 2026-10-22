@@ -248,7 +248,7 @@ void main() {
         contains('receipt_missing'),
       );
       await fixture.controller.retry(manual: true);
-      expect(fixture.bridge.receiptRefreshes, [false, true]);
+      expect(fixture.bridge.receiptRefreshes, [false, false, true]);
       expect(fixture.backend.verifyCalls, 1);
       expect(fixture.backend.orderCalls, 1);
       expect(fixture.bridge.buyCalls, 1);

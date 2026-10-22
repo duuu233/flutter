@@ -2,7 +2,7 @@
 
 > 文档类型：Integration
 > 状态：Active
-> 最后核验：2026-10-20（购买后日志定位与线上 Swagger 复核；未完成 iOS 编译及端到端交付验收）
+> 最后核验：2026-10-22（验单 HTTP 阶段、收据显示开关与重试回归；未完成 iOS 编译及端到端交付验收）
 
 ## 1. 应用身份与商品
 
@@ -57,7 +57,7 @@ getGoodsList.appleProductId
 
 公共参数由 `ApiClient` 携带：`terminal=2`、当前 `language`、登录 `userToken`、原生设备型号 `device`。
 按既有接口兼容规则同时写入 header/query。Bundle ID 是后端核验配置，本接口当前 DTO 没有该入参，
-客户端不会擅自添加。请求 body 与此接口响应日志均脱敏，收据及嵌在 `responseData` 中的收据不输出。
+客户端不会擅自添加。通用 HTTP 控制台摘要继续脱敏；购买诊断中 `verify.request` / `verify.response` 按联调要求保留原始收据与响应字段，页面及剪贴板的 `receiptData` 原文由下述开关控制。登录凭证始终脱敏。
 
 2026-10-12 最新线上 Swagger 已列出 `receiptData/orderNo/transactionId`，旧 `excludeOldTransactions` 已移除；
 公共参数仍由 ApiClient 注入。验证成功后由后端负责发币。客户端使用持久化业务订单号和原生苹果交易号，
@@ -169,7 +169,7 @@ Mac 上须先编译 Runner，再使用当前 Bundle ID 对应的真实沙盒商�
 `receiptDataLength` 是实际提交的 Base64 字符数；订单号、交易号按本次请求原值打印，方便与后端日志关联。
 返回摘要只打印数值状态、识别出的苹果环境及字段是否存在，不输出原始收据、`responseData`、
 `latestReceipt` 或任意服务端错误正文；公共登录凭证继续脱敏。日志仅在 debug 构建开启，
-release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表发币完成，需结合订单和余额核对。
+release / TestFlight 包没有这些通用控制台摘要，但包含下述页内购买诊断。`status=0` 仍不独立代表发币完成，需结合订单和余额核对。
 本轮补充的日志在隔离 HTTP 测试中核对实际 body、摘要字段及收据不泄露；尚未真机采集。
 
 ### 商品及购买后诊断：真机页内展示（2026-10-16）
@@ -178,7 +178,9 @@ release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表
 
 安装包含本轮改动的**新iOS包**（普通Release、TestFlight、debug均可），尽量覆盖安装保留原映射，打开确认购买页，底部“苹果支付诊断详情”显示本次商品预检与当前账号的购买后诊断。商品预检错误保留实际code/message/details及可用栈；未知错误字段不因白名单而丢弃，敏感内容脱敏。详情可上下滚动、选择或点“复制日志”复制，不需要连接控制台。
 
-购买后诊断由进程级 controller 持有，独立于商品预检的异步 capture，在 Release/TestFlight 同样可见，保留当前账号最近160项，账号切换清空；离开页面不保留页面回调，重新进入仍可看当前账号尚在内存中的记录，杀进程后不保留诊断。预检重新获取只清预检，不删除交易诊断或待处理订单。记录允许关联的 orderNo/transactionId、状态与数量，不记录账户UUID、用户ID、密码、登录凭证；为支持联调自测，erify.request 显式输出 eceiptData 明文，erify.response 显式输出 esponseData 与 exceptionMsg 明文供复制排查。原生收据刷新错误补充脱敏系统描述和 domain/code，仍保留原错误码。
+购买后诊断由进程级 controller 持有，独立于商品预检的异步 capture，在 Release/TestFlight 同样可见，保留当前账号最近160项，账号切换清空；离开页面不保留页面回调，重新进入仍可看当前账号尚在内存中的记录，杀进程后不保留诊断。预检重新获取只清预检，不删除交易诊断或待处理订单。记录允许关联的 orderNo/transactionId、状态与数量，不记录账户UUID、用户ID、密码、登录凭证。为支持联调，verify.request 保留完整 receiptData，verify.response 保留 responseData/exceptionMsg；不将这些敏感原文写入持久化订单。
+
+2026-10-22：“苹果支付诊断详情”标题旁新增“显示 receiptData”开关，默认关闭，原文显示为 [hidden]，仍保留收据长度、订单号与交易号。“复制日志”与当前显示一致；打开开关后显示、选择和复制完整原文，不截断、不改变真实验单参数。开关随当前诊断组件存活，重新进页或重新获取商品时恢复默认关闭。复制中禁用重复点击；系统写入失败或5秒未响应时显示失败提示，可隐藏收据后重试。剪贴板写入完成只说明系统接收，目标应用是否允许粘贴仍需真机确认。
 
 | 阶段 | 用于判断 |
 | --- | --- |
@@ -186,11 +188,13 @@ release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表
 | `payment.start.request/accepted/failed` | 是否提交苹果付款；accepted 仅代表原生受理，不代表购买成功 |
 | `transaction.updated`、`recovery.queue.response`、`recovery.match.response` | 是否有回调、队列数量、当前订单是否匹配；不输出未知账号的交易内容 |
 | `receipt.request/response`、`receipt.read.failed` | 是否在取得收据前失败；长度不等于收据正文 |
-| `verify.request/response/failed/skipped` | 是否进入 APP 的 `/Client/Pay/setApplePayVerifyReceipt`，Apple status/environment、明细是否匹配；历史提交需手动确认时明确说明 |
+| `verify.request/response/failed/skipped` | 是否进入客户端验单逻辑，以及业务状态、明细匹配和手动重验限制 |
+| `verify.http.request/response/failed` | 实际调用 HTTP 客户端、收到 HTTP/retCode 或传输异常；包含 host/scheme/path、次数与耗时，不含 query、header、body |
+| `verify.blocked` | 尚未发验单请求时明确标记 backendCalled=false：交易未匹配、仍购买中、苹果失败、交易号不符或收据不可用 |
 | `delivery.order.response`、`delivery.balance.response` | 对应订单是否已支付、当前/基线/预期余额；只有验单成功仍不足以完成 |
 | `transaction.finished`、`phase.changed` | 是否实际完成交付收尾，或以哪种错误停在 pending |
 
-`verify.request` 表示已进入客户端后端调用，仍需网关/服务器访问日志确认真正收到 HTTP；不能把它当成 Apple 主动发到业务后台的通知。`status=21007` 应由后端按现有传统收据协议处理沙盒回退。发生问题先复制本轮日志及查询同一订单，不新买一笔冒充重验。
+`verify.request` 只表示进入业务验单，`verify.http.request` 进一步证明交给 HTTP 客户端，均不单独证明服务端已收到。`verify.http.response` 记录实际响应的 HTTP 状态与 retCode，仍可用同一 orderNo/transactionId 对照网关及服务端日志；这不是 Apple 主动向业务后台发通知。`status=21007` 应由后端按现有传统收据协议处理沙盒回退。发生问题先复制本轮日志及查询同一订单，不新买一笔冒充重验。
 
 “重新获取商品”清空上次详情并重置滚动位置，只采集本次商品预检。即使初始化已缓存，本次仍记录运行Bundle ID和支付权限；异步请求分别隔离，结束后释放页面回调，离开页面后到达的结果不更新已销毁页面。查询失败时不再继续显示“正在获取价格…”，购买仍受原商品与权限检查保护。
 
@@ -223,6 +227,12 @@ release / TestFlight 包没有这些调试日志。`status=0` 仍不独立代表
 2026-10-13历史回归：页面诊断及原有商品/支付回归合计 **76项通过**；五个修改Dart文件无error/warning、无新增info，原PayPal页有1条既有跨异步context info，analyze因此退出1。新增6项核对底部完整错误与复制、未知/长描述/嵌套凭证脱敏、重试与缓存初始化、短屏大字体滚动、退出及异步采集隔离。测试以模拟原生/HTTP返回完成，页面采集位于debug判断之前；Windows未编译Swift/iOS或普通安装包，尚未确认实际手机的失败原因。
 
 2026-10-16当前回归：新增22项，六个支付相关测试文件共 **98项通过**；六个Dart文件静态检查无error/warning及新增info，仍仅上述PayPal既有info。覆盖新订单真实建单/落盘、各种阻断、旧记录及迟到回调、独立重验、完整诊断脱敏、UUID大小写和小屏大字；未替代Swift编译、覆盖安装及真机沙盒/后端交付联调。
+
+2026-10-22回归：六个定向测试文件共 **115项通过**，包括16,000字符收据的默认隐藏/完整显示/复制联动、复制失败反馈、短屏大字、真实ApiClient模拟响应/断网、被动重读收据、手动刷新失败及忙碌期间保留手动重验意图。8个改动Dart/测试文件静态检查无error/warning及新增info，仍有PayPal既有跨异步context info（退出1）。未编译Swift/iOS，未调用真实支付/发币接口。
+
+购买完成后的本地收据缺失时，自动恢复最多被动读取3次（立即、再等250ms、再等750ms），不触发苹果认证。手动重验先按同样方式读取，仍缺失才发起一次收据刷新；苹果刷新错误不自动循环。忙碌中收到手动重验时，串行恢复保留manual标记，换账号清除该标记。依据：[Apple SKReceiptRefreshRequest](https://developer.apple.com/documentation/StoreKit/SKReceiptRefreshRequest)。
+
+现场日志出现 verify.response: status=0, environment=Sandbox, responseData为空, exceptionMsg=平台产品与凭据不符合，证明该次后端调用已返回业务拒绝；之后 previous_submission_requires_manual_retry 是避免自动重复POST的分支，不是从未验单。截图21104属于Apple原生错误，当前没有其精确调用阶段证据，不能将其当作业务接口错误或Apple验单21004。新包用上述分阶段日志区分；不能据此宣称已修好Apple服务或后端映射。
 
 真机检查：
 

@@ -10,6 +10,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../network/boltfox_api.dart';
 import '../../network/api_session.dart';
 import '../../network/api_exception.dart';
+import '../../network/api_client.dart';
 import 'star_coin_api.dart';
 import 'apple_iap_diagnostics.dart';
 
@@ -303,6 +304,11 @@ class AppleIapController extends ChangeNotifier {
     AppleIapStore? store,
     AppleIapBackend? backend,
     bool? supported,
+    this.receiptReadDelays = const [
+      Duration.zero,
+      Duration(milliseconds: 250),
+      Duration(milliseconds: 750),
+    ],
     this.confirmationDelays = const [
       Duration.zero,
       Duration(seconds: 1),
@@ -320,10 +326,12 @@ class AppleIapController extends ChangeNotifier {
   final AppleIapBackend backend;
   final bool supported;
   final List<Duration> confirmationDelays;
+  final List<Duration> receiptReadDelays;
   final List<Map<String, dynamic>> _records = [];
   Future<void>? _initializing;
   bool _working = false;
   bool _rerun = false;
+  bool _rerunManual = false;
   bool _canPay = false;
   int _epoch = 0;
   String? _userId;
@@ -358,6 +366,7 @@ class AppleIapController extends ChangeNotifier {
         : userId;
     if (_userId == next) return;
     _userId = next;
+    _rerunManual = false;
     _diagnostics.clear();
     _epoch++;
     _setPhase(AppleIapPhase.idle);
@@ -452,6 +461,7 @@ class AppleIapController extends ChangeNotifier {
       if (owned) 'state': event['state'],
       if (owned) 'productId': event['productId'],
       if (owned) 'transactionId': event['transactionId'],
+      if (owned) ..._nativeErrorFields(event),
     });
     // Keep all mutations in the serialized retry pass, including cancellations.
     if (_working) {
@@ -782,6 +792,63 @@ class AppleIapController extends ChangeNotifier {
     }
   }
 
+  Map<String, Object?> _nativeErrorFields(Map<String, dynamic> source) => {
+    for (final key in [
+      'nativeErrorDomain',
+      'nativeErrorCode',
+      'nativeMessage',
+      'underlyingErrors',
+    ])
+      if (source.containsKey(key)) key: source[key],
+  };
+
+  Future<String?> _readReceipt(
+    Map<String, dynamic> record,
+    int epoch, {
+    required bool manual,
+  }) async {
+    final delays = receiptReadDelays.isEmpty
+        ? const [Duration.zero]
+        : receiptReadDelays;
+    for (var index = 0; index < delays.length; index++) {
+      await Future<void>.delayed(delays[index]);
+      if (!_current(epoch)) return null;
+      _diagnose('receipt.request', {
+        'orderNo': record['orderNo'],
+        'transactionId': record['transactionId'],
+        'manual': manual,
+        'attempt': index + 1,
+        'refreshIfMissing': false,
+      });
+      try {
+        return await bridge.receipt(refreshIfMissing: false);
+      } on PlatformException catch (error) {
+        if (error.code != 'receipt_missing') rethrow;
+        if (!_current(epoch)) return null;
+        if (index + 1 < delays.length) {
+          _diagnose('receipt.wait', {
+            'orderNo': record['orderNo'],
+            'attempt': index + 1,
+            'reason': 'receipt_not_ready',
+            'backendCalled': false,
+          });
+          continue;
+        }
+        if (!manual) rethrow;
+        _diagnose('receipt.request', {
+          'orderNo': record['orderNo'],
+          'transactionId': record['transactionId'],
+          'manual': true,
+          'attempt': index + 2,
+          'refreshIfMissing': true,
+        });
+        // One explicit refresh only. Apple failures/cancellations are never retried here.
+        return await bridge.receipt(refreshIfMissing: true);
+      }
+    }
+    return null;
+  }
+
   /// Automatic recovery never repeats a POST whose result might have been lost.
   /// Only an explicit retry can resubmit that receipt; backend idempotency is
   /// still required. Missing receipts refresh only after that explicit action.
@@ -789,6 +856,7 @@ class AppleIapController extends ChangeNotifier {
     if (!supported || _userId == null) return;
     if (_working) {
       _rerun = true;
+      _rerunManual = _rerunManual || manual;
       return;
     }
     _working = true;
@@ -841,6 +909,11 @@ class AppleIapController extends ChangeNotifier {
             'supersededBy': record['supersededBy'],
         });
         if (matches.isEmpty) {
+          _diagnose('verify.blocked', {
+            'orderNo': record['orderNo'],
+            'reason': 'transaction_unmatched',
+            'backendCalled': false,
+          });
           if (record['supersededBy'] != null) continue;
           if (record['credited'] == true) {
             stage = 'transaction.finish';
@@ -858,6 +931,16 @@ class AppleIapController extends ChangeNotifier {
         final transaction = matches.first;
         final state = transaction['state'];
         if (state == 'failed' || state == 'canceled') {
+          _diagnose('transaction.failed', {
+            'orderNo': record['orderNo'],
+            'state': state,
+            ..._nativeErrorFields(transaction),
+          });
+          _diagnose('verify.blocked', {
+            'orderNo': record['orderNo'],
+            'reason': 'apple_payment_failed',
+            'backendCalled': false,
+          });
           _records.remove(record);
           try {
             await _save();
@@ -878,6 +961,12 @@ class AppleIapController extends ChangeNotifier {
           continue;
         }
         if (state != 'purchased') {
+          _diagnose('verify.blocked', {
+            'orderNo': record['orderNo'],
+            'state': state,
+            'reason': 'transaction_not_purchased',
+            'backendCalled': false,
+          });
           _recordPhase(
             record,
             state == 'deferred'
@@ -890,6 +979,11 @@ class AppleIapController extends ChangeNotifier {
         if (transactionId.isEmpty ||
             (record['transactionId'] != null &&
                 record['transactionId'] != transactionId)) {
+          _diagnose('verify.blocked', {
+            'orderNo': record['orderNo'],
+            'reason': 'transaction_mismatch',
+            'backendCalled': false,
+          });
           _recordPhase(record, AppleIapPhase.pending, 'transaction_mismatch');
           continue;
         }
@@ -918,12 +1012,8 @@ class AppleIapController extends ChangeNotifier {
           }
           _recordPhase(record, AppleIapPhase.verifying);
           stage = 'receipt.read';
-          _diagnose('receipt.request', {
-            'orderNo': record['orderNo'],
-            'manual': manual,
-          });
-          final receipt = await bridge.receipt(refreshIfMissing: manual);
-          if (!_current(epoch)) return;
+          final receipt = await _readReceipt(record, epoch, manual: manual);
+          if (!_current(epoch) || receipt == null) return;
           _diagnose('receipt.response', {
             'orderNo': record['orderNo'],
             'receiptLength': receipt.length,
@@ -939,10 +1029,21 @@ class AppleIapController extends ChangeNotifier {
             'receiptLength': receipt.length,
             'receiptData': receipt,
           });
-          final verified = await backend.verify(
-            receipt: receipt,
-            orderNo: record['orderNo'] as String,
-            transactionId: transactionId,
+          final verified = await ApiClient.captureDiagnostics(
+            () => backend.verify(
+              receipt: receipt,
+              orderNo: record['orderNo'] as String,
+              transactionId: transactionId,
+            ),
+            onEvent: (httpStage, fields) {
+              if (_current(epoch)) {
+                _diagnose('verify.$httpStage', {
+                  'orderNo': record['orderNo'],
+                  'transactionId': transactionId,
+                  ...fields,
+                });
+              }
+            },
           );
           if (!_current(epoch)) return;
           final matchesReceipt = verified.matches(
@@ -1010,6 +1111,13 @@ class AppleIapController extends ChangeNotifier {
       }
     } catch (error) {
       if (_current(epoch)) {
+        if (stage == 'receipt.read') {
+          _diagnose('verify.blocked', {
+            'orderNo': currentRecord?['orderNo'],
+            'reason': 'receipt_unavailable',
+            'backendCalled': false,
+          });
+        }
         _diagnoseError(
           '$stage.failed',
           error,
@@ -1057,6 +1165,8 @@ class AppleIapController extends ChangeNotifier {
   void _runQueued() {
     if (!_rerun) return;
     _rerun = false;
-    unawaited(retry());
+    final manual = _rerunManual;
+    _rerunManual = false;
+    unawaited(retry(manual: manual));
   }
 }

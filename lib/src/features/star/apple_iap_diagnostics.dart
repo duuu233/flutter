@@ -46,6 +46,16 @@ abstract final class AppleIapDiagnostics {
     'phase',
     'state',
     'manual',
+    'method',
+    'host',
+    'scheme',
+    'path',
+    'attempt',
+    'httpStatus',
+    'retCode',
+    'durationMs',
+    'backendCalled',
+    'refreshIfMissing',
     'newOrder',
     'pendingCount',
     'matchedCount',
@@ -93,6 +103,21 @@ abstract final class AppleIapDiagnostics {
   static String format(String stage, Map<String, Object?> fields) {
     final allowVerify = stage == 'verify.request' || stage == 'verify.response';
     return '[AppleIAP] $stage: ${jsonEncode(_safe(fields, allowVerify: allowVerify))}';
+  }
+
+  /// The page and clipboard share this projection; stored/request bytes stay intact.
+  static String displayLine(String line, {required bool includeReceiptData}) {
+    const prefix = '[AppleIAP] verify.request: ';
+    if (includeReceiptData || !line.startsWith(prefix)) return line;
+    try {
+      final data = jsonDecode(line.substring(prefix.length));
+      if (data is! Map || !data.containsKey('receiptData')) return line;
+      data['receiptData'] = '[hidden]';
+      return '$prefix${jsonEncode(data)}';
+    } on FormatException {
+      // Do not expose an unparseable verification payload while hiding receipts.
+      return '$prefix[hidden]';
+    }
   }
 
   /// Preserve unexpected error fields on the page while masking private payloads.

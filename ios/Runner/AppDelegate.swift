@@ -758,11 +758,10 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
       guard let self = self else { return }
       if self.receiptRequest === request {
         let native = error as NSError
+        var details = self.storeKitErrorFields(native)
+        details["reason"] = "storekit_receipt_request_failed"
         self.completeReceipt(FlutterError(code: "receipt_failed",
-          message: self.productText(native.localizedDescription), details: [
-            "reason": "storekit_receipt_request_failed", "nativeErrorDomain": native.domain,
-            "nativeErrorCode": native.code,
-          ]))
+          message: self.productText(native.localizedDescription), details: details))
         return
       }
       let key = ObjectIdentifier(request)
@@ -785,6 +784,18 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
     }
   }
 
+  private func storeKitErrorFields(_ error: NSError) -> [String: Any] {
+    var underlying: [[String: Any]] = []
+    var next = error.userInfo[NSUnderlyingErrorKey] as? NSError
+    while let item = next, underlying.count < 3 {
+      underlying.append(["domain": item.domain, "nativeErrorCode": item.code,
+        "nativeMessage": productText(item.localizedDescription)])
+      next = item.userInfo[NSUnderlyingErrorKey] as? NSError
+    }
+    return ["nativeErrorDomain": error.domain, "nativeErrorCode": error.code,
+      "nativeMessage": productText(error.localizedDescription), "underlyingErrors": underlying]
+  }
+
   private func summary(_ transaction: SKPaymentTransaction) -> [String: Any] {
     let state: String
     switch transaction.transactionState {
@@ -797,9 +808,13 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
       state = code == SKError.Code.paymentCancelled.rawValue ? "canceled" : "failed"
     @unknown default: state = "unknown"
     }
-    return ["state": state, "productId": transaction.payment.productIdentifier,
+    var row: [String: Any] = ["state": state, "productId": transaction.payment.productIdentifier,
       "accountToken": transaction.payment.applicationUsername ?? "",
       "transactionId": transaction.transactionIdentifier ?? ""]
+    if let error = transaction.error as NSError? {
+      row.merge(storeKitErrorFields(error)) { _, new in new }
+    }
+    return row
   }
 
   func paymentQueue(_ queue: SKPaymentQueue, updatedTransactions transactions: [SKPaymentTransaction]) {
@@ -822,7 +837,11 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
           if let token = transaction.payment.applicationUsername {
             saved = saved.filter { $0.key.lowercased() != token.lowercased() }
             var failed = self.failures.filter { $0["accountToken"]?.lowercased() != token.lowercased() }
-            failed.append(row.compactMapValues { $0 as? String }); self.failures = failed
+            failed.append(row.compactMapValues { value -> String? in
+              if let text = value as? String { return text }
+              if let number = value as? NSNumber { return number.stringValue }
+              return nil
+            }); self.failures = failed
           }
           self.requests = saved
           queue.finishTransaction(transaction)

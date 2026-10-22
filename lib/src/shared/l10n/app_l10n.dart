@@ -220,6 +220,7 @@ class AppL10n {
     'Please agree to the BoltStar AI Service Agreement first',
     '先にBoltStar AIサービス規約に同意してください',
   );
+
   /// 同意弹窗正文（三段，与小程序 `utils/ai-service-consent.js` 的 `CONSENT_SUMMARY` 同源）：
   /// ① 发给谁、做什么；② 内容用途；③ **境外传输告知** —— AI 网关部署在新加坡，内容出境是
   /// 需要单独告知的事项，细则在隐私政策第八节，弹窗只告知并指路，不复述整节法律文本。
@@ -369,14 +370,12 @@ class AppL10n {
     'WeChat authorization timed out. Please try again.',
     'WeChat認証がタイムアウトしました。再度お試しください。',
   );
+
   /// 微信授权登录成功提示（2026-08-19 需求：Android/iOS 从微信跳回 App 都要有反馈）。
   /// 邮箱登录**不弹**成功提示（界面切到主壳层本身就是反馈），微信这条是特例——
   /// 中间去了一趟微信客户端再跳回来，用户需要一句确认「这趟走通了」。
-  String get accWechatLoginSuccess => _pick(
-    '授权登录成功',
-    'Signed in with WeChat',
-    'WeChatでログインしました',
-  );
+  String get accWechatLoginSuccess =>
+      _pick('授权登录成功', 'Signed in with WeChat', 'WeChatでログインしました');
   String get accWechatAuthFailed => _pick(
     '微信授权失败，请稍后重试',
     'WeChat authorization failed, please try again later',
@@ -532,12 +531,11 @@ class AppL10n {
       _pick('图片处理中', 'Processing Image', '画像を処理中');
   String get castStageTransferring =>
       _pick('图片传输中', 'Transferring Image', '画像を転送中');
-  String get castReadingDeviceInfo =>
-      _pick(
-        '正在读取电子纸设备信息…',
-        'Reading e-paper device information…',
-        '電子ペーパーの情報を読み込んでいます…',
-      );
+  String get castReadingDeviceInfo => _pick(
+    '正在读取电子纸设备信息…',
+    'Reading e-paper device information…',
+    '電子ペーパーの情報を読み込んでいます…',
+  );
 
   /// 刚投完屏、设备正在刷新（0x24）时对任何指令都回忙(0x0B)。这几秒是可等的短暂
   /// 状态，投屏入口会自动等它刷完再继续，期间给用户这条提示。
@@ -746,6 +744,7 @@ class AppL10n {
   // 对应的 castPrevPhoto/castNextPhoto 两个键随之删除，勿再加回。
   String get castPortrait => _pick('竖向', 'Portrait', '縦向き');
   String get castLandscape => _pick('横向', 'Landscape', '横向き');
+
   /// 提示里的时长必须与 `cast_preview_page.dart` 的 `_kLongPress` 一致（2026-07-31 起 0.5 秒）。
   String get castEditHint => _pick(
     '长按0.5秒后可拖拽图片、双指可缩放与旋转图片',
@@ -803,11 +802,8 @@ class AppL10n {
   // 所以：进度文案按 `stage` 走下面这组；占位按 [isThinkingPlaceholder] 认出来再换成当前语种。
 
   /// 生图进度各档（与聊天页 `aiProgressLabel` 的 stage / 数值分档一一对应）。
-  String get aiProgressConnecting => _pick(
-    '正在连接生图引擎…',
-    'Connecting to the image engine…',
-    '画像生成エンジンに接続中…',
-  );
+  String get aiProgressConnecting =>
+      _pick('正在连接生图引擎…', 'Connecting to the image engine…', '画像生成エンジンに接続中…');
   String get aiProgressCreating =>
       _pick('AI 正在创作中…', 'AI is creating…', 'AIが作成中…');
   String get aiProgressDraftReady =>
@@ -876,14 +872,11 @@ class AppL10n {
   /// 欢迎页灵感词。顺序与三张图标 `ai-suggestion-home/sunrise/palette.png` 一一对应，
   /// 增删条目要同步改 `ai_chat_page` 里的图标数组。
   List<String> get aiWelcomeSuggestions => [
-    _pick(
-      '生成一张温馨的客厅插画',
-      'Draw a cozy living room',
-      '居心地のよいリビングのイラストを生成',
-    ),
+    _pick('生成一张温馨的客厅插画', 'Draw a cozy living room', '居心地のよいリビングのイラストを生成'),
     _pick('帮我写一句早安文案', 'Write me a good-morning line', 'おはようの一言を書いて'),
     _pick('把照片变成漫画风', 'Turn my photo into a comic', '写真を漫画風にして'),
   ];
+
   /// 2026-08-10 需求 8：输入框默认文案改为「按住说话或输入您的想法...」
   /// —— 右侧那颗麦克风按钮是语音入口，提示语要把两条路都说出来。
   /// 发送后、消息真正上屏前那段空窗的蒙层文案（见 `_AiChatPageState._prepareSend`）。
@@ -932,8 +925,7 @@ class AppL10n {
 
   /// 松手之后、文字回来之前的浮层文案（**仅安卓备胎链路**：录音要上传后端转文字）。
   /// 端上识别是瞬时出结果的，走那条路时不会显示这句。
-  String get aiVoiceTranscribing =>
-      _pick('识别中…', 'Transcribing…', '認識中…');
+  String get aiVoiceTranscribing => _pick('识别中…', 'Transcribing…', '認識中…');
 
   /// 录音起不来（**仅安卓备胎链路**）：麦克风被别的应用占着 / AudioRecord 初始化失败。
   /// 与 [aiVoiceUnavailable] 分开：这一条重试有用，那一条重试没用。
@@ -944,8 +936,11 @@ class AppL10n {
   );
 
   /// 识别不出任何文字（说太轻/环境太吵/一开口就松手）。
-  String get aiVoiceNoSpeech =>
-      _pick('没听清，请再说一次', 'Didn\'t catch that — try again', '聞き取れませんでした。もう一度どうぞ');
+  String get aiVoiceNoSpeech => _pick(
+    '没听清，请再说一次',
+    'Didn\'t catch that — try again',
+    '聞き取れませんでした。もう一度どうぞ',
+  );
 
   /// 这台机器没有可用的系统语音识别服务。
   ///
@@ -960,7 +955,8 @@ class AppL10n {
   );
 
   /// 麦克风 / 语音识别授权被拒时的引导框。
-  String get aiVoiceMicDeniedTitle => _pick('需要麦克风权限', 'Microphone needed', 'マイクの許可が必要です');
+  String get aiVoiceMicDeniedTitle =>
+      _pick('需要麦克风权限', 'Microphone needed', 'マイクの許可が必要です');
   String get aiVoiceMicDeniedMessage => _pick(
     '请在系统设置中允许使用麦克风与语音识别后，再按住说话。',
     'Allow microphone and speech recognition in Settings, then hold to talk.',
@@ -981,7 +977,8 @@ class AppL10n {
   String get aiPickStyle => _pick('选择生图模式', 'Choose a style', '生成スタイルを選択');
 
   // 30xxx / 未知上游失败：不再只弹一次性 toast，气泡原地变成可重试的失败卡（对齐小程序 2026-07-30）。
-  String get aiFailureTitle => _pick('生成未完成', 'Generation failed', '生成できませんでした');
+  String get aiFailureTitle =>
+      _pick('生成未完成', 'Generation failed', '生成できませんでした');
   String get aiFailureDesc => _pick(
     '网络或服务繁忙，请稍后重试',
     'Network or service is busy. Please try again.',
@@ -994,7 +991,8 @@ class AppL10n {
   // ── 删除消息 / 删除图片（2026-08-10 需求 2 & 7）──
   // 长按气泡空白处、以及图下方常驻操作条的「删除」都走这一套确认框（与全站弹框同版式），
   // 取代原来的底部操作面板（小程序侧同步撤掉了 wx.showActionSheet）。
-  String get aiDeleteMessageTitle => _pick('删除消息', 'Delete message', 'メッセージを削除');
+  String get aiDeleteMessageTitle =>
+      _pick('删除消息', 'Delete message', 'メッセージを削除');
   String get aiDeleteMessageDesc => _pick(
     '删除后这条消息会从对话中移除，且无法恢复',
     'This message will be removed from the chat and cannot be recovered.',
@@ -1061,6 +1059,7 @@ class AppL10n {
     'Nothing was generated this time. Please try again.',
     '今回は生成されませんでした。もう一度お試しください',
   );
+
   /// 上限 2026-08-12 由 4 张放宽到 5 张（与 `_kMaxImages` 必须一致），
   /// 文案也换成产品给的那句（不再是「一次最多选择 N 张图片」）。
   String get aiMaxImages => _pick(
@@ -1108,13 +1107,9 @@ class AppL10n {
     'Only the last 7 days of chats are kept.',
     '直近7日間のチャットのみ保持されます',
   );
-  String get aiNoSessions =>
-      _pick('暂时没有历史会话', 'No chats yet', '履歴はまだありません');
-  String get aiNoSessionsDesc => _pick(
-    '开始一次新的历史创作吧',
-    'Start a new conversation.',
-    '新しい会話を始めましょう',
-  );
+  String get aiNoSessions => _pick('暂时没有历史会话', 'No chats yet', '履歴はまだありません');
+  String get aiNoSessionsDesc =>
+      _pick('开始一次新的历史创作吧', 'Start a new conversation.', '新しい会話を始めましょう');
   String get aiPullToLoadMore =>
       _pick('上拉加载更多', 'Pull up to load more', '上にスワイプして続きを読み込む');
 
@@ -1229,11 +1224,7 @@ class AppL10n {
   String get bindEndSearchInline => _pick('，结束搜索', ', End Search', '、検索を終了');
   String get bindBindNow => _pick('立即绑定', 'Bind Now', '今すぐ追加');
   String get bindNotFoundTitle =>
-      _pick(
-        '未发现电子纸设备',
-        'No E-paper Device Found',
-        '電子ペーパーが見つかりません',
-      );
+      _pick('未发现电子纸设备', 'No E-paper Device Found', '電子ペーパーが見つかりません');
   String get bindNotFoundHint => _pick(
     '电子纸设备连接中断，请检查电子纸设备状态后重试',
     'Connection interrupted. Please check the e-paper device and try again.',
@@ -1242,12 +1233,11 @@ class AppL10n {
   String get bindRescan => _pick('重新扫描', 'Rescan', '再スキャン');
   String get bindScanHelpLink =>
       _pick('扫描不到怎么办？', "Can't find your device?", 'スキャンできない場合は？');
-  String get bindSearchingTitle =>
-      _pick(
-        '正在搜索附近电子纸设备',
-        'Searching for nearby e-paper devices',
-        '近くの電子ペーパーを検索中',
-      );
+  String get bindSearchingTitle => _pick(
+    '正在搜索附近电子纸设备',
+    'Searching for nearby e-paper devices',
+    '近くの電子ペーパーを検索中',
+  );
   String get bindSearchingHint => _pick(
     '请尽量将手机靠近需要添加的电子纸设备...',
     'Please keep your phone close to the e-paper device you want to add...',
@@ -1439,7 +1429,8 @@ class AppL10n {
   );
 
   /// 绑定成功后的命名引导标题：弱性强制，可以点「稍后」跳过。
-  String get devBindNameTitle => _pick('设备命名', 'Name Your Device', 'デバイスに名前を付ける');
+  String get devBindNameTitle =>
+      _pick('设备命名', 'Name Your Device', 'デバイスに名前を付ける');
 
   /// 命名引导的取消按钮：2026-08-02 产品把「暂不修改」改成更短的「稍后」（对齐小程序 bind.wxml）。
   String get devBindNameLater => _pick('稍后', 'Later', '後で');
@@ -1451,12 +1442,11 @@ class AppL10n {
   String get devConfirm => _pick('确认', 'Confirm', '確認');
   String get devConnecting =>
       _pick('连接设备中', 'Connecting to device…', 'デバイスに接続中…');
-  String get devConnectFirst =>
-      _pick(
-        '请先连接电子纸设备',
-        'Please connect the e-paper device first',
-        '先に電子ペーパーを接続してください',
-      );
+  String get devConnectFirst => _pick(
+    '请先连接电子纸设备',
+    'Please connect the e-paper device first',
+    '先に電子ペーパーを接続してください',
+  );
   String get devDisconnecting => _pick('断开中', 'Disconnecting…', '切断中…');
   String get devPhotoReadFailed => _pick(
     '无法读取照片，请检查相机/相册权限后重试。',
@@ -1493,6 +1483,7 @@ class AppL10n {
   /// 行文案与取值口径必须成对，改一个要改另一个（值见 device_details_page.dart）。
   String get devMaxPhotoCount =>
       _pick('最大照片数量', 'Max Photos', '最大写真枚数', '最大照片數量');
+
   /// 设备详情里那一行。2026-08-28 中文由「OTA升级」改为「固件升级」，与小程序
   /// `detail.wxml` 的行文案一字一致（英/日本来就是 Firmware Update / ファームウェア更新口径）。
   String get devOtaUpgrade => _pick('固件升级', 'Firmware Update', 'ファームウェア更新');
@@ -1535,16 +1526,10 @@ class AppL10n {
   String get devUnbinding => _pick('解除绑定中', 'Unbinding…', 'ペアリング解除中…');
   String get devDeleteDevice => _pick('删除设备', 'Delete Device', 'デバイスを削除');
   String get devDeleting => _pick('删除设备中', 'Deleting device…', 'デバイスを削除中…');
-  String get devDeviceDeleted => _pick(
-    '电子纸设备已删除',
-    'E-paper device deleted',
-    '電子ペーパーを削除しました',
-  );
-  String get devDeleteDeviceValue => _pick(
-    '清空照片并解除绑定',
-    'Erase photos and unbind',
-    '写真を消去してペアリング解除',
-  );
+  String get devDeviceDeleted =>
+      _pick('电子纸设备已删除', 'E-paper device deleted', '電子ペーパーを削除しました');
+  String get devDeleteDeviceValue =>
+      _pick('清空照片并解除绑定', 'Erase photos and unbind', '写真を消去してペアリング解除');
 
   /// 删除设备第二次确认的标题与说明（对齐小程序 detail.wxml）。
   String get devDeleteDeviceConfirmTitle =>
@@ -1571,6 +1556,7 @@ class AppL10n {
     'I have read and understood the consequences and confirm erasing all photos on the e-paper device and in the gallery.',
     'この操作の結果を理解した上で、電子ペーパーとギャラリー内のすべての写真を消去することを確認します。',
   );
+
   /// 删除设备第一次确认：先劝一句「建议清空照片防隐私泄露」（对齐小程序 detail.wxml）。
   String get devDeleteDeviceMessage => _pick(
     '删除设备将执行一键清空电子纸设备及小程序/APP内的照片，防止隐私泄露。是否确认删除设备？',
@@ -1621,6 +1607,7 @@ class AppL10n {
       _pick('发现新版本', 'New version available', '新しいバージョンあり');
   String get otaDeviceNotConnected =>
       _pick('设备未连接', 'Device not connected', 'デバイス未接続');
+
   /// 未连接时的主按钮文案：点它会先自动扫连再升级（不再是「按钮画着却点不动」）。
   String get otaConnectAndUpgrade =>
       _pick('连接并升级', 'Connect & upgrade', '接続してアップグレード');
@@ -1725,8 +1712,7 @@ class AppL10n {
     '$version（先に電子ペーパーへ接続します）',
   );
 
-  String get otaLatestTitle =>
-      _pick('已是最新版本', 'Already up to date', 'すでに最新です');
+  String get otaLatestTitle => _pick('已是最新版本', 'Already up to date', 'すでに最新です');
   String get otaLatestDesc => _pick(
     '当前固件已是最新，无需升级',
     'Your firmware is the latest version. No update needed.',
@@ -1739,8 +1725,7 @@ class AppL10n {
     'ファームウェアパッケージが無効です。後でもう一度お試しください。',
   );
 
-  String get otaCheckFailedTitle =>
-      _pick('检查失败', 'Check failed', '確認に失敗しました');
+  String get otaCheckFailedTitle => _pick('检查失败', 'Check failed', '確認に失敗しました');
 
   /// 自动扫连那一屏（升级前设备不在线时）。
   String get otaConnectingTitle =>
@@ -1799,8 +1784,7 @@ class AppL10n {
       _pick('正在校验头信息…', 'Verifying the header…', 'ヘッダーを検証中…');
   String get otaNoteTransferring =>
       _pick('正在传输固件数据…', 'Transferring firmware data…', 'ファームウェアを転送中…');
-  String get otaNoteRetrying =>
-      _pick('正在重传…', 'Resending…', '再送信中…');
+  String get otaNoteRetrying => _pick('正在重传…', 'Resending…', '再送信中…');
   String get otaNoteVerifying => _pick(
     '设备正在校验固件…',
     'The device is verifying the firmware…',
@@ -1812,8 +1796,7 @@ class AppL10n {
     '検証完了。まもなく再起動します。',
   );
 
-  String get otaSuccessTitle =>
-      _pick('升级成功', 'Upgrade complete', 'アップグレード完了');
+  String get otaSuccessTitle => _pick('升级成功', 'Upgrade complete', 'アップグレード完了');
   String get otaSuccessDesc => _pick(
     '固件已升级到最新版本。电子纸设备正在重启，请稍等几秒后重新连接。',
     'The firmware is now up to date. The e-paper device is restarting — please reconnect in a few seconds.',
@@ -1832,8 +1815,7 @@ class AppL10n {
     'データは送信済みですが、電子ペーパーからの確認が得られませんでした。アップグレードは未確認です。再試行してください。',
   );
 
-  String get otaRetryUpgrade =>
-      _pick('重新升级', 'Retry upgrade', '再アップグレード');
+  String get otaRetryUpgrade => _pick('重新升级', 'Retry upgrade', '再アップグレード');
 
   String get otaReadyToUpgrade =>
       _pick('可开始升级', 'Ready to upgrade', 'アップグレード可能');
@@ -1930,8 +1912,7 @@ class AppL10n {
       // 中/日不动——那两种语言本来就放得下。
       _pick('拍照投屏', 'Camera', 'カメラ投影');
   String get homeEntryAlbumTitle => _pick('相册投屏', 'Album Cast', 'アルバム投影');
-  String get homeEntryUploadsTitle =>
-      _pick('我的上传', 'My Uploads', 'マイアップロード');
+  String get homeEntryUploadsTitle => _pick('我的上传', 'My Uploads', 'マイアップロード');
   String get homeEntryUploadsSubtitle =>
       _pick('管理我的照片', 'Manage my photos', '写真を管理');
   String get homeEntryAiTitle => _pick('AI创作', 'AI Create', 'AI作成');
@@ -1941,12 +1922,11 @@ class AppL10n {
       _pick('海量精选美图', 'Curated wallpapers', '厳選画像が多数');
   String get homeEntryDevicesSubtitle =>
       _pick('管理我的设备', 'Manage my devices', 'デバイスを管理');
-  String get homeBindSearchingTitle =>
-      _pick(
-        '正在搜索附近电子纸设备',
-        'Searching for nearby e-paper devices',
-        '近くの電子ペーパーを検索中',
-      );
+  String get homeBindSearchingTitle => _pick(
+    '正在搜索附近电子纸设备',
+    'Searching for nearby e-paper devices',
+    '近くの電子ペーパーを検索中',
+  );
   String get homeBindSearchingSubtitle => _pick(
     '请尽量将手机靠近需要添加的电子纸设备...',
     'Keep your phone close to the e-paper device you want to add...',
@@ -1954,11 +1934,7 @@ class AppL10n {
   );
   String get homeBindCancelScan => _pick('取消扫描', 'Cancel Scan', 'スキャンを中止');
   String get homeBindNotFoundTitle =>
-      _pick(
-        '未发现电子纸设备',
-        'No E-paper Device Found',
-        '電子ペーパーが見つかりません',
-      );
+      _pick('未发现电子纸设备', 'No E-paper Device Found', '電子ペーパーが見つかりません');
   String get homeBindNotFoundSubtitle => _pick(
     '电子纸设备连接中断，请检查电子纸设备状态后重试',
     'The connection was interrupted. Check the e-paper device and try again.',
@@ -2042,7 +2018,8 @@ class AppL10n {
   );
 
   /// 批量再次投屏时的准备提示（连接完成后下载原图阶段）。
-  String get galRecastPreparing => _pick('准备照片中', 'Preparing photos…', '写真を準備中…');
+  String get galRecastPreparing =>
+      _pick('准备照片中', 'Preparing photos…', '写真を準備中…');
 
   /// 记录与设备下拉都定位不到目标设备（后端两处都没回 userProductId 时的兜底）。
   /// 再次投屏与删除共用：两条链路都要连「这些照片所属的那台设备」。
@@ -2094,8 +2071,11 @@ class AppL10n {
       _pick('赠送 $count', '+$count bonus', 'ボーナス $count');
 
   String get starBuyEntryTitle => _pick('购买星币', 'Buy Stars', 'スターコインを購入');
-  String get starBuyEntryDesc =>
-      _pick('选择套餐，PayPal 支付', 'Choose a plan, pay with PayPal', 'プランを選んで PayPal で支払う');
+  String get starBuyEntryDesc => _pick(
+    '选择套餐，PayPal 支付',
+    'Choose a plan, pay with PayPal',
+    'プランを選んで PayPal で支払う',
+  );
   String get starBuyTitle => _pick('确认购买', 'Confirm Purchase', '購入の確認');
   String get starBuyChoosePackage => _pick('选择套餐', 'Choose a plan', 'プランを選択');
   // App Store consumable purchases; Traditional Chinese uses the common converter.
@@ -2110,6 +2090,13 @@ class AppL10n {
       _pick('价格获取失败', 'Price unavailable', '価格を取得できません');
   String get starAppleDiagnosticsTitle =>
       _pick('苹果支付诊断详情', 'Apple payment diagnostics', 'Apple決済診断の詳細');
+  String get starAppleShowReceiptData =>
+      _pick('显示 receiptData', 'Show receiptData', 'receiptData を表示');
+  String get starAppleDiagnosticsCopyFailed => _pick(
+    '复制失败，请重试或隐藏 receiptData 后再复制。',
+    'Copy failed. Try again or hide receiptData before copying.',
+    'コピーできません。再試行するか receiptData を非表示にしてください。',
+  );
   String get starAppleDiagnosticsWaiting =>
       _pick('正在查询，请稍候…', 'Querying product, please wait…', '商品を照会中です…');
   String get starAppleUnavailable => _pick(
@@ -2142,7 +2129,8 @@ class AppL10n {
   String get starAppleRetry =>
       _pick('重新确认支付', 'Check purchase again', '購入を再確認');
   String get starAppleContinue => _pick('继续支付', 'Continue payment', '支払いを続ける');
-  String get starAppleNewOrder => _pick('重新下单支付', 'Create a new purchase', '新しい注文で購入');
+  String get starAppleNewOrder =>
+      _pick('重新下单支付', 'Create a new purchase', '新しい注文で購入');
   String get starAppleNewOrderNote => _pick(
     '重新确认只处理原交易，不会再次付款。需要新订单时，请使用下方入口。',
     'Retry confirmation only checks the existing purchase. Use the option below for a new order.',
@@ -2195,8 +2183,11 @@ class AppL10n {
       _pick('赠 $count', '+$count bonus', '$count ボーナス');
 
   /// 套餐卡底部的单价（约）。⚠️ 按含赠送总数算，见 [StarPackage.unitPrice]。
-  String starBuyUnitPrice(String price, String currency) =>
-      _pick('≈ $currency$price/星币', '≈ $currency$price/star', '≈ $currency$price/コイン');
+  String starBuyUnitPrice(String price, String currency) => _pick(
+    '≈ $currency$price/星币',
+    '≈ $currency$price/star',
+    '≈ $currency$price/コイン',
+  );
 
   // ── 购买/消费记录里后端下发的两个「已转文字」字段 ───────────────────────
   //
@@ -2315,8 +2306,11 @@ class AppL10n {
     '支払い結果を確認中です。購入履歴で後ほどご確認ください。',
   );
 
-  String get starBuyOrderFailed =>
-      _pick('下单失败，请稍后重试', 'Could not create the order. Please try again.', '注文の作成に失敗しました。後でもう一度お試しください。');
+  String get starBuyOrderFailed => _pick(
+    '下单失败，请稍后重试',
+    'Could not create the order. Please try again.',
+    '注文の作成に失敗しました。後でもう一度お試しください。',
+  );
   String get starBuyCreatePayFailed => _pick(
     '未能拉起 PayPal 支付，请稍后重试',
     'Could not start the PayPal payment. Please try again.',
@@ -2336,8 +2330,11 @@ class AppL10n {
 
   /// 分类条首项。后端只给真实分类，「全部」是端上补的（列表接口不传 categoryId 即全部）。
   String get galleryAllCategory => _pick('全部', 'All', 'すべて');
-  String get galleryEmptyCategory =>
-      _pick('该分类下还没有图片', 'No images in this category yet.', 'このカテゴリーにはまだ画像がありません');
+  String get galleryEmptyCategory => _pick(
+    '该分类下还没有图片',
+    'No images in this category yet.',
+    'このカテゴリーにはまだ画像がありません',
+  );
   String get galleryFavoritesEmpty => _pick(
     '还没有收藏任何官方图片',
     'You have not saved any official images yet.',
@@ -2356,8 +2353,11 @@ class AppL10n {
   String get galleryCancelFavorite => _pick('取消收藏', 'Saved', '保存済み');
   String get galleryFavorited => _pick('已收藏', 'Saved', '保存しました');
   String get galleryUnfavorited => _pick('已取消收藏', 'Removed', '保存を解除しました');
-  String get galleryFavoriteFailed =>
-      _pick('操作失败，请重试', 'Action failed. Please try again.', '操作に失敗しました。再試行してください');
+  String get galleryFavoriteFailed => _pick(
+    '操作失败，请重试',
+    'Action failed. Please try again.',
+    '操作に失敗しました。再試行してください',
+  );
   String get galleryLoadFailed =>
       _pick('图片加载失败', 'Failed to load the image.', '画像の読み込みに失敗しました');
   String get galleryPhotoGone => _pick(
@@ -2450,6 +2450,7 @@ class AppL10n {
   // 目前无消费方。留着这一条只为万一要改回来时不用重译；不要拿它当新标题复用。
   String get mineCommonFeatures => _pick('常用功能', 'Features', 'よく使う機能');
   String get mineServiceHelp => _pick('服务与帮助', 'Service & Help', 'サービスとヘルプ');
+
   /// 2026-08-04：「设备照片」与「投屏管理」两张卡合并为一张（投屏成功的照片）。
   /// 合并后宫格由三卡变两卡、卡片等分宽度，日语不再需要为 102 宽缩写。
   ///

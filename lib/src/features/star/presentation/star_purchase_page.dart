@@ -554,7 +554,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
 }
 
 /// Purchase diagnostics and sandbox maintenance, including release/TestFlight.
-class _AppleProductDiagnostics extends StatelessWidget {
+class _AppleProductDiagnostics extends StatefulWidget {
   const _AppleProductDiagnostics({
     super.key,
     required this.lines,
@@ -569,8 +569,41 @@ class _AppleProductDiagnostics extends StatelessWidget {
   final VoidCallback? onSandboxReset;
 
   @override
+  State<_AppleProductDiagnostics> createState() =>
+      _AppleProductDiagnosticsState();
+}
+
+class _AppleProductDiagnosticsState extends State<_AppleProductDiagnostics> {
+  bool _showReceiptData = false;
+  bool _copying = false;
+
+  Future<void> _copy(String text) async {
+    setState(() => _copying = true);
+    try {
+      await Clipboard.setData(
+        ClipboardData(text: text),
+      ).timeout(const Duration(seconds: 5));
+      if (mounted) AppToast.show(context, widget.l10n.crashReportCopied);
+    } catch (_) {
+      if (mounted) {
+        AppToast.show(context, widget.l10n.starAppleDiagnosticsCopyFailed);
+      }
+    } finally {
+      if (mounted) setState(() => _copying = false);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final text = lines.join('\n\n');
+    final l10n = widget.l10n;
+    final text = widget.lines
+        .map(
+          (line) => AppleIapDiagnostics.displayLine(
+            line,
+            includeReceiptData: _showReceiptData,
+          ),
+        )
+        .join('\n\n');
     return Container(
       key: const Key('apple-product-diagnostics'),
       padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
@@ -586,34 +619,56 @@ class _AppleProductDiagnostics extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  l10n.starAppleDiagnosticsTitle,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Wrap(
+                  spacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      l10n.starAppleDiagnosticsTitle,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            l10n.starAppleShowReceiptData,
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                        ),
+                        Switch.adaptive(
+                          key: const Key('toggle-apple-receipt-data'),
+                          value: _showReceiptData,
+                          onChanged: (value) =>
+                              setState(() => _showReceiptData = value),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               TextButton(
                 key: const Key('copy-apple-product-diagnostics'),
-                onPressed: text.isEmpty
-                    ? null
-                    : () async {
-                        await Clipboard.setData(ClipboardData(text: text));
-                        if (context.mounted) {
-                          AppToast.show(context, l10n.crashReportCopied);
-                        }
-                      },
-                child: Text(l10n.crashReportCopy),
+                onPressed: text.isEmpty || _copying ? null : () => _copy(text),
+                child: _copying
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(l10n.crashReportCopy),
               ),
             ],
           ),
-          if (showSandboxReset)
+          if (widget.showSandboxReset)
             Align(
               alignment: Alignment.centerLeft,
               child: TextButton.icon(
                 key: const Key('apple-sandbox-reset'),
-                onPressed: onSandboxReset,
+                onPressed: widget.onSandboxReset,
                 icon: const Icon(Icons.restart_alt, size: 18),
                 label: Text(l10n.starAppleSandboxReset),
               ),
