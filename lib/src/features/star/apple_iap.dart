@@ -439,8 +439,11 @@ class AppleIapController extends ChangeNotifier {
 
   void _diagnose(String stage, Map<String, Object?> fields) {
     if (_userId == null) return;
-    _diagnostics.add(AppleIapDiagnostics.format(stage, fields));
-    if (_diagnostics.length > 160) _diagnostics.removeAt(0);
+    // 正式包（release）不展示诊断面板，也就不在内存里留这些行（验单行含收据原文）。
+    if (!kReleaseMode) {
+      _diagnostics.add(AppleIapDiagnostics.format(stage, fields));
+      if (_diagnostics.length > 160) _diagnostics.removeAt(0);
+    }
     AppleIapDiagnostics.log(stage, fields);
     notifyListeners();
   }

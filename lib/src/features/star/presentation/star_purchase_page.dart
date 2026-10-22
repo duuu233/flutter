@@ -514,16 +514,20 @@ class _StarPurchasePageState extends State<StarPurchasePage>
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _AppleProductDiagnostics(
-                    key: ValueKey(_appleDiagnosticAttempt),
-                    lines: [..._appleDiagnostics, ..._apple.diagnostics],
-                    l10n: l10n,
-                    showSandboxReset: _apple.canResetSandbox,
-                    onSandboxReset: _busy || _apple.busy
-                        ? null
-                        : _resetAppleSandbox,
-                  ),
-                  const SizedBox(height: 12),
+                  // 苹果支付诊断详情（含沙盒清理、receiptData 开关）只在调试 / profile 包显示：
+                  // 支付流程已联调通过，正式包（release，含 TestFlight）不再展示（2026-10-22）。
+                  if (!kReleaseMode) ...[
+                    _AppleProductDiagnostics(
+                      key: ValueKey(_appleDiagnosticAttempt),
+                      lines: [..._appleDiagnostics, ..._apple.diagnostics],
+                      l10n: l10n,
+                      showSandboxReset: _apple.canResetSandbox,
+                      onSandboxReset: _busy || _apple.busy
+                          ? null
+                          : _resetAppleSandbox,
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   FigmaPrimaryButton(
                     label: _apple.hasPending
                         ? l10n.starAppleRetry

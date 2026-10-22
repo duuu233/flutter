@@ -111,8 +111,9 @@ OpenHarmony/HAP is not integrated.
   `docs/integration/IOS_IN_APP_PURCHASE.md`. Product preflight diagnostics print the selected SKU,
   runtime bundle ID/payment permission, StoreKit returned/invalid product IDs and sanitized native
   error domain/code/message. The confirmation page shows/copies the current query and full redacted
-  error at its bottom in all build modes, including release/TestFlight; only console printing is
-  debug-only. Since 2026-10-16, the same panel also shows current-user purchase/receipt/verification/
+  error at its bottom in debug/profile builds; since 2026-10-22 release builds (store and
+  TestFlight) hide the whole diagnostics panel (including sandbox reset and the receiptData switch)
+  and the controller keeps no diagnostic lines. Console printing is debug-only. Since 2026-10-16, the same panel also shows current-user purchase/receipt/verification/
   delivery diagnostics (160-entry in-memory bound, cleared on account changes, no UUID/login
   payloads). Verification stages retain raw receipt/response data for integration; since 2026-10-22
   a default-off receiptData switch controls page display and copying without altering submitted bytes.
