@@ -1107,8 +1107,11 @@ class PhotoFrameState extends ChangeNotifier {
     // 这里**不能**像电量/容量那样加 `> 0` 守卫：0 张是合法状态（设备被清空），
     // 加了守卫清空后就会一直显示旧张数。
     device.liveImageCount = info.imgCount;
-    if (info.capacity > 0) {
-      device.liveCapacity = info.capacity;
+    // 容量先按机型再按屏型（v1.6：EC-370 屏型同报 0x01，只能按机型给 11）。
+    final capacity =
+        FrameProtocol.capacityOf(device.broadcastId, info.screenType);
+    if (capacity > 0) {
+      device.liveCapacity = capacity;
     }
     device.currentImageIndex = info.curImgIndex;
     device.playbackMode = _playbackModeFromWire(info.playMode);

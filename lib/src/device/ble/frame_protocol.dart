@@ -207,6 +207,32 @@ class FrameProtocol {
     0x03: FrameScreen(type: 0x03, label: '7.3寸', model: 'EF6-730', width: 0, height: 0, capacity: 0),
   };
 
+  /// 各机型最多可存图片张数（规格书 v1.6 §5.2，2026-10-23 同步小程序 `capacityOf`）。
+  /// EC-370（挂牌）与 EF6-370 同为 3.7 寸、屏型都报 0x01，屏型分不出两者，只能按机型
+  /// （产品 broadcastId，即蓝牙广播名）区分；匹配口径同设备图：大小写不敏感的包含匹配。
+  static const Map<String, int> modelCapacity = {
+    'EC-370': 11,
+    'EB-169': 25,
+    'EF6-370': 95,
+    'EF6-589': 51,
+  };
+
+  /// 不在 [screenTypes] 里的新屏型容量（v1.6：0x04 1.69寸 只有 EB-169）。只给张数，不给尺寸。
+  static const Map<int, int> newScreenCapacity = {0x04: 25};
+
+  /// 设备最多可存张数：先按机型，认不出机型再按屏型；都认不出返回 0（未知，不猜）。
+  static int capacityOf(String? model, [int screenType = 0]) {
+    final upper = (model ?? '').toUpperCase();
+    if (upper.isNotEmpty) {
+      for (final entry in modelCapacity.entries) {
+        if (upper.contains(entry.key)) return entry.value;
+      }
+    }
+    final screen = screenTypes[screenType];
+    if (screen != null && screen.capacity > 0) return screen.capacity;
+    return newScreenCapacity[screenType] ?? 0;
+  }
+
   // 播放模式 ⇄ 字节（6.7.3）
   static String playModeToString(int value) {
     switch (value) {
@@ -604,7 +630,7 @@ class FrameProtocol {
       screenType: screenType,
       screen: screen?.label ?? '',
       model: screen?.model ?? '',
-      capacity: screen?.capacity ?? 0,
+      capacity: capacityOf('', screenType),
       width: screen?.width ?? 0,
       height: screen?.height ?? 0,
       curImgIndex: b.length > 27 ? b[27] & 0xFF : 0,

@@ -179,6 +179,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             deviceWidth: target?.screenWidth ?? 0,
             deviceHeight: target?.screenHeight ?? 0,
             deviceShapeType: target?.shapeType,
+            deviceBroadcastId: target?.broadcastId ?? '',
             filePaths: widget.imagePaths,
             recordFilePaths: widget.originalPaths.isEmpty
                 ? null

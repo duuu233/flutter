@@ -682,8 +682,9 @@ class DeviceDetailsBody extends StatelessWidget {
                 // 避免未连接时显示后端不下发而回落的 0/容量，误导用户（对齐小程序断开后内存变 --）。
                 // 2026-08-02：行文案回到「最大照片数量」，值定为分数式 `已用/上限`（如 8/51，
                 // 对齐小程序 detail.js memoryText），两端同一口径。
-                value: connected
-                    ? '${device.imageCount}/${device.capacity}'
+                // 2026-10-23：容量没读到（机型、屏型都认不出）也给 --，不再用常量 32 冒充上限。
+                value: connected && device.liveCapacity != null
+                    ? '${device.imageCount}/${device.liveCapacity}'
                     : '--',
               ),
               const _ThinDivider(),

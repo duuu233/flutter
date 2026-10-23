@@ -559,7 +559,10 @@ Logout / successful account deletion / session expiry
    models skip the model veto. Since 2026-10-23 `sameScreenCode` only vetoes between the sized
    legacy codes 0x01/0x02 (new/unknown codes and 0x03 pass), and post-connect verification checks
    only the complete 6-byte ID, like the mini program (EC-370 could not connect before). Projection and preview take width/height from the device list
-   (`features/cast/projection_device.dart`), unknown capacity uses the IMG_MASK slot limit, and
+   (`features/cast/projection_device.dart`). Capacity comes from `FrameProtocol.capacityOf`: model
+   (broadcastId, spec v1.6 §5.2: EF6-370 95, EF6-589 51, EB-169 25, EC-370 11; EC-370 shares screen
+   code 0x01 with EF6-370) first, then screen code (0x04→25); device details show `--` when unknown
+   instead of the constant 32; still-unknown capacity uses the IMG_MASK slot limit, and
    size/identity configuration errors are no longer reported as "not connected". Device images
    come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default). Records whose
    `broadcastId` is missing or not a product broadcast name get it from the product list by

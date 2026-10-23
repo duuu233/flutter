@@ -130,6 +130,8 @@ class ServerImageProjectionService {
     int deviceWidth = 0,
     int deviceHeight = 0,
     int? deviceShapeType,
+    // 所属产品广播名（机型），决定图片容量/选槽上限（v1.6 EC-370 只有 11 槽）。
+    String deviceBroadcastId = '',
   }) async {
     final client = _ble.client;
     // [filePaths]=预览处理后的设备分辨率图（喂抖动接口出帧）；[recordFilePaths]=对应的原图
@@ -263,6 +265,7 @@ class ServerImageProjectionService {
         deviceWidth: deviceWidth,
         deviceHeight: deviceHeight,
         shapeType: deviceShapeType,
+        broadcastId: deviceBroadcastId,
       );
       final width = transfer.width;
       final height = transfer.height;

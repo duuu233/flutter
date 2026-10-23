@@ -37,6 +37,7 @@ ProjectionTransferInfo resolveProjectionTransfer({
   int deviceWidth = 0,
   int deviceHeight = 0,
   int? shapeType,
+  String broadcastId = '',
 }) {
   // 尺寸来自哪条后台记录，必须由刚读回的完整硬件 ID 确认；临时 BLE 句柄和广播名不能证明身份。
   final expected = canonicalDeviceSerial(expectedSerial);
@@ -91,9 +92,13 @@ ProjectionTransferInfo resolveProjectionTransfer({
     return 0;
   }
 
-  final known = sameSize(info.width, info.height) && info.capacity > 0
-      ? info.capacity
-      : legacyCapacity();
+  // 机型认得出就按机型（v1.6：EC-370 与 EF6-370 同尺寸同屏型，容量 11 对 95，只能靠机型分）。
+  final byModel = FrameProtocol.capacityOf(broadcastId);
+  final known = byModel > 0
+      ? byModel
+      : sameSize(info.width, info.height) && info.capacity > 0
+          ? info.capacity
+          : legacyCapacity();
   final capacity = known < maskSlotLimit ? known : maskSlotLimit;
   return ProjectionTransferInfo(
     width: width,
