@@ -119,18 +119,15 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     }
   }
 
-  Future<void> _buyApple({bool newOrder = false}) async {
-    if (_busy ||
-        _apple.busy ||
-        (!newOrder && !_apple.canBuy) ||
-        _appleProduct == null) {
+  Future<void> _buyApple() async {
+    if (_busy || _apple.busy || !_apple.canBuy || _appleProduct == null) {
       return;
     }
     _appleStarted = true;
     setState(() => _busy = true);
     AppLoadingDialog.show(context, AppL10n.of(context).starBuyStagePay);
     try {
-      await _apple.buy(widget.package, newOrder: newOrder);
+      await _apple.buy(widget.package);
     } finally {
       if (mounted) {
         AppLoadingDialog.hide(context);
@@ -142,19 +139,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   Future<void> _retryApple() async {
     _appleStarted = true;
     await _apple.retry(manual: true);
-  }
-
-  Future<void> _newAppleOrder() async {
-    if (_busy || _apple.busy || _appleProduct == null) return;
-    final l10n = AppL10n.of(context);
-    final confirmed = await showAppConfirmDialog(
-      context,
-      title: l10n.starAppleNewOrder,
-      message: l10n.starAppleNewOrderConfirm,
-      confirmLabel: l10n.starAppleNewOrder,
-    );
-    if (confirmed != true || !mounted) return;
-    await _buyApple(newOrder: true);
   }
 
   Future<void> _resetAppleSandbox() async {
@@ -492,19 +476,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
             _ApprovingCard(l10n: l10n),
           ],
           const SizedBox(height: 28),
-          if (_isApple && _apple.hasPending) ...[
-            Text(
-              l10n.starAppleNewOrderNote,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF6F7782)),
-            ),
-            TextButton(
-              key: const Key('apple-new-order'),
-              onPressed: _busy || _apple.busy || _appleProduct == null
-                  ? null
-                  : _newAppleOrder,
-              child: Text(l10n.starAppleNewOrder),
-            ),
-          ],
         ],
       ),
       bottom: _isApple

@@ -345,13 +345,16 @@ void main() {
   });
 
   testWidgets(
-    'resume keeps independent retry and new-order confirmation; retry never pays',
+    'resume offers retry only; no new-order note or button; retry never pays',
     (tester) async {
       final fixture = await tester.runAsync(resumablePurchase);
       await pumpPurchase(tester, fixture!);
       expect(find.text('继续支付'), findsNothing);
       expect(find.text('重新确认支付'), findsOneWidget);
-      expect(find.byKey(const Key('apple-new-order')), findsOneWidget);
+      // 确认购买页不再提供「重新下单支付」及其说明（2026-10-23 产品要求去掉）。
+      expect(find.byKey(const Key('apple-new-order')), findsNothing);
+      expect(find.text('重新下单支付'), findsNothing);
+      expect(find.textContaining('只处理原交易'), findsNothing);
       await tester.tap(find.text('重新确认支付'));
       await tester.pumpAndSettle();
       expect(fixture.backend.orderCalls, 1);
@@ -362,14 +365,6 @@ void main() {
           )
           .data!;
       expect(details, contains('"manual":true'));
-      await tester.ensureVisible(find.byKey(const Key('apple-new-order')));
-      await tester.tap(find.byKey(const Key('apple-new-order')));
-      await tester.pumpAndSettle();
-      expect(fixture.backend.orderCalls, 1);
-      await tester.tap(find.text('重新下单支付').last);
-      await tester.pumpAndSettle();
-      expect(fixture.backend.orderCalls, 2);
-      expect(fixture.bridge.buyCalls, 2);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
       debugDefaultTargetPlatformOverride = null;
@@ -377,44 +372,7 @@ void main() {
   );
 
   testWidgets(
-    'cancel new-order confirmation leaves previous record unchanged',
-    (tester) async {
-      final fixture = await tester.runAsync(resumablePurchase);
-      await pumpPurchase(tester, fixture!);
-      await tester.ensureVisible(find.byKey(const Key('apple-new-order')));
-      await tester.tap(find.byKey(const Key('apple-new-order')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      expect(fixture.backend.orderCalls, 1);
-      expect(fixture.store.records.single['supersededBy'], isNull);
-      await tester.pumpWidget(const SizedBox());
-      debugDefaultTargetPlatformOverride = null;
-    },
-  );
-
-  testWidgets(
-    'blocked new order explains existing transaction and preserves native queue',
-    (tester) async {
-      final fixture = fixtures.Fixture();
-      await tester.runAsync(fixture.start);
-      await pumpPurchase(tester, fixture);
-      await tester.ensureVisible(find.byKey(const Key('apple-new-order')));
-      await tester.tap(find.byKey(const Key('apple-new-order')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('重新下单支付').last);
-      await tester.pumpAndSettle();
-      expect(find.textContaining('检测到待确认'), findsOneWidget);
-      expect(fixture.backend.orderCalls, 1);
-      expect(fixture.bridge.finishCalls, 0);
-      expect(tester.takeException(), isNull);
-      await tester.pumpWidget(const SizedBox());
-      debugDefaultTargetPlatformOverride = null;
-    },
-  );
-
-  testWidgets(
-    'short screen and large text can use both independent actions without overflow',
+    'short screen and large text show the retry action without overflow',
     (tester) async {
       final fixture = await tester.runAsync(resumablePurchase);
       await pumpPurchase(
@@ -423,8 +381,7 @@ void main() {
         size: const Size(375, 568),
         scale: 1.8,
       );
-      await tester.ensureVisible(find.byKey(const Key('apple-new-order')));
-      await tester.tap(find.byKey(const Key('apple-new-order')));
+      await tester.ensureVisible(find.text('重新确认支付'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());
@@ -436,9 +393,6 @@ void main() {
     for (final language in AppLanguage.values) {
       final l10n = AppL10n(language);
       for (final text in [
-        l10n.starAppleNewOrder,
-        l10n.starAppleNewOrderNote,
-        l10n.starAppleNewOrderConfirm,
         l10n.starAppleNewOrderBlocked,
         l10n.starAppleDiagnosticsTitle,
       ]) {

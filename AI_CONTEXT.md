@@ -124,8 +124,9 @@ OpenHarmony/HAP is not integrated.
   delivery order-query line also carries the raw getPayQuery payState/payNo/exceptionMsg, or the
   query error type/code/message, with unchanged paid rule (payState=1). Passive local receipt
   reads are bounded; only explicit manual retry may refresh a missing receipt once. A queued manual
-  retry retains its intent and is cleared on account changes. Pending purchases always have a verification-only retry action, separate from a
-  confirmation-gated new-order action. A new order is blocked by any native queued/requested entry
+  retry retains its intent and is cleared on account changes. Pending purchases always have a verification-only retry action. Since 2026-10-23 the purchase
+  page no longer shows the new-order note or button; `buy(newOrder: true)` and its guard remain in
+  the controller with no UI entry. A new order is blocked by any native queued/requested entry
   or local transaction/verification evidence; unmatched unverified records are retained with
   supersededBy and can recover late transactions without completing the new order's UI. Failed
   price queries explicitly display price unavailable. The new behavior and Swift changes still
