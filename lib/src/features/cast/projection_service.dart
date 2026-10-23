@@ -1,9 +1,9 @@
-// 投屏服务（seekink 抖动出帧 + BLE 图传）—— 由微信小程序版 `subpackages/projection/result/result.js` 移植。
+// 投屏服务（抖动出帧 + BLE 图传）—— 由微信小程序版 `subpackages/projection/result/result.js` 移植。
 //
 // 链路（2026-07-23 对齐小程序 07-22 切换，见 photo-album docs `server-image-processing-ble-transfer.md`）：
 //   连接设备 → 读设备信息(0x01) → 逐张（两路网络并行，见 _acquireFrame）：
-//     ① 设备帧：预览处理后的设备分辨率图 → 统一压缩 → seekink 抖动接口出六色 4bpp 帧(DitheringApi，
-//        不再下载后端转码的 .bin)
+//     ① 设备帧：预览处理后的设备分辨率图 → 统一压缩 → 抖动接口出六色 4bpp 帧(DitheringApi，
+//        不再下载后端转码的 .bin；2026-10-23 起抖动接口由第三方迁到我方后端 /Client/Basic/imageDitheringBinDownload)
 //     ② 投屏记录：原图（进预览页前未操作过的图）→ 同一套统一压缩 → setUserProductUpload 按
 //        「未成功(0)」建记录拿 taskId（⚠️ 响应 DTO BaseUploadApiOut 没有 upirId，后端靠 taskId 定位记录）
 //   → 校验帧长度==宽×高÷2 → 选空闲槽位 → BLE 图传(0x20/0x21/0x22)
@@ -11,7 +11,7 @@
 //
 // 再次/重新投屏（2026-07-23 起与正常投屏同链路）：投屏管理页只带记录图片地址进预览页，与手选图片
 // 流程无差别；旧「imgBle .bin 直传 + addUserProductImgRecord 补记」(recastRecord) 已删除——
-// 后端不再生成/返回 .bin。App 端不做六色量化：出帧在 seekink 接口侧，App 拿帧字节直传设备。
+// 后端不再生成/返回 .bin。App 端不做六色量化：出帧在抖动接口侧，App 拿帧字节直传设备。
 
 import 'dart:async';
 import 'dart:io';
@@ -112,7 +112,7 @@ class ServerImageProjectionService {
   final BleController _ble;
   final AppL10n? _l10n;
 
-  /// 逐张把 [filePaths] 里的图（预览处理后的设备分辨率图）经 seekink 抖动接口出帧并图传到设备；
+  /// 逐张把 [filePaths] 里的图（预览处理后的设备分辨率图）经抖动接口出帧并图传到设备；
   /// [recordFilePaths] 为逐张对应的原图（建投屏记录用，缺省回退 [filePaths]）。
   ///
   /// [userProductId] 为后端设备 id（写投屏记录用）。任一张失败即整单失败并返回失败原因；
@@ -363,7 +363,7 @@ class ServerImageProjectionService {
         // 详见 photo-album/docs/changes/2026-09-03-AI图投屏帧字节数对不上定位.md。
         if (frameData.length != expected4bpp) {
           debugPrint(
-            '[投屏] 出帧尺寸不符：第三方抖动接口返回 ${frameData.length} 字节(头16=$head)，'
+            '[投屏] 出帧尺寸不符：抖动接口返回 ${frameData.length} 字节(头16=$head)，'
             '设备 $width×$height 需要 $expected4bpp 字节'
             '（帧字节数跟着上传图像素走，先查上传给抖动接口的图是不是设备物理分辨率）',
           );
@@ -599,7 +599,7 @@ class ServerImageProjectionService {
 
   /// 取本张要发给设备的六色 4bpp 帧 + 后端记录 id（2026-07-23 对齐小程序 07-22 链路切换）。
   /// 两路网络并行，任一失败本张失败——
-  ///   · 设备帧：预览处理后的设备分辨率图([filePath]) → 统一压缩 → seekink 抖动接口出帧；
+  ///   · 设备帧：预览处理后的设备分辨率图([filePath]) → 统一压缩 → 抖动接口出帧；
   ///   · 投屏记录：原图([originalPath]) → 同一套统一压缩 → setUserProductUpload 建记录拿 taskId。
   /// 帧失败时记录可能已按「未成功(0)」建好，与旧链路「转码成功后图传失败」同态，无需回滚。
   /// 纯网络 + 纯计算、无 UI 副作用：可被主循环「预取下一张」提前并行调用（见 castImages 的预取流水线）。
@@ -645,7 +645,7 @@ class ServerImageProjectionService {
   }
 
   /// 设备帧：预览处理后的设备分辨率图 → 统一压缩（已是设备尺寸则原样通过，见 _prepareUploadSource
-  /// 的 400KB 触发门）→ seekink 抖动接口出六色 4bpp 帧（[DitheringApi.requestFrameBin]）。
+  /// 的 400KB 触发门）→ 抖动接口出六色 4bpp 帧（[DitheringApi.requestFrameBin]）。
   Future<Uint8List> _fetchDitheringFrame({
     required String filePath,
     required int width,
@@ -657,7 +657,7 @@ class ServerImageProjectionService {
       targetHeight: height,
     );
     // 📌 排查日志（2026-09-03，对齐小程序 result.js fetchDitheringFrame）：帧字节数 =
-    //    **上传图像素** ÷ 2，第三方不按 type 补齐/缩放。此前链路里没有一处记过「这一张到底
+    //    **上传图像素** ÷ 2，抖动接口不按 type 补齐/缩放。此前链路里没有一处记过「这一张到底
     //    上传了什么」，出帧尺寸不符时只能靠帧长度倒算。像素尺寸留给预览页那条 [预览][出图]
     //    （这里再解一次图代价太大），本条只记文件与期望值。
     var uploadBytes = 0;

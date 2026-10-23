@@ -15,30 +15,6 @@ import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../../shared/l10n/app_l10n.dart';
 
-/// 屏幕物理分辨率文案（展示在「设备ID」下方），如 `680*960`。
-///
-/// 取值优先级：已连接时用 0x01 读到的真机宽高（`FrameProtocol.screenTypes` 权威表按屏型填出，
-/// 见 `FrameDeviceInfo`）→ 后端记录的原始宽高 → `--`。
-///
-/// 与设备ID/内存不同，分辨率是**产品静态属性**而非实时数据，所以**不跟随连接状态置 `--`**：
-/// 未连接时后端记录里的宽高一样准，硬要置 `--` 只会让常态未连接的设备永远看不到分辨率。
-///
-/// 为什么已连接时不用 `device.screenType` 反查表：它是由后端宽高归一化出来的枚举，后端没下发尺寸时
-/// 会回落 5.89 寸（见 [DeviceItem.screenWidth]），反查就会显示一个臆造的 `680*960`。
-String _resolutionText(DeviceItem device, bool connected) {
-  if (connected) {
-    final info = BleController.instance.info;
-    // 7.3寸占位型号权威表里是 0×0（固件未实现图传），落到后端宽高继续兜。
-    if (info != null && info.width > 0 && info.height > 0) {
-      return '${info.width}*${info.height}';
-    }
-  }
-  if (device.screenWidth > 0 && device.screenHeight > 0) {
-    return '${device.screenWidth}*${device.screenHeight}';
-  }
-  return '--';
-}
-
 /// 当前会话 BLE 实读的固件版本（`0x03 GET_SW_VER`）。
 ///
 /// 未连接一律空串：这一行讲的是**设备此刻在跑的版本**，而 [DeviceItem.firmwareVersion] 在 App 侧
@@ -662,18 +638,20 @@ class DeviceDetailsBody extends StatelessWidget {
                     : '--',
               ),
               const _ThinDivider(),
-              // 屏幕物理尺寸（如 680*960），紧跟设备ID：产品静态属性，
-              // 不随连接状态置 --（见 [_resolutionText]）。
+              // 屏幕尺寸，紧跟设备ID：2026-10-23 起直接展示后台产品配置的尺寸型号
+              // [DeviceItem.sizeModel]（如 3.6寸），不再按屏型或宽高推算；没配整行（连同分隔线）不展示。
               // 图标不复用「设备ID」那张标签图：这一行讲的是屏幕，用专门画的相框+尺寸标注
               //（对齐小程序 device-detail-screen-size.svg；Flutter 无 SVG 依赖，故用 CustomPaint）。
-              _DetailRow(
-                iconAsset: '',
-                iconWidget: const _ScreenSizeGlyph(),
-                fallbackIcon: Icons.aspect_ratio_rounded,
-                label: AppL10n.of(context).devScreenSize,
-                value: _resolutionText(device, connected),
-              ),
-              const _ThinDivider(),
+              if (device.sizeModel.isNotEmpty) ...[
+                _DetailRow(
+                  iconAsset: '',
+                  iconWidget: const _ScreenSizeGlyph(),
+                  fallbackIcon: Icons.aspect_ratio_rounded,
+                  label: AppL10n.of(context).devScreenSize,
+                  value: device.sizeModel,
+                ),
+                const _ThinDivider(),
+              ],
               _DetailRow(
                 iconAsset: 'assets/images/device-detail-icon03.png',
                 fallbackIcon: Icons.sd_storage_outlined,

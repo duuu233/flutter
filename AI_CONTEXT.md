@@ -55,7 +55,7 @@ OpenHarmony/HAP is not integrated.
 | Dependency | Declared version | Purpose |
 | --- | --- | --- |
 | `flutter_blue_plus` | `^2.3.8` | BLE scanning, GATT connection, MTU, writes, and notifications |
-| `http` | `^1.2.2` | BoltFox, seekink, and AI HTTP calls |
+| `http` | `^1.2.2` | BoltFox (including dithering frames) and AI HTTP calls |
 | `http_parser` | `^4.0.2` | Explicit multipart media types |
 | `crypto` | `^3.0.6` | Lowercase 32-character MD5 for password-compatible requests |
 | `image_picker` | `^1.1.2` | Camera and gallery source selection |
@@ -200,7 +200,7 @@ main.dart
 
 UI / PhotoFrameState
   |-> BoltFoxApi -> ApiClient -> BoltFox backend
-  |-> DitheringApi -----------> seekink six-color conversion service
+  |-> DitheringApi -> ApiClient -> BoltFox /Client/Basic/imageDitheringBinDownload (six-color frame)
   |-> BoltStarAiApi ----------> independent AI service
   `-> BleController
         -> FrameBleClient
@@ -217,12 +217,13 @@ Architectural boundaries:
   long-lived `FrameBleClient`.
 - `FrameBleClient` owns GATT discovery, notifications, command serialization, MTU/chunk sizing,
   image packet windows, cumulative ACK handling, retries, and transfer telemetry.
-- `ServerImageProjectionService` coordinates backend record upload, seekink conversion, BLE transfer,
+- `ServerImageProjectionService` coordinates backend record upload, dithering-frame conversion, BLE transfer,
   rollback, and result reporting.
 - Named routes live in `AppRoutes`; parameter-heavy flows may use `AppPageRoute` directly. Routing
   should dispatch pages, not absorb connection, deletion, permission, or OTA business rules.
-- BoltFox, seekink, and BoltStar AI have different authentication and response contracts and must
-  remain separate service abstractions.
+- BoltFox and BoltStar AI have different authentication and response contracts and must remain
+  separate service abstractions. Since 2026-10-23 dithering is a BoltFox endpoint returning a binary
+  body, reached through `ApiClient.postMultipartForBytes` (same common params and user token).
 
 ## Directory Structure
 
@@ -270,8 +271,8 @@ Inside `lib/src/features/`, the current domains are `account`, `ai`, `cast`, `de
 | Shared business state | Session/profile, devices, selected target, gallery, casting records, FAQ, user actions, API error mapping, session-expiry reset | `lib/src/state.dart` |
 | Routing and shell | Named route dispatch and two-tab Home/Mine shell. Since 2026-08-19 each tab draws a four-slot bottom bar (Home / AI / Official Gallery / Mine); only Home and Mine are tabs, the middle two push routes | `lib/src/routes/app_routes.dart`, `lib/src/features/shell/presentation/` |
 | Network core | Common BoltFox parameters, token/session state, response parsing, uploads, exceptions, API row parsing | `lib/src/network/api_client.dart`, `api_session.dart`, `api_rows.dart`, `api_exception.dart` |
-| BoltFox API | Account, product, user-device, gallery, casting-record, version, upload, and seekink-token endpoints | `lib/src/network/boltfox_api.dart` |
-| External services | seekink binary conversion/token refresh and independent BoltStar AI calls | `lib/src/network/dithering_api.dart`, `lib/src/network/boltstar_ai_api.dart` |
+| BoltFox API | Account, product, user-device, gallery, casting-record, version, and upload endpoints | `lib/src/network/boltfox_api.dart` |
+| Dithering and AI | Binary dithering frames from BoltFox `/Client/Basic/imageDitheringBinDownload` (third-party seekink and `getXTYUserToken` retired 2026-10-23) and independent BoltStar AI calls | `lib/src/network/dithering_api.dart`, `lib/src/network/boltstar_ai_api.dart` |
 | BLE session and protocol | Permissions, scan, one-session ownership, full-ID verification, GATT commands, image transfer, ACK/retry behavior, connection lease, performance tuning, OTA | `lib/src/device/ble_controller.dart`, `lib/src/device/ble/device_ble.dart`, `lib/src/device/ble/frame_protocol.dart`, `lib/src/device/frame_device_protocol.dart`, `lib/src/device/serial_match.dart`, `lib/src/device/device_identity_registry.dart`, `lib/src/device/ble_connection_lease.dart`, `lib/src/device/ble/ota_ble.dart` |
 | Device feature | Bind/search/found/not-found flows, list/detail, carousel, clear, unbind, OTA, BLE debug, and performance diagnostics | `lib/src/features/devices/` |
 | Cast feature | Source selection, persistent preview editor, strict device-resolution export, backend conversion, BLE projection, progress/results, recast | `lib/src/features/cast/` |
@@ -434,7 +435,7 @@ Camera/gallery selection
   -> reconnect that exact target if necessary
   -> ServerImageProjectionService
        -> wait for device transfer state to become idle when busy/pending
-       -> obtain backend image record/original upload and seekink six-color 4bpp frame
+       -> obtain backend image record/original upload and dithering-endpoint six-color 4bpp frame
        -> select a free physical image slot
        -> FrameBleClient sends windowed BLE packets and waits for cumulative ACKs
        -> on success, update backend record with the real imgIndex
@@ -570,7 +571,10 @@ Logout / successful account deletion / session expiry
    unresolved are looked up once per session via `getUserProductDetail` by `userProductId`
    (`device/product_broadcast_id.dart`, 2026-10-23: EC-370 image/capacity were wrong on home, my
    devices and details while the mini program detail page was right), and connected devices get
-   `liveCapacity` recomputed by model. For
+   `liveCapacity` recomputed by model. The device-details "screen size" row shows the product's
+   `sizeModel` (e.g. 3.6寸, from the device list/detail APIs, 2026-10-23) as configured in the admin
+   console; it is no longer derived from screen code or width/height, and the row (with its divider)
+   is hidden when empty. For
    `shapeType == 1` the cast preview clips the photo and edit frame to a circle and disables the
    portrait/landscape buttons; export and rotation are unchanged.
 3. **The selected target is immutable during an async operation.** Connection, projection, delete,
@@ -578,10 +582,11 @@ Logout / successful account deletion / session expiry
    changes.
 4. **Only one active physical connection is supported.** Connecting another device first tears down
    the old GATT/session state.
-5. **Three HTTP services keep separate contracts.** BoltFox, seekink, and BoltStar AI do not share a
-   response model merely because all use HTTP.
-6. **seekink token recovery is bounded.** Cache the token for the session; on a conversion 401,
-   request a forced token refresh once with `isNewLogin=1` and retry once, avoiding loops.
+5. **Two HTTP services keep separate contracts.** BoltFox and BoltStar AI do not share a
+   response model merely because both use HTTP.
+6. **Dithering uses the user's own session.** Since 2026-10-23 frames come from BoltFox
+   `/Client/Basic/imageDitheringBinDownload` with the normal common params/userToken; a 401/406 is a
+   normal session expiry (no separate third-party token, no forced re-login retry).
 7. **Real device slot is persisted.** Successful projection records the device's physical
    `imgIndex`; `0` is valid, `-1` means unknown, and device mask validation protects destructive
    commands.
@@ -651,7 +656,7 @@ Logout / successful account deletion / session expiry
    incomplete backend records.
 7. Preserve target-device snapshots through asynchronous business flows.
 8. Handle `imgIndex` with explicit numeric comparisons. `0` is a valid slot; unknown is `-1`.
-9. Keep BoltFox, seekink, and AI authentication/response handling separate. Do not display AI
+9. Keep BoltFox and AI authentication/response handling separate. Do not display AI
    service `detail` directly to users.
 10. Keep page battery reads on command `0x04` through `DeviceBatteryCache`. Preserve the 15-second
     TTL, in-flight deduplication, valid `0%`, old-value fallback, and `--` unknown state.
@@ -773,7 +778,7 @@ Logout / successful account deletion / session expiry
 | `docs/README.md` | Documentation index, lifecycle, source-of-truth rules, update triggers, and maintenance rhythm |
 | `docs/PROJECT_OVERVIEW.md` | Human-readable product scope, release targets, capabilities, and basic commands |
 | `docs/architecture/PROJECT_STRUCTURE.md` | Current code/module/state/route/network/BLE/cast/test architecture |
-| `docs/architecture/API_INTEGRATION.md` | BoltFox, seekink, and BoltStar AI contracts and service boundaries |
+| `docs/architecture/API_INTEGRATION.md` | BoltFox (including dithering) and BoltStar AI contracts and service boundaries |
 | `docs/architecture/BLE_CONNECTION_AND_IDENTITY.md` | Single-session, candidate selection, full-ID verification, battery, and lifecycle invariants |
 | `docs/architecture/IMAGE_SLOT_INDEX.md` | Physical `imgIndex` persistence, parsing, lookup, fallback, and known consistency gaps |
 | `docs/architecture/RESOURCE_LIFECYCLE.md` | Image cache, account isolation, temp files, memory pressure, BLE lease, and process reclamation |
@@ -870,7 +875,7 @@ Current history groups include:
 - 「待确认」 The exact Flutter release all development and build machines are expected to use.
 - 「待确认」 The numeric Android `minSdk`, `compileSdk`, and `targetSdk` after resolution by the
   agreed Flutter toolchain.
-- 「待确认」 The complete current Swagger field set returned by `getXTYUserToken`.
+- 「待确认」 Swagger describes the dithering `type` as screen rotation (1=clockwise 90°, 2=counter-clockwise 90°); the app keeps the former strategy values (480×720 → 1, else 0) per the owner's "same parameters" instruction. Real-device output still needs confirmation.
 - 「待确认」 Whether the backend enforces one active record per device plus physical `imgIndex`.
 - 「待确认」 Whether the latest deployed BoltStar AI API still matches current session creation,
   error codes, and image-message structures.

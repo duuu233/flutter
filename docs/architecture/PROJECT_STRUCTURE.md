@@ -127,7 +127,7 @@ lib/
 
 - `ApiClient` 负责 BoltFox 请求头、会话参数、响应解析、上传和统一异常。
 - `BoltFoxApi` 封装账号、产品、设备、图库、投屏记录和版本接口。
-- `DitheringApi` 负责 seekink 图片抖动/六色帧服务及 token 缓存、401 刷新。
+- `DitheringApi` 负责调用后端 `/Client/Basic/imageDitheringBinDownload` 取六色帧（二进制响应走 `ApiClient.postMultipartForBytes`，网络失败重试）。
 - `BoltStarAiApi` 是独立第三方 AI 服务，不复用 BoltFox 的响应壳和公共参数。
 - `AiServiceConsent` 以协议版本和 BoltFox 用户 ID 隔离本地同意状态；AI 发送前统一检查，
   退出、注销成功和登录态失效时由 `PhotoFrameState` 清理。

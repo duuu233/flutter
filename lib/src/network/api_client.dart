@@ -434,6 +434,57 @@ class ApiClient {
     return results.length == 1 ? results.first : results;
   }
 
+  /// form-data 上传、响应体是**二进制文件流**的接口（抖动出帧 .bin，见 `DitheringApi`）。
+  ///
+  /// 公共 header 与 `/Client/` query（terminal/language/device/userToken）跟 [upload] 同口径。
+  /// 回的是 JSON/文本（业务报错、登录过期 401/406）或非 2xx 时交给 [_parse] 同一套判定抛
+  /// [ApiException]，绝不把错误体当文件返回。不做自动重试：网络失败原样抛
+  /// TimeoutException / http.ClientException / IOException，由调用方决定是否重试。
+  Future<Uint8List> postMultipartForBytes(
+    String path, {
+    required Map<String, String> fields,
+    required http.MultipartFile file,
+    Duration timeout = ApiConfig.uploadTimeout,
+  }) async {
+    final uri = _uri(path, _clientQuery(path));
+    _logRequest(
+      'POST multipart',
+      uri,
+      data: {...fields, 'fileName': file.filename},
+    );
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll(_headers())
+      ..fields.addAll(fields)
+      ..files.add(file);
+    final streamed = await _http.send(request).timeout(timeout);
+    final response = await http.Response.fromStream(streamed).timeout(timeout);
+    final bytes = response.bodyBytes;
+    final contentType = response.headers['content-type'] ?? '';
+    final looksText =
+        RegExp('json|text', caseSensitive: false).hasMatch(contentType) ||
+        (bytes.isNotEmpty &&
+            bytes.length < 4096 &&
+            (bytes[0] == 0x7b || bytes[0] == 0x5b));
+    final ok = response.statusCode >= 200 && response.statusCode < 300;
+    if (looksText || !ok) {
+      // 错误体是 JSON/文本，照常打日志；正常的二进制帧不打（十几万字节的乱码刷屏）
+      _logResponse('POST multipart', uri, response);
+      _parse(response);
+      // 2xx 且 retCode=200 却没给文件：同样算失败
+      throw ApiException('EMPTY_FILE', _l10n.netServerError);
+    }
+    if (kDebugMode) {
+      debugPrint(
+        '[HTTP] <-- ${response.statusCode} POST multipart ${_redactUri(uri)} '
+        '(binary ${bytes.length} bytes)',
+      );
+    }
+    if (bytes.isEmpty) {
+      throw ApiException('EMPTY_FILE', _l10n.netServerError);
+    }
+    return bytes;
+  }
+
   /// 解析响应：按 HTTP 状态码与业务 retCode 二次判定，成功返回 retData。
   dynamic _parse(http.Response response) {
     Map<String, dynamic> body;

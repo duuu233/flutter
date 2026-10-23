@@ -12,7 +12,6 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../device/ble/frame_protocol.dart';
 // `screenType.code` 是 FrameScreenTypeDetails 扩展方法：扩展必须导入其定义库才能用。
 import '../../../device/frame_device_protocol.dart';
-import '../../../network/dithering_api.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
@@ -48,7 +47,7 @@ import 'casting_progress_page.dart';
 /// 取景框的「宽」落到画布的「高」→ `k = outH / frameW`；0/180 时 → `k = outW / frameW`。
 ///
 /// **横向绝不能直接输出横向尺寸**（如 960×680）：像素总数与竖向相同、帧字节数(宽×高÷2)也相同，
-/// 所以 seekink 抖动接口不会报错——但设备按 680px 一行解析 960px 一行的数据会整幅错位，
+/// 所以抖动接口不会报错——但设备按 680px 一行解析 960px 一行的数据会整幅错位，
 /// 表现为**花屏且无任何报错**。2026-07-22 当天曾短暂改成「对调分辨率直出」，同日即被用户拍板撤销。
 class CastPreviewPage extends StatefulWidget {
   const CastPreviewPage({
@@ -479,9 +478,6 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       '竖向导出角=${_verticalExportRotateDeg(widget.device)}° '
       '横向导出角=${_landscapeExportRotateDeg(widget.device)}°',
     );
-    // 进预览页即预热 seekink 抖动接口 token（对齐小程序 preview.js onLoad 的 prefetchAuthToken）：
-    // 用户构图的这几秒先把 token 取回会话缓存，点「开始投屏」出帧零等待；失败静默。
-    DitheringApi.prefetchAuthToken();
   }
 
   @override

@@ -2,21 +2,21 @@
 
 > 文档类型：Integration Architecture  
 > 状态：Active  
-> 最后核验：2026-07-28  
+> 最后核验：2026-10-23\
 > 维护责任：网络层、账号、设备、投屏与 AI 模块维护者  
 > 事实来源：`lib/src/network/`、后端 Swagger、跨端对齐结论
 
 ## 1. 服务边界
 
-BoltStar 当前使用三套不同的远端服务：
+BoltStar 当前使用两套不同的远端服务（2026-10-23 起抖动出帧并入 BoltFox，第三方 seekink 停用）：
 
 | 服务 | 客户端入口 | 用途 | 响应/鉴权 |
 | --- | --- | --- | --- |
 | BoltFox API | `BoltFoxApi` / `ApiClient` | 账号、产品、设备、图库、投屏记录、版本、文件上传 | `retCode/retMsg/retData`；业务 token |
-| seekink 抖动服务 | `DitheringApi` | 原图转设备六色 `.bin` 帧 | Bearer token；token 由 BoltFox `getXTYUserToken` 获取 |
+| BoltFox 抖动出帧 | `DitheringApi` → `ApiClient.postMultipartForBytes` | 原图转设备六色 `.bin` 帧（`POST /Client/Basic/imageDitheringBinDownload`） | 公共参数与用户自己的 userToken 同其它 `/Client/` 接口；成功响应体是二进制，报错回 `retCode/retMsg` |
 | BoltStar AI | `BoltStarAiApi` | 星宝会话、图文对话、图片增强 | 独立 `{success,code,data,params,detail}`；不走 `ApiClient` |
 
-三套服务不得因为“都是 HTTP”而合并响应模型。特别是 AI 的 `detail` 只允许写工程日志，不能直接
+两套服务不得因为“都是 HTTP”而合并响应模型。特别是 AI 的 `detail` 只允许写工程日志，不能直接
 展示给用户。
 
 ## 2. BoltFox 公共规则
@@ -40,7 +40,7 @@ BoltStar 当前使用三套不同的远端服务：
 | 版本检查 | `GET /Client/Basic/getLastVersion` | `getLastVersion` | Android/iOS 均使用 |
 | Android 下载 | `GET /Client/Basic/getAndroidDownload` | `getAndroidDownload` | 仅 Android 安装引导 |
 | 基础数据 | `GET /Client/Basic/getBasicData` | `getBasicData` | 配置/字典 |
-| 抖动 token | `GET /Client/Basic/getXTYUserToken` | `getXTYUserToken` | `isNewLogin=1` 用于 401 后强制刷新 |
+| 图片抖动出帧 | `POST /Client/Basic/imageDitheringBinDownload` | `DitheringApi.requestFrameBin` | form-data：`color=BWRYGB`、`imageDitheringModes=2`、`type`、`file`；返回 .bin 二进制（2026-10-23 替代第三方接口与 `getXTYUserToken`） |
 | 通用文件上传 | `POST /Client/Basic/setFileUpload` | `setFileUpload` | form-data 字段 `fileParam` |
 | 投屏原图上传 | `POST /Client/Basic/setUserProductUpload` | `setUserProductUpload` | 建记录并上传原图 |
 
@@ -109,7 +109,7 @@ iOS 的原生商品 ID 来自 `getGoodsList.appleProductId`，建单使用 `payT
 - 投屏成功时把设备物理槽位 `imgIndex` 回写到后端记录。
 - 删除与刷屏优先使用真实 `imgIndex`；无索引的旧记录才允许回退推算。
 - `imgIndex=0` 是合法槽位，判空只能使用 `<0`/`>=0`。
-- seekink token 会话级缓存；抖动接口 401 时只强制刷新一次并重试，防止循环。
+- 抖动出帧用用户自己的登录态；401/406 按登录过期处理（清会话），网络失败退避重试共 3 次，业务报错不重试。
 - 投屏记录上传与设备帧获取可以并行，但只有 BLE 成功后才能把记录标记为成功。
 
 槽位长期规则见 `IMAGE_SLOT_INDEX.md`。
@@ -251,7 +251,7 @@ AI 模块用到的两个只读/校验接口：
 
 ## 7. 已知待确认
 
-- `getXTYUserToken` 的所有返回字段仍应以真机联调和最新 Swagger 为准。
+- 抖动接口 `type` 在 Swagger 中描述为屏幕旋转（1=顺时针90°、2=逆时针90°），端上沿用原取值（480×720 传 1、其余 0），需联调确认。
 - 后端需要保证同一设备同一 `imgIndex` 的记录唯一性，避免旧记录幽灵指向已复用槽位。
 - AI 接口版本变化必须同时核对会话创建时机、错误码和图片消息结构。
 - `setImgCollected`（图库收藏，小程序已接）与 `chkAiDialogue` 返回布尔的语义都要与后端确认；

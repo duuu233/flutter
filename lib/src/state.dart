@@ -163,6 +163,7 @@ class DeviceItem {
     this.productId = 0,
     this.broadcastId = '',
     this.shapeType,
+    this.sizeModel = '',
     this.verticalRotation = DeviceRotation.verticalFallbackDeg,
     this.rotationDegree = DeviceRotation.landscapeFallbackDeg,
     this.isUpdate = 0,
@@ -207,10 +208,10 @@ class DeviceItem {
   bool carouselEnabled;
 
   // ── 屏幕物理像素（后端记录 `width`/`height` 原样保留，0=未下发）─────────────
-  /// 详情页「分辨率」在**未连接**时的取值来源。
+  /// 投屏出图尺寸等按它取（详情页「屏幕尺寸」2026-10-23 起改读 [sizeModel]，不再用它）。
   ///
   /// 为什么不直接用 [screenType] 反查 `FrameProtocol.screenTypes`：[_screenTypeFromSize] 在后端
-  /// 没下发尺寸时会**回落 5.89 寸**，反查就会显示一个臆造的 `680*960`。原始宽高为 0 就老实显示 `--`。
+  /// 没下发尺寸时会**回落 5.89 寸**，反查会得到一个臆造的 680×960。原始宽高为 0 就是未下发。
   int screenWidth;
   int screenHeight;
 
@@ -223,6 +224,10 @@ class DeviceItem {
 
   /// 后台产品「形状类型」：1 = 圆形，0 = 方形；未下发为 null。只认整数 1 为圆形。
   int? shapeType;
+
+  /// 后台产品配置的尺寸型号（如 `3.6寸`，设备列表/详情接口下发 `sizeModel`，2026-10-23）。
+  /// 详情页「屏幕尺寸」直接展示它，端上不再按屏型或宽高推算；未配置为空串，整行不展示。
+  String sizeModel;
 
   /// 设备图（按机型区分，见 [DeviceThumb]）。
   String get thumbAsset =>
@@ -2448,6 +2453,10 @@ class PhotoFrameState extends ChangeNotifier {
         if (DeviceRotation.hasLandscapeKey(row)) {
           device.rotationDegree = detail.rotationDegree;
         }
+        // 尺寸型号同理：详情带了这个键才覆盖（含后台清空后的空串）。
+        if (row.containsKey('sizeModel')) {
+          device.sizeModel = detail.sizeModel;
+        }
         notifyListeners();
         return device;
       }
@@ -3424,6 +3433,7 @@ class PhotoFrameState extends ChangeNotifier {
       shapeType: data['shapeType'] is num
           ? (data['shapeType'] as num).toInt()
           : null,
+      sizeModel: (data['sizeModel'] ?? '').toString().trim(),
       // 两个导出角都走 [DeviceRotation]，与小程序 utils/device-rotation.js 同口径：
       // 竖向缺省 0（不旋转），横向缺省 270（历史行为）。⚠️ 不能改用 _asInt——
       // 它对缺失返回 0，横向那条会把「没下发」当成「不旋转」，正好丢掉历史兜底角。

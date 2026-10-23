@@ -42,20 +42,6 @@ class BoltFoxApi {
     return _http.getJson('/Client/Basic/getBasicData', query: params);
   }
 
-  /// 获取 seekink 抖动接口（XTY）的访问 token（2026-07-23 对齐小程序，替代写死的联调 token）。
-  /// 用法：抖动接口请求头 `Authorization: Bearer+空格+token`。
-  /// 会话级缓存/预热/401 刷新都在 [DitheringApi.ensureAuthToken]，业务方不要直接调本方法。
-  /// [isNewLogin]（2026-07-24 对齐小程序）：0=复用后端已有会话（默认，首取/预热）；1=强制重新
-  /// 登录取新 token，仅在抖动接口回 401（token 过期）自愈刷新时传，避免后端把过期会话原样返回。
-  /// ⚠️ 返回形态（retData 直接是 token 串，或包在 token/xtyToken 等字段里）为假设待联调确认，
-  /// 兼容解析见 DitheringApi._normalizeToken。
-  static Future<dynamic> getXTYUserToken({int isNewLogin = 0}) {
-    return _http.getJson(
-      '/Client/Basic/getXTYUserToken',
-      query: {'isNewLogin': isNewLogin},
-    );
-  }
-
   /// 获取 App 版本更新状态。App 端「检查更新」使用。
   static Future<dynamic> getLastVersion({String? appVersionNo}) {
     return _http.getJson(
@@ -77,7 +63,7 @@ class BoltFoxApi {
   /// 投屏「原图上传建记录」：form-data 上传原图，返回 `{ url, taskId, upirId }`。
   ///
   /// 对齐小程序 2026-07-22 链路切换：本接口**只负责建投屏记录 + 后端存图**（图库/记录页展示），
-  /// 返回的 `.bin url` 不再下载使用——设备帧改由 seekink 抖动接口生成（见 DitheringApi）。
+  /// 返回的 `.bin url` 不再下载使用——设备帧改由抖动接口生成（见 DitheringApi）。
   /// 设备图传成功后再用 [editUserProductImgRecord]（按 taskId）把投屏记录置为成功。
   static Future<dynamic> setUserProductUpload({
     required List<String> filePaths,

@@ -46,7 +46,7 @@
 **写**（`features/cast/projection_service.dart`）：
 
 - 普通投屏与再次/重新投屏最终都进入 `castImages`。
-- 每张图先通过 `setUserProductUpload` 创建一条新记录并取得 `taskId`，同时由 seekink
+- 每张图先通过 `setUserProductUpload` 创建一条新记录并取得 `taskId`，同时由抖动出帧接口
   生成新的设备帧。
 - BLE 图传成功后调用 `editUserProductImgRecord(taskId, deviceUploadState: 1,
   imgIndex: index)`。
