@@ -349,6 +349,10 @@ void main() {
     (tester) async {
       final fixture = await tester.runAsync(resumablePurchase);
       await pumpPurchase(tester, fixture!);
+      // 有待处理购买：先置灰「处理中…」，等一段时间仍无结果才放开重新确认。
+      expect(find.text('处理中…'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pump();
       expect(find.text('继续支付'), findsNothing);
       expect(find.text('重新确认支付'), findsOneWidget);
       // 确认购买页不再提供「重新下单支付」及其说明（2026-10-23 产品要求去掉）。
@@ -381,6 +385,8 @@ void main() {
         size: const Size(375, 568),
         scale: 1.8,
       );
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pump();
       await tester.ensureVisible(find.text('重新确认支付'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);

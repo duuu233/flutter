@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:BoltStar/src/features/star/presentation/star_purchase_page.dart';
 import 'package:BoltStar/src/shared/l10n/app_l10n.dart';
+import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import 'package:BoltStar/src/state.dart';
 import 'package:BoltStar/src/network/api_session.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -389,6 +390,106 @@ void main() {
     },
   );
 
+  test('success is announced once per order, not again after a restart', () async {
+    final f = Fixture();
+    await f.start();
+    f.bridge.purchased();
+    f.backend.paid = true;
+    f.backend.currentBalance = 350;
+    await f.controller.retry();
+    expect(f.controller.phase, AppleIapPhase.credited);
+    expect(f.controller.unannouncedCredit?.tokens, 250);
+    expect(f.controller.takeCredit()?.orderNo, 'order-1');
+    expect(f.controller.takeCredit(), isNull);
+    await f.controller.retry();
+    expect(f.controller.unannouncedCredit, isNull);
+
+    // 上次进程已确认到账、只差收尾的记录：重启后收尾，但不再提示「购买成功」。
+    final restarted = Fixture();
+    restarted.store.records = [
+      {
+        'userId': 'user-A',
+        'accountToken': 'token-9',
+        'orderNo': 'order-9',
+        'productId': 'stars.200',
+        'tokens': 250,
+        'baseline': 100,
+        'transactionId': 'tx-9',
+        'verificationAttempted': true,
+        'receiptVerified': true,
+        'credited': true,
+      },
+    ];
+    restarted.bridge.rows.add({
+      'accountToken': 'token-9',
+      'productId': 'stars.200',
+      'state': 'purchased',
+      'transactionId': 'tx-9',
+    });
+    await restarted.login();
+    expect(restarted.bridge.finishCalls, 1);
+    expect(restarted.store.records, isEmpty);
+    expect(restarted.controller.phase, AppleIapPhase.credited);
+    expect(restarted.controller.unannouncedCredit, isNull);
+  });
+
+  testWidgets(
+    'the success dialog shows once; reopening the page does not repeat it',
+    (tester) async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final f = Fixture();
+      await tester.runAsync(f.login);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: AppLocalizationsScope(
+            language: AppLanguage.zh,
+            child: Builder(
+              builder: (context) => Scaffold(
+                body: TextButton(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<bool>(
+                      builder: (_) => StarPurchasePage(
+                        package: package,
+                        appleIap: f.controller,
+                      ),
+                    ),
+                  ),
+                  child: const Text('打开确认购买'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('打开确认购买'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('立即购买'));
+      await tester.pumpAndSettle();
+
+      f.bridge.purchased();
+      f.backend.paid = true;
+      f.backend.currentBalance = 350;
+      unawaited(f.controller.retry());
+      await tester.pumpAndSettle();
+      expect(find.text('购买成功，到账 250 星币'), findsOneWidget);
+      await tester.tap(find.text('我知道了'));
+      await tester.pumpAndSettle();
+      expect(find.text('打开确认购买'), findsOneWidget);
+
+      // 再进确认购买页、再有刷新：控制器仍停在 credited，也不能再弹。
+      await tester.tap(find.text('打开确认购买'));
+      await tester.pumpAndSettle();
+      unawaited(f.controller.retry());
+      await tester.pumpAndSettle();
+      expect(find.textContaining('购买成功'), findsNothing);
+      expect(find.text('立即购买'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+      debugDefaultTargetPlatformOverride = null;
+    },
+  );
+
   test('paid order and the complete token increase finish once', () async {
     final f = Fixture();
     await f.start();
@@ -639,8 +740,24 @@ void main() {
       await tester.pumpAndSettle();
       expect(f.backend.orderCalls, 1);
       expect(f.bridge.charges, 1);
-      expect(find.text('重新确认支付'), findsOneWidget);
       expect(find.textContaining('不支持人民币'), findsNothing);
+      // 确认中：按钮置灰「处理中…」，说明一句话不变；不能购买也不能重试。
+      expect(find.text('处理中…'), findsOneWidget);
+      expect(find.text('支付处理中，请稍候，不要重复购买。'), findsOneWidget);
+      expect(find.text('立即购买'), findsNothing);
+      expect(find.text('重新确认支付'), findsNothing);
+      expect(
+        tester.widget<FigmaPrimaryButton>(find.byType(FigmaPrimaryButton))
+            .onPressed,
+        isNull,
+      );
+      // 久久没有结果才放开重新确认。
+      await tester.pump(const Duration(seconds: 12));
+      expect(find.text('重新确认支付'), findsNothing);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pump();
+      expect(find.text('重新确认支付'), findsOneWidget);
+      expect(find.text('支付结果暂未确认，请点击重新确认支付，不要重复购买。'), findsOneWidget);
       f.bridge.rows.single['state'] = 'canceled';
       await tester.tap(find.text('重新确认支付'));
       await tester.pumpAndSettle();
@@ -710,6 +827,9 @@ void main() {
       for (final text in [
         l10n.starApplePurchase,
         l10n.starApplePending,
+        l10n.starAppleProcessing,
+        l10n.starAppleProcessingNote,
+        l10n.starAppleFailed,
         l10n.starAppleDeferred,
         l10n.starAppleRetry,
         l10n.starAppleContinue,

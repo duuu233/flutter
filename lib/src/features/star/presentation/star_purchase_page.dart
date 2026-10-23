@@ -63,9 +63,16 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       widget.appleIap ?? AppleIapController.instance;
   AppleIapProduct? _appleProduct;
   bool _appleLoading = false;
-  bool _appleStarted = false;
-  bool _appleCompleted = false;
   String? _appleProductError;
+
+  /// 「购买成功」弹框已经排上了，防止同一笔被排两次。
+  bool _appleAnnouncing = false;
+
+  /// 处理结束后要再等这么久仍没有结果，才放开「重新确认支付」（2026-10-23 产品：
+  /// 确认中按钮置灰，久久不返回再允许重试）。
+  static const _appleRetryHold = Duration(seconds: 15);
+  bool _appleRetryUnlocked = false;
+  Timer? _appleRetryHoldTimer;
   final _appleDiagnostics = <String>[];
   int _appleDiagnosticAttempt = 0;
 
@@ -101,43 +108,87 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     }
   }
 
+  // ── iOS 确认购买的页面状态（2026-10-23 梳理）──
+  //
+  // 只分三种，按钮和说明各自**一句话贯穿始终**，不跟着控制器内部的
+  // 建单 / 付款 / 读收据 / 验单 / 查到账一步步换字、来回闪：
+  // 1. 可购买：「立即购买」；
+  // 2. 处理中（本页在下单，或有这个账号的待处理购买）：按钮置灰「处理中…」，说明
+  //    「支付处理中，请稍候，不要重复购买」；
+  // 3. 处理结束后 [_appleRetryHold] 内仍没有结果：放开「重新确认支付」。
+  // 控制器在后台的恢复检查（页面打开、回前台）没有待处理购买时不算处理中，按钮不闪。
+
+  /// 正在干活：本页在下单，或控制器正在处理这个账号的待处理购买。
+  bool get _appleActive => _busy || (_apple.busy && _apple.hasPending);
+
+  /// 还在等结果（按钮不是「立即购买」）。
+  bool get _appleAwaiting => _appleActive || _apple.hasPending;
+
+  /// 处理中锁住重试；停下来后计时，[_appleRetryHold] 到了才放开。
+  void _syncAppleRetryHold() {
+    if (_appleActive || !_apple.hasPending) {
+      _appleRetryHoldTimer?.cancel();
+      _appleRetryHoldTimer = null;
+      _appleRetryUnlocked = false;
+      return;
+    }
+    if (_appleRetryUnlocked || _appleRetryHoldTimer != null) return;
+    _appleRetryHoldTimer = Timer(_appleRetryHold, () {
+      _appleRetryHoldTimer = null;
+      if (mounted) setState(() => _appleRetryUnlocked = true);
+    });
+  }
+
   void _onAppleChanged() {
     if (!mounted) return;
-    setState(() {});
-    if (_appleStarted &&
-        !_appleCompleted &&
-        _apple.phase == AppleIapPhase.credited) {
-      _appleCompleted = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) async {
-        if (!mounted) return;
-        await showAppNoticeDialog(
-          context,
-          title: AppL10n.of(context).starBuySucceeded(_apple.creditedTokens),
-        );
-        if (mounted) Navigator.of(context).pop(true);
-      });
-    }
+    setState(_syncAppleRetryHold);
+    if (_appleAnnouncing || _apple.unannouncedCredit == null) return;
+    _appleAnnouncing = true;
+    // 每笔到账只弹一次：弹之前从控制器取走（App 在后台时等回到前台的第一帧再弹）。
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final credit = mounted ? _apple.takeCredit() : null;
+      if (credit == null) {
+        _appleAnnouncing = false;
+        return;
+      }
+      await showAppNoticeDialog(
+        context,
+        title: AppL10n.of(context).starBuySucceeded(credit.tokens),
+      );
+      if (mounted) Navigator.of(context).pop(true);
+    });
   }
 
   Future<void> _buyApple() async {
-    if (_busy || _apple.busy || !_apple.canBuy || _appleProduct == null) {
-      return;
-    }
-    _appleStarted = true;
-    setState(() => _busy = true);
-    AppLoadingDialog.show(context, AppL10n.of(context).starBuyStagePay);
+    if (_busy || _appleProduct == null) return;
+    setState(() {
+      _busy = true;
+      _syncAppleRetryHold();
+    });
     try {
+      // 页面打开 / 回前台会顺手跑一次恢复检查（没有待处理购买时很快结束）。这期间
+      // 点了购买就等它跑完再下单，不吞掉这次点击，按钮也一直是「处理中…」。
+      for (var i = 0; i < 50 && _apple.busy; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+        if (!mounted) return;
+      }
+      if (!_apple.canBuy) return;
       await _apple.buy(widget.package);
     } finally {
       if (mounted) {
-        AppLoadingDialog.hide(context);
-        setState(() => _busy = false);
+        setState(() {
+          _busy = false;
+          _syncAppleRetryHold();
+        });
       }
     }
   }
 
   Future<void> _retryApple() async {
-    _appleStarted = true;
+    setState(() {
+      _appleRetryUnlocked = false;
+      _syncAppleRetryHold();
+    });
     await _apple.retry(manual: true);
   }
 
@@ -151,7 +202,6 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       confirmLabel: l10n.starAppleSandboxReset,
     );
     if (confirmed != true || !mounted || _busy || _apple.busy) return;
-    _appleStarted = false;
     final cleared = await _apple.resetSandbox(widget.package);
     if (!mounted) return;
     await showAppNoticeDialog(
@@ -165,16 +215,15 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   }
 
   String _appleMessage(AppL10n l10n) {
-    if (_appleProductError != null) return l10n.starAppleUnavailable;
-    if (_apple.errorCode == 'new_order_blocked') {
-      return l10n.starAppleNewOrderBlocked;
+    if (_appleAwaiting) {
+      // 等家长批准可能要很久，单独说明；其余处理中一律同一句。
+      if (_apple.phase == AppleIapPhase.deferred) return l10n.starAppleDeferred;
+      return _appleRetryUnlocked
+          ? l10n.starApplePending
+          : l10n.starAppleProcessingNote;
     }
+    if (_appleProductError != null) return l10n.starAppleUnavailable;
     return switch (_apple.phase) {
-      AppleIapPhase.purchasing => l10n.starAppleWaiting,
-      AppleIapPhase.deferred => l10n.starAppleDeferred,
-      AppleIapPhase.verifying => l10n.starAppleVerifying,
-      AppleIapPhase.pending => l10n.starApplePending,
-      AppleIapPhase.resume => l10n.starAppleContinueNote,
       AppleIapPhase.canceled => l10n.starBuyCanceled,
       AppleIapPhase.failed => l10n.starAppleFailed,
       _ => l10n.starApplePurchase,
@@ -198,9 +247,13 @@ class _StarPurchasePageState extends State<StarPurchasePage>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     if (_isApple) {
+      // 本页打开之前就已到账的（离开页面后才确认的）不再补弹：余额已经更新，
+      // 刚进来就弹「购买成功」再把页面关掉，会被当成又买了一次。
+      _apple.takeCredit();
       _apple.addListener(_onAppleChanged);
       unawaited(_loadAppleProduct());
       unawaited(_apple.retry());
+      _syncAppleRetryHold();
     }
   }
 
@@ -208,6 +261,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (_isApple) _apple.removeListener(_onAppleChanged);
+    _appleRetryHoldTimer?.cancel();
     super.dispose();
   }
 
@@ -465,7 +519,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
             const _PayPalChannelCard(),
           ] else ...[
             _ApplePendingNote(message: _appleMessage(l10n)),
-            if (_appleProductError != null)
+            if (_appleProductError != null && !_appleAwaiting)
               TextButton(
                 onPressed: _appleLoading ? null : _loadAppleProduct,
                 child: Text(l10n.starAppleReload),
@@ -493,22 +547,23 @@ class _StarPurchasePageState extends State<StarPurchasePage>
                       lines: [..._appleDiagnostics, ..._apple.diagnostics],
                       l10n: l10n,
                       showSandboxReset: _apple.canResetSandbox,
-                      onSandboxReset: _busy || _apple.busy
+                      onSandboxReset: _appleActive || _apple.busy
                           ? null
                           : _resetAppleSandbox,
                     ),
                     const SizedBox(height: 12),
                   ],
+                  // 处理中置灰「处理中…」；久等无结果才放开「重新确认支付」。
                   FigmaPrimaryButton(
-                    label: _apple.hasPending
+                    label: !_appleAwaiting
+                        ? l10n.starBuyNow
+                        : _appleRetryUnlocked
                         ? l10n.starAppleRetry
-                        : l10n.starBuyNow,
-                    onPressed: _busy || _apple.busy
-                        ? null
-                        : _apple.hasPending
+                        : l10n.starAppleProcessing,
+                    onPressed: !_appleAwaiting
+                        ? (_appleProduct != null ? _buy : null)
+                        : _appleRetryUnlocked
                         ? _retryApple
-                        : _appleProduct != null && _apple.canBuy
-                        ? _buy
                         : null,
                   ),
                 ],

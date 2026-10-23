@@ -2128,11 +2128,21 @@ class AppL10n {
   );
   String get starAppleVerifying =>
       _pick('正在验证支付凭证…', 'Verifying your purchase…', '購入を検証中…');
+  /// 确认中等了一段时间仍没有结果，才放开「重新确认支付」时的说明。
   String get starApplePending => _pick(
-    '支付结果确认中，请重新确认，避免重复购买。',
-    'Your purchase is being confirmed. Check again before buying again.',
-    '購入結果を確認中です。重複購入せず、再確認してください。',
+    '支付结果暂未确认，请点击重新确认支付，不要重复购买。',
+    "The purchase hasn't been confirmed yet. Tap Check purchase again instead of buying again.",
+    '購入結果がまだ確認できません。重複購入せず「購入を再確認」をタップしてください。',
   );
+
+  /// 下单、付款、确认到账整个过程中**同一句**说明与按钮文字，不随内部步骤来回变。
+  String get starAppleProcessingNote => _pick(
+    '支付处理中，请稍候，不要重复购买。',
+    "Processing your purchase. Please wait and don't buy again.",
+    '購入を処理中です。重複購入せずにお待ちください。',
+  );
+  String get starAppleProcessing =>
+      _pick('处理中…', 'Processing…', '処理中…');
   String get starAppleContinueNote => _pick(
     '有一笔待继续的购买，请继续支付或重新确认。',
     'A purchase is pending. Continue the payment or check it again.',
@@ -2170,9 +2180,9 @@ class AppL10n {
   );
   String get starAppleReload => _pick('重新获取商品', 'Reload product', '商品を再読み込み');
   String get starAppleFailed => _pick(
-    '本次支付未完成，请重试确认。',
-    'Payment was not completed. Please check again.',
-    'お支払いが完了していません。再確認してください。',
+    '本次支付未完成，可以重新购买。',
+    "Payment wasn't completed. You can buy again.",
+    'お支払いが完了しませんでした。もう一度購入できます。',
   );
 
   String get starBuyPayChannel =>

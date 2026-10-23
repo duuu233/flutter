@@ -124,7 +124,10 @@ OpenHarmony/HAP is not integrated.
   delivery order-query line also carries the raw getPayQuery payState/payNo/exceptionMsg, or the
   query error type/code/message, with unchanged paid rule (payState=1). Passive local receipt
   reads are bounded; only explicit manual retry may refresh a missing receipt once. A queued manual
-  retry retains its intent and is cleared on account changes. Pending purchases always have a verification-only retry action. Since 2026-10-23 the purchase
+  retry retains its intent and is cleared on account changes. Pending purchases always have a verification-only retry action; since 2026-10-23 the purchase page
+  greys the button as “处理中…” while processing and only unlocks “重新确认支付” after 15 s without a
+  result, with one stable note per state, and the success dialog is driven by
+  `unannouncedCredit/takeCredit()` (credited in this process, shown once) instead of `phase`. Since 2026-10-23 the purchase
   page no longer shows the new-order note or button; `buy(newOrder: true)` and its guard remain in
   the controller with no UI entry. A new order is blocked by any native queued/requested entry
   or local transaction/verification evidence; unmatched unverified records are retained with

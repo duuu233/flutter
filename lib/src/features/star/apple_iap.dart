@@ -34,6 +34,13 @@ bool _sameAccountToken(Object? first, Object? second) =>
     first.isNotEmpty &&
     first.toLowerCase() == second.toLowerCase();
 
+/// 一笔已确认到账、等确认购买页提示「购买成功」的购买。
+class AppleIapCredit {
+  const AppleIapCredit({required this.orderNo, required this.tokens});
+  final String orderNo;
+  final int tokens;
+}
+
 class AppleIapProduct {
   const AppleIapProduct({required this.id, required this.price});
   final String id;
@@ -401,6 +408,25 @@ class AppleIapController extends ChangeNotifier {
   String? errorCode;
   int creditedTokens = 0;
 
+  /// 本进程里刚确认到账（`credited` 由本进程写入）的订单号。只有这些在收尾时提示
+  /// 「购买成功」：重启后才收尾的、早已到账的记录不再提示（2026-10-23 测试反馈：
+  /// 重新打开 APP 又弹了一次「购买成功，到账 N 星币」，星币并没有重复到账）。
+  final Set<String> _creditedThisRun = <String>{};
+  AppleIapCredit? _unannouncedCredit;
+
+  /// 刚到账、还没在确认购买页提示过的那一笔；每笔只提示一次（见 [takeCredit]）。
+  ///
+  /// 不再用 [phase] == credited 判断要不要弹：phase 是进程级的、到账后一直停在
+  /// credited，之后任何一次刷新都可能把旧的到账当成新的再弹一遍。
+  AppleIapCredit? get unannouncedCredit => _unannouncedCredit;
+
+  /// 取走待提示的到账（页面弹「购买成功」前调用，或页面打开时丢弃之前的）。
+  AppleIapCredit? takeCredit() {
+    final credit = _unannouncedCredit;
+    _unannouncedCredit = null;
+    return credit;
+  }
+
   bool get busy => _working;
   bool get canResetSandbox =>
       supported &&
@@ -429,6 +455,8 @@ class AppleIapController extends ChangeNotifier {
     if (_userId == next) return;
     _userId = next;
     _rerunManual = false;
+    _creditedThisRun.clear();
+    _unannouncedCredit = null;
     _diagnostics.clear();
     _epoch++;
     _setPhase(AppleIapPhase.idle);
@@ -675,6 +703,7 @@ class AppleIapController extends ChangeNotifier {
         ..clear()
         ..addAll(archived);
       creditedTokens = 0;
+      _unannouncedCredit = null;
       _diagnose('sandbox.reset.completed', {
         'pendingCount': 0,
         'removedCount': discarded.length,
@@ -1164,6 +1193,7 @@ class AppleIapController extends ChangeNotifier {
               balance != null &&
               balance >= baseline + tokens) {
             record['credited'] = true;
+            _creditedThisRun.add(record['orderNo'] as String);
             stage = 'delivery.persist';
             await _save();
             if (!_current(epoch)) return;
@@ -1225,6 +1255,12 @@ class AppleIapController extends ChangeNotifier {
     }
     if (record['supersededBy'] == null) {
       creditedTokens = record['tokens'] as int;
+      if (_creditedThisRun.remove(record['orderNo'])) {
+        _unannouncedCredit = AppleIapCredit(
+          orderNo: record['orderNo'] as String,
+          tokens: creditedTokens,
+        );
+      }
       if (_current(epoch)) _setPhase(AppleIapPhase.credited);
     }
   }
