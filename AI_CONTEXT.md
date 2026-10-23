@@ -566,7 +566,11 @@ Logout / successful account deletion / session expiry
    size/identity configuration errors are no longer reported as "not connected". Device images
    come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default). Records whose
    `broadcastId` is missing or not a product broadcast name get it from the product list by
-   `productId` (`_fillBroadcastIds`, 2026-10-23, same rule as the mini program). For
+   `productId` (`_fillBroadcastIds`, 2026-10-23, same rule as the mini program); records still
+   unresolved are looked up once per session via `getUserProductDetail` by `userProductId`
+   (`device/product_broadcast_id.dart`, 2026-10-23: EC-370 image/capacity were wrong on home, my
+   devices and details while the mini program detail page was right), and connected devices get
+   `liveCapacity` recomputed by model. For
    `shapeType == 1` the cast preview clips the photo and edit frame to a circle and disables the
    portrait/landscape buttons; export and rotation are unchanged.
 3. **The selected target is immutable during an async operation.** Connection, projection, delete,

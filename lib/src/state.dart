@@ -13,6 +13,7 @@ import 'device/device_identity_registry.dart';
 import 'device/device_interaction_trace.dart';
 import 'device/device_thumb.dart';
 import 'device/frame_device_protocol.dart';
+import 'device/product_broadcast_id.dart';
 import 'device/recently_bound_device.dart';
 import 'device/serial_match.dart';
 import 'features/ai/ai_last_session.dart';
@@ -2577,27 +2578,84 @@ class PhotoFrameState extends ChangeNotifier {
         .whenComplete(() => _productBroadcastIdsRequest = null);
   }
 
-  /// 按 productId 给记录补上所属产品的 broadcastId。记录自带、且是产品列表里认得的广播名就不动；
-  /// 没带，或带的不是任何产品的广播名（字段口径对不上时）才按 productId 回查覆盖。
-  /// [catalog] 由调用方与设备列表请求并行发起，这里最多再等 [_productCatalogWait]。
+  /// 设备列表认不出机型的记录按 userProductId 调详情接口补到的广播名（详情正常返回但认不出记空串），
+  /// 整次会话复用：绑定记录的机型不会变。请求失败不记，下次刷新再试。
+  final Map<String, String> _detailBroadcastIds = {};
+
+  /// 按 productId 给记录补上所属产品的 broadcastId（口径见 [ProductBroadcastId]）。记录自带、且是产品
+  /// 列表里认得的广播名就不动；没带，或带的不是任何产品的广播名（字段口径对不上时）才按 productId 回查覆盖。
+  /// 仍认不出的再按 userProductId 调详情接口补（2026-10-23：EC-370 首页/列表/详情设备图与最多照片数都不对，
+  /// 小程序详情页走详情接口是对的——列表这条记录没有可用的 productId / broadcastId）。
+  /// [catalog] 由调用方与设备列表请求并行发起，这里最多再等 [_productCatalogWait]，详情补机型同样最多再等这么久。
   Future<void> _fillBroadcastIds(
     List<DeviceItem> devices,
     Future<Map<int, String>> catalog,
   ) async {
-    if (!devices.any((d) => d.productId > 0)) return;
+    if (devices.isEmpty) return;
     final byProductId = await catalog.timeout(
       _productCatalogWait,
       onTimeout: () => const <int, String>{},
     );
     if (byProductId.isEmpty) return;
-    final known = byProductId.values.map((id) => id.toUpperCase()).toSet();
+    final pending = <DeviceItem>[];
     for (final device in devices) {
-      if (device.productId <= 0 ||
-          known.contains(device.broadcastId.toUpperCase())) {
-        continue;
+      final resolved = ProductBroadcastId.resolve(
+        broadcastId: device.broadcastId,
+        productId: device.productId,
+        catalog: byProductId,
+      );
+      if (resolved.isNotEmpty) {
+        device.broadcastId = resolved;
+      } else {
+        pending.add(device);
       }
-      final fromCatalog = byProductId[device.productId];
-      if (fromCatalog != null) device.broadcastId = fromCatalog;
+    }
+    if (pending.isNotEmpty) {
+      final fromDetail = await Future.wait(
+        pending.map((device) => _detailBroadcastId(device.id, byProductId)),
+      ).timeout(_productCatalogWait, onTimeout: () => const <String>[]);
+      for (var i = 0; i < fromDetail.length; i++) {
+        if (fromDetail[i].isNotEmpty) pending[i].broadcastId = fromDetail[i];
+      }
+    }
+    // 机型补上后容量跟着按机型重算（v1.6：EC-370 屏型同报 0x01，只能按机型给 11）。只改已从真机
+    // 读过 0x01 的（liveImageCount 非空）；没读过的等连接后由 [_applyConnectedInfo] 按机型给。
+    for (final device in devices) {
+      if (device.liveImageCount == null) continue;
+      final capacity = FrameProtocol.capacityOf(device.broadcastId);
+      if (capacity > 0) device.liveCapacity = capacity;
+    }
+  }
+
+  /// 按 userProductId 调详情接口取所属产品的广播名；认不出或请求失败返回空串（失败不缓存）。
+  Future<String> _detailBroadcastId(
+    String userProductId,
+    Map<int, String> byProductId,
+  ) async {
+    final cached = _detailBroadcastIds[userProductId];
+    if (cached != null) return cached;
+    try {
+      final data = await BoltFoxApi.getUserProductDetail(
+        userProductId: userProductId,
+      );
+      Map<String, dynamic>? row;
+      if (data is Map) {
+        row = data.map((k, v) => MapEntry(k.toString(), v));
+      } else {
+        final rows = extractApiRows(data);
+        if (rows.isNotEmpty) row = rows.first;
+      }
+      final resolved = row == null
+          ? ''
+          : ProductBroadcastId.resolve(
+              broadcastId: (row['broadcastId'] ?? '').toString(),
+              productId: _asInt(row['productId']),
+              catalog: byProductId,
+            );
+      _detailBroadcastIds[userProductId] = resolved;
+      return resolved;
+    } catch (_) {
+      return '';
     }
   }
 
