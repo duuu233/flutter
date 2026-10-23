@@ -127,7 +127,9 @@ OpenHarmony/HAP is not integrated.
   retry retains its intent and is cleared on account changes. Pending purchases always have a verification-only retry action; since 2026-10-23 the purchase page
   greys the button as “处理中…” while processing and only unlocks “重新确认支付” after 15 s without a
   result, with one stable note per state, and the success dialog is driven by
-  `unannouncedCredit/takeCredit()` (credited in this process, shown once) instead of `phase`. Since 2026-10-23 the purchase
+  `unannouncedCredit/takeCredit()` (credited in this process, shown once) instead of `phase`. Likewise, when the Apple
+  payment sheet started in this process comes back canceled/failed (user closed it, Face ID / password failed), the page
+  shows a “支付失败，请重新支付” dialog once via `unannouncedFailure/takeFailure()` (zh/zh-Hant/en/ja) and stays open. Since 2026-10-23 the purchase
   page no longer shows the new-order note or button; `buy(newOrder: true)` and its guard remain in
   the controller with no UI entry. A new order is blocked by any native queued/requested entry
   or local transaction/verification evidence; unmatched unverified records are retained with

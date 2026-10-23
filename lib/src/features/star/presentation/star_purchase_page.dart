@@ -65,7 +65,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   bool _appleLoading = false;
   String? _appleProductError;
 
-  /// 「购买成功」弹框已经排上了，防止同一笔被排两次。
+  /// 「购买成功」/「支付失败」弹框已经排上了，防止同一笔被排两次。
   bool _appleAnnouncing = false;
 
   /// 处理结束后要再等这么久仍没有结果，才放开「重新确认支付」（2026-10-23 产品：
@@ -142,7 +142,11 @@ class _StarPurchasePageState extends State<StarPurchasePage>
   void _onAppleChanged() {
     if (!mounted) return;
     setState(_syncAppleRetryHold);
-    if (_appleAnnouncing || _apple.unannouncedCredit == null) return;
+    if (_appleAnnouncing) return;
+    if (_apple.unannouncedCredit == null) {
+      if (_apple.unannouncedFailure != null) _announceAppleFailure();
+      return;
+    }
     _appleAnnouncing = true;
     // 每笔到账只弹一次：弹之前从控制器取走（App 在后台时等回到前台的第一帧再弹）。
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -156,6 +160,24 @@ class _StarPurchasePageState extends State<StarPurchasePage>
         title: AppL10n.of(context).starBuySucceeded(credit.tokens),
       );
       if (mounted) Navigator.of(context).pop(true);
+    });
+  }
+
+  /// 苹果付款框被关掉（用户取消、面容 / 密码验证失败等）：弹「支付失败，请重新支付」，
+  /// 留在本页，按钮已回到「立即购买」可以直接再付。每单只弹一次。
+  void _announceAppleFailure() {
+    _appleAnnouncing = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final failure = mounted ? _apple.takeFailure() : null;
+      if (failure != null) {
+        await showAppNoticeDialog(
+          context,
+          title: AppL10n.of(context).starApplePayFailedRetry,
+        );
+      }
+      _appleAnnouncing = false;
+      // 弹框期间若又有到账 / 失败待提示，接着处理。
+      if (mounted) _onAppleChanged();
     });
   }
 
@@ -250,6 +272,7 @@ class _StarPurchasePageState extends State<StarPurchasePage>
       // 本页打开之前就已到账的（离开页面后才确认的）不再补弹：余额已经更新，
       // 刚进来就弹「购买成功」再把页面关掉，会被当成又买了一次。
       _apple.takeCredit();
+      _apple.takeFailure();
       _apple.addListener(_onAppleChanged);
       unawaited(_loadAppleProduct());
       unawaited(_apple.retry());

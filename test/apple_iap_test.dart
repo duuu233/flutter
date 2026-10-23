@@ -569,8 +569,46 @@ void main() {
       expect(f.store.records, isEmpty);
       expect(f.bridge.acknowledgements, 1);
       expect(f.backend.verifyCalls, 0);
+      // 付款框被关掉：提示一次「支付失败，请重新支付」。
+      expect(f.controller.takeFailure(), 'order-1');
+      expect(f.controller.takeFailure(), isNull);
     },
   );
+
+  test('payment failure is announced only for payments started this run', () async {
+    final f = Fixture();
+    await f.start();
+    f.bridge.rows.single['state'] = 'failed';
+    await f.controller.retry();
+    expect(f.controller.phase, AppleIapPhase.failed);
+    expect(f.controller.unannouncedFailure, 'order-1');
+
+    // 上次进程拉起、重启后才收尾的失败交易：照常清理，不再提示。
+    final restarted = Fixture();
+    restarted.store.records = [
+      {
+        'userId': 'user-A',
+        'accountToken': 'token-9',
+        'orderNo': 'order-9',
+        'productId': 'stars.200',
+        'tokens': 250,
+        'baseline': 100,
+        'verificationAttempted': false,
+        'receiptVerified': false,
+        'credited': false,
+      },
+    ];
+    restarted.bridge.rows.add({
+      'accountToken': 'token-9',
+      'productId': 'stars.200',
+      'state': 'canceled',
+    });
+    await restarted.login();
+    expect(restarted.store.records, isEmpty);
+    expect(restarted.bridge.acknowledgements, 1);
+    expect(restarted.controller.phase, AppleIapPhase.canceled);
+    expect(restarted.controller.unannouncedFailure, isNull);
+  });
 
   test(
     'restart replays the correct owner; other accounts cannot verify',
@@ -761,7 +799,13 @@ void main() {
       f.bridge.rows.single['state'] = 'canceled';
       await tester.tap(find.text('重新确认支付'));
       await tester.pumpAndSettle();
+      // 付款框被关掉：弹一次「支付失败，请重新支付」，关掉后留在本页可以直接再买。
+      expect(find.text('支付失败，请重新支付'), findsOneWidget);
+      await tester.tap(find.text('我知道了'));
+      await tester.pumpAndSettle();
+      expect(find.text('支付失败，请重新支付'), findsNothing);
       expect(find.text('已取消支付'), findsOneWidget);
+      expect(find.text('立即购买'), findsOneWidget);
       expect(f.store.records, isEmpty);
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox());

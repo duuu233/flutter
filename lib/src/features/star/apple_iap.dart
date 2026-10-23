@@ -427,6 +427,23 @@ class AppleIapController extends ChangeNotifier {
     return credit;
   }
 
+  /// 本进程里已拉起苹果付款框的订单号。只有这些付款被取消 / 失败时提示「支付失败，
+  /// 请重新支付」：上次进程留下的失败结果在重启后收尾，不再补弹。
+  final Set<String> _paymentStartedThisRun = <String>{};
+  String? _unannouncedFailure;
+
+  /// 刚被取消 / 失败、还没在确认购买页提示过的那一单（订单号）。付款框被用户关掉、
+  /// 面容 / 密码验证失败等都会以 canceled / failed 交易回来（2026-10-23 产品要求提示
+  /// 「支付失败，请重新支付」）。每单只提示一次，见 [takeFailure]。
+  String? get unannouncedFailure => _unannouncedFailure;
+
+  /// 取走待提示的付款失败（页面弹框前调用，或页面打开时丢弃之前的）。
+  String? takeFailure() {
+    final orderNo = _unannouncedFailure;
+    _unannouncedFailure = null;
+    return orderNo;
+  }
+
   bool get busy => _working;
   bool get canResetSandbox =>
       supported &&
@@ -457,6 +474,8 @@ class AppleIapController extends ChangeNotifier {
     _rerunManual = false;
     _creditedThisRun.clear();
     _unannouncedCredit = null;
+    _paymentStartedThisRun.clear();
+    _unannouncedFailure = null;
     _diagnostics.clear();
     _epoch++;
     _setPhase(AppleIapPhase.idle);
@@ -704,6 +723,8 @@ class AppleIapController extends ChangeNotifier {
         ..addAll(archived);
       creditedTokens = 0;
       _unannouncedCredit = null;
+      _paymentStartedThisRun.clear();
+      _unannouncedFailure = null;
       _diagnose('sandbox.reset.completed', {
         'pendingCount': 0,
         'removedCount': discarded.length,
@@ -846,6 +867,8 @@ class AppleIapController extends ChangeNotifier {
         'orderNo': record['orderNo'],
         'productId': record['productId'],
       });
+      // 回执丢失时付款框也可能已经拉起，所以在调用前记下。
+      _paymentStartedThisRun.add(record['orderNo'] as String);
       await bridge.buy(
         record['productId'] as String,
         record['accountToken'] as String,
@@ -1044,6 +1067,10 @@ class AppleIapController extends ChangeNotifier {
           }
           await bridge.acknowledgeFailure(record['accountToken'] as String);
           if (_current(epoch)) {
+            if (_paymentStartedThisRun.remove(record['orderNo']) &&
+                record['supersededBy'] == null) {
+              _unannouncedFailure = record['orderNo'] as String;
+            }
             _recordPhase(
               record,
               state == 'canceled'

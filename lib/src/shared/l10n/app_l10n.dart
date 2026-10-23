@@ -2185,6 +2185,14 @@ class AppL10n {
     'お支払いが完了しませんでした。もう一度購入できます。',
   );
 
+  /// 苹果付款框被关掉（用户取消、面容 / 密码验证失败等）时的弹框。
+  String get starApplePayFailedRetry => _pick(
+    '支付失败，请重新支付',
+    'Payment failed. Please try again.',
+    'お支払いに失敗しました。もう一度お支払いください。',
+    '支付失敗，請重新支付',
+  );
+
   String get starBuyPayChannel =>
       _pick('选择支付方式', 'Choose a payment method', 'お支払い方法を選択');
 
