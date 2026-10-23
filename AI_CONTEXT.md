@@ -559,7 +559,9 @@ Logout / successful account deletion / session expiry
    models skip the model veto. Projection and preview take width/height from the device list
    (`features/cast/projection_device.dart`), unknown capacity uses the IMG_MASK slot limit, and
    size/identity configuration errors are no longer reported as "not connected". Device images
-   come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default). For
+   come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default). Records whose
+   `broadcastId` is missing or not a product broadcast name get it from the product list by
+   `productId` (`_fillBroadcastIds`, 2026-10-23, same rule as the mini program). For
    `shapeType == 1` the cast preview clips the photo and edit frame to a circle and disables the
    portrait/landscape buttons; export and rotation are unchanged.
 3. **The selected target is immutable during an async operation.** Connection, projection, delete,

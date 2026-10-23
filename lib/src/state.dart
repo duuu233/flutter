@@ -2309,6 +2309,8 @@ class PhotoFrameState extends ChangeNotifier {
   /// 后端返回为准整体替换本地列表（含空列表）；请求失败保留当前列表。
   Future<ActionFeedback> refreshDevices() async {
     final epoch = _sessionEpoch;
+    // 产品列表（设备图回查 broadcastId 用）与设备列表并行拉，会话内成功一次后直接命中缓存
+    final catalog = _loadProductBroadcastIds();
     try {
       final data = await BoltFoxApi.getUserProductList({
         'pageIndex': 1,
@@ -2332,6 +2334,8 @@ class PhotoFrameState extends ChangeNotifier {
         // 小程序同样是合并而非覆盖（home.js:424 / device/list.js:86 的 `?? cached`）。
         _carryOverBleFields(device);
       }
+      // 设备图按机型区分：broadcastId 缺失或认不出的记录按 productId 回查产品列表补上（见 [_fillBroadcastIds]）。
+      await _fillBroadcastIds(mapped, catalog);
       // 稳定身份的第三档来源：登记表（顺序见 [DeviceIdentityRegistry]）。
       // 前两档都没给出完整 ID 时才查表兜底；反过来，后端这次下发了完整 ID 的记录顺手登记，
       // 供以后接口没下发时使用。整条补齐链只为一件事：别让身份闸把好设备拦在扫描之前。
@@ -2530,6 +2534,70 @@ class PhotoFrameState extends ChangeNotifier {
     return name is String ? decodeDisplayText(name).trim() : '';
   }
 
+  /// 产品列表 productId → broadcastId（去首尾空白）缓存，设备图按机型区分用
+  /// （对齐小程序 `api.js loadProductCatalog` / `withProductBroadcastId`）。
+  /// 设备列表接口下发 broadcastId，这里给缺失或认不出的记录按 productId 回查兜底：没有这一步，
+  /// 记录里取不到机型时 EC-370 只能落默认图（EB-169 还能靠 shapeType 兜成圆屏图），
+  /// 表现为搜索页对、首页/我的设备/详情错。
+  /// 成功才缓存（整次会话复用），失败静默返回空表——查不到只是设备图退回默认那张，不能挡住设备列表。
+  Map<int, String>? _productBroadcastIds;
+  Future<Map<int, String>>? _productBroadcastIdsRequest;
+
+  /// 设备列表最多为产品列表多等这么久（请求层超时 + 静默重试能拖很久）：超时就先按已有信息出图，
+  /// 请求本身照常跑完，成功了下次刷新列表就用上（与小程序 `PRODUCT_CATALOG_WAIT_MS` 同值）。
+  static const Duration _productCatalogWait = Duration(seconds: 3);
+
+  Map<int, String> _cacheProductBroadcastIds(List<Map<String, dynamic>> rows) {
+    final map = <int, String>{};
+    for (final row in rows) {
+      final productId = _asInt(row['productId']);
+      final broadcastId = (row['broadcastId'] ?? '').toString().trim();
+      if (productId > 0 && broadcastId.isNotEmpty) {
+        map[productId] = broadcastId;
+      }
+    }
+    if (map.isNotEmpty) {
+      _productBroadcastIds = map;
+    }
+    return map;
+  }
+
+  Future<Map<int, String>> _loadProductBroadcastIds() {
+    final cached = _productBroadcastIds;
+    if (cached != null) return Future.value(cached);
+    return _productBroadcastIdsRequest ??= BoltFoxApi.getProductList({
+      'pageIndex': 1,
+      'pageSize': 100,
+    })
+        .then((data) => _cacheProductBroadcastIds(extractApiRows(data)))
+        .catchError((Object _) => const <int, String>{})
+        .whenComplete(() => _productBroadcastIdsRequest = null);
+  }
+
+  /// 按 productId 给记录补上所属产品的 broadcastId。记录自带、且是产品列表里认得的广播名就不动；
+  /// 没带，或带的不是任何产品的广播名（字段口径对不上时）才按 productId 回查覆盖。
+  /// [catalog] 由调用方与设备列表请求并行发起，这里最多再等 [_productCatalogWait]。
+  Future<void> _fillBroadcastIds(
+    List<DeviceItem> devices,
+    Future<Map<int, String>> catalog,
+  ) async {
+    if (!devices.any((d) => d.productId > 0)) return;
+    final byProductId = await catalog.timeout(
+      _productCatalogWait,
+      onTimeout: () => const <int, String>{},
+    );
+    if (byProductId.isEmpty) return;
+    final known = byProductId.values.map((id) => id.toUpperCase()).toSet();
+    for (final device in devices) {
+      if (device.productId <= 0 ||
+          known.contains(device.broadcastId.toUpperCase())) {
+        continue;
+      }
+      final fromCatalog = byProductId[device.productId];
+      if (fromCatalog != null) device.broadcastId = fromCatalog;
+    }
+  }
+
   /// 解析 addUserProduct 必传的 productId（对齐小程序 `api.js` 的 `bindDevice` + `productScore`）。
   ///
   /// 拉「全部产品列表」，用扫描到的设备(型号/屏幕/名称)与每个产品的
@@ -2548,6 +2616,8 @@ class PhotoFrameState extends ChangeNotifier {
         'pageSize': 100,
       });
       products = extractApiRows(data);
+      // 顺手用这次拉到的产品列表刷新 broadcastId 缓存，刚上架的机型绑定后立刻认得出设备图
+      _cacheProductBroadcastIds(products);
     } catch (_) {
       return (
         productId: null,
