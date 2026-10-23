@@ -162,12 +162,21 @@ bool sessionSerialsMatch(Iterable<Object?> session, Object? expected) {
   return serials.contains(target);
 }
 
+/// 有确定尺寸的旧屏型码（[FrameProtocol.screenTypes] 里宽高非 0 的：0x01=3.7寸 480×720、
+/// 0x02=5.89寸 680×960）。只有它们之间才能按型号否决。
+const Set<int> _sizedScreenCodes = {0x01, 0x02};
+
 /// 屏幕型号是否一致（防跨型号串台，对齐小程序 active-device.sameScreen）：
-/// 两侧屏幕类型码都已知且不同 → 判为不同型号设备，返回 false；
-/// 任一侧未知(0) → 不阻断，回退纯序列号匹配（信息缺失不拦，保持兼容）。
-/// 屏幕类型码 = FrameScreenType.code（0x01=3.7寸 / 0x02=5.89寸 / 0x03=7.3寸）或广播里的 int。
+/// 两侧都是有确定尺寸的旧屏型码且不同 → 判为不同型号设备，返回 false；
+/// 其余一律不阻断，回退纯序列号匹配：任一侧未知(0)、7.3寸占位(0x03，无尺寸)、
+/// 以及新机型的屏型码（EB-169 报 0x04，EC-370 等报的码不在旧表里）。
+///
+/// 2026-10-23：原来「两侧非 0 且不同就否决」，0x01 应答里的**原始**屏型字节不归一，
+/// 新机型报一个不认识的码就和记录的旧码对不上，连上后被判「不是这台」→断开排除→报未搜到，
+/// 表现为 APP 连不上 EC-370 而小程序能连（小程序 sameScreen 只在旧尺寸之间否决）。
+/// 屏幕类型码 = FrameScreenType.code 或广播 / 0x01 里的原始 int。
 bool sameScreenCode(int a, int b) {
-  if (a == 0 || b == 0) {
+  if (!_sizedScreenCodes.contains(a) || !_sizedScreenCodes.contains(b)) {
     return true;
   }
   return a == b;

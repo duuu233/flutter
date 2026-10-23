@@ -784,14 +784,13 @@ class BleController extends ChangeNotifier {
   /// 小程序是**该断不断**，这里是**断了还顺手把它拉黑**。
   Future<_IdentityVerdict> _verifyBoundDeviceIdentity({
     required String serial,
-    required int screenCode,
   }) async {
     if (!isCompleteDeviceSerial(serial)) {
       return _IdentityVerdict.mismatched;
     }
-    if (!sameScreenCode(screenCode, sessionScreenCode)) {
-      return _IdentityVerdict.mismatched;
-    }
+    // 连上后只认 0x01 完整 6 字节 ID（对齐小程序 deviceInfoMatches），不再按屏型否决：
+    // 完整 ID 精确相等本身就比屏型强；原来这里拿记录码和 0x01 原始屏型字节比，新机型报
+    // 不认识的码就被判「不是这台」，断开、排除后报未搜到，且不打日志（2026-10-23，EC-370）。
     var actual = info?.deviceId ?? '';
     if (actual.isEmpty) {
       try {
@@ -856,7 +855,6 @@ class BleController extends ChangeNotifier {
         sessionSerials.any((value) => broadcastCandidateMatch(value, serial))) {
       if (await _verifyBoundDeviceIdentity(
             serial: serial,
-            screenCode: screenCode,
           ) ==
           _IdentityVerdict.verified) {
         _connectionLease.noteActivity();
@@ -1024,7 +1022,6 @@ class BleController extends ChangeNotifier {
       }
       final verdict = await _verifyBoundDeviceIdentity(
         serial: serial,
-        screenCode: screenCode,
       );
       if (verdict == _IdentityVerdict.verified) {
         if (directProbed == _DirectConnectOutcome.missed) {
@@ -1151,7 +1148,6 @@ class BleController extends ChangeNotifier {
       final verdict = error == null
           ? await _verifyBoundDeviceIdentity(
               serial: serial,
-              screenCode: screenCode,
             )
           : null;
       if (verdict == _IdentityVerdict.verified) {
@@ -1228,7 +1224,6 @@ class BleController extends ChangeNotifier {
     final verdict = error == null
         ? await _verifyBoundDeviceIdentity(
             serial: serial,
-            screenCode: screenCode,
           )
         : null;
     if (verdict == _IdentityVerdict.verified) {

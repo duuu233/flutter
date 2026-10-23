@@ -556,7 +556,9 @@ Logout / successful account deletion / session expiry
    original order; an unknown screen type (EB-169 reports 0x04) no longer drops the ID, and the
    search list shows `--` instead of falling back to `remoteId`. Device records keep
    `productId/broadcastId/shapeType`; `DeviceItem.screenCode` is 0 for non-legacy sizes so new
-   models skip the model veto. Projection and preview take width/height from the device list
+   models skip the model veto. Since 2026-10-23 `sameScreenCode` only vetoes between the sized
+   legacy codes 0x01/0x02 (new/unknown codes and 0x03 pass), and post-connect verification checks
+   only the complete 6-byte ID, like the mini program (EC-370 could not connect before). Projection and preview take width/height from the device list
    (`features/cast/projection_device.dart`), unknown capacity uses the IMG_MASK slot limit, and
    size/identity configuration errors are no longer reported as "not connected". Device images
    come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default). Records whose

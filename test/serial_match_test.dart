@@ -146,9 +146,19 @@ void main() {
       expect(sameScreenCode(0x02, 0x02), isTrue);
     });
 
-    test('两侧都已知且不同 → 一票否决', () {
+    test('两侧都是有尺寸的旧屏型且不同 → 一票否决', () {
       expect(sameScreenCode(0x01, 0x02), isFalse);
-      expect(sameScreenCode(0x03, 0x02), isFalse);
+      expect(sameScreenCode(0x02, 0x01), isFalse);
+    });
+
+    // 2026-10-23 对齐小程序 sameScreen：只在有确定尺寸的旧屏型（0x01/0x02）之间否决。
+    // 原断言 sameScreenCode(0x03, 0x02) 为 false 挪到这里改为放行：7.3寸占位无尺寸，小程序不拿它否决。
+    test('7.3寸占位与新机型屏型码 → 不阻断（APP 连不上 EC-370 的根因）', () {
+      expect(sameScreenCode(0x03, 0x02), isTrue);
+      expect(sameScreenCode(0x01, 0x04), isTrue);
+      expect(sameScreenCode(0x02, 0x04), isTrue);
+      expect(sameScreenCode(0x01, 0x05), isTrue);
+      expect(sameScreenCode(0x07, 0x02), isTrue);
     });
 
     test('任一侧未知(0) → 不阻断（回退纯序列号匹配）', () {
