@@ -93,4 +93,36 @@ void main() {
     expect(DeviceThumb.ofRecord(broadcastId: ''), DeviceThumb.defaultAsset);
     expect(FrameProtocol.capacityOf(''), 0);
   });
+
+  group('搜索列表尺寸：按广播名匹配产品的 sizeModel（2026-10-23，同小程序 scanSizeModel）', () {
+    const products = <ProductSizeModel>[
+      (broadcastId: 'EF6-370', sizeModel: '3.7寸'),
+      (broadcastId: 'EF6-589', sizeModel: ' 5.89寸 '),
+      (broadcastId: 'EC-370', sizeModel: '3.6寸'),
+      (broadcastId: 'EB-169 ', sizeModel: ''),
+      (broadcastId: '', sizeModel: '9.9寸'),
+    ];
+
+    test('广播名包含匹配：带后缀、大小写不同、尺寸去空白', () {
+      expect(ProductBroadcastId.sizeModelOfScan('EC-370', products), '3.6寸');
+      expect(ProductBroadcastId.sizeModelOfScan('ec-370-0B37 ', products), '3.6寸');
+      expect(ProductBroadcastId.sizeModelOfScan(' EF6-589', products), '5.89寸');
+    });
+
+    test('没配、匹配不到、产品列表为空都不展示（不再按屏型猜）', () {
+      expect(ProductBroadcastId.sizeModelOfScan('EB-169', products), '');
+      expect(ProductBroadcastId.sizeModelOfScan('XX-001', products), '');
+      expect(ProductBroadcastId.sizeModelOfScan('EC-370', const []), '');
+    });
+
+    test('多个命中取更具体（更长）的广播名', () {
+      expect(
+        ProductBroadcastId.sizeModelOfScan('EF6-370-PRO', [
+          ...products,
+          (broadcastId: 'EF6-370-PRO', sizeModel: '4.0寸'),
+        ]),
+        '4.0寸',
+      );
+    });
+  });
 }

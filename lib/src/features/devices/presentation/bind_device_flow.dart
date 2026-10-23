@@ -22,6 +22,7 @@ import 'bind_device_found.dart';
 import 'bind_device_not_found.dart';
 import 'bind_device_searching.dart';
 import '../../../device/device_thumb.dart';
+import '../../../device/product_broadcast_id.dart';
 
 /// 绑定设备流程编排页：权限 → 扫描 → 发现 / 未发现 → 连接 → 绑定。
 ///
@@ -56,6 +57,9 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   List<ScanResult> _results = const [];
   bool _binding = false;
 
+  /// 产品列表的「广播名 → 尺寸型号」，列表副标题的尺寸按它显示（见 [_entryOf]）；拉到前为空，不显示尺寸。
+  List<ProductSizeModel> _productSizeModels = const [];
+
   /// 扫描是否仍在进行。与 [_stage] 分开存：搜到第一台后 stage 就切到 `found`（列表开始显示），
   /// 但扫描还在继续，雷达要继续转、列表要继续追加——这两件事同时为真才是「边搜边显示」。
   bool _scanning = false;
@@ -70,6 +74,14 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   @override
   void initState() {
     super.initState();
+    // 与扫描并行拉产品列表（会话缓存、失败静默），回来后重建列表补上尺寸
+    unawaited(
+      widget.state.loadProductSizeModels().then((list) {
+        if (mounted && list.isNotEmpty) {
+          setState(() => _productSizeModels = list);
+        }
+      }),
+    );
     WidgetsBinding.instance.addPostFrameCallback((_) => _startScan());
   }
 
@@ -245,9 +257,15 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   }
 
   /// 把扫描结果构造成发现页的展示项：名称 + 「尺寸 · 电量XX% · 信号XX」副标题
-  /// （对齐小程序 `bind.wxml` 的 `nearby-sub`）。屏型/电量取自广播厂商数据，信号取自 RSSI 档位。
+  /// （对齐小程序 `bind.wxml` 的 `nearby-sub`）。尺寸按广播名匹配产品、取后台配置的 sizeModel
+  /// （2026-10-23 起，不再用广播屏型推算，匹配不到或没配不显示）；电量取自广播厂商数据，信号取自 RSSI 档位。
   BindDeviceEntry _entryOf(ScanResult result) {
-    final screen = BleController.screenLabelOf(result);
+    final scanName =
+        '${result.device.platformName} ${result.advertisementData.advName}';
+    final sizeModel = ProductBroadcastId.sizeModelOfScan(
+      scanName,
+      _productSizeModels,
+    );
     final battery = BleController.batteryOf(result);
     final level = BleController.rssiToSignalLevel(result.rssi);
     final l10n = AppL10n.of(context);
@@ -260,7 +278,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       null => '--',
     };
     final parts = <String>[
-      if (screen.isNotEmpty) screen,
+      if (sizeModel.isNotEmpty) sizeModel,
       if (battery != null) l10n.bindBatteryLabel(battery),
       l10n.bindSignalLabel(signal),
     ];
@@ -270,9 +288,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       subtitle: parts.join(' · '),
       deviceId: _displayDeviceCode(result),
       // 设备图按本次广播名区分机型（name 与广播包里的 advName 都看，与扫描白名单同口径）。
-      thumbAsset: DeviceThumb.ofScanName(
-        '${result.device.platformName} ${result.advertisementData.advName}',
-      ),
+      thumbAsset: DeviceThumb.ofScanName(scanName),
     );
   }
 

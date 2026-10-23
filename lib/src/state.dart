@@ -2556,6 +2556,9 @@ class PhotoFrameState extends ChangeNotifier {
   Map<int, String>? _productBroadcastIds;
   Future<Map<int, String>>? _productBroadcastIdsRequest;
 
+  /// 同一次产品列表顺带缓存的「广播名 → 尺寸型号」，绑定页搜索列表按广播名显示 sizeModel 用（2026-10-23）。
+  List<ProductSizeModel>? _productSizeModels;
+
   /// 设备列表最多为产品列表多等这么久（请求层超时 + 静默重试能拖很久）：超时就先按已有信息出图，
   /// 请求本身照常跑完，成功了下次刷新列表就用上（与小程序 `PRODUCT_CATALOG_WAIT_MS` 同值）。
   static const Duration _productCatalogWait = Duration(seconds: 3);
@@ -2571,9 +2574,21 @@ class PhotoFrameState extends ChangeNotifier {
     }
     if (map.isNotEmpty) {
       _productBroadcastIds = map;
+      _productSizeModels = [
+        for (final row in rows)
+          (
+            broadcastId: (row['broadcastId'] ?? '').toString().trim(),
+            sizeModel: (row['sizeModel'] ?? '').toString().trim(),
+          ),
+      ];
     }
     return map;
   }
+
+  /// 产品列表的「广播名 → 尺寸型号」（会话缓存，与设备图回查共用一次请求；失败静默返回空表）。
+  /// 绑定页搜索列表据此按蓝牙广播名显示尺寸（见 [ProductBroadcastId.sizeModelOfScan]）。
+  Future<List<ProductSizeModel>> loadProductSizeModels() => _loadProductBroadcastIds()
+      .then((_) => _productSizeModels ?? const <ProductSizeModel>[]);
 
   Future<Map<int, String>> _loadProductBroadcastIds() {
     final cached = _productBroadcastIds;

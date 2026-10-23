@@ -574,7 +574,9 @@ Logout / successful account deletion / session expiry
    `liveCapacity` recomputed by model. The device-details "screen size" row shows the product's
    `sizeModel` (e.g. 3.6寸, from the device list/detail APIs, 2026-10-23) as configured in the admin
    console; it is no longer derived from screen code or width/height, and the row (with its divider)
-   is hidden when empty. For
+   is hidden when empty. The bind search list matches the scan's broadcast name against product
+   `broadcastId` (`ProductBroadcastId.sizeModelOfScan`, same rule as the mini program) and shows that
+   product's `sizeModel`, or nothing. For
    `shapeType == 1` the cast preview clips the photo and edit frame to a circle and disables the
    portrait/landscape buttons; export and rotation are unchanged.
 3. **The selected target is immutable during an async operation.** Connection, projection, delete,
@@ -875,7 +877,7 @@ Current history groups include:
 - 「待确认」 The exact Flutter release all development and build machines are expected to use.
 - 「待确认」 The numeric Android `minSdk`, `compileSdk`, and `targetSdk` after resolution by the
   agreed Flutter toolchain.
-- 「待确认」 Swagger describes the dithering `type` as screen rotation (1=clockwise 90°, 2=counter-clockwise 90°); the app keeps the former strategy values (480×720 → 1, else 0) per the owner's "same parameters" instruction. Real-device output still needs confirmation.
+- Dithering `type` keeps its original values (0 = 5.8-inch large device 680×960, 1 = 3.7-inch small device 480×720; a frame strategy, not a rotation). Swagger once described it as rotation; the owner confirmed on 2026-10-23 that the backend will align. 「待确认」 Real-device frames after the backend switch.
 - 「待确认」 Whether the backend enforces one active record per device plus physical `imgIndex`.
 - 「待确认」 Whether the latest deployed BoltStar AI API still matches current session creation,
   error codes, and image-message structures.

@@ -28,3 +28,9 @@
 
 - 本机无 Flutter/Dart，`flutter analyze`、`flutter test`（含新增用例）均未运行；未真机。
 - `git diff --check` 通过。
+
+## 同日追加（用户确认后）
+
+- 绑定页搜索列表：副标题的尺寸改为按广播名（platformName + advName）匹配产品列表 `broadcastId`（去首尾空白、大小写不敏感的包含匹配，多个命中取最长），显示该产品的 `sizeModel`；匹配不到、没配或产品列表没拉到都不显示，不再用 `BleController.screenLabelOf`。产品列表与扫描并行拉（`PhotoFrameState.loadProductSizeModels`，与设备图回查共用一次请求与会话缓存，失败静默），回来后重建列表。绑定时传给 `bindDevice` 的 `screen` 仍是广播屏型（只用于匹配打分），未改。`test/product_broadcast_id_test.dart` 新增 3 个用例。
+- `type`：用户确认数值与原来一致不改（0=5.8寸大设备、1=3.7寸小设备，出帧策略非旋转角），后端按此对齐；注释与文档改为该口径。
+- 验证：本机仍无 Flutter，analyze/test 未运行，未真机。
