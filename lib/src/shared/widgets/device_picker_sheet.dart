@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/wifi/wifi_widgets.dart';
 import '../../state.dart';
 import '../l10n/app_l10n.dart';
 
@@ -195,17 +196,28 @@ class _DevicePickerRow extends StatelessWidget {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      device.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: selected
-                            ? const Color(0xFFFF5A1E)
-                            : const Color(0xFF2A2D32),
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            device.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: selected
+                                  ? const Color(0xFFFF5A1E)
+                                  : const Color(0xFF2A2D32),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                        // WiFi 版挂角标（2026-10-27 同步小程序）：选它不连蓝牙，走 WiFi 投屏
+                        if (device.isWifi) ...[
+                          const SizedBox(width: 6),
+                          CommBadge.plain(context, wifi: true),
+                        ],
+                      ],
                     ),
                     // 设备ID：同型号同名设备靠它区分（后端记录里的完整 6 字节）。
                     // 老记录可能没有，缺就不画这一行，不写「--」占位。

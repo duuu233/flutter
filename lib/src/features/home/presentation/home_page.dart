@@ -20,6 +20,8 @@ import '../../ai/ai_entry.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../gallery/official/official_gallery_entry.dart';
+import '../../wifi/wifi_status.dart';
+import '../../wifi/wifi_widgets.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
 part 'home_main_view.dart'; // 首页主视图（已绑定 / 未绑定）
@@ -163,6 +165,8 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) {
         return;
       }
+      // WiFi 版卡片的云端状态（不走蓝牙）后台查，回来再替换（2026-10-27 同步小程序）
+      WifiStatusStore.instance.refreshAll(widget.state.devices);
       // 电量/内存是蓝牙字段、后端不下发：列表刷完再对连接中的那台补一次 0x01 回读，
       // 首页卡片进来就是实时电量，而不是上一次读到的缓存值。
       for (final device in widget.state.devices) {
@@ -398,7 +402,12 @@ class _HomePageState extends State<HomePage> {
       );
       return;
     }
-    if (!widget.state.isDeviceActuallyConnected(activeDevice.id)) {
+    if (activeDevice.isWifi) {
+      // WiFi 版不走蓝牙（2026-10-27 同步小程序）：确认云端在线即可（明确离线才拦，查不到放行由投屏接口裁决）
+      if (!await ensureWifiDeviceOnline(context, activeDevice) || !mounted) {
+        return;
+      }
+    } else if (!widget.state.isDeviceActuallyConnected(activeDevice.id)) {
       // 未连接则自动扫连再投（对齐小程序 ensureActiveDeviceConnection）；连不上提示并中止。
       // 低电量提醒由 _ensureConnected 在连上后弹，这里不再弹第二次。
       final connected = await _ensureConnected(activeDevice.id);

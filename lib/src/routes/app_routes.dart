@@ -35,6 +35,7 @@ import '../features/settings/presentation/settings_page.dart';
 import '../features/settings/presentation/update_boltstar_page.dart';
 import '../features/devices/presentation/ota_upgrade_page.dart';
 import '../features/settings/presentation/user_agreement_page.dart';
+import '../features/wifi/presentation/wifi_device_detail_page.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../shared/widgets/app_toast.dart';
 import '../state.dart';
@@ -260,6 +261,12 @@ class AppRoutes {
         final detailDeviceId = settings.arguments is String
             ? settings.arguments as String
             : state.selectedDeviceId;
+        // WiFi 版走 WiFi 设备详情（2026-10-27 同步小程序）：蓝牙版详情全是蓝牙能力，从任何入口进来都在这里分流
+        if (state.deviceById(detailDeviceId).isWifi) {
+          builder = (context) =>
+              WifiDeviceDetailPage(state: state, deviceId: detailDeviceId);
+          break;
+        }
         builder = (context) => DeviceDetailsPage(
           state: state,
           deviceId: detailDeviceId,

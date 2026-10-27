@@ -44,6 +44,27 @@
 | 星币（支付体系） | `subpackages/token` | `features/star` | 🔶 | 管理、套餐、余额与购买/消费记录已有。小程序=微信虚拟支付(1)、安卓=PayPal(3)、iOS=Apple 内购(2)。iOS 2026-10-12 接入商品查询、原生购买、传统 Base64 收据及交易恢复；匹配交易、订单已支付和余额到账后才结束交易。验收据提交订单号/苹果交易号，后端负责发币；新返回结构/幂等及 iOS 沙盒仍待验收，见 [iOS 内购契约](IOS_IN_APP_PURCHASE.md)。安卓 PayPal 流程保留，联调说明见 `../runbooks/PAYPAL_REDIRECT.md`。 |
 | App 邮箱注册/改密 | 不适用 | `features/account` | 🔶 | App 平台专属 |
 
+## 2.1 WiFi 版（`main-wifi` 分支，2026-10-27 起）
+
+两端都是双长期分支：`main` 为线上蓝牙版、互相对齐；`main-wifi` 开发 WiFi 版设备、互相对齐，`main` 修的问题及时合入 `main-wifi`。
+下表只在 `main-wifi` 成立，记录见 [`../history/2026-10/2026-10-27-wifi-version-sync.md`](../history/2026-10/2026-10-27-wifi-version-sync.md)。
+
+| 模块 | 小程序 | Flutter | 状态 | 当前结论 |
+| --- | --- | --- | --- | --- |
+| 广播匹配 / 扫描 | `utils/broadcast-match.js`、`bluetooth.js includeWifi` | `device/wifi/broadcast_match.dart`、`FrameBleClient.scan(includeWifi)` | ✅⚠️ | `*` 模板 + 内置 `IJ_*`，中间 12 位为 deviceNo；只有搜索页收录 WiFi 版 |
+| 搜索设备列表 | `subpackages/device/bind` | `bind_device_flow.dart` / `bind_device_found.dart` | ✅⚠️ | 第二行「类型标签包住尺寸 → 电量 → 信号 + 信号格」；WiFi 行查规格、未知设备拦截、「立即配网」先 BluFi 连接 |
+| 配网三页 | `wifi-list` / `wifi-config` / `wifi-provision` | `features/wifi/presentation/` 三页 | ✅⚠️🔶 | 流程、文案、四步时序一致；🔶 App 不保持屏幕常亮、手机网络判断改为解析 IoT 域名 |
+| BluFi | `utils/blufi.js` | `device/wifi/blufi.dart` | ✅⚠️ | 帧格式、分片、两种 WiFi 列表回包、JSON 指令回执口径一致；不加密 |
+| IoT 服务 | `utils/iot-*.js` | `network/iot/` | ✅⚠️ | 错误码同表（App 四语种）；401 登出、503 不登出；WS 心跳 / 退避 / 补订一致 |
+| 我的设备 | `subpackages/device/list` | `my_devices_page.dart` | ✅⚠️ | WiFi版 / 蓝牙版分组；WiFi 卡云端状态 + 投屏 / 刷新状态 |
+| WiFi 设备详情 | `subpackages/device/wifi-detail` | `wifi_device_detail_page.dart` | ✅⚠️ | 设备信息行、`device.status` 自动重查；蓝牙详情入口自动分流 |
+| WiFi 投屏 | `utils/wifi-projection.js`、`projection/wifi-result` | `wifi_projection.dart`、`wifi_cast_result_page.dart` | ✅⚠️ | 上传进度、WS + 状态查询兜底、TIMEOUT 修正窗口、90 秒未知；不写投屏记录 |
+| 首页 / 图库详情 / 选设备弹层 | `home`、`gallery/detail`、`device-picker-sheet` | `home_*`、`official_gallery_detail_page.dart`、`device_picker_sheet.dart` | ✅⚠️ | WiFi 卡云端状态、投屏只确认在线、弹层「WiFi版」角标 |
+| IoT 联调卡 | `subpackages/device/debug` | — | 🔶 | App 调试台未加 |
+| AI 对话 / 我的相册再次投屏 | 未接 | 未接 | ⚠️ | 两端一致：选 WiFi 版仍走蓝牙，会失败 |
+
+⚠️ App 侧未编译、未真机、未与 IoT 联调。
+
 ## 3. 全局行为
 
 | 项目 | 状态 | 当前规则 |

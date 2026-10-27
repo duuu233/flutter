@@ -16,6 +16,8 @@ import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../cast_image_editor.dart';
+import '../../../network/dithering_api.dart';
+import '../../wifi/presentation/wifi_cast_result_page.dart';
 import 'casting_progress_page.dart';
 
 /// 投屏预览页。**2026-07-25 按小程序 07-22 ~ 07-24 的三轮重构整页重写**
@@ -1365,6 +1367,21 @@ class _CastPreviewPageState extends State<CastPreviewPage>
     // 先把当前图的实时手势快照进 _states，否则带回去的是它上次切图时的旧构图。
     _saveEditState();
     _CarriedEdits.save(_paths, _states);
+
+    // WiFi 版不走蓝牙（2026-10-27 同步小程序）：构图导出后去 WiFi 投屏结果页，经 IoT 服务上传
+    if (widget.device.isWifi) {
+      await Navigator.of(context).pushReplacement(
+        AppPageRoute<void>(
+          builder: (_) => WifiCastResultPage(
+            device: widget.device,
+            imagePaths: outPaths,
+            // 与蓝牙版抖动出帧同口径：按导出分辨率判型（评审回复 8.1）
+            type: DitheringApi.typeForDevice(dev.width, dev.height),
+          ),
+        ),
+      );
+      return;
+    }
 
     // pushReplacement：投屏页返回时直接回到上一页（首页/设备页），
     // 不要退回这个已经用过的预览页（对齐小程序 redirectTo）。

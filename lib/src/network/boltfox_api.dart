@@ -1,5 +1,6 @@
 import 'api_client.dart';
 import 'api_config.dart';
+import 'api_exception.dart';
 import 'api_rows.dart';
 import 'api_session.dart';
 import 'crypto_util.dart';
@@ -110,6 +111,113 @@ class BoltFoxApi {
       }
     }
     return ids;
+  }
+
+  /// WiFi 版设备按 deviceNo 查产品规格（尺寸、产品 ID 等，同步小程序 `api.lookupProductByDevice`）。
+  ///
+  /// 返回 `(product, reason)`：查到时 product 为归一后的产品行、reason 为空；没查到时 product 为 null，
+  /// reason 说明原因（联调用，如「E348C21ED428：接口失败：500 …」）。不抛错。
+  /// 设备 ID 只传不带冒号的 12 位（产品口径：传给后端查询的设备ID不加冒号），传进来带冒号也先去掉。
+  /// 不做网络重试、不做结果缓存：失败 / 超时由调用方直接按「未知设备」处理，重新搜索全部重查。
+  static Future<({Map<String, dynamic>? product, String reason})> lookupProductByDevice(
+    String deviceNo,
+  ) async {
+    final plain = deviceNo.replaceAll(RegExp(r'[:\-\s]'), '').trim().toUpperCase();
+    if (plain.isEmpty) {
+      return (product: null, reason: '设备ID为空');
+    }
+    Object? data;
+    try {
+      data = await _http.getJson(
+        '/Client/Product/getProductByDevice',
+        query: {'deviceNo': plain},
+        retryOnTimeout: false,
+        retryOnConnectionError: false,
+      );
+    } catch (error) {
+      final message = error is ApiException ? '${error.code} ${error.message}' : '$error';
+      return (product: null, reason: '$plain：接口失败：$message');
+    }
+    final product = normalizeWifiProduct(data);
+    if (product != null) {
+      return (product: product, reason: '');
+    }
+    return (product: null, reason: '$plain：${_describeWifiProductMiss(data)}');
+  }
+
+  /// getProductByDevice 的返回剥壳：兼容直接回对象、回列表（取第一条）、分页（list / records / rows / pageData）、
+  /// 或包在 product / productInfo / data 字段里（还没拿到真实返回样例，常见形状一并兼容）。
+  static Object? _unwrapWifiProduct(Object? data) {
+    var raw = data;
+    for (var depth = 0; depth < 3 && raw != null; depth++) {
+      if (raw is List) {
+        raw = raw.isEmpty ? null : raw.first;
+        continue;
+      }
+      if (raw is! Map) {
+        break;
+      }
+      final map = raw;
+      final lists = [map['list'], map['records'], map['rows'], map['pageData']].whereType<List>();
+      if (lists.isNotEmpty) {
+        final first = lists.first;
+        raw = first.isEmpty ? null : first.first;
+        continue;
+      }
+      final inner = [map['product'], map['productInfo'], map['data']].whereType<Map>();
+      if (inner.isNotEmpty && map['productId'] == null && map['sizeModel'] == null) {
+        raw = inner.first;
+        continue;
+      }
+      break;
+    }
+    return raw;
+  }
+
+  /// 归一成产品行；「查到」只认产品身份：有效的 productId（非空、非 0）或非空的产品名。
+  /// 空数据、空对象、字段全是 null / 0 的空壳记录一律算查不到（后端对未开通设备回一条默认值记录时，
+  /// 不能被当成已开通，否则「未知设备」就拦不住）。
+  static Map<String, dynamic>? normalizeWifiProduct(Object? data) {
+    final raw = _unwrapWifiProduct(data);
+    if (raw is! Map) {
+      return null;
+    }
+    String first(List<Object?> values) {
+      for (final value in values) {
+        final text = (value ?? '').toString().trim();
+        if (text.isNotEmpty) return text;
+      }
+      return '';
+    }
+
+    final productName = first([raw['productName'], raw['name'], raw['model']]);
+    final sizeModel = first([raw['sizeModel']]);
+    final productId = first([raw['productId'], raw['id']]);
+    final hasProductId = productId.isNotEmpty && productId != '0';
+    if (!hasProductId && productName.isEmpty) {
+      return null;
+    }
+    return {
+      ...raw.map((k, v) => MapEntry(k.toString(), v)),
+      'productId': productId,
+      'productName': productName,
+      'sizeModel': sizeModel,
+    };
+  }
+
+  static String _describeWifiProductMiss(Object? data) {
+    final raw = _unwrapWifiProduct(data);
+    if (raw == null || raw == '') {
+      return '返回为空';
+    }
+    if (raw is! Map) {
+      return '返回格式不认识：$data';
+    }
+    if (raw.isEmpty) {
+      return '返回为空对象';
+    }
+    final text = '$data';
+    return '返回里没有产品 ID 和产品名称：${text.length > 200 ? text.substring(0, 200) : text}';
   }
 
   /// 常见问题列表。[params]：pageIndex、pageSize、keyword、startDate、endDate。

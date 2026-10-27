@@ -14,6 +14,7 @@ import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../cast/recast_download.dart';
+import '../../wifi/wifi_status.dart';
 import 'official_gallery_api.dart';
 
 /// 官方图库·图片详情，对照小程序 `photo-album/subpackages/gallery/detail`。
@@ -231,11 +232,17 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
     _projecting = true;
     setState(() {});
     try {
-      // 权限门禁必须在 AppLoadingDialog **之前**（授权框与设备操作不同屏，见 PermissionGate 文档）
-      if (!await PermissionGate.ensureBleReady(context) || !mounted) {
+      // WiFi 版（2026-10-27 同步小程序）：不连蓝牙，确认云端在线（明确离线提示并中止，查不到放行由投屏接口裁决），
+      // 预览页导出后去 WiFi 投屏结果页
+      if (device.isWifi) {
+        if (!await ensureWifiDeviceOnline(context, device) || !mounted) {
+          return;
+        }
+      } else if (!await PermissionGate.ensureBleReady(context) || !mounted) {
+        // 权限门禁必须在 AppLoadingDialog **之前**（授权框与设备操作不同屏，见 PermissionGate 文档）
         return;
       }
-      if (!device.connected) {
+      if (!device.isWifi && !device.connected) {
         AppLoadingDialog.show(context, l10n.castConnectingDevice);
         final ActionFeedback feedback;
         try {
@@ -255,9 +262,11 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
 
       // 「连接并投屏」是主动操作：本来就连着 / 刚扫连上都提醒一次电量
       // （2026-08-27 补齐 08-21 遗留入口）。放在下载蒙层之前，不与蒙层抢屏。
-      await showLowBatteryTipIfNeeded(context, state, device.id);
-      if (!mounted) {
-        return;
+      if (!device.isWifi) {
+        await showLowBatteryTipIfNeeded(context, state, device.id);
+        if (!mounted) {
+          return;
+        }
       }
 
       // 预览页只接受本地路径，远程图必须先下下来

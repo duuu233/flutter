@@ -5,6 +5,10 @@ import 'package:BoltStar/src/shared/widgets/device_name_dialog.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../device/device_thumb.dart';
+import '../../wifi/presentation/wifi_device_detail_page.dart' show WifiActionBar;
+import '../../wifi/wifi_l10n.dart';
+import '../../wifi/wifi_status.dart';
+import '../../wifi/wifi_widgets.dart';
 
 /// 我的设备列表页面，对应 UI 稿「我的设备」。
 ///
@@ -24,9 +28,15 @@ class MyDevicesPage extends StatefulWidget {
     this.onDisconnect,
     this.onRename,
     this.promotedDeviceId = '',
+    this.onWifiCast,
+    this.onWifiRefresh,
   });
 
   final List<MyDeviceOverview>? devices;
+
+  /// WiFi 版卡片的「投屏」「刷新状态」（2026-10-27 同步小程序 main-wifi）。
+  final ValueChanged<String>? onWifiCast;
+  final ValueChanged<String>? onWifiRefresh;
 
   /// 设备列表首屏是否仍在加载。true 时显示 loading，不显示「暂无设备」空态——
   /// 否则接口返回前必然先闪一次空列表（对齐小程序 device/list 的 `loading:true` 门控）。
@@ -62,6 +72,8 @@ class MyDeviceOverview {
     required this.connected,
     required this.battery,
     this.thumbAsset = DeviceThumb.defaultAsset,
+    this.wifi = false,
+    this.wifiStatus = WifiDeviceStatus.loading,
   });
 
   final String id;
@@ -72,12 +84,18 @@ class MyDeviceOverview {
   /// 设备图（按机型区分，见 [DeviceThumb]）。
   final String thumbAsset;
 
+  /// WiFi 版（按所属产品广播 ID 认）：不走蓝牙，状态取 [wifiStatus]（IoT 云端）。
+  final bool wifi;
+  final WifiDeviceStatus wifiStatus;
+
   MyDeviceOverview copy() => MyDeviceOverview(
     id: id,
     name: name,
     connected: connected,
     battery: battery,
     thumbAsset: thumbAsset,
+    wifi: wifi,
+    wifiStatus: wifiStatus,
   );
 }
 
@@ -117,34 +135,72 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
                     // 下拉刷新：此前数据只在进页时刷新，无手动恢复手段。
                     onRefresh: () async => widget.onRefresh?.call(),
                     color: const Color(0xFFEB5F1B),
-                    child: ListView.separated(
+                    // 按 WiFi 版 / 蓝牙版分组（2026-10-27 同步小程序 main-wifi）：WiFi 版在前；某组没有设备就不出该组标题。
+                    // 组内仍按上层排好的顺序（已连接 → 最近绑定 → 接口原序）。
+                    child: ListView(
                       padding: const EdgeInsets.only(bottom: 12),
                       physics: const AlwaysScrollableScrollPhysics(),
-                      itemCount: _devices.length,
-                      separatorBuilder: (_, _) => const SizedBox(height: 12),
-                      itemBuilder: (context, index) {
-                        final device = _devices[index];
-                        return _PromotionTransition(
-                          // key 带上设备 id：列表重排后 Flutter 才不会把动画状态
-                          // 复用给恰好排在同一位置的另一台设备。
-                          key: ValueKey('device-card-${device.id}'),
-                          active: device.id == widget.promotedDeviceId,
-                          child: _DeviceCard(
-                            device: device,
-                            onOpenDetail: () =>
-                                widget.onOpenDetail?.call(device.id),
-                            onCast: () => widget.onCast?.call(device.id),
-                            onRename: () => _rename(device),
-                            onToggleConnection: () => _toggleConnection(device),
-                          ),
-                        );
-                      },
+                      children: _groupedCards(context),
                     ),
                   ),
           ),
         ],
       ),
     );
+  }
+
+  List<Widget> _groupedCards(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    final wifi = _devices.where((device) => device.wifi).toList();
+    final ble = _devices.where((device) => !device.wifi).toList();
+    final children = <Widget>[];
+    if (wifi.isNotEmpty) {
+      children.add(_GroupTitle(wifi: true, label: l10n.wifiBadge));
+      for (final device in wifi) {
+        children
+          ..add(const SizedBox(height: 12))
+          ..add(
+            _WifiDeviceCard(
+              key: ValueKey('wifi-card-${device.id}'),
+              device: device,
+              onOpenDetail: () => widget.onOpenDetail?.call(device.id),
+              onRename: () => _rename(device),
+              onCast: () => widget.onWifiCast?.call(device.id),
+              onRefresh: () => widget.onWifiRefresh?.call(device.id),
+            ),
+          );
+      }
+    }
+    if (ble.isNotEmpty) {
+      if (wifi.isNotEmpty) {
+        children.add(const SizedBox(height: 22));
+      }
+      children
+        ..add(_GroupTitle(wifi: false, label: l10n.bleBadge))
+        ..add(const SizedBox(height: 12));
+      for (var i = 0; i < ble.length; i++) {
+        final device = ble[i];
+        if (i > 0) {
+          children.add(const SizedBox(height: 12));
+        }
+        children.add(
+          _PromotionTransition(
+            // key 带上设备 id：列表重排后 Flutter 才不会把动画状态
+            // 复用给恰好排在同一位置的另一台设备。
+            key: ValueKey('device-card-${device.id}'),
+            active: device.id == widget.promotedDeviceId,
+            child: _DeviceCard(
+              device: device,
+              onOpenDetail: () => widget.onOpenDetail?.call(device.id),
+              onCast: () => widget.onCast?.call(device.id),
+              onRename: () => _rename(device),
+              onToggleConnection: () => _toggleConnection(device),
+            ),
+          ),
+        );
+      }
+    }
+    return children;
   }
 
   void _toggleConnection(MyDeviceOverview device) {
@@ -719,6 +775,161 @@ class _DeviceActionButton extends StatelessWidget {
               fontWeight: FontWeight.w500,
               height: 1,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 分组标题（WiFi版 / 蓝牙版），同小程序 `.device-group-title`：某组有设备就出该组标题。
+class _GroupTitle extends StatelessWidget {
+  const _GroupTitle({required this.wifi, required this.label});
+
+  final bool wifi;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = wifi ? kWifiGreen : kBleBlue;
+    return Row(
+      children: [
+        Icon(wifi ? Icons.wifi_rounded : Icons.bluetooth_rounded, size: 16, color: color),
+        const SizedBox(width: 6),
+        Text(
+          label,
+          style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 15, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+}
+
+/// WiFi 版设备卡（同小程序 list.wxml `device-card--wifi`）：不走蓝牙，状态来自 IoT 设备信息
+/// （在线 / 信号 / 电量）；按钮：投屏、刷新状态（没有连接 / 断开：WiFi 不经手机蓝牙）。设备图、改名同蓝牙版。
+class _WifiDeviceCard extends StatelessWidget {
+  const _WifiDeviceCard({
+    super.key,
+    required this.device,
+    required this.onOpenDetail,
+    required this.onRename,
+    required this.onCast,
+    required this.onRefresh,
+  });
+
+  final MyDeviceOverview device;
+  final VoidCallback onOpenDetail;
+  final VoidCallback onRename;
+  final VoidCallback onCast;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    final status = device.wifiStatus;
+    final online = status.online;
+    final stateColor = switch (status.status) {
+      WifiOnlineStatus.online => kWifiGreen,
+      _ => const Color(0xFF9BA2AD),
+    };
+    final battery = status.battery;
+    return FigmaGlassCard(
+      borderRadius: 20,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onOpenDetail,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 24, 17, 0),
+              child: Row(
+                children: [
+                  Image.asset(
+                    device.thumbAsset,
+                    width: 60,
+                    height: 60,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      Icons.photo_library_outlined,
+                      color: Color(0xFFEB5F1B),
+                      size: 34,
+                    ),
+                  ),
+                  const SizedBox(width: 22),
+                  Expanded(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                device.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: Color(0xFF2A2D32),
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.15,
+                                ),
+                              ),
+                            ),
+                            FigmaEditIconButton(onTap: onRename),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            if (status.status == WifiOnlineStatus.loading)
+                              const WifiMiniSpinner(size: 11)
+                            else
+                              Icon(Icons.wifi_rounded, size: 14, color: stateColor),
+                            const SizedBox(width: 5),
+                            Text(
+                              status.text(l10n),
+                              style: TextStyle(color: stateColor, fontSize: 12, height: 1),
+                            ),
+                            if (online && status.signalBars > 0) ...[
+                              const SizedBox(width: 8),
+                              SignalBars(level: status.signalBars),
+                            ],
+                            if (battery != null) ...[
+                              const SizedBox(width: 13),
+                              Image.asset(
+                                _batteryIconForLabel('$battery%'),
+                                width: 24,
+                                fit: BoxFit.contain,
+                                errorBuilder: (context, error, stackTrace) => const Icon(
+                                  Icons.battery_4_bar_rounded,
+                                  size: 16,
+                                  color: Color(0xFF737B86),
+                                ),
+                              ),
+                              const SizedBox(width: 5),
+                              Text(
+                                '$battery%',
+                                style: const TextStyle(color: Color(0xFF737B86), fontSize: 12, height: 1),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF777E88)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 17),
+          WifiActionBar(
+            castLabel: l10n.devCast,
+            refreshLabel: l10n.wifiRefreshStatus,
+            refreshing: status.status == WifiOnlineStatus.loading,
+            onCast: onCast,
+            onRefresh: onRefresh,
           ),
         ],
       ),

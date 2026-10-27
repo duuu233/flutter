@@ -11,6 +11,8 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/low_battery_tip.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
+import '../../wifi/wifi_cast_entry.dart';
+import '../../wifi/wifi_status.dart';
 import 'my_devices_page.dart';
 import '../../../state.dart';
 
@@ -143,6 +145,8 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
     if (!mounted) {
       return;
     }
+    // WiFi 版设备的在线 / 信号 / 电量（IoT 云端，不走蓝牙）：沿用上一次的结果先显示，查询回来再替换
+    WifiStatusStore.instance.refreshAll(widget.state.devices);
     for (final device in widget.state.devices) {
       if (device.connected) {
         await widget.state.refreshConnectedDeviceInfo(device.id);
@@ -155,7 +159,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
   Widget build(BuildContext context) {
     final state = widget.state;
     return AnimatedBuilder(
-      animation: state,
+      animation: Listenable.merge([state, WifiStatusStore.instance]),
       builder: (context, _) {
         final ordered = _sortedDevices();
         // 已连接的那台排序后必然在第一位（若有）；连接目标变了就播一次上移动效。
@@ -180,9 +184,24 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
                   connected: device.connected,
                   battery: device.batteryLabel,
                   thumbAsset: device.thumbAsset,
+                  wifi: device.isWifi,
+                  wifiStatus: WifiStatusStore.instance.of(device.id),
                 ),
               )
               .toList(),
+          // WiFi 版「投屏」：不连蓝牙，离线先拦，选图后进同一个预览页（预览页导出后去 WiFi 投屏结果页）
+          onWifiCast: (deviceId) =>
+              startWifiCast(context, state, state.deviceById(deviceId)),
+          // WiFi 版「刷新状态」：重查这一台的在线 / 信号 / 电量
+          onWifiRefresh: (deviceId) {
+            if (WifiStatusStore.instance.of(deviceId).status !=
+                WifiOnlineStatus.loading) {
+              WifiStatusStore.instance.refresh(
+                state.deviceById(deviceId),
+                showLoading: true,
+              );
+            }
+          },
           onAddDevice: () {
             Navigator.of(
               context,

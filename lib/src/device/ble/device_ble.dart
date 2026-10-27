@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart'
     show ChangeNotifier, kReleaseMode, debugPrint;
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
+import '../wifi/broadcast_match.dart';
 import 'ble_tuning.dart';
 import 'frame_protocol.dart';
 import 'image_codec.dart';
@@ -528,12 +529,16 @@ class FrameBleClient {
   /// （见 [BleController.scan] 的说明）。接口回来后会重算所有已收录设备的放行判定，
   /// 因新名单才够格的设备会**追溯性地**出现在列表里并触发一次 [onUpdate]/[until]。
   /// 失败/为空/与现有名单相同都当无事发生；扫描已收网后回来的结果直接丢弃。
+  /// [includeWifi]：同时收录 WiFi 版设备（广播名按 `IJ_*` 等 `*` 模板命中，见 [BroadcastMatch]）。
+  /// 只有搜索设备页传 true；其余入口（连接前扫描、自动重连、调试台白名单模式）一律不收——
+  /// 哪怕后台把广播 ID 写成能包含匹配上的 `IJ_`、或厂商数据凑巧对上，也不能把 WiFi 设备当候选去连 FF00 会话。
   static Future<List<ScanResult>> scan({
     Duration timeout = const Duration(seconds: 8),
     List<String>? allowedNames,
     Future<List<String>>? pendingAllowedNames,
     void Function(List<ScanResult> devices)? onUpdate,
     bool Function(List<ScanResult> devices)? until,
+    bool includeWifi = false,
   }) async {
     // 白名单归一化（去空、大写）；为空表示放开过滤（allowAll）。
     // 非 final：[pendingAllowedNames] 回来后原地换掉，下面的 isAllowed 闭包读的就是新名单。
@@ -553,9 +558,17 @@ class FrameBleClient {
       if (allow.isEmpty) {
         return true;
       }
+      // WiFi 版（广播名整名对上 `*` 模板）只给 includeWifi 的调用方；带 `*` 的广播 ID 不参与下面的包含匹配
+      if (BroadcastMatch.wifiMatch(
+            [r.device.platformName, r.advertisementData.advName],
+            allow,
+          ) !=
+          null) {
+        return includeWifi;
+      }
       final name = '${r.device.platformName} ${r.advertisementData.advName}'
           .toUpperCase();
-      if (allow.any((a) => name.contains(a))) {
+      if (allow.any((a) => !BroadcastMatch.isWildcard(a) && name.contains(a))) {
         return true;
       }
       return _looksLikeFrame(r);

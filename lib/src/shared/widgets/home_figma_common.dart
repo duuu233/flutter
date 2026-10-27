@@ -471,9 +471,14 @@ class FigmaBindDeviceCard extends StatelessWidget {
     this.selected = false,
     this.onTap,
     this.onLongPress,
+    this.subtitleWidget,
   });
 
   final String name;
+
+  /// 第二行自定义内容（WiFi 版接入后：通信类型标签包住尺寸 + 电量 + 信号格，见 bind_device_found）。
+  /// 传了就代替 [subtitle] 文字；高度与一行副标题相同，卡片高度不变。
+  final Widget? subtitleWidget;
 
   /// 设备图（按本次扫描的蓝牙广播名区分机型，见 [DeviceThumb.ofScanName]）。
   final String thumbAsset;
@@ -550,7 +555,15 @@ class FigmaBindDeviceCard extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: FigmaHomeTextStyles.deviceName,
                   ),
-                  if (subtitle.isNotEmpty) ...[
+                  if (subtitleWidget != null) ...[
+                    const SizedBox(height: 3),
+                    DefaultTextStyle.merge(
+                      style: FigmaHomeTextStyles.cardSubtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      child: subtitleWidget!,
+                    ),
+                  ] else if (subtitle.isNotEmpty) ...[
                     const SizedBox(height: 3),
                     Text(
                       subtitle,

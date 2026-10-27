@@ -16,14 +16,18 @@ import 'device/frame_device_protocol.dart';
 import 'device/product_broadcast_id.dart';
 import 'device/recently_bound_device.dart';
 import 'device/serial_match.dart';
+import 'device/wifi/broadcast_match.dart';
 import 'features/ai/ai_last_session.dart';
 import 'features/ai/ai_token.dart';
 import 'features/cast/cast_upload_limit.dart';
 import 'features/cast/device_rotation.dart';
+import 'features/wifi/wifi_status.dart';
 import 'network/api_exception.dart';
 import 'network/api_rows.dart';
 import 'network/api_session.dart';
 import 'network/boltfox_api.dart';
+import 'network/iot/iot_client.dart';
+import 'network/iot/iot_ws.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'shared/ai_service_consent.dart';
 import 'shared/display_text.dart';
@@ -232,6 +236,10 @@ class DeviceItem {
   /// 设备图（按机型区分，见 [DeviceThumb]）。
   String get thumbAsset =>
       DeviceThumb.ofRecord(broadcastId: broadcastId, shapeType: shapeType);
+
+  /// 是否 WiFi 版（按所属产品的广播 ID 认：`IJ_*` 模板或 `IJ_` 前缀，见 [BroadcastMatch.isWifiBroadcastId]）。
+  /// WiFi 版不走蓝牙：状态来自 IoT 云端、投屏经 IoT 上传，蓝牙版的连接 / 读 0x01 / 轮播 / 清空 / OTA 都不适用。
+  bool get isWifi => BroadcastMatch.isWifiBroadcastId(broadcastId);
 
   /// 型号防串台用的屏幕类型码（[FrameScreenType.code]），交给 `sameScreenCode` 做一票否决。
   ///
@@ -523,6 +531,8 @@ class PhotoFrameState extends ChangeNotifier {
     // 请求头 `language` 与初始语种对齐：跟随系统语言起步时，首屏那批请求
     // （FAQ/协议/后端 retMsg）也必须按同一语种要，否则会先拿回一屏简中内容。
     ApiSession.instance.setLanguage(_language);
+    // WiFi 版设备的 IoT 服务 401 与老服务同一套登出引导（503 不登出，见 IotClient）。
+    IotClient.onUnauthorized = _handleSessionExpired;
   }
 
   AppLanguage _language;
@@ -2531,6 +2541,63 @@ class PhotoFrameState extends ChangeNotifier {
     }
   }
 
+  /// 绑定 WiFi 版设备（配网第 3 步，同步小程序 `api.bindWifiDevice`）：走老服务同一个 addUserProduct。
+  ///   · deviceId 用 12 位 deviceNo 转成的 AA:BB:CC:DD:EE:FF（与蓝牙版同口径，产品确认统一加冒号）；
+  ///     查询类接口（getProductByDevice、IoT 在线 / 设备信息）仍传不带冒号的 12 位；
+  ///   · productId / 产品名取搜索时 getProductByDevice 查到的产品，不再按广播名打分匹配；
+  ///   · 先查已绑定列表：同一台已绑定过（重配网 / 上次绑定成功但联网失败）就复用那条，不重复绑定；
+  ///   · 新绑定后回查列表拿真实 userProductId（addUserProduct 的返回不含可靠主键）。
+  /// 成功返回 `deviceId` 为设备记录 id（回查不到时为空串，不影响绑定已成功）。
+  Future<({bool success, String message, String deviceId})> bindWifiDevice({
+    required String deviceNo,
+    required String productId,
+    String productName = '',
+    String broadcastName = '',
+  }) async {
+    final serial = canonicalDeviceSerial(deviceNo);
+    if (serial.isEmpty) {
+      return (
+        success: false,
+        message: tr(
+          zh: '设备ID格式不正确，无法绑定',
+          en: 'The device ID is invalid and cannot be bound.',
+          ja: 'デバイスIDの形式が正しくないため追加できません。',
+        ),
+        deviceId: '',
+      );
+    }
+    String findBound() {
+      for (final device in _devices) {
+        if (verifiedDeviceSerialMatch(device.serialNumber, serial)) {
+          return device.id;
+        }
+      }
+      return '';
+    }
+
+    // 查不到列表按未绑定处理
+    await refreshDevices();
+    final existed = findBound();
+    if (existed.isNotEmpty) {
+      return (success: true, message: '', deviceId: existed);
+    }
+    final name = productName.trim().isNotEmpty
+        ? productName.trim()
+        : (broadcastName.trim().isNotEmpty ? broadcastName.trim() : '智能相框');
+    try {
+      await BoltFoxApi.addUserProduct(
+        productId: _asInt(productId),
+        productName: name,
+        productSerialNo: serial,
+      );
+    } catch (error) {
+      final failure = _apiFailure(error);
+      return (success: false, message: failure.message, deviceId: '');
+    }
+    await refreshDevices();
+    return (success: true, message: '', deviceId: findBound());
+  }
+
   /// 从 `addUserProduct` 出参里取后端回带的设备名（首次绑定时它就是我们刚提交的那个，
   /// 重新绑定曾解绑过的设备时是它上次保存的旧名）。取不到返回空串。
   String _backendProductName(dynamic data) {
@@ -3120,6 +3187,9 @@ class PhotoFrameState extends ChangeNotifier {
     // AI「上次停在哪一页」的记忆属于上一个用户，换账号后必须清掉（只在内存里）
     AiLastSession.clear();
     ApiSession.instance.clear();
+    // WiFi 版设备的推送长连接是按旧 token 握手的，退出后一并断开并清掉订阅；云端状态缓存属于上个账号
+    IotWs.instance.close();
+    WifiStatusStore.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 清空列表还不够：照片本体还在内存/磁盘两层图片缓存里（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
@@ -3165,6 +3235,8 @@ class PhotoFrameState extends ChangeNotifier {
     // AI「上次停在哪一页」的记忆属于上一个用户，换账号后必须清掉（只在内存里）
     AiLastSession.clear();
     ApiSession.instance.clear();
+    IotWs.instance.close();
+    WifiStatusStore.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 账号已在服务端删除，本地缓存的照片本体更不该留（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();
@@ -3779,6 +3851,8 @@ class PhotoFrameState extends ChangeNotifier {
     unawaited(AiServiceConsent.clear(_currentUser.id));
     AiLastSession.clear();
     ApiSession.instance.clear();
+    IotWs.instance.close();
+    WifiStatusStore.instance.clear();
     _sessionEpoch++; // 作废本会话在途请求的响应（见 _sessionEpoch 注释）
     // 与 logout 同等对待：会话已失效，上个账号的照片不该留在本机（见 ImageCacheCleanup）。
     ImageCacheCleanup.clearAll();

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kReleaseMode;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_blue_plus/flutter_blue_plus.dart';
@@ -23,6 +24,12 @@ import 'bind_device_not_found.dart';
 import 'bind_device_searching.dart';
 import '../../../device/device_thumb.dart';
 import '../../../device/product_broadcast_id.dart';
+import '../../../device/wifi/blufi.dart';
+import '../../../device/wifi/broadcast_match.dart';
+import '../../../network/boltfox_api.dart';
+import '../../wifi/presentation/wifi_list_page.dart';
+import '../../wifi/wifi_l10n.dart';
+import '../../wifi/wifi_provision.dart';
 
 /// 绑定设备流程编排页：权限 → 扫描 → 发现 / 未发现 → 连接 → 绑定。
 ///
@@ -39,6 +46,20 @@ class BindDeviceFlowPage extends StatefulWidget {
 }
 
 enum _Stage { permission, scanning, found, notFound }
+
+/// WiFi 版设备的规格查询结果（getProductByDevice，同一次搜索每台只查一次）。
+class _WifiLookup {
+  const _WifiLookup.loading() : loading = true, product = null, reason = '';
+  const _WifiLookup.done(this.product, this.reason) : loading = false;
+
+  final bool loading;
+
+  /// 查到的产品行（productId / productName / sizeModel）；null = 未知设备。
+  final Map<String, dynamic>? product;
+
+  /// 没查到的原因（联调用，非正式包在未知设备提示里显示）。
+  final String reason;
+}
 
 class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   /// 扫描窗口（2026-07-29 由 12s 放宽到 20s，与小程序 `bind.js SCAN_TIMEOUT_MS` 同值）。
@@ -71,6 +92,13 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   /// 设备 id → 首次被搜到的序号，用来把展示顺序钉死（见 [_applyScanResult]）。
   final Map<String, int> _scanOrder = <String, int>{};
 
+  /// WiFi 版规格查询账本（12 位 deviceNo → 结果）。不跨搜索缓存：每次重新搜索都换一本新账、全部重查；
+  /// 换新对象而不是清空旧对象——上一轮在途的查询回来时写的是旧账本，不会污染本轮（同小程序 bind.js wifiLookups）。
+  Map<String, _WifiLookup> _wifiLookups = <String, _WifiLookup>{};
+
+  /// WiFi 版「立即配网」的蓝牙连接进行中（防连点）。
+  bool _wifiConnecting = false;
+
   @override
   void initState() {
     super.initState();
@@ -102,6 +130,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     // 本轮扫描的编号；展示顺序表跟着一起重置（见 _applyScanResult）。
     final seq = ++_scanSeq;
     _scanOrder.clear();
+    _wifiLookups = <String, _WifiLookup>{};
     // 权限阶段：页面保持只有导航栏的安静占位，等系统授权框（定位/附近设备）先行处理完。
     setState(() {
       _stage = _Stage.permission;
@@ -162,6 +191,8 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     try {
       list = await _ble.scan(
         timeout: _scanTimeout,
+        // 蓝牙版与 WiFi 版一起搜（只有本页这么搜，其它扫描入口不受影响），行上用标签区分
+        includeWifi: true,
         onUpdate: (devices) => _applyScanResult(seq, devices),
       );
     } catch (error) {
@@ -208,6 +239,11 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         result.device.remoteId.str,
         () => _scanOrder.length,
       );
+      // WiFi 版：首次见到这台就查规格（每台只查一次）
+      final wifi = _wifiMatchOf(result);
+      if (wifi != null) {
+        _lookupWifiProduct(wifi.wifiDeviceNo);
+      }
     }
     final ordered = [...list]
       ..sort(
@@ -256,40 +292,150 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
     Navigator.maybePop(context);
   }
 
-  /// 把扫描结果构造成发现页的展示项：名称 + 「尺寸 · 电量XX% · 信号XX」副标题
-  /// （对齐小程序 `bind.wxml` 的 `nearby-sub`）。尺寸按广播名匹配产品、取后台配置的 sizeModel
-  /// （2026-10-23 起，不再用广播屏型推算；2026-10-27 起匹配不到或没配显示「--寸」，原为不显示）；
-  /// 电量取自广播厂商数据，信号取自 RSSI 档位。
+  /// 把扫描结果构造成发现页的展示项（对齐小程序 `bind.wxml` 的 `nearby-sub`）。
+  /// 第二行（2026-10-27 同步小程序 main-wifi）：通信类型标签把尺寸包进来（如「蓝牙版·5.89寸」），
+  /// 后接电量与「信号」+ 信号格（不再写「强 / 弱」文字）。
+  ///   · 蓝牙版：尺寸按广播名匹配产品、取后台配置的 sizeModel，匹配不到或没配显示「--寸」；电量取自广播厂商数据；
+  ///   · WiFi 版：尺寸来自 getProductByDevice（查询中显示小圆圈 loading / 查不到为「未知设备」），广播里没有电量；
+  ///     设备ID 显示广播名里解析出的 12 位 deviceNo 加冒号。
   BindDeviceEntry _entryOf(ScanResult result) {
     final scanName =
         '${result.device.platformName} ${result.advertisementData.advName}';
+    final l10n = AppL10n.of(context);
+    final bars = rssiToBars(result.rssi);
+    final wifi = _wifiMatchOf(result);
+    if (wifi != null) {
+      final lookup = _wifiLookups[wifi.wifiDeviceNo] ?? const _WifiLookup.loading();
+      final product = lookup.product;
+      final size = (product?['sizeModel'] ?? '').toString();
+      final code = canonicalDeviceSerial(wifi.wifiDeviceNo);
+      return BindDeviceEntry(
+        id: result.device.remoteId.str,
+        name: BleController.displayName(result),
+        subtitle: '',
+        deviceId: code.isNotEmpty ? code : wifi.wifiDeviceNo,
+        thumbAsset: DeviceThumb.ofScanName(scanName),
+        wifi: true,
+        specLoading: lookup.loading,
+        specUnknown: !lookup.loading && product == null,
+        sizeText: lookup.loading
+            ? ''
+            : product == null
+            ? l10n.wifiUnknownDevice
+            : (size.isNotEmpty ? size : l10n.bindSizeUnknown),
+        signalBars: bars,
+      );
+    }
     final sizeModel = ProductBroadcastId.sizeModelOfScan(
       scanName,
       _productSizeModels,
     );
     final battery = BleController.batteryOf(result);
-    final level = BleController.rssiToSignalLevel(result.rssi);
-    final l10n = AppL10n.of(context);
-    final signal = switch (level) {
-      BleSignalLevel.veryStrong => l10n.signalVeryStrong,
-      BleSignalLevel.strong => l10n.signalStrong,
-      BleSignalLevel.normal => l10n.signalNormal,
-      BleSignalLevel.weak => l10n.signalWeak,
-      BleSignalLevel.veryWeak => l10n.signalVeryWeak,
-      null => '--',
-    };
-    final parts = <String>[
-      sizeModel.isNotEmpty ? sizeModel : l10n.bindSizeUnknown,
-      if (battery != null) l10n.bindBatteryLabel(battery),
-      l10n.bindSignalLabel(signal),
-    ];
     return BindDeviceEntry(
       id: result.device.remoteId.str,
       name: BleController.displayName(result),
-      subtitle: parts.join(' · '),
+      subtitle: '',
       deviceId: _displayDeviceCode(result),
       // 设备图按本次广播名区分机型（name 与广播包里的 advName 都看，与扫描白名单同口径）。
       thumbAsset: DeviceThumb.ofScanName(scanName),
+      sizeText: sizeModel.isNotEmpty ? sizeModel : l10n.bindSizeUnknown,
+      batteryText: battery != null ? l10n.bindBatteryLabel(battery) : '',
+      signalBars: bars,
+    );
+  }
+
+  /// 这台是不是 WiFi 版：广播名按后台 `*` 模板（产品列表 broadcastId）或内置 `IJ_*` 命中，带出 12 位 deviceNo。
+  WifiMatch? _wifiMatchOf(ScanResult result) => BroadcastMatch.wifiMatch(
+    [result.device.platformName, result.advertisementData.advName],
+    [for (final product in _productSizeModels) product.broadcastId],
+  );
+
+  /// 按 12 位 deviceNo 查 WiFi 产品规格。同一次搜索每台只查一次（边搜边显示会反复回调同一台）；
+  /// 查不到 / 失败 / 超时一律按「未知设备」，不重试。
+  void _lookupWifiProduct(String deviceNo) {
+    final lookups = _wifiLookups;
+    if (deviceNo.isEmpty || lookups.containsKey(deviceNo)) {
+      return;
+    }
+    lookups[deviceNo] = const _WifiLookup.loading();
+    BoltFoxApi.lookupProductByDevice(deviceNo)
+        .catchError((Object error) => (product: null, reason: '查询出错：$error'))
+        .then((result) {
+          final product = result.product;
+          debugPrint(
+            '[WiFi规格查询] $deviceNo '
+            '${product != null ? '查到 sizeModel=${product['sizeModel']}' : result.reason}',
+          );
+          lookups[deviceNo] = _WifiLookup.done(product, result.reason);
+          // 页面已销毁，或已重新搜索（本条属于上一轮）
+          if (mounted && identical(lookups, _wifiLookups)) {
+            setState(() {});
+          }
+        });
+  }
+
+  /// 选中 WiFi 设备后按「立即配网」：规格查到才进配网；未知设备直接弹窗拦下，不进入配网。
+  /// 配网第一步就是蓝牙连上设备：在本页连，连上才进 WiFi 列表页（同一会话留给列表页扫 WiFi、
+  /// 配网状态页下发参数复用）；连不上就停在本页提示，可直接再点重试。与蓝牙版同样先停扫、等射频安静再连。
+  Future<void> _openWifiProvision(ScanResult result, WifiMatch wifi) async {
+    if (_wifiConnecting) {
+      return;
+    }
+    final l10n = AppL10n.of(context);
+    final lookup = _wifiLookups[wifi.wifiDeviceNo];
+    if (lookup == null || lookup.loading) {
+      _toast(l10n.wifiLookingUp);
+      return;
+    }
+    final product = lookup.product;
+    if (product == null) {
+      // 未知设备：正式包只给「未知设备，请联系客服开通」，联调包带上没查到的原因
+      await showAppNoticeDialog(
+        context,
+        title: l10n.wifiUnknownDeviceTip,
+        message: kReleaseMode ? null : (lookup.reason.isNotEmpty ? lookup.reason : '没有查询结果'),
+        icon: Icons.info_outline_rounded,
+      );
+      return;
+    }
+    _wifiConnecting = true;
+    await _stopScanForBind();
+    if (!mounted) {
+      return;
+    }
+    final remoteId = result.device.remoteId.str;
+    AppLoadingDialog.show(context, l10n.bindConnecting);
+    try {
+      await Blufi.connect(remoteId);
+    } catch (error) {
+      debugPrint('[WiFi配网] 蓝牙连接设备失败 $remoteId $error');
+      AppLoadingDialog.hide(context);
+      _wifiConnecting = false;
+      if (mounted) {
+        _toast(l10n.wifiConnectDeviceFailed);
+      }
+      return;
+    }
+    AppLoadingDialog.hide(context);
+    _wifiConnecting = false;
+    if (!mounted) {
+      return;
+    }
+    // 配网要用的设备信息走内存交接（BLE 句柄、不带冒号的 deviceNo、查到的产品），不进路由
+    final size = (product['sizeModel'] ?? '').toString();
+    WifiProvision.setTarget(
+      WifiProvisionTarget(
+        bleRemoteId: remoteId,
+        deviceNo: wifi.wifiDeviceNo,
+        name: BleController.displayName(result),
+        spec: size.isNotEmpty ? size : l10n.bindSizeUnknown,
+        productId: (product['productId'] ?? '').toString(),
+        productName: (product['productName'] ?? '').toString(),
+      ),
+    );
+    // 已连上设备 → 进 WiFi 列表页让设备扫描附近 WiFi → 选中后进账号密码页
+    await Navigator.of(context).push<void>(
+      AppPageRoute(builder: (_) => WifiListPage(state: widget.state)),
     );
   }
 
@@ -345,6 +491,15 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   Future<void> _bind(String id) async {
     if (_binding) {
       return; // 绑定进行中，忽略重复点击，避免重复绑定
+    }
+    // WiFi 版不走蓝牙绑定：查规格 → 进 WiFi 配网（蓝牙版下面的流程一行没动）
+    final selectedIndex = _results.indexWhere((r) => r.device.remoteId.str == id);
+    if (selectedIndex >= 0) {
+      final wifi = _wifiMatchOf(_results[selectedIndex]);
+      if (wifi != null) {
+        await _openWifiProvision(_results[selectedIndex], wifi);
+        return;
+      }
     }
     // _binding 必须在**任何 await 之前**同步置起：下面 await 停扫期间按钮照样点得动，
     // 晚一步置起就等于给连点留了一个空窗（与 AI 发送那处同款病灶，见 ai_chat_page 的 _guardedSend）。

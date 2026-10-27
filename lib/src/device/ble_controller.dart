@@ -440,7 +440,8 @@ class BleController extends ChangeNotifier {
 
   /// 内置广播名兜底白名单：拉产品列表失败/为空时用它，保证 3.7 寸 EF6-370 / 5.89 寸 EF6-589
   /// 两款目标相框仍能被搜到（对齐小程序 `bluetooth.js FALLBACK_BROADCAST_IDS`）。
-  static const List<String> _fallbackBroadcastIds = ['EF6-370', 'EF6-589'];
+  /// WiFi 版模板 `IJ_*` 只对 includeWifi 的扫描生效（见 [FrameBleClient.scan]）。
+  static const List<String> _fallbackBroadcastIds = ['EF6-370', 'EF6-589', 'IJ_*'];
 
   /// 产品列表 broadcastId 白名单缓存：首次扫描拉取后整次会话复用；失败不缓存，便于下次重试
   /// （对齐小程序 `bluetooth.js cachedBroadcastIds`）。
@@ -493,11 +494,13 @@ class BleController extends ChangeNotifier {
   /// 两个尺寸），对齐小程序 `discoverDevices` 默认过滤——绑定/列表/详情/自动重连都只显示/匹配目标相框，
   /// 而不是把周围所有蓝牙设备都列出来。[allowAll]=true 放开过滤（硬件调试台排查用）。
   /// [onUpdate]：增量回调「当前已搜到的列表」，供绑定页「搜出一个显示一个」，不必等满 timeout。
+  /// [includeWifi]：同时收录 WiFi 版设备（只有搜索设备页传；不传时与接入 WiFi 版之前完全一致）。
   Future<List<ScanResult>> scan({
     Duration timeout = const Duration(seconds: 8),
     bool allowAll = false,
     void Function(List<ScanResult> devices)? onUpdate,
     bool Function(List<ScanResult> devices)? until,
+    bool includeWifi = false,
   }) async {
     // 在任何 await 之前先换代：这不仅作废已经进入底层的旧扫描，也能作废仍卡在
     // 产品白名单接口上的旧调用。否则页面退出时底层尚未起扫，stopScan 无从可停；
@@ -541,6 +544,7 @@ class BleController extends ChangeNotifier {
           }
         },
         until: until,
+        includeWifi: includeWifi,
       );
       _runningScan = run;
       final scanned = await run;

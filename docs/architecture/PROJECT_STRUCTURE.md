@@ -47,7 +47,8 @@ lib/
     │   ├── device_interaction_trace.dart
     │   ├── frame_device_protocol.dart
     │   ├── recently_bound_device.dart
-    │   └── serial_match.dart
+    │   ├── serial_match.dart
+    │   └── wifi/                  # main-wifi：广播名模板匹配、BluFi 配网协议与会话
     ├── features/
     │   ├── account/
     │   ├── ai/
@@ -59,6 +60,7 @@ lib/
     │   ├── mine/
     │   ├── settings/
     │   ├── star/                # 余额/套餐/记录、安卓 PayPal、iOS StoreKit
+    │   ├── wifi/                # main-wifi：配网三页、WiFi 设备详情、WiFi 投屏、云端状态缓存
     │   └── shell/
     ├── network/
     │   ├── api_client.dart
@@ -69,7 +71,8 @@ lib/
     │   ├── boltfox_api.dart
     │   ├── boltstar_ai_api.dart
     │   ├── crypto_util.dart
-    │   └── dithering_api.dart
+    │   ├── dithering_api.dart
+    │   └── iot/                 # main-wifi：IoT 服务 HTTP / WebSocket（WiFi 版设备）
     ├── routes/
     │   └── app_routes.dart
     ├── shared/

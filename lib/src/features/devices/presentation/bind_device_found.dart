@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:BoltStar/src/shared/widgets/home_figma_common.dart';
 import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../wifi/wifi_l10n.dart';
+import '../../wifi/wifi_widgets.dart';
 import 'bind_device_debug_entry.dart';
 import '../../../device/device_thumb.dart';
 
@@ -20,6 +22,12 @@ class BindDeviceEntry {
     required this.subtitle,
     this.deviceId = '',
     this.thumbAsset = DeviceThumb.defaultAsset,
+    this.wifi = false,
+    this.sizeText = '',
+    this.specLoading = false,
+    this.specUnknown = false,
+    this.batteryText = '',
+    this.signalBars = 0,
   });
 
   final String id;
@@ -29,6 +37,26 @@ class BindDeviceEntry {
 
   /// 设备图（按本次扫描的蓝牙广播名区分机型，见 [DeviceThumb.ofScanName]）。
   final String thumbAsset;
+
+  // ── 第二行（2026-10-27 同步小程序 main-wifi）：通信类型标签把尺寸包进来（如「WiFi版·5.89寸」），
+  //    后接电量（蓝牙版）与「信号」+ 信号格，见 [_BindDeviceFoundState._subtitleRow]。
+  /// 是否 WiFi 版（广播名按 `IJ_*` 等模板命中）。WiFi 版不走蓝牙绑定，底部按钮为「立即配网」。
+  final bool wifi;
+
+  /// 尺寸文案（sizeModel，没配为「--寸」；WiFi 版查不到为「未知设备」）。
+  final String sizeText;
+
+  /// WiFi 版规格查询中：尺寸位置显示小圆圈 loading。
+  final bool specLoading;
+
+  /// WiFi 版查不到产品规格：标签里的「未知设备」用警示色。
+  final bool specUnknown;
+
+  /// 电量文案（如「电量88%」，WiFi 版广播里没有电量，为空）。
+  final String batteryText;
+
+  /// 信号格 0~4。
+  final int signalBars;
 }
 
 /// 绑定设备-发现设备页：展示搜索到的设备并发起绑定，对应 UI 稿「绑定设备-发现设备」。
@@ -231,6 +259,7 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                               FigmaBindDeviceCard(
                                 name: entries[i].name,
                                 subtitle: entries[i].subtitle,
+                                subtitleWidget: _subtitleRow(l10n, entries[i]),
                                 deviceId: entries[i].deviceId,
                                 thumbAsset: entries[i].thumbAsset,
                                 selected: entries[i].id == selectedId,
@@ -257,13 +286,68 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
         ],
       ),
       bottom: FigmaHomePrimaryButton(
-        label: l10n.bindBindNow,
+        // 选中的是 WiFi 版：「立即配网」（不走蓝牙绑定，先查规格再进配网）
+        label: entries.any((e) => e.id == selectedId && e.wifi)
+            ? l10n.wifiProvisionNow
+            : l10n.bindBindNow,
         // 「立即绑定」文字加粗对齐小程序 bind.wxss 的 .primary-action(font-weight:700)。
         fontWeight: FontWeight.w700,
         onPressed: selectedId.isEmpty
             ? null
             : () => widget.onBindId?.call(selectedId),
       ),
+    );
+  }
+
+  /// 第二行：通信类型标签（图标 + 类型·尺寸，WiFi 版青绿、蓝牙版蓝）→ 电量（蓝牙版）→「信号」+ 信号格。
+  /// 标签本身当分隔，标签后不再写「·」。信号格整体上提一点：竖条底部对齐，行内居中后看着偏低（2026-10-27 反馈）。
+  Widget _subtitleRow(AppL10n l10n, BindDeviceEntry entry) {
+    final typeLabel = '${entry.wifi ? l10n.wifiBadge : l10n.bleBadge}·';
+    final Widget badge;
+    if (!entry.wifi) {
+      badge = CommBadge(wifi: false, text: '$typeLabel${entry.sizeText}');
+    } else if (entry.specLoading) {
+      badge = CommBadge(
+        wifi: true,
+        text: typeLabel,
+        trailing: const Padding(
+          padding: EdgeInsets.only(left: 1),
+          child: WifiMiniSpinner(size: 8),
+        ),
+      );
+    } else {
+      badge = CommBadge(
+        wifi: true,
+        text: typeLabel,
+        trailing: Text(
+          entry.sizeText,
+          maxLines: 1,
+          style: TextStyle(
+            color: entry.specUnknown ? const Color(0xFFE5533D) : kWifiGreen,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+            height: 1,
+          ),
+        ),
+      );
+    }
+    final signalText = entry.batteryText.isNotEmpty
+        ? '${entry.batteryText} · ${l10n.wifiSignal}'
+        : l10n.wifiSignal;
+    return Row(
+      children: [
+        badge,
+        const SizedBox(width: 6),
+        Flexible(child: Text(signalText, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        const SizedBox(width: 4),
+        Transform.translate(
+          offset: const Offset(0, -1.5),
+          child: SignalBars(
+            level: entry.signalBars,
+            color: entry.wifi ? kWifiGreen : kBleBlue,
+          ),
+        ),
+      ],
     );
   }
 }
