@@ -576,7 +576,7 @@ Logout / successful account deletion / session expiry
    console; it is no longer derived from screen code or width/height, and the row (with its divider)
    is hidden when empty. The bind search list matches the scan's broadcast name against product
    `broadcastId` (`ProductBroadcastId.sizeModelOfScan`, same rule as the mini program) and shows that
-   product's `sizeModel`, or nothing. For
+   product's `sizeModel`, or `--寸` when unmatched/unconfigured (2026-10-27; previously nothing). For
    `shapeType == 1` the cast preview clips the photo and edit frame to a circle and disables the
    portrait/landscape buttons; export and rotation are unchanged.
 3. **The selected target is immutable during an async operation.** Connection, projection, delete,

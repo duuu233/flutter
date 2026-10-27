@@ -57,7 +57,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   List<ScanResult> _results = const [];
   bool _binding = false;
 
-  /// 产品列表的「广播名 → 尺寸型号」，列表副标题的尺寸按它显示（见 [_entryOf]）；拉到前为空，不显示尺寸。
+  /// 产品列表的「广播名 → 尺寸型号」，列表副标题的尺寸按它显示（见 [_entryOf]）；拉到前为空，尺寸显示「--寸」。
   List<ProductSizeModel> _productSizeModels = const [];
 
   /// 扫描是否仍在进行。与 [_stage] 分开存：搜到第一台后 stage 就切到 `found`（列表开始显示），
@@ -258,7 +258,8 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
 
   /// 把扫描结果构造成发现页的展示项：名称 + 「尺寸 · 电量XX% · 信号XX」副标题
   /// （对齐小程序 `bind.wxml` 的 `nearby-sub`）。尺寸按广播名匹配产品、取后台配置的 sizeModel
-  /// （2026-10-23 起，不再用广播屏型推算，匹配不到或没配不显示）；电量取自广播厂商数据，信号取自 RSSI 档位。
+  /// （2026-10-23 起，不再用广播屏型推算；2026-10-27 起匹配不到或没配显示「--寸」，原为不显示）；
+  /// 电量取自广播厂商数据，信号取自 RSSI 档位。
   BindDeviceEntry _entryOf(ScanResult result) {
     final scanName =
         '${result.device.platformName} ${result.advertisementData.advName}';
@@ -278,7 +279,7 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       null => '--',
     };
     final parts = <String>[
-      if (sizeModel.isNotEmpty) sizeModel,
+      sizeModel.isNotEmpty ? sizeModel : l10n.bindSizeUnknown,
       if (battery != null) l10n.bindBatteryLabel(battery),
       l10n.bindSignalLabel(signal),
     ];

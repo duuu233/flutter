@@ -1396,6 +1396,8 @@ class AppL10n {
       _pick('电量$battery%', 'Battery $battery%', 'バッテリー$battery%');
   String bindSignalLabel(String signal) =>
       _pick('信号 $signal', 'Signal $signal', '信号 $signal');
+  /// 绑定页搜索列表：按广播名匹配不到产品或后台没配尺寸型号 sizeModel 时的占位（对齐小程序 `--寸`）。
+  String get bindSizeUnknown => _pick('--寸', '-- in', '--インチ');
   String get carouselTitle => _pick('轮播设置', 'Slideshow Settings', 'スライドショー設定');
   String get carouselEnable =>
       _pick('开启轮播', 'Enable Slideshow', 'スライドショーを有効にする');
