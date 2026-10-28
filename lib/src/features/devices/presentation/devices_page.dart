@@ -11,8 +11,10 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/low_battery_tip.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
+import '../../wifi/presentation/wifi_slideshow_page.dart';
 import '../../wifi/wifi_cast_entry.dart';
 import '../../wifi/wifi_status.dart';
+import '../../wifi/wifi_watch.dart';
 import 'my_devices_page.dart';
 import '../../../state.dart';
 
@@ -42,9 +44,17 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
   /// 每次进页都对已连接那台放一遍就成了无意义的入场噪音。
   bool _promotionPrimed = false;
 
+  /// WiFi 版状态推送（同小程序 device/list watchWifiDevices）：本页可见时订阅，收到推送重查那一台，
+  /// 长连接重连成功全部重查；进下一页时退订，回来再订。
+  late final WifiWatch _wifiWatch = WifiWatch(
+    (deviceNos) => WifiStatusStore.instance.refreshAll(widget.state.devices, deviceNos: deviceNos),
+  );
+
   @override
   void initState() {
     super.initState();
+    // 先按已有列表订阅（回前台 / 返回本页时立刻生效），_reload 后再按最新列表更新
+    _wifiWatch.update(widget.state.devices);
     // 「最近绑定」是排序的第二优先级，进页先把它从本机读回来。
     RecentlyBoundDevice.instance.load().then((_) {
       if (mounted) {
@@ -125,6 +135,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
   @override
   void dispose() {
     _promotionTimer?.cancel();
+    _wifiWatch.stop();
     appRouteObserver.unsubscribe(this);
     super.dispose();
   }
@@ -133,7 +144,14 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
   /// 详情页里改名/连接/清空后返回，列表还是旧的）。
   @override
   void didPopNext() {
+    _wifiWatch.update(widget.state.devices);
     _reload();
+  }
+
+  /// 进下一页：退订 WiFi 状态推送（隐藏的页面不跟着刷新），回来 [didPopNext] 再订。
+  @override
+  void didPushNext() {
+    _wifiWatch.stop();
   }
 
   /// 后端列表 + 已连接设备的真机实时值。
@@ -147,6 +165,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
     }
     // WiFi 版设备的在线 / 信号 / 电量（IoT 云端，不走蓝牙）：沿用上一次的结果先显示，查询回来再替换
     WifiStatusStore.instance.refreshAll(widget.state.devices);
+    _wifiWatch.update(widget.state.devices);
     for (final device in widget.state.devices) {
       if (device.connected) {
         await widget.state.refreshConnectedDeviceInfo(device.id);
@@ -186,21 +205,23 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
                   thumbAsset: device.thumbAsset,
                   wifi: device.isWifi,
                   wifiStatus: WifiStatusStore.instance.of(device.id),
+                  sizeModel: device.sizeModel,
+                  serialNumber: device.serialNumber,
                 ),
               )
               .toList(),
           // WiFi 版「投屏」：不连蓝牙，离线先拦，选图后进同一个预览页（预览页导出后去 WiFi 投屏结果页）
           onWifiCast: (deviceId) =>
               startWifiCast(context, state, state.deviceById(deviceId)),
-          // WiFi 版「刷新状态」：重查这一台的在线 / 信号 / 电量
-          onWifiRefresh: (deviceId) {
-            if (WifiStatusStore.instance.of(deviceId).status !=
-                WifiOnlineStatus.loading) {
-              WifiStatusStore.instance.refresh(
-                state.deviceById(deviceId),
-                showLoading: true,
-              );
-            }
+          // WiFi 版「轮播设置」（V1.4 更新说明 1.5，取代原「刷新状态」）：查询只要权限、离线也能看，不拦离线；
+          // 保存时由接口裁决（离线 4041）
+          onWifiSlideshow: (deviceId) {
+            Navigator.of(context).push<void>(
+              AppPageRoute(
+                builder: (_) =>
+                    WifiSlideshowPage(state: state, deviceId: deviceId),
+              ),
+            );
           },
           onAddDevice: () {
             Navigator.of(

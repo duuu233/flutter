@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../network/iot/iot_api.dart';
 import '../../../network/iot/iot_ws.dart';
+import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
@@ -11,6 +12,9 @@ import '../wifi_cast_entry.dart';
 import '../wifi_l10n.dart';
 import '../wifi_status.dart';
 import '../wifi_widgets.dart';
+import 'wifi_messages_page.dart';
+import 'wifi_sleep_page.dart';
+import 'wifi_slideshow_page.dart';
 
 /// WiFi 版设备详情，同步小程序 `subpackages/device/wifi-detail`（对接进度 STEP 4 设备查询 + STEP 3 投屏入口）。
 ///
@@ -18,8 +22,11 @@ import '../wifi_widgets.dart';
 ///   · 设备记录：设备列表里的这一条（名称、设备 ID、尺寸、设备图）；
 ///   · 状态：IoT GET /api/device/info（在线、最后上线、固件版本、影子：电量 / WiFi 信号与名称 / TF / 国家码 / 最后心跳）；
 ///     订阅 WS device.status，上下线时自动重查（只推信号不推详情）；
-///   · 操作：「投屏」（拍照 / 相册 → 预览构图 → WiFi 投屏结果页）、「刷新状态」。
-/// 轮播、刷新屏幕、TF、休眠、OTA 等设备控制属于后续 STEP，未接；App 也没有删除 / 重新配网操作。
+///   · 操作：「投屏」（拍照 / 相册 → 预览构图 → WiFi 投屏结果页）、「轮播设置」（V1.4 更新说明 1.5，取代原「刷新状态」，
+///     进 [WifiSlideshowPage]；状态随进页与 WS device.status 自动重查）；
+///   · 入口（V1.4 实现报告反馈二 / 三）：「休眠设置」进 [WifiSleepPage]；「消息中心」进 [WifiMessagesPage]，带未读角标
+///     （IoT GET /api/notification/unread-count，进页时、从消息中心返回时查，收到本设备 WS notification.new 再查）。
+/// 刷新屏幕、TF、OTA 等设备控制属于后续 STEP，未接；App 也没有删除 / 重新配网操作。
 class WifiDeviceDetailPage extends StatefulWidget {
   const WifiDeviceDetailPage({super.key, required this.state, required this.deviceId});
 
@@ -32,7 +39,9 @@ class WifiDeviceDetailPage extends StatefulWidget {
 
 class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   StreamSubscription<Map<String, dynamic>>? _statusSub;
+  StreamSubscription<Map<String, dynamic>>? _noticeSub;
   String _subscribed = '';
+  int _unreadCount = 0;
 
   DeviceItem get _device => widget.state.deviceById(widget.deviceId);
 
@@ -47,6 +56,12 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         WifiStatusStore.instance.refresh(_device);
       }
     });
+    // 新消息只推信号：收到就重查未读数
+    _noticeSub = IotWs.instance.on('notification.new').listen((event) {
+      if (IotApi.plainDeviceNo(event['deviceNo']) == _deviceNo) {
+        _refreshUnread();
+      }
+    });
     final deviceNo = _deviceNo;
     if (deviceNo.isNotEmpty && !IotWs.instance.subscriptions.contains(deviceNo)) {
       IotWs.instance.subscribe(deviceNo);
@@ -56,6 +71,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         WifiStatusStore.instance.refresh(_device);
+        _refreshUnread();
       }
     });
   }
@@ -63,18 +79,104 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   @override
   void dispose() {
     unawaited(_statusSub?.cancel());
+    unawaited(_noticeSub?.cancel());
     if (_subscribed.isNotEmpty) {
       IotWs.instance.unsubscribe(_subscribed);
     }
     super.dispose();
   }
 
-  void _refreshTap() {
-    final store = WifiStatusStore.instance;
-    if (store.of(widget.deviceId).status == WifiOnlineStatus.loading) {
+  /// 消息中心未读角标；查不到不显示，不弹错。
+  Future<void> _refreshUnread() async {
+    final deviceNo = _deviceNo;
+    if (deviceNo.isEmpty) {
       return;
     }
-    store.refresh(_device, showLoading: true);
+    int count;
+    try {
+      count = (num.tryParse('${(await IotApi.getUnreadCount(deviceNo))['unreadCount'] ?? 0}') ?? 0).toInt();
+    } catch (error) {
+      debugPrint('[WiFi消息] 未读数查询失败 $error');
+      return;
+    }
+    if (mounted) {
+      setState(() => _unreadCount = count);
+    }
+  }
+
+  /// 「轮播设置」：查询离线也能看，不拦状态；保存时由接口裁决。
+  void _openSlideshow() {
+    Navigator.of(context).push<void>(
+      AppPageRoute(builder: (_) => WifiSlideshowPage(state: widget.state, deviceId: widget.deviceId)),
+    );
+  }
+
+  void _openSleep() {
+    Navigator.of(context).push<void>(
+      AppPageRoute(builder: (_) => WifiSleepPage(state: widget.state, deviceId: widget.deviceId)),
+    );
+  }
+
+  Future<void> _openMessages() async {
+    await Navigator.of(context).push<void>(
+      AppPageRoute(builder: (_) => WifiMessagesPage(deviceNo: _deviceNo)),
+    );
+    // 消息中心里标了已读：回来重查角标
+    if (mounted) {
+      _refreshUnread();
+    }
+  }
+
+  Widget _buildEntries(AppL10n l10n) {
+    Widget entry(String label, VoidCallback onTap, {Widget? trailing}) {
+      return GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
+          height: 50,
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  label,
+                  style: const TextStyle(color: Color(0xFF33373D), fontSize: 14, fontWeight: FontWeight.w600),
+                ),
+              ),
+              if (trailing != null) ...[trailing, const SizedBox(width: 8)],
+              const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF777E88)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return FigmaGlassCard(
+      borderRadius: 18,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      child: Column(
+        children: [
+          entry(l10n.wifiSleepSettings, _openSleep),
+          const Divider(height: 1, thickness: 0.5, color: Color(0x0F2A2B2B)),
+          entry(
+            l10n.wifiMessageCenter,
+            _openMessages,
+            trailing: _unreadCount > 0
+                ? Container(
+                    constraints: const BoxConstraints(minWidth: 18),
+                    height: 18,
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: const Color(0xFFE5533D), borderRadius: BorderRadius.circular(999)),
+                    child: Text(
+                      _unreadCount > 99 ? '99+' : '$_unreadCount',
+                      style: const TextStyle(color: Colors.white, fontSize: 11, height: 1),
+                    ),
+                  )
+                : null,
+          ),
+        ],
+      ),
+    );
   }
 
   String _tfText(AppL10n l10n, Map<String, dynamic> shadow) {
@@ -104,7 +206,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         final shadow = status.shadow;
         final info = status.info;
         final rssi = num.tryParse('${shadow['wifiRssi'] ?? ''}');
-        final known = status.status == WifiOnlineStatus.online || status.status == WifiOnlineStatus.offline;
+        final known = status.status != WifiOnlineStatus.loading && status.status != WifiOnlineStatus.unknown;
         final rows = <({String label, String value, Widget? leading})>[
           (
             label: l10n.wifiRowBattery,
@@ -129,7 +231,8 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         ];
         final stateColor = switch (status.status) {
           WifiOnlineStatus.online => kWifiGreen,
-          WifiOnlineStatus.offline => const Color(0xFF9BA2AD),
+          WifiOnlineStatus.sleeping => kWifiSleepBlue,
+          WifiOnlineStatus.offline || WifiOnlineStatus.shutdown => const Color(0xFF9BA2AD),
           _ => const Color(0xFF8B9098),
         };
         return FigmaScreen(
@@ -243,11 +346,12 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
               const SizedBox(height: 14),
               WifiActionBar(
                 castLabel: l10n.devCast,
-                refreshLabel: l10n.wifiRefreshStatus,
-                refreshing: status.status == WifiOnlineStatus.loading,
+                slideshowLabel: l10n.wifiSlideshowSettings,
                 onCast: () => startWifiCast(context, widget.state, device),
-                onRefresh: _refreshTap,
+                onSlideshow: _openSlideshow,
               ),
+              const SizedBox(height: 14),
+              _buildEntries(l10n),
               const SizedBox(height: 24),
             ],
           ),
@@ -257,22 +361,21 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   }
 }
 
-/// WiFi 版设备的操作栏「投屏 | 刷新状态」（我的设备卡片与 WiFi 设备详情共用，同蓝牙版卡片的操作栏样式）。
+/// WiFi 版设备的操作栏「投屏 | 轮播设置」（我的设备卡片与 WiFi 设备详情共用，同蓝牙版卡片的操作栏样式）。
+/// V1.4 更新说明 1.5：原「刷新状态」改为「轮播设置」；状态随进页与 WS device.status 自动重查。
 class WifiActionBar extends StatelessWidget {
   const WifiActionBar({
     super.key,
     required this.castLabel,
-    required this.refreshLabel,
-    required this.refreshing,
+    required this.slideshowLabel,
     required this.onCast,
-    required this.onRefresh,
+    required this.onSlideshow,
   });
 
   final String castLabel;
-  final String refreshLabel;
-  final bool refreshing;
+  final String slideshowLabel;
   final VoidCallback onCast;
-  final VoidCallback onRefresh;
+  final VoidCallback onSlideshow;
 
   @override
   Widget build(BuildContext context) {
@@ -327,19 +430,16 @@ class WifiActionBar extends StatelessWidget {
             child: SizedBox(width: 1, height: 19, child: ColoredBox(color: Color(0xFFDADDDF))),
           ),
           action(
-            icon: Opacity(
-              opacity: refreshing ? 0.4 : 1,
-              child: Image.asset(
-                'assets/images/refresh-icon.png',
-                width: 18,
-                height: 18,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.refresh_rounded, size: 16, color: kWifiGreen),
-              ),
+            icon: Image.asset(
+              'assets/images/device-detail-icon01.png',
+              width: 18,
+              height: 18,
+              errorBuilder: (context, error, stackTrace) =>
+                  const Icon(Icons.slideshow_rounded, size: 16, color: kWifiGreen),
             ),
-            label: refreshLabel,
-            color: refreshing ? const Color(0xFF9BA2AD) : kWifiGreen,
-            onTap: onRefresh,
+            label: slideshowLabel,
+            color: kWifiGreen,
+            onTap: onSlideshow,
           ),
         ],
       ),

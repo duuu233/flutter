@@ -279,6 +279,27 @@ class IotClient {
     }
   }
 
+  /// POST JSON（轮播、休眠、删除照片、消息已读等设备控制）：不做网络重试（有副作用，重发可能重复下发）。
+  Future<Object?> post(
+    String path, {
+    Map<String, Object?> body = const {},
+    Map<String, String>? headers,
+  }) async {
+    final uri = _uri(path);
+    try {
+      final response = await _http
+          .post(
+            uri,
+            headers: _headers({'Content-Type': 'application/json', ...?headers}),
+            body: jsonEncode(body),
+          )
+          .timeout(IotConfig.timeout);
+      return _parse(response);
+    } catch (error) {
+      _fail(error);
+    }
+  }
+
   /// multipart 上传（WiFi 投屏 POST /api/device/play）：不做网络重试（重传会重复投屏）。
   /// [onProgress] 回调已送出的字节占比 0~100（流式写入时按块统计）。
   Future<Object?> upload(

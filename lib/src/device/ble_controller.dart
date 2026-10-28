@@ -265,6 +265,15 @@ class BleController extends ChangeNotifier {
   }
 
   /// 扫描结果的展示名：platformName → 广播名 → MAC。
+  /// 完整蓝牙广播名（同小程序 `broadcast-match.fullBroadcastName`，2026-10-27 绑定时默认昵称用）：
+  /// platformName / advName 取较长的那个。真机上两者常常只有一个带全（另一个为空或被截短），
+  /// 取长的才是完整广播，如 `IJ_E348C21ED428`、`EF6-370`。都取不到返回空串，由调用方回落到原来的取值。
+  static String fullBroadcastName(ScanResult result) {
+    final a = result.device.platformName.trim();
+    final b = result.advertisementData.advName.trim();
+    return b.length > a.length ? b : a;
+  }
+
   static String displayName(ScanResult result) {
     if (result.device.platformName.isNotEmpty) {
       return result.device.platformName;

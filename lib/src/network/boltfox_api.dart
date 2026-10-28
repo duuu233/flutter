@@ -61,6 +61,44 @@ class BoltFoxApi {
     return _http.upload('/Client/Basic/setFileUpload', filePaths: filePaths);
   }
 
+  /// WiFi 版投屏后写老服务相册记录（同小程序 `api.addWifiAlbumRecord`；V1.4 更新说明 1.4 / 2.4 / 9.1：
+  /// 相册数据由 App 调老服务维护，IoT 服务不写）。「我的相册」列表、轮播选图（imgUrls）、设备拉的播放列表、
+  /// 删除都认这条记录的 imgBle。
+  ///   ① [setFileUpload] 上传投屏用的那张图 → img（相册缩略图 / 再次投屏用）；
+  ///   ② [addUserProductImgRecord] 建记录：img + imgBle（= 投屏接口返回的 binUrl）+ deviceUploadState=1。
+  /// WiFi 版没有槽位，不传 imgIndex。失败抛给调用方，由结果页记日志并注明「未存入我的上传」。
+  /// ⚠️ 待联调：addUserProductImgRecord 不带 upirId / taskId 时能否新建记录、列表能否按 userProductId 查回来。
+  /// 返回 img 地址。
+  static Future<String> addWifiAlbumRecord({
+    required Object userProductId,
+    required String filePath,
+    required String imgBle,
+  }) async {
+    final img = _uploadedUrl(await setFileUpload([filePath]));
+    if (img.isEmpty) {
+      throw StateError('相册图片上传失败');
+    }
+    await addUserProductImgRecord(userProductId: userProductId, img: img, imgBle: imgBle, deviceUploadState: 1);
+    return img;
+  }
+
+  /// setFileUpload 的返回：字符串 / 数组（取首个）/ 对象（url / fileUrl / path 等），同 `state._extractUploadedUrl`。
+  static String _uploadedUrl(dynamic data) {
+    if (data is String) {
+      return data.trim();
+    }
+    if (data is List && data.isNotEmpty) {
+      return _uploadedUrl(data.first);
+    }
+    if (data is Map) {
+      final url = data['url'] ?? data['fileUrl'] ?? data['filePath'] ?? data['path'] ?? data['fileParam'] ?? data['src'];
+      if (url is String) {
+        return url.trim();
+      }
+    }
+    return '';
+  }
+
   /// 投屏「原图上传建记录」：form-data 上传原图，返回 `{ url, taskId, upirId }`。
   ///
   /// 对齐小程序 2026-07-22 链路切换：本接口**只负责建投屏记录 + 后端存图**（图库/记录页展示），

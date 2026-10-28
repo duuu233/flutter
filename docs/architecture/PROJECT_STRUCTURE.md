@@ -60,7 +60,7 @@ lib/
     │   ├── mine/
     │   ├── settings/
     │   ├── star/                # 余额/套餐/记录、安卓 PayPal、iOS StoreKit
-    │   ├── wifi/                # main-wifi：配网三页、WiFi 设备详情、WiFi 投屏、云端状态缓存
+    │   ├── wifi/                # main-wifi：配网三页、WiFi 设备详情、WiFi 投屏、轮播 / 休眠 / 消息中心、云端状态缓存与推送订阅
     │   └── shell/
     ├── network/
     │   ├── api_client.dart

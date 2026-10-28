@@ -17,7 +17,9 @@ import '../../../shared/l10n/app_l10n.dart';
 import '../../../state.dart';
 import '../cast_image_editor.dart';
 import '../../../network/dithering_api.dart';
+import '../../../network/iot/iot_api.dart';
 import '../../wifi/presentation/wifi_cast_result_page.dart';
+import '../../wifi/wifi_l10n.dart';
 import 'casting_progress_page.dart';
 
 /// 投屏预览页。**2026-07-25 按小程序 07-22 ~ 07-24 的三轮重构整页重写**
@@ -479,6 +481,53 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       '${widget.device.screenHeight} 出图画布=${_deviceSize.width}x${_deviceSize.height} '
       '竖向导出角=${_verticalExportRotateDeg(widget.device)}° '
       '横向导出角=${_landscapeExportRotateDeg(widget.device)}°',
+    );
+    if (widget.device.isWifi) {
+      _checkCarousel();
+    }
+  }
+
+  // ── WiFi 版「同时加入轮播」（同小程序 preview-page checkCarousel，实现报告反馈追加内容第二节）──
+  // 进页查 GET /api/device/strategy，running=true 才显示开关，默认关；查询失败按未开轮播处理（不显示）。
+  // 打开后 WiFi 投屏结果页每张都带 addToCarousel=true。
+  bool _carouselRunning = false;
+  bool _addToCarousel = false;
+
+  Future<void> _checkCarousel() async {
+    try {
+      final res = await IotApi.getStrategy(widget.device.serialNumber);
+      if (mounted) {
+        setState(() => _carouselRunning = res['running'] == true);
+      }
+    } catch (error) {
+      debugPrint('[投屏预览][WiFi] 查询轮播失败，不显示同时加入轮播 $error');
+    }
+  }
+
+  Widget _buildCarouselToggle() {
+    if (!_carouselRunning) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(23, 8, 23, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Text(
+            AppL10n.of(context).wifiAddToCarousel,
+            style: const TextStyle(color: Color(0xFF25282D), fontSize: 14),
+          ),
+          const SizedBox(width: 8),
+          Transform.scale(
+            scale: 0.8,
+            child: Switch(
+              value: _addToCarousel,
+              activeTrackColor: const Color(0xFFFF6A20),
+              onChanged: (value) => setState(() => _addToCarousel = value),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1377,6 +1426,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             imagePaths: outPaths,
             // 与蓝牙版抖动出帧同口径：按导出分辨率判型（评审回复 8.1）
             type: DitheringApi.typeForDevice(dev.width, dev.height),
+            // 只有轮播在运行且打开了开关才加入轮播
+            addToCarousel: _carouselRunning && _addToCarousel,
           ),
         ),
       );
@@ -1421,6 +1472,7 @@ class _CastPreviewPageState extends State<CastPreviewPage>
           if (_paths.length > 1) _buildDots(),
           _buildToolBar(),
           _buildGestureTip(),
+          _buildCarouselToggle(),
           const SizedBox(height: 20),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 23),

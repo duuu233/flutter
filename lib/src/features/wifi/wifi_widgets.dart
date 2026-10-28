@@ -137,3 +137,148 @@ class WifiMiniSpinner extends StatelessWidget {
     );
   }
 }
+
+// ── 设置页通用件（轮播设置 / 休眠设置，同小程序 `.ws-segment` / `.ws-row` / picker）──
+
+/// 分段选择（同小程序 `.ws-segment`）：选中项橙色描边浅底。
+class WifiSegment<T> extends StatelessWidget {
+  const WifiSegment({super.key, required this.value, required this.items, required this.onChanged});
+
+  final T value;
+  final List<(T, String)> items;
+  final ValueChanged<T> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        for (var i = 0; i < items.length; i++) ...[
+          if (i > 0) const SizedBox(width: 10),
+          Expanded(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => onChanged(items[i].$1),
+              child: Container(
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: items[i].$1 == value ? const Color(0x1AFF6A20) : Colors.white.withValues(alpha: 0.6),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: items[i].$1 == value ? const Color(0xFFFF6A20) : Colors.transparent,
+                  ),
+                ),
+                child: Text(
+                  items[i].$2,
+                  style: TextStyle(
+                    color: items[i].$1 == value ? const Color(0xFFFF6A20) : const Color(0xFF5E6470),
+                    fontSize: 14,
+                    fontWeight: items[i].$1 == value ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+/// 一行「标签 …… 值 ›」（同小程序 `.ws-row`），点了弹选择器。
+class WifiFormRow extends StatelessWidget {
+  const WifiFormRow({super.key, required this.label, required this.value, this.onTap, this.trailing});
+
+  final String label;
+  final String value;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        height: 48,
+        child: Row(
+          children: [
+            Text(label, style: const TextStyle(color: Color(0xFF33373D), fontSize: 14)),
+            const Spacer(),
+            trailing ??
+                Text(value, style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600)),
+            if (onTap != null) const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF9BA2AD)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+String _two(int n) => n.toString().padLeft(2, '0');
+
+/// 选一个 HH:mm（24 小时制）；取消返回 null。
+Future<String?> pickWifiTime(BuildContext context, String initial) async {
+  final parts = initial.split(':');
+  final picked = await showTimePicker(
+    context: context,
+    initialTime: TimeOfDay(
+      hour: int.tryParse(parts.first) ?? 8,
+      minute: parts.length > 1 ? int.tryParse(parts[1]) ?? 0 : 0,
+    ),
+    builder: (context, child) => MediaQuery(
+      data: MediaQuery.of(context).copyWith(alwaysUse24HourFormat: true),
+      child: child ?? const SizedBox.shrink(),
+    ),
+  );
+  return picked == null ? null : '${_two(picked.hour)}:${_two(picked.minute)}';
+}
+
+/// 选一个 yyyy-MM-dd（不早于今天）；取消返回 null。
+Future<String?> pickWifiDate(BuildContext context, String initial) async {
+  final now = DateTime.now();
+  final today = DateTime(now.year, now.month, now.day);
+  var current = DateTime.tryParse(initial) ?? today;
+  if (current.isBefore(today)) {
+    current = today;
+  }
+  final picked = await showDatePicker(
+    context: context,
+    initialDate: current,
+    firstDate: today,
+    lastDate: today.add(const Duration(days: 365 * 2)),
+  );
+  return picked == null ? null : '${picked.year}-${_two(picked.month)}-${_two(picked.day)}';
+}
+
+/// 从一列选项里选一个（间隔档位、天数等）；取消返回 null。
+Future<int?> pickWifiOption(BuildContext context, List<String> options, int selected) {
+  return showModalBottomSheet<int>(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+    builder: (context) => SafeArea(
+      child: SizedBox(
+        height: 320,
+        child: ListView.builder(
+          controller: ScrollController(initialScrollOffset: ((selected - 2).clamp(0, options.length) * 48).toDouble()),
+          itemExtent: 48,
+          itemCount: options.length,
+          itemBuilder: (context, index) => InkWell(
+            onTap: () => Navigator.of(context).pop(index),
+            child: Center(
+              child: Text(
+                options[index],
+                style: TextStyle(
+                  color: index == selected ? const Color(0xFFFF6A20) : const Color(0xFF2A2D32),
+                  fontSize: 16,
+                  fontWeight: index == selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  );
+}

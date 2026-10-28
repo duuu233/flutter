@@ -2100,6 +2100,19 @@ class PhotoFrameState extends ChangeNotifier {
   //     推算的输入是「同一台设备在库照片的排队顺序」，而唯一的索引来源已收敛成投屏记录自己的
   //     `imgIndex`，缺了就整批终止，刻意不再推算。
 
+  /// 某台设备的投屏成功记录（WiFi 轮播选图用）：与 [refreshCastRecords] 同一接口同一映射，
+  /// 但**不改** [castRecords]（「我的相册」页的列表与筛选不受影响）；失败抛给调用方。
+  Future<List<CastRecord>> fetchSuccessCastRecords(String userProductId) async {
+    final data = await BoltFoxApi.getUserProductImgRecordList({
+      'pageIndex': 1,
+      'pageSize': 100,
+      'userProductId': userProductId,
+      'deviceUploadState': 1,
+    });
+    final rows = extractApiRows(data);
+    return [for (var i = 0; i < rows.length; i++) _castRecordFromJson(rows[i], i)];
+  }
+
   /// 投屏记录列表：`/Client/UserProduct/getUserProductImgRecordList`。
   ///
   /// 映射为 [CastRecord]，仅在后端返回非空时替换本地列表（失败保留当前数据）。
@@ -2237,24 +2250,25 @@ class PhotoFrameState extends ChangeNotifier {
   ///
   /// 后端没有批量接口，这里串行逐条调用；**允许部分失败**——设备槽位与相册记录此时已经删掉，
   /// 不能因为记录没删干净就整体报错回滚（对齐小程序 `api.deleteProjectionRecords`）。
-  /// 返回 `(total, failed)` 由调用方决定提示文案。
-  Future<({int total, int failed})> deleteCastRecords(
+  /// 返回 `(total, failed, failedIds)` 由调用方决定提示文案。
+  /// failedIds：WiFi 版删完记录还要删云端 bin，只能删记录真删掉了的那些（见「我的相册」WiFi 删除）。
+  Future<({int total, int failed, List<String> failedIds})> deleteCastRecords(
     Iterable<String> recordIds,
   ) async {
     final ids = recordIds.where((id) => id.isNotEmpty).toSet().toList();
-    var failed = 0;
+    final failedIds = <String>[];
     for (final id in ids) {
       try {
         await BoltFoxApi.delUserProductImgRecord(id);
         _castRecords.removeWhere((record) => record.id == id);
       } catch (_) {
-        failed += 1;
+        failedIds.add(id);
       }
     }
     if (ids.isNotEmpty) {
       notifyListeners();
     }
-    return (total: ids.length, failed: failed);
+    return (total: ids.length, failed: failedIds.length, failedIds: failedIds);
   }
 
   /// 删除投屏记录：先调用 `/Client/UserProduct/delUserProductImgRecord`，成功后移除本地。
@@ -2581,9 +2595,11 @@ class PhotoFrameState extends ChangeNotifier {
     if (existed.isNotEmpty) {
       return (success: true, message: '', deviceId: existed);
     }
-    final name = productName.trim().isNotEmpty
-        ? productName.trim()
-        : (broadcastName.trim().isNotEmpty ? broadcastName.trim() : '智能相框');
+    // 默认昵称 = 完整蓝牙广播名（如 IJ_E348C21ED428，同小程序 2026-10-27 产品口径），与蓝牙版一致；
+    // 之前传的是产品名，同款 WiFi 设备绑定后全叫一个名字。广播名取不到才回落产品名。
+    final name = broadcastName.trim().isNotEmpty
+        ? broadcastName.trim()
+        : (productName.trim().isNotEmpty ? productName.trim() : '智能相框');
     try {
       await BoltFoxApi.addUserProduct(
         productId: _asInt(productId),

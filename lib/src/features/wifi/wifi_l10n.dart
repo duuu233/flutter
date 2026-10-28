@@ -41,7 +41,7 @@ extension WifiL10n on AppL10n {
     "Can't find your Wi-Fi? Enter it manually",
     'Wi-Fiが見つからない場合は手動で入力してください',
   );
-  String get wifiListHead => pick('设备附近的2.4G WiFi', '2.4 GHz Wi-Fi near the device', 'デバイス付近の2.4GHz Wi-Fi');
+  String get wifiListHead => pick('设备附近的WiFi', 'Wi-Fi near the device', 'デバイス付近のWi-Fi');
   String get wifiRescan => pick('重新搜索', 'Search again', '再検索');
   String get wifiConnectingDevice => pick('正在连接设备...', 'Connecting to device...', 'デバイスに接続中...');
   String get wifiSearchingNetwork => pick('正在搜索网络...', 'Searching for networks...', 'ネットワークを検索中...');
@@ -171,8 +171,20 @@ extension WifiL10n on AppL10n {
   String get wifiStatusLoading => pick('查询中', 'Checking', '確認中');
   String get wifiStatusOnline => pick('在线', 'Online', 'オンライン');
   String get wifiStatusOffline => pick('离线', 'Offline', 'オフライン');
+  String get wifiStatusSleeping => pick('休眠中', 'Sleeping', 'スリープ中');
+  String get wifiStatusShutdown => pick('已关机', 'Powered off', '電源オフ');
   String get wifiStatusUnknown => pick('状态未知', 'Status unknown', '状態不明');
   String get wifiRefreshStatus => pick('刷新状态', 'Refresh', '状態を更新');
+  String get wifiSleepingTip => pick(
+    '设备休眠中，唤醒后可操作',
+    'The device is sleeping. Try again after it wakes up.',
+    'デバイスはスリープ中です。起動後に操作してください',
+  );
+  String get wifiShutdownTip => pick(
+    '设备已关机，开机后可操作',
+    'The device is powered off. Try again after turning it on.',
+    'デバイスの電源がオフです。電源を入れてから操作してください',
+  );
   String get wifiOfflineTip => pick(
     '设备已离线，请检查设备网络',
     'The device is offline. Please check its network.',
@@ -208,9 +220,9 @@ extension WifiL10n on AppL10n {
       pick('第 $current / $total 张', '$current / $total', '$current / $total 枚目');
   String wifiCastItemNo(int index) => pick('第 $index 张', 'Photo $index', '$index 枚目');
   String get wifiCastNote => pick(
-    '进度为图片上传进度，上传完成后等待设备下载并刷屏',
-    'Progress shows the upload. After uploading, the device downloads and refreshes the screen.',
-    '進捗はアップロードの進捗です。完了後、デバイスがダウンロードして画面を更新します',
+    '进度为图片上传进度；发送后设备会自行下载并刷新屏幕，多张时只在最后一张刷屏',
+    'Progress shows the upload. After sending, the device downloads and refreshes the screen; with several photos it refreshes only on the last one.',
+    '進捗はアップロードの進捗です。送信後、デバイスがダウンロードして画面を更新します。複数枚の場合は最後の1枚でのみ更新します',
   );
   String get wifiCastRetryFailed => pick('重试未成功的', 'Retry unsuccessful', '失敗分を再試行');
   String get wifiCastDone => pick('完成', 'Done', '完了');
@@ -231,7 +243,8 @@ extension WifiL10n on AppL10n {
   String wifiCastStage(String stage) => switch (stage) {
     'UPLOADING' => pick('图片上传中', 'Uploading image', '画像をアップロード中'),
     'PROCESSING' => pick('图片处理中', 'Processing image', '画像を処理中'),
-    'SENT' => pick('指令已下发，等待设备', 'Sent, waiting for the device', '送信済み、デバイスを待機中'),
+    'SENT' => pick('已发送，屏幕即将刷新', 'Sent. The screen will refresh soon.', '送信しました。まもなく画面が更新されます'),
+    'UPLOADED' => pick('已上传', 'Uploaded', 'アップロード済み'),
     'DOWNLOADING' => pick('屏幕即将刷新', 'Screen will refresh soon', 'まもなく画面が更新されます'),
     'FLASHING' => pick('设备刷屏中', 'Refreshing the screen', '画面を更新中'),
     'SUCCESS' => pick('投屏成功', 'Cast succeeded', 'キャスト成功'),
@@ -248,5 +261,246 @@ extension WifiL10n on AppL10n {
     'PLAY_STORAGE_ERROR' => pick('设备存储异常', 'Device storage error', 'デバイスのストレージエラー'),
     'PLAY_FAILED' => pick('设备处理失败', 'The device failed to process it', 'デバイスの処理に失敗しました'),
     _ => '',
+  };
+
+  // ── WiFi 投屏结果页（V1.4：写我的相册、同时加入轮播、投屏日志） ──
+  String wifiCastAllSent(int total) => pick(
+    '已发送 $total 张，屏幕即将刷新',
+    '$total photos sent. The screen will refresh soon.',
+    '$total 枚送信しました。まもなく画面が更新されます',
+  );
+  String get wifiCastSavingAlbum => pick('正在存入我的上传', 'Saving to My Uploads', 'マイアップロードに保存中');
+  String wifiCastAlbumNotSaved(String text) =>
+      pick('$text（未存入我的上传）', '$text (not saved to My Uploads)', '$text（マイアップロードに未保存）');
+  String get wifiCarouselAddFailed => pick(
+    '未成功加入轮播，请前往轮播设置添加',
+    'Not added to the slideshow. Add it in Slideshow settings.',
+    'スライドショーに追加できませんでした。スライドショー設定で追加してください',
+  );
+  String get wifiAddToCarousel => pick('同时加入轮播', 'Also add to slideshow', 'スライドショーにも追加');
+  String get wifiCastLogTitle => pick('投屏日志', 'Cast log', 'キャストログ');
+  String get wifiCopyLog => pick('复制日志', 'Copy log', 'ログをコピー');
+  String get wifiLogEmpty => pick('（暂无）', '(empty)', '（なし）');
+  String get wifiLogCopied => pick('已复制', 'Copied', 'コピーしました');
+
+  // ── 我的相册：WiFi 版照片删除（V1.4 更新说明九、反馈追加内容第三节） ──
+  String get wifiDeleteMayNeedSwitch => pick(
+    '删除后相框可能需手动切换才会更新。',
+    'The frame may need to be switched manually to update after deletion.',
+    '削除後、フォトフレームの表示を更新するには手動で切り替える必要がある場合があります。',
+  );
+  String get wifiDeleteDoneMaySwitch => pick(
+    '已删除；若相框未更新，请手动切换或重新设置轮播',
+    'Deleted. If the frame does not update, switch manually or set up the slideshow again.',
+    '削除しました。フォトフレームが更新されない場合は、手動で切り替えるかスライドショーを再設定してください',
+  );
+  String get wifiDeleteSwitched => pick(
+    '已删除，相框已切换到下一张',
+    'Deleted. The frame has switched to the next photo.',
+    '削除しました。フォトフレームは次の写真に切り替わりました',
+  );
+  String get wifiDeleteOffline => pick(
+    '已删除；设备离线，相框换图将在设备联网后进行',
+    'Deleted. The device is offline; the frame will update once it is back online.',
+    '削除しました。デバイスがオフラインのため、オンラインになってから表示を更新します',
+  );
+  String wifiDeletePartial(int deleted, int failed) => pick(
+    '已删除 $deleted 张，$failed 张未删除成功，请稍后重试',
+    '$deleted deleted, $failed failed. Please try again later.',
+    '$deleted 枚削除、$failed 枚は削除できませんでした。しばらくしてからお試しください',
+  );
+  String wifiDeleteCloudFailed(String reason) => pick(
+    '照片已从我的上传删除，相框播放列表更新失败：$reason',
+    'Removed from My Uploads, but updating the frame playlist failed: $reason',
+    'マイアップロードから削除しましたが、再生リストの更新に失敗しました：$reason',
+  );
+  String get wifiCloudDeleteFailed => pick('云端删除失败', 'Cloud deletion failed', 'クラウドでの削除に失敗しました');
+  String get wifiDeleteFailed => pick('删除失败，请稍后重试', 'Deletion failed. Please try again later.', '削除に失敗しました。しばらくしてからお試しください');
+
+  // ── 设置页通用 ──
+  String get wifiSave => pick('保存', 'Save', '保存');
+  String get wifiSaving => pick('保存中…', 'Saving…', '保存中…');
+  String get wifiSaveFailed => pick('保存失败，请稍后重试', 'Save failed. Please try again later.', '保存に失敗しました。しばらくしてからお試しください');
+  String wifiSaveFailedWith(String reason) => pick('保存失败：$reason', 'Save failed: $reason', '保存に失敗しました：$reason');
+  String wifiLastSet(String time) => pick('最后设置 $time', 'Last set $time', '最終設定 $time');
+  String wifiNextDay(String time) => pick('次日 $time', 'Next day $time', '翌日 $time');
+  String wifiMinutes(int n) => pick('$n 分钟', '$n min', '$n 分');
+  String wifiHours(int n) => pick('$n 小时', '$n h', '$n 時間');
+  String wifiDays(int n) => pick('$n 天', '$n day${n == 1 ? '' : 's'}', '$n 日');
+  String get wifiLoadFailed => pick('加载失败', 'Failed to load', '読み込みに失敗しました');
+  String get wifiLoadFailedRetry => pick('加载失败，请稍后重试', 'Failed to load. Please try again later.', '読み込みに失敗しました。しばらくしてからお試しください');
+  String get wifiReload => pick('重新加载', 'Reload', '再読み込み');
+  String get wifiLoadingMore => pick('加载中…', 'Loading…', '読み込み中…');
+  String get wifiLoadMoreFailed => pick('加载失败，点击重试', 'Failed to load. Tap to retry.', '読み込みに失敗しました。タップして再試行');
+  String get wifiPullUpMore => pick('上拉加载更多', 'Scroll up to load more', '上にスクロールしてさらに読み込む');
+  String get wifiNoMore => pick('没有更多了', 'No more', 'これ以上ありません');
+
+  // ── 轮播设置（V1.4 更新说明 1.5 / 第五节、实现报告反馈六、反馈追加内容第一节） ──
+  String get wifiSlideshowSettings => pick('轮播设置', 'Slideshow', 'スライドショー設定');
+  String get wifiSlideState => pick('轮播状态', 'Slideshow status', 'スライドショーの状態');
+  String get wifiSlideRunning => pick('轮播中', 'Playing', '再生中');
+  String get wifiSlidePaused => pick('已暂停', 'Paused', '一時停止中');
+  String get wifiSlideNotSet => pick('未设置', 'Not set', '未設定');
+  String get wifiSlideMode => pick('轮播方式', 'Mode', '再生方式');
+  String get wifiSlideInterval => pick('间隔时间', 'Interval', '間隔');
+  String get wifiSlideFixed => pick('固定时间', 'Fixed times', '固定時刻');
+  String get wifiSlideBegin => pick('开始时间', 'Start time', '開始時刻');
+  String get wifiSlideEnd => pick('结束时间', 'End time', '終了時刻');
+  String get wifiSlideEvery => pick('每隔', 'Every', '間隔');
+  String wifiSlideEveryValue(String interval) => pick('$interval 换一张', 'Next photo every $interval', '$interval ごとに切り替え');
+  String get wifiSlideUpdateTime => pick('更新时间', 'Update times', '更新時刻');
+  String get wifiSlideAddTime => pick('+ 添加', '+ Add', '+ 追加');
+  String get wifiSlideOrder => pick('播放顺序', 'Order', '再生順');
+  String get wifiSlideSequential => pick('顺序播放', 'In order', '順番に再生');
+  String get wifiSlideRandom => pick('随机播放', 'Shuffle', 'シャッフル再生');
+  String get wifiSlideIdle => pick('轮播后休眠', 'Sleep after each change', '切り替え後にスリープ');
+  String get wifiSlidePhotos => pick('轮播照片', 'Slideshow photos', 'スライドショーの写真');
+  String get wifiSlideSelectAll => pick('全选', 'Select all', 'すべて選択');
+  String get wifiSlideUnselectAll => pick('取消全选', 'Deselect all', '選択解除');
+  String wifiSlidePhotosDesc(int max) => pick(
+    '从「我的上传」选择，按选择顺序轮播；全选即轮播全部照片（含之后新上传的）。最多 $max 张',
+    'Choose from My Uploads; photos play in the order selected. Select all to play every photo (including future uploads). Up to $max.',
+    'マイアップロードから選択し、選んだ順に再生します。すべて選択すると今後のアップロードも含めて再生します。最大 $max 枚',
+  );
+  String wifiSlideSelectedCount(int count, int max) => pick('已选 $count/$max', 'Selected $count/$max', '選択中 $count/$max');
+  String get wifiSlidePhotosFailed => pick('「我的上传」加载失败，请返回重试', 'Failed to load My Uploads. Go back and try again.', 'マイアップロードを読み込めませんでした。戻って再度お試しください');
+  String get wifiSlidePhotosEmpty => pick('还没有可轮播的照片，先投屏几张吧', 'No photos to play yet. Cast a few first.', 'スライドショーにできる写真がありません。まず何枚かキャストしてください');
+  String get wifiSlideQueryFailed => pick('轮播配置查询失败，以下为默认设置', 'Failed to load slideshow settings. Showing defaults.', 'スライドショー設定を取得できませんでした。既定値を表示しています');
+  String get wifiSlideAllDeleted => pick('之前选择的照片已全部删除，请重新选择', 'All previously selected photos were deleted. Please choose again.', '以前選んだ写真はすべて削除されました。選び直してください');
+  String get wifiSlideNotInAlbum => pick('之前选择的照片已不在「我的上传」中', 'Previously selected photos are no longer in My Uploads', '以前選んだ写真はマイアップロードにありません');
+  String wifiSlideSomeDeleted(int n) => pick('之前选择的照片有 $n 张已删除', '$n previously selected photos were deleted', '以前選んだ写真のうち $n 枚が削除されました');
+  String wifiSlideWholeAlbumOverLimit(int max) => pick(
+    '当前轮播全部照片；最多选择 $max 张，已选前 $max 张，保存后只轮播所选',
+    'Currently playing all photos. Up to $max can be selected, so the first $max are selected; after saving only these will play.',
+    '現在すべての写真を再生中です。選択は最大 $max 枚のため先頭 $max 枚を選択しました。保存後は選択した写真のみ再生します',
+  );
+  String wifiSlideFull(int max) => pick(
+    '最多选择 $max 张，请先取消部分照片',
+    'Up to $max photos. Deselect some first.',
+    '最大 $max 枚です。先にいくつか選択を解除してください',
+  );
+  String wifiSlideMax(int max) => pick('最多选择 $max 张', 'Up to $max photos', '最大 $max 枚まで');
+  String wifiSlideOverLimit(int max) => wifiSlideFull(max);
+  String wifiSlideSaveOverLimit(int max) => pick(
+    '轮播照片最多 $max 张，请先取消部分照片后再保存',
+    'The slideshow allows up to $max photos. Deselect some and save again.',
+    'スライドショーは最大 $max 枚です。いくつか選択を解除してから保存してください',
+  );
+  String get wifiSlideSaveInvalid => pick('保存失败：轮播设置有误，请检查后重试', 'Save failed: the slideshow settings are invalid. Please check and try again.', '保存に失敗しました：設定に誤りがあります。確認して再度お試しください');
+  String get wifiSlideNeedTimes => pick('请选择轮播开始和结束时间', 'Choose the start and end times', '開始時刻と終了時刻を選択してください');
+  String get wifiSlideNeedInterval => pick('请选择轮播间隔', 'Choose an interval', '間隔を選択してください');
+  String get wifiSlideDaysRange => pick('每隔天数需在 1~365 之间', 'Days must be between 1 and 365', '日数は1〜365の範囲で指定してください');
+  String get wifiSlideNeedTimePoint => pick('请至少添加一个更新时间', 'Add at least one update time', '更新時刻を1つ以上追加してください');
+  String get wifiSlideNeedPhoto => pick('请至少选择一张照片', 'Select at least one photo', '写真を1枚以上選択してください');
+  String get wifiSlideTimeExists => pick('这个时间点已添加', 'This time has already been added', 'この時刻は追加済みです');
+  String wifiSlideTimeMax(int max) => pick('最多添加 $max 个时间点', 'Up to $max times', '最大 $max 個まで追加できます');
+  String get wifiSlideSaveStart => pick('保存并开始轮播', 'Save and start', '保存して開始');
+  String get wifiSlideStop => pick('暂停轮播', 'Pause slideshow', 'スライドショーを一時停止');
+  String get wifiSlideStopping => pick('暂停中…', 'Pausing…', '一時停止中…');
+  String get wifiSlideStopped => pick('已暂停轮播', 'Slideshow paused', 'スライドショーを一時停止しました');
+  String get wifiSlideStopFailed => pick('暂停失败，请稍后重试', 'Failed to pause. Please try again later.', '一時停止に失敗しました。しばらくしてからお試しください');
+  String get wifiSlideSwitching => pick('正在切到第一张…', 'Switching to the first photo…', '最初の写真に切り替え中…');
+  String wifiSlideSavedSome(int n) => pick('已保存，轮播所选 $n 张', 'Saved. Playing $n selected photos', '保存しました。選択した $n 枚を再生します');
+  String get wifiSlideSavedAll => pick('已保存，轮播全部照片', 'Saved. Playing all photos', '保存しました。すべての写真を再生します');
+  String wifiSlideSavedPlaying(String saved) => pick('$saved，屏幕即将切到第一张', '$saved. The screen will switch to the first photo.', '$saved。まもなく最初の写真に切り替わります');
+  String get wifiSlideFirstNoImage => pick('第一张照片缺少原图，等下一个轮播周期再切换', 'The first photo has no original image; it will switch at the next cycle', '最初の写真に元画像がないため、次の周期で切り替わります');
+  String get wifiSlideFirstDownloadFailed => pick('第一张照片下载失败，等下一个轮播周期再切换', 'Failed to download the first photo; it will switch at the next cycle', '最初の写真をダウンロードできなかったため、次の周期で切り替わります');
+  String wifiSlideFirstFailed(String reason) => pick('切换第一张失败：$reason', 'Failed to switch to the first photo: $reason', '最初の写真への切り替えに失敗しました：$reason');
+
+  // ── 休眠设置（实现报告反馈第二节） ──
+  String get wifiSleepSettings => pick('休眠设置', 'Sleep settings', 'スリープ設定');
+  String get wifiSleepCurrent => pick('当前设置', 'Current setting', '現在の設定');
+  String get wifiSleepNotSet => pick('未开启休眠', 'Sleep is not enabled', 'スリープは未設定です');
+  String get wifiSleepClosed => pick('已关闭休眠', 'Sleep is off', 'スリープはオフです');
+  String get wifiSleepQueryFailed => pick('当前设置查询失败', 'Failed to load the current setting', '現在の設定を取得できませんでした');
+  String wifiSleepDailySummary(String sleep, String wake, bool crossDay) => pick(
+    '周期休眠：每天 $sleep ~ ${crossDay ? '次日 ' : ''}$wake',
+    'Daily sleep: $sleep – ${crossDay ? 'next day ' : ''}$wake',
+    '毎日スリープ：$sleep 〜 ${crossDay ? '翌日 ' : ''}$wake',
+  );
+  String wifiSleepOnceSummary(String begin, String end) =>
+      pick('一次性休眠：$begin ~ $end', 'One-time sleep: $begin – $end', '1回のみスリープ：$begin 〜 $end');
+  String get wifiSleepMode => pick('休眠方式', 'Sleep mode', 'スリープ方式');
+  String get wifiSleepModeOff => pick('关闭', 'Off', 'オフ');
+  String get wifiSleepModeDaily => pick('周期', 'Daily', '毎日');
+  String get wifiSleepModeOnce => pick('一次性', 'One-time', '1回のみ');
+  String get wifiSleepDailySleep => pick('每天休眠', 'Sleep at', 'スリープ時刻');
+  String get wifiSleepDailyWake => pick('每天唤醒', 'Wake at', '起動時刻');
+  String get wifiSleepCrossDayTip => pick(
+    '唤醒时间早于休眠时间时按次日唤醒（跨午夜）',
+    'If the wake time is earlier than the sleep time, it wakes the next day (past midnight).',
+    '起動時刻がスリープ時刻より早い場合は翌日に起動します（日付をまたぐ）',
+  );
+  String get wifiSleepBegin => pick('开始', 'Start', '開始');
+  String get wifiSleepEnd => pick('结束', 'End', '終了');
+  String get wifiSleepOnceTip => pick('只休眠这一次，开始时间需早于结束时间', 'Sleeps just once; the start must be earlier than the end.', 'この1回だけスリープします。開始は終了より前にしてください');
+  String get wifiSleepOffTip => pick('关闭后设备保持联网，不按计划休眠', 'When off, the device stays online and does not sleep on a schedule.', 'オフの場合、デバイスはオンラインのままでスケジュールによるスリープは行いません');
+  String get wifiSleepNote => pick('设置时设备需要在线；时间按手机本地时间填写', 'The device must be online. Times use your phone’s local time.', '設定時はデバイスがオンラインである必要があります。時刻はスマートフォンの現地時間です');
+  String get wifiSleepNeedTimes => pick('请选择休眠时间和唤醒时间', 'Choose the sleep and wake times', 'スリープ時刻と起動時刻を選択してください');
+  String get wifiSleepSameTime => pick('休眠时间和唤醒时间不能相同', 'The sleep and wake times cannot be the same', 'スリープ時刻と起動時刻を同じにすることはできません');
+  String get wifiSleepNeedDateTimes => pick('请选择开始和结束的日期与时间', 'Choose the start and end dates and times', '開始と終了の日付・時刻を選択してください');
+  String get wifiSleepBeginBeforeEnd => pick('开始时间必须早于结束时间', 'The start must be earlier than the end', '開始は終了より前にしてください');
+  String get wifiSleepEndPassed => pick('结束时间已过，请重新选择', 'The end time has passed. Please choose again.', '終了時刻を過ぎています。選び直してください');
+  String get wifiSleepCloseTitle => pick('关闭休眠', 'Turn off sleep', 'スリープをオフ');
+  String get wifiSleepCloseConfirm => pick(
+    '关闭后设备将保持联网，不再按计划休眠，确认关闭吗？',
+    'The device will stay online and stop sleeping on a schedule. Turn it off?',
+    'オフにするとデバイスはオンラインのままになり、スケジュールによるスリープを行いません。オフにしますか？',
+  );
+  String get wifiSleepClosedToast => pick('已关闭休眠', 'Sleep turned off', 'スリープをオフにしました');
+  String get wifiSleepSaved => pick('休眠设置已保存', 'Sleep settings saved', 'スリープ設定を保存しました');
+
+  // ── 消息中心（实现报告反馈第三节、对接文档第八节） ──
+  String get wifiMessageCenter => pick('消息中心', 'Messages', 'メッセージ');
+  String get wifiMsgUnreadOnly => pick('只看未读', 'Unread only', '未読のみ');
+  String wifiMsgReadAll(int unread) => pick(
+    unread > 0 ? '全部已读（$unread）' : '全部已读',
+    unread > 0 ? 'Mark all read ($unread)' : 'Mark all read',
+    unread > 0 ? 'すべて既読（$unread）' : 'すべて既読',
+  );
+  String get wifiMsgAllRead => pick('已全部标记为已读', 'All marked as read', 'すべて既読にしました');
+  String get wifiMsgEmpty => pick('暂无消息', 'No messages', 'メッセージはありません');
+  String get wifiMsgNoUnread => pick('没有未读消息', 'No unread messages', '未読メッセージはありません');
+  String get wifiMsgEmptyDesc => pick(
+    '设备上下线、电量、投屏结果等消息会出现在这里（保留 90 天）',
+    'Messages about the device going online/offline, battery, cast results, etc. appear here (kept for 90 days).',
+    'デバイスのオンライン/オフライン、バッテリー、キャスト結果などのメッセージがここに表示されます（90日間保存）',
+  );
+  String get wifiMsgNoPermission => pick('没有查看该设备消息的权限', 'No permission to view this device’s messages', 'このデバイスのメッセージを表示する権限がありません');
+  String get wifiMsgSeparator => pick('，', ', ', '、');
+  String wifiMsgSignalLevel(String level) => pick('信号等级 $level', 'Signal level $level', '信号レベル $level');
+  String wifiMsgBatteryLevel(String level) => pick('电量等级 $level', 'Battery level $level', 'バッテリーレベル $level');
+  String wifiMsgBattery(String battery) => pick('电量 $battery%', 'Battery $battery%', 'バッテリー $battery%');
+  String wifiMsgRssi(String rssi) => pick('信号 ${rssi}dBm', 'Signal ${rssi}dBm', '信号 ${rssi}dBm');
+  String wifiMsgResultCode(String code) => pick('设备返回码 $code', 'Device code $code', 'デバイスの応答コード $code');
+  String get wifiMsgCorrected => pick('设备超时后才返回成功', 'The device reported success after the timeout', 'タイムアウト後にデバイスが成功を報告しました');
+
+  /// 消息标题（服务端只给短码 type，文案由 App 维护）；未知 type 显示通用文案。
+  String wifiMessageTitle(String type) => switch (type) {
+    'DEVICE_ONLINE' => pick('设备已上线', 'Device online', 'デバイスがオンラインになりました'),
+    'DEVICE_OFFLINE' => pick('设备已离线', 'Device offline', 'デバイスがオフラインになりました'),
+    'LOW_BATTERY' => pick('设备电量低', 'Low battery', 'バッテリー残量低下'),
+    'WIFI_WEAK' => pick('设备 WiFi 信号弱', 'Weak Wi-Fi signal', 'Wi-Fi信号が弱い'),
+    'TF_FULL' => pick('TF 卡容量将满', 'TF card almost full', 'TFカードの容量がまもなくいっぱいです'),
+    'PLAY_SUCCESS' => pick('投屏成功', 'Cast succeeded', 'キャスト成功'),
+    'PLAY_DOWNLOAD_FAILED' => pick('投屏失败：设备下载图片失败', 'Cast failed: the device could not download the image', 'キャスト失敗：デバイスが画像をダウンロードできませんでした'),
+    'PLAY_STORAGE_ERROR' => pick('投屏失败：设备存储异常', 'Cast failed: device storage error', 'キャスト失敗：デバイスのストレージエラー'),
+    'PLAY_FAILED' => pick('投屏失败', 'Cast failed', 'キャスト失敗'),
+    'EXCEPTION_UP_PARSE' => pick('设备上报数据解析失败', 'Failed to parse device data', 'デバイスのデータを解析できませんでした'),
+    'EXCEPTION_UNKNOWN_ACTION' => pick('设备上报了未知指令', 'The device reported an unknown command', 'デバイスが不明なコマンドを報告しました'),
+    'EXCEPTION_COMMAND_BUILD' => pick('平台下发指令构造失败', 'Failed to build the command', 'コマンドの作成に失敗しました'),
+    _ => pick(
+      type.isNotEmpty ? '设备消息（$type）' : '设备消息',
+      type.isNotEmpty ? 'Device message ($type)' : 'Device message',
+      type.isNotEmpty ? 'デバイスメッセージ（$type）' : 'デバイスメッセージ',
+    ),
+  };
+
+  String wifiMessageCategory(String category) => switch (category) {
+    'DEVICE' => pick('设备', 'Device', 'デバイス'),
+    'ALARM' => pick('告警', 'Alert', 'アラート'),
+    'EXCEPTION' => pick('异常', 'Error', '異常'),
+    'BUSINESS' => pick('业务', 'Activity', '利用'),
+    _ => pick('消息', 'Message', 'メッセージ'),
   };
 }

@@ -427,7 +427,10 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       WifiProvisionTarget(
         bleRemoteId: remoteId,
         deviceNo: wifi.wifiDeviceNo,
-        name: BleController.displayName(result),
+        // 完整广播名（如 IJ_E348C21ED428）：配网绑定时作为默认昵称（同小程序 2026-10-27，见 state.bindWifiDevice）
+        name: BleController.fullBroadcastName(result).isNotEmpty
+            ? BleController.fullBroadcastName(result)
+            : BleController.displayName(result),
         spec: size.isNotEmpty ? size : l10n.bindSizeUnknown,
         productId: (product['productId'] ?? '').toString(),
         productName: (product['productName'] ?? '').toString(),
@@ -550,7 +553,9 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         _toast(AppL10n.of(context).bleIncompleteDeviceIdentity);
         return;
       }
-      final name = BleController.displayName(result);
+      // 默认昵称 = 完整蓝牙广播名（同小程序 2026-10-27 产品口径）；platformName / advName 常只有一个带全，取长的那个
+      final fullName = BleController.fullBroadcastName(result);
+      final name = fullName.isNotEmpty ? fullName : BleController.displayName(result);
       final serials = <String>[serial];
       // 本机屏幕类型码（优先固件 0x01 读到的，其次广播）：判重时按型号一票否决，
       // 防广播 4 字节与后端 6 字节偶合，把新设备(如 3.7寸)误判成已绑定的别台(如 5.89寸)而不新建绑定。

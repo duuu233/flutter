@@ -56,12 +56,14 @@
 | 配网三页 | `wifi-list` / `wifi-config` / `wifi-provision` | `features/wifi/presentation/` 三页 | ✅⚠️🔶 | 流程、文案、四步时序一致；🔶 App 不保持屏幕常亮、手机网络判断改为解析 IoT 域名 |
 | BluFi | `utils/blufi.js` | `device/wifi/blufi.dart` | ✅⚠️ | 帧格式、分片、两种 WiFi 列表回包、JSON 指令回执口径一致；不加密 |
 | IoT 服务 | `utils/iot-*.js` | `network/iot/` | ✅⚠️ | 错误码同表（App 四语种）；401 登出、503 不登出；WS 心跳 / 退避 / 补订一致 |
-| 我的设备 | `subpackages/device/list` | `my_devices_page.dart` | ✅⚠️ | WiFi版 / 蓝牙版分组；WiFi 卡云端状态 + 投屏 / 刷新状态 |
-| WiFi 设备详情 | `subpackages/device/wifi-detail` | `wifi_device_detail_page.dart` | ✅⚠️ | 设备信息行、`device.status` 自动重查；蓝牙详情入口自动分流 |
-| WiFi 投屏 | `utils/wifi-projection.js`、`projection/wifi-result` | `wifi_projection.dart`、`wifi_cast_result_page.dart` | ✅⚠️ | 上传进度、WS + 状态查询兜底、TIMEOUT 修正窗口、90 秒未知；不写投屏记录 |
-| 首页 / 图库详情 / 选设备弹层 | `home`、`gallery/detail`、`device-picker-sheet` | `home_*`、`official_gallery_detail_page.dart`、`device_picker_sheet.dart` | ✅⚠️ | WiFi 卡云端状态、投屏只确认在线、弹层「WiFi版」角标 |
-| IoT 联调卡 | `subpackages/device/debug` | — | 🔶 | App 调试台未加 |
-| AI 对话 / 我的相册再次投屏 | 未接 | 未接 | ⚠️ | 两端一致：选 WiFi 版仍走蓝牙，会失败 |
+| 我的设备 | `subpackages/device/list` | `my_devices_page.dart` | ✅⚠️ | WiFi版 / 蓝牙版分组；WiFi 卡云端状态（含休眠中 / 已关机）+ 投屏 / 轮播设置；两类卡「尺寸 · 设备ID」；可见时订阅状态推送（2026-10-28） |
+| WiFi 设备详情 | `subpackages/device/wifi-detail` | `wifi_device_detail_page.dart` | ✅⚠️ | 设备信息行、`device.status` 自动重查；投屏 / 轮播设置；休眠设置、消息中心（未读角标）入口；蓝牙详情入口自动分流 |
+| WiFi 投屏 | `utils/wifi-projection.js`、`projection/wifi-result` | `wifi_projection.dart`、`wifi_cast_result_page.dart` | ✅⚠️ | V1.4：返回 SENT 即结束，多张只刷最后一张，写相册记录，同时加入轮播（预览页开关），可复制投屏日志（2026-10-28） |
+| 轮播设置 / 休眠设置 / 消息中心 | `wifi-slideshow` / `wifi-sleep` / `wifi-messages` | `wifi_slideshow_page.dart` / `wifi_sleep_page.dart` / `wifi_messages_page.dart` | ✅⚠️ | 逻辑与文案同小程序（轮播上限 100）；App 选择器用 Material 时间 / 日期选择与底部列表 |
+| 首页 / 图库详情 / 选设备弹层 | `home`、`gallery/detail`、`device-picker-sheet` | `home_*`、`official_gallery_detail_page.dart`、`device_picker_sheet.dart` | ✅⚠️ | WiFi 卡云端状态、类型·尺寸标签、状态与电量同行、投屏只确认在线、弹层「WiFi版」角标；首页可见时订阅状态推送 |
+| 我的相册（WiFi 照片） | `album/list` | `gallery_page.dart` | ✅⚠️ | 删除：删记录 → 删云端 bin + nextImageUrl，「可能需手动切换」提示；再次投屏不连蓝牙（2026-10-28） |
+| IoT 联调卡 / 全页面日志浮窗 | `subpackages/device/debug`、`components/debug-log` | — | 🔶 | App 未加（只有 WiFi 投屏结果页的投屏日志） |
+| AI 对话 | 未接 | 未接 | ⚠️ | 两端一致：选 WiFi 版仍走蓝牙，会失败 |
 
 ⚠️ App 侧未编译、未真机、未与 IoT 联调。
 

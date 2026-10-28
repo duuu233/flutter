@@ -13,6 +13,10 @@ import 'package:BoltStar/src/shared/widgets/figma_common.dart';
 import '../../cast/cast_upload_limit.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../cast/recast_download.dart';
+import '../../../network/iot/iot_api.dart';
+import '../../../network/iot/iot_client.dart';
+import '../../wifi/wifi_l10n.dart';
+import '../../wifi/wifi_status.dart';
 
 /// 「我的相册」，对照微信小程序 `photo-album/subpackages/album/list`
 /// （2026-08-04 由原「设备照片」+「投屏管理」两个模块合并而来）。
@@ -409,15 +413,23 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       return;
     }
     final l10n = AppL10n.of(context);
+    // WiFi 版：没有槽位、不连蓝牙，单独一条链路（见 [_deleteWifiPhotos]）；确认弹窗多一句「可能需手动切换」
+    final wifiOwner = _wifiOwnerOf(records);
     final confirmed = await showAppConfirmDialog(
       context,
       icon: Icons.delete_outline_rounded,
       tone: AppDialogTone.danger,
       title: l10n.galDeletePhotos,
-      message: l10n.galDeleteConfirm(records.length),
+      message: wifiOwner == null
+          ? l10n.galDeleteConfirm(records.length)
+          : '${l10n.galDeleteConfirm(records.length)}\n${l10n.wifiDeleteMayNeedSwitch}',
       confirmLabel: l10n.galConfirm,
     );
     if (confirmed != true || !mounted) {
+      return;
+    }
+    if (wifiOwner != null) {
+      await _deleteWifiPhotos(records, wifiOwner);
       return;
     }
     // 待删槽位只认**每条投屏记录自己的 imgIndex**：任意一条缺索引/非法就整批终止，
@@ -518,6 +530,94 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     }
   }
 
+  /// 照片属于同一台 WiFi 版设备时返回那台设备，其余（蓝牙版 / 跨设备 / 找不到）一律返回 null，
+  /// 交回原蓝牙链路（同小程序 album/list.js ownerIfWifi）。
+  DeviceItem? _wifiOwnerOf(List<CastRecord> records) {
+    final owners = {for (final record in records) record.deviceId};
+    final ownerId = owners.length == 1
+        ? (owners.first.isNotEmpty ? owners.first : (_deviceFilter ?? ''))
+        : '';
+    if (ownerId.isEmpty) {
+      return null;
+    }
+    final device = state.deviceById(ownerId);
+    return !device.isPlaceholder && device.isWifi ? device : null;
+  }
+
+  /// WiFi 版删除（同小程序 album/list.js deleteWifiPhotos，V1.4 更新说明 9.4）：
+  /// ① 老服务删相册记录 → ② IoT 删云端 bin（只删记录真删掉了的那些，每批 200）。
+  /// 两步互不回滚：记录删了但云端没删，设备拉的播放列表也已经不含它（列表读的就是相册记录），只是 OSS 上留个文件。
+  /// nextImageUrl 取相册里剩下的第一张：删到屏上当前图时服务端用它换图。服务端靠设备下载记录反推当前图，
+  /// 反推不到就不切图（实现报告反馈追加内容第三节），所以没自动切图时提示「若相框未更新，请手动切换或重新设置轮播」。
+  /// 结果以响应的 deviceAction / deviceNotified 为准。
+  Future<void> _deleteWifiPhotos(List<CastRecord> records, DeviceItem device) async {
+    final l10n = AppL10n.of(context);
+    final ids = [for (final record in records) record.id];
+    final remaining = _records.where((record) => !ids.contains(record.id) && (record.imgBle ?? '').isNotEmpty).toList();
+    final nextImageUrl = remaining.isEmpty ? '' : remaining.first.imgBle!;
+    _showBlockingLoading(l10n.galDeleting);
+    ({int total, int failed, List<String> failedIds}) recordResult;
+    var cloudError = '';
+    var offline = false;
+    var switched = false;
+    try {
+      recordResult = await state.deleteCastRecords(ids);
+      final imgUrls = <String>[];
+      for (final record in records) {
+        final url = record.imgBle ?? '';
+        if (!recordResult.failedIds.contains(record.id) && url.isNotEmpty && !imgUrls.contains(url)) {
+          imgUrls.add(url);
+        }
+      }
+      debugPrint('[相册删除][WiFi] 记录删除 ${recordResult.total} 条失败 ${recordResult.failed}，待删云端 ${imgUrls.length} 张，下一张 $nextImageUrl');
+      for (var start = 0; start < imgUrls.length; start += 200) {
+        final end = start + 200 < imgUrls.length ? start + 200 : imgUrls.length;
+        try {
+          final res = await IotApi.deletePhotos({
+            'deviceNo': device.serialNumber,
+            'imgUrls': imgUrls.sublist(start, end),
+            if (nextImageUrl.isNotEmpty) 'nextImageUrl': nextImageUrl,
+          });
+          debugPrint('[相册删除][WiFi] 云端删除返回 $res');
+          if (res['deviceNotified'] == false) {
+            offline = true;
+          } else if (res['deviceAction'] == 'PLAY_NEXT') {
+            switched = true;
+          }
+        } catch (error) {
+          debugPrint('[相册删除][WiFi] 云端删除失败 $error');
+          cloudError = error is IotException ? error.message : l10n.wifiCloudDeleteFailed;
+        }
+      }
+    } finally {
+      _dismissBlockingLoading();
+    }
+    if (!mounted) {
+      return;
+    }
+    final deletedCount = recordResult.total - recordResult.failed;
+    if (deletedCount > 0) {
+      setState(_selectedIds.clear);
+    }
+    await _reloadRecordsForFilter();
+    if (!mounted) {
+      return;
+    }
+    if (deletedCount <= 0) {
+      AppToast.warn(context, l10n.wifiDeleteFailed);
+    } else if (cloudError.isNotEmpty) {
+      AppToast.warn(context, l10n.wifiDeleteCloudFailed(cloudError));
+    } else if (recordResult.failed > 0) {
+      AppToast.warn(context, l10n.wifiDeletePartial(deletedCount, recordResult.failed));
+    } else if (offline) {
+      _showFeedback(l10n.wifiDeleteOffline);
+    } else if (switched) {
+      _showFeedback(l10n.wifiDeleteSwitched);
+    } else {
+      _showFeedback(l10n.wifiDeleteDoneMaySwitch);
+    }
+  }
+
   /// 蒙层阻断式 loading（不可返回/不可点透），配合耗时的设备 BLE 操作。
   /// 统一走公共的 [AppLoadingDialog]（原来这里有一份私有实现，遮罩偏黑、文字还会被
   /// Flutter 渲染成黄色双下划线——dialog 路由下没有 Material 祖先）。
@@ -578,6 +678,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
         : (_deviceFilter ?? '');
     if (targetDeviceId.isEmpty) {
       _showFeedback(l10n.galRecastNoDevice);
+      return;
+    }
+    // WiFi 版（同小程序 doRetryProjection）：不连蓝牙，确认在线（休眠 / 关机 / 离线先拦）后下载原图进预览页，
+    // 预览页认出 WiFi 版、导出后去 WiFi 投屏结果页（会写一条新的相册记录）。
+    final wifiOwner = _wifiOwnerOf(records);
+    if (wifiOwner != null) {
+      await _recastWifi(wifiOwner, urls);
       return;
     }
     // 重入锁在权限门禁之前上：授权框停留期间用户还能再点，不锁就会并发两次 connectDevice。
@@ -652,6 +759,48 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       }
       // 再次投屏会新增成功记录；列表由 didPopNext 重新对账，这里只清掉选中态。
       setState(_selectedIds.clear);
+    } finally {
+      _recasting = false;
+    }
+  }
+
+  Future<void> _recastWifi(DeviceItem device, List<String> urls) async {
+    _recasting = true;
+    try {
+      final l10n = AppL10n.of(context);
+      if (!await ensureWifiDeviceOnline(context, device) || !mounted) {
+        return;
+      }
+      final paths = <String>[];
+      _showBlockingLoading(l10n.galRecastPreparing);
+      try {
+        for (var i = 0; i < urls.length; i++) {
+          final path = await RecastDownload.toTempFile(urls[i], seq: i);
+          if (path != null) {
+            paths.add(path);
+          }
+        }
+      } finally {
+        _dismissBlockingLoading();
+      }
+      if (!mounted) {
+        return;
+      }
+      if (paths.isEmpty) {
+        _showFeedback(l10n.castRecordImageDownloadFailed);
+        return;
+      }
+      if (paths.length < urls.length) {
+        _showFeedback(l10n.castRecordImageDownloadFailed);
+      }
+      await Navigator.of(context).push(
+        AppPageRoute(
+          builder: (_) => CastPreviewPage(state: state, device: device, imagePaths: paths),
+        ),
+      );
+      if (mounted) {
+        setState(_selectedIds.clear);
+      }
     } finally {
       _recasting = false;
     }

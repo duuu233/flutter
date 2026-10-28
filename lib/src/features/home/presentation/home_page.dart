@@ -20,7 +20,9 @@ import '../../ai/ai_entry.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../gallery/official/official_gallery_entry.dart';
+import '../../wifi/wifi_l10n.dart';
 import '../../wifi/wifi_status.dart';
+import '../../wifi/wifi_watch.dart';
 import '../../wifi/wifi_widgets.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
@@ -85,7 +87,7 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage> with RouteAware {
   String? _pendingAvatarPath;
   bool _updatingAvatar = false;
   bool _openingDeviceList = false;
@@ -149,9 +151,38 @@ class _HomePageState extends State<HomePage> {
     return connected.isNotEmpty ? connected.first : devices.first;
   }
 
+  /// WiFi 版状态推送（同小程序 home.js watchWifiCards）：首页可见时订阅，收到推送重查那一台，
+  /// 长连接重连成功（如熄屏回前台）全部重查；进下一页时退订，回来再订。不做定时轮询。
+  late final WifiWatch _wifiWatch = WifiWatch(
+    (deviceNos) => WifiStatusStore.instance.refreshAll(widget.state.devices, deviceNos: deviceNos),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final route = ModalRoute.of(context);
+    if (route is PageRoute) {
+      appRouteObserver.subscribe(this, route);
+    }
+  }
+
+  @override
+  void didPopNext() {
+    // 回到首页：先按已有设备订阅（不必等列表接口），并补查一次云端状态
+    _wifiWatch.update(widget.state.devices);
+    WifiStatusStore.instance.refreshAll(widget.state.devices);
+  }
+
+  @override
+  void didPushNext() {
+    _wifiWatch.stop();
+  }
+
   @override
   void initState() {
     super.initState();
+    // 先用已有设备订阅 WiFi 状态推送，列表刷新回来再按最新设备更新
+    _wifiWatch.update(widget.state.devices);
     // 不再 addListener：首页在根部 AnimatedBuilder（bolt_star_app `home:`）之下，
     // 任何 state 通知本就会重建本页；原监听只服务于已删除的「离线弹层」死路径
     //（setOffline 从无调用方，isOffline 永 false）。
@@ -167,6 +198,7 @@ class _HomePageState extends State<HomePage> {
       }
       // WiFi 版卡片的云端状态（不走蓝牙）后台查，回来再替换（2026-10-27 同步小程序）
       WifiStatusStore.instance.refreshAll(widget.state.devices);
+      _wifiWatch.update(widget.state.devices);
       // 电量/内存是蓝牙字段、后端不下发：列表刷完再对连接中的那台补一次 0x01 回读，
       // 首页卡片进来就是实时电量，而不是上一次读到的缓存值。
       for (final device in widget.state.devices) {
@@ -181,6 +213,8 @@ class _HomePageState extends State<HomePage> {
   @override
   void dispose() {
     _scanTimer?.cancel();
+    _wifiWatch.stop();
+    appRouteObserver.unsubscribe(this);
     super.dispose();
   }
 

@@ -891,81 +891,86 @@ class _ConnectedDeviceCard extends StatelessWidget {
                           style: _HomeTextStyles.deviceCardTitle,
                         ),
                       ),
-                      const SizedBox(height: 9),
-                      // WiFi 版（2026-10-27 同步小程序）：不走蓝牙，显示云端在线状态与电量（IoT 设备信息），没有「连接蓝牙」
+                      const SizedBox(height: 6),
+                      // 类型 + 尺寸标签（同小程序 2026-10-27）：与搜索列表同款「WiFi版·5.89寸 / 蓝牙版·5.89寸」，没配尺寸显示 --寸
+                      CommBadge(
+                        wifi: device.isWifi,
+                        text:
+                            '${device.isWifi ? AppL10n.of(context).wifiBadge : AppL10n.of(context).bleBadge}'
+                            '·${device.sizeModel.trim().isNotEmpty ? device.sizeModel.trim() : '--寸'}',
+                      ),
+                      const SizedBox(height: 8),
+                      // WiFi 版：不走蓝牙，显示云端在线状态与电量（IoT 设备信息），没有「连接蓝牙」；
+                      // 两类卡的状态与电量都排同一行（同小程序 `.status-meta-row`）
                       if (device.isWifi)
                         _WifiCardStatus(deviceId: device.id)
                       else ...[
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Image.asset(
-                            device.connected
-                                ? 'assets/images/bluetooth-icon.png'
-                                : 'assets/images/bluetooth-icon-not.png',
-                            width: 11,
-                            height: 14,
-                            fit: BoxFit.contain,
-                            errorBuilder: (context, error, stackTrace) {
-                              return Icon(
-                                Icons.bluetooth_rounded,
-                                color: device.connected
-                                    ? const Color(0xFF4A98FF)
-                                    : const Color(0xFF777E88),
-                                size: 14,
-                              );
-                            },
-                          ),
-                          const SizedBox(width: 7),
-                          Flexible(
-                            child: Text(
-                              device.connected
-                                  ? AppL10n.of(context).homeConnected
-                                  : AppL10n.of(context).homeDisconnected,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: _HomeTextStyles.deviceMeta.copyWith(
-                                color: device.connected
-                                    ? const Color(0xFF287DFF)
-                                    : null,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      // ⚠️ 这条间距**两态共用**，故提到 if 外面 —— 免得将来只改一边、
-                      // 两态又不等高（那正是「文字上下跳」的来源，见 [_kCardMetaGap]）。
-                      const SizedBox(height: _kCardMetaGap),
-                      if (device.connected) ...[
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (device.hasBatteryReading) ...[
-                              Image.asset(
-                                _batteryIconAsset(device.batteryLevel),
-                                width: 26,
-                                fit: BoxFit.contain,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Icon(
-                                    Icons.battery_2_bar_rounded,
-                                    color: Color(0xFFFF6A24),
-                                    size: 18,
-                                  );
-                                },
-                              ),
-                              const SizedBox(width: 7),
-                            ],
-                            Text(
-                              device.batteryLabel,
-                              style: _HomeTextStyles.deviceMeta,
+                            Image.asset(
+                              device.connected
+                                  ? 'assets/images/bluetooth-icon.png'
+                                  : 'assets/images/bluetooth-icon-not.png',
+                              width: 11,
+                              height: 14,
+                              fit: BoxFit.contain,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Icon(
+                                  Icons.bluetooth_rounded,
+                                  color: device.connected
+                                      ? const Color(0xFF4A98FF)
+                                      : const Color(0xFF777E88),
+                                  size: 14,
+                                );
+                              },
                             ),
+                            const SizedBox(width: 7),
+                            Flexible(
+                              child: Text(
+                                device.connected
+                                    ? AppL10n.of(context).homeConnected
+                                    : AppL10n.of(context).homeDisconnected,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: _HomeTextStyles.deviceMeta.copyWith(
+                                  color: device.connected
+                                      ? const Color(0xFF287DFF)
+                                      : null,
+                                ),
+                              ),
+                            ),
+                            // 仅在已连接设备后才展示电量图标与数值（文案统一由 batteryLabel 给出，读不到为 --）
+                            if (device.connected) ...[
+                              const SizedBox(width: 12),
+                              if (device.hasBatteryReading) ...[
+                                Image.asset(
+                                  _batteryIconAsset(device.batteryLevel),
+                                  width: 26,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) {
+                                    return const Icon(
+                                      Icons.battery_2_bar_rounded,
+                                      color: Color(0xFFFF6A24),
+                                      size: 18,
+                                    );
+                                  },
+                                ),
+                                const SizedBox(width: 7),
+                              ],
+                              Text(
+                                device.batteryLabel,
+                                style: _HomeTextStyles.deviceMeta,
+                              ),
+                            ],
                           ],
                         ),
-                      ] else ...[
-                        // 按钮宽度跟文案走（内部 `mainAxisSize.min` + 省略号），
-                        // 放不下也只是省略，绝不横向溢出。
-                        _HomeConnectButton(onTap: onConnect),
-                      ],
+                        if (!device.connected) ...[
+                          const SizedBox(height: _kCardMetaGap),
+                          // 按钮宽度跟文案走（内部 `mainAxisSize.min` + 省略号），
+                          // 放不下也只是省略，绝不横向溢出。
+                          _HomeConnectButton(onTap: onConnect),
+                        ],
                       ],
                     ],
                   ),
@@ -979,8 +984,8 @@ class _ConnectedDeviceCard extends StatelessWidget {
   }
 }
 
-/// 首页 WiFi 版设备卡的状态两行（同小程序 home.wxml `wifi-status`）：WiFi 图标 + 在线 / 离线 / 查询中，
-/// 下一行电量（在线且读得到才有）。状态来自 [WifiStatusStore]，单独监听，不随设备列表整页重建。
+/// 首页 WiFi 版设备卡的状态行（同小程序 home.wxml `wifi-status`）：WiFi 图标 + 在线 / 休眠中 / 已关机 / 离线 / 查询中，
+/// 同一行接电量（在线且读得到才有）。状态来自 [WifiStatusStore]，单独监听，不随设备列表整页重建。
 class _WifiCardStatus extends StatelessWidget {
   const _WifiCardStatus({required this.deviceId});
 
@@ -992,57 +997,45 @@ class _WifiCardStatus extends StatelessWidget {
       listenable: WifiStatusStore.instance,
       builder: (context, _) {
         final status = WifiStatusStore.instance.of(deviceId);
-        final online = status.online;
         final battery = status.battery;
-        return Column(
+        // 在线青绿（与 WiFi版 角标同色），休眠中蓝，离线 / 关机 / 未知 / 查询中灰
+        final color = switch (status.status) {
+          WifiOnlineStatus.online => kWifiGreen,
+          WifiOnlineStatus.sleeping => kWifiSleepBlue,
+          _ => null,
+        };
+        return Row(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.wifi_rounded,
-                  size: 14,
-                  color: online ? kWifiGreen : const Color(0xFF777E88),
-                ),
-                const SizedBox(width: 7),
-                Flexible(
-                  child: Text(
-                    status.text(AppL10n.of(context)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: _HomeTextStyles.deviceMeta.copyWith(
-                      color: online ? kWifiGreen : null,
-                    ),
-                  ),
-                ),
-              ],
+            Icon(
+              Icons.wifi_rounded,
+              size: 14,
+              color: color ?? const Color(0xFF777E88),
             ),
-            const SizedBox(height: _kCardMetaGap),
-            // 电量那一行没有时也占住同样的高度，卡片两态文字位置不跳
-            SizedBox(
-              height: 18,
-              child: battery == null
-                  ? null
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Image.asset(
-                          _batteryIconAsset(battery),
-                          width: 26,
-                          fit: BoxFit.contain,
-                          errorBuilder: (context, error, stackTrace) => const Icon(
-                            Icons.battery_2_bar_rounded,
-                            color: Color(0xFFFF6A24),
-                            size: 18,
-                          ),
-                        ),
-                        const SizedBox(width: 7),
-                        Text('$battery%', style: _HomeTextStyles.deviceMeta),
-                      ],
-                    ),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                status.text(AppL10n.of(context)),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _HomeTextStyles.deviceMeta.copyWith(color: color),
+              ),
             ),
+            if (battery != null) ...[
+              const SizedBox(width: 12),
+              Image.asset(
+                _batteryIconAsset(battery),
+                width: 26,
+                fit: BoxFit.contain,
+                errorBuilder: (context, error, stackTrace) => const Icon(
+                  Icons.battery_2_bar_rounded,
+                  color: Color(0xFFFF6A24),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text('$battery%', style: _HomeTextStyles.deviceMeta),
+            ],
           ],
         );
       },

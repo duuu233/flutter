@@ -29,14 +29,15 @@ class MyDevicesPage extends StatefulWidget {
     this.onRename,
     this.promotedDeviceId = '',
     this.onWifiCast,
-    this.onWifiRefresh,
+    this.onWifiSlideshow,
   });
 
   final List<MyDeviceOverview>? devices;
 
-  /// WiFi 版卡片的「投屏」「刷新状态」（2026-10-27 同步小程序 main-wifi）。
+  /// WiFi 版卡片的「投屏」「轮播设置」（同步小程序 main-wifi；V1.4 更新说明 1.5：原「刷新状态」改为「轮播设置」，
+  /// 状态随进页、状态推送与长连接重连自动重查）。
   final ValueChanged<String>? onWifiCast;
-  final ValueChanged<String>? onWifiRefresh;
+  final ValueChanged<String>? onWifiSlideshow;
 
   /// 设备列表首屏是否仍在加载。true 时显示 loading，不显示「暂无设备」空态——
   /// 否则接口返回前必然先闪一次空列表（对齐小程序 device/list 的 `loading:true` 门控）。
@@ -74,6 +75,8 @@ class MyDeviceOverview {
     this.thumbAsset = DeviceThumb.defaultAsset,
     this.wifi = false,
     this.wifiStatus = WifiDeviceStatus.loading,
+    this.sizeModel = '',
+    this.serialNumber = '',
   });
 
   final String id;
@@ -88,6 +91,11 @@ class MyDeviceOverview {
   final bool wifi;
   final WifiDeviceStatus wifiStatus;
 
+  /// 后台产品配置的尺寸型号（如「5.89寸」）与设备ID：名称下一行「尺寸 · 设备ID xxx」（同小程序 2026-10-27，
+  /// 只显示尺寸、不带 WiFi版 / 蓝牙版；没配显示「--寸」）。
+  final String sizeModel;
+  final String serialNumber;
+
   MyDeviceOverview copy() => MyDeviceOverview(
     id: id,
     name: name,
@@ -96,6 +104,8 @@ class MyDeviceOverview {
     thumbAsset: thumbAsset,
     wifi: wifi,
     wifiStatus: wifiStatus,
+    sizeModel: sizeModel,
+    serialNumber: serialNumber,
   );
 }
 
@@ -166,7 +176,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
               onOpenDetail: () => widget.onOpenDetail?.call(device.id),
               onRename: () => _rename(device),
               onCast: () => widget.onWifiCast?.call(device.id),
-              onRefresh: () => widget.onWifiRefresh?.call(device.id),
+              onSlideshow: () => widget.onWifiSlideshow?.call(device.id),
             ),
           );
       }
@@ -597,6 +607,8 @@ class _DeviceCard extends StatelessWidget {
                             FigmaEditIconButton(onTap: onRename),
                           ],
                         ),
+                        _SizeIdLine(device: device),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             // 连接状态：蓝牙图标 + 文案。
@@ -805,8 +817,28 @@ class _GroupTitle extends StatelessWidget {
   }
 }
 
+/// 名称下一行「尺寸 · 设备ID xxx」（同小程序 list.wxml `.device-id`）：尺寸没配显示「--寸」，设备ID 为空时只剩尺寸。
+class _SizeIdLine extends StatelessWidget {
+  const _SizeIdLine({required this.device});
+
+  final MyDeviceOverview device;
+
+  @override
+  Widget build(BuildContext context) {
+    final size = device.sizeModel.trim().isNotEmpty ? device.sizeModel.trim() : '--寸';
+    final id = device.serialNumber.trim();
+    return Text(
+      id.isEmpty ? size : '$size · ${AppL10n.of(context).devDeviceId} $id',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12, height: 1.3),
+    );
+  }
+}
+
 /// WiFi 版设备卡（同小程序 list.wxml `device-card--wifi`）：不走蓝牙，状态来自 IoT 设备信息
-/// （在线 / 信号 / 电量）；按钮：投屏、刷新状态（没有连接 / 断开：WiFi 不经手机蓝牙）。设备图、改名同蓝牙版。
+/// （在线 / 休眠中 / 已关机 / 离线、信号、电量）；按钮：投屏、轮播设置（没有连接 / 断开：WiFi 不经手机蓝牙）。
+/// 设备图、改名同蓝牙版。
 class _WifiDeviceCard extends StatelessWidget {
   const _WifiDeviceCard({
     super.key,
@@ -814,14 +846,14 @@ class _WifiDeviceCard extends StatelessWidget {
     required this.onOpenDetail,
     required this.onRename,
     required this.onCast,
-    required this.onRefresh,
+    required this.onSlideshow,
   });
 
   final MyDeviceOverview device;
   final VoidCallback onOpenDetail;
   final VoidCallback onRename;
   final VoidCallback onCast;
-  final VoidCallback onRefresh;
+  final VoidCallback onSlideshow;
 
   @override
   Widget build(BuildContext context) {
@@ -830,6 +862,7 @@ class _WifiDeviceCard extends StatelessWidget {
     final online = status.online;
     final stateColor = switch (status.status) {
       WifiOnlineStatus.online => kWifiGreen,
+      WifiOnlineStatus.sleeping => kWifiSleepBlue,
       _ => const Color(0xFF9BA2AD),
     };
     final battery = status.battery;
@@ -880,6 +913,8 @@ class _WifiDeviceCard extends StatelessWidget {
                             FigmaEditIconButton(onTap: onRename),
                           ],
                         ),
+                        _SizeIdLine(device: device),
+                        const SizedBox(height: 6),
                         Row(
                           children: [
                             if (status.status == WifiOnlineStatus.loading)
@@ -926,10 +961,9 @@ class _WifiDeviceCard extends StatelessWidget {
           const SizedBox(height: 17),
           WifiActionBar(
             castLabel: l10n.devCast,
-            refreshLabel: l10n.wifiRefreshStatus,
-            refreshing: status.status == WifiOnlineStatus.loading,
+            slideshowLabel: l10n.wifiSlideshowSettings,
             onCast: onCast,
-            onRefresh: onRefresh,
+            onSlideshow: onSlideshow,
           ),
         ],
       ),
