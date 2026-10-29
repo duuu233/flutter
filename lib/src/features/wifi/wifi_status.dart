@@ -14,14 +14,22 @@ import 'wifi_l10n.dart';
 ///     旧服务端没有 status 时按 online 回退。休眠中设备收不到指令（接口仍回 4041），入口提示「设备休眠中，唤醒后可操作」；
 ///   · 已关机（V1.4 更新说明三）：status=SHUTDOWN（灰色「已关机」），开机重新登录后恢复 ONLINE。
 ///     优先级 ONLINE > SHUTDOWN > SLEEPING > OFFLINE 由服务端算好，前端照抄。
-enum WifiOnlineStatus { loading, online, sleeping, shutdown, offline, unknown }
+///   · 本地模式（2026-10-29 前端对接变更说明）：设备切到 TF 卡本地播放后 status=LOCAL_TF（online=false），
+///     显示「本地模式」，远程操作一律提示「当前设备状态：本地模式，请恢复设备网络再试」；恢复只能在设备端重新入网。
+///     优先级 ONLINE > SHUTDOWN > LOCAL_TF > SLEEPING > OFFLINE。同一文档：不认识的新状态值按「状态未知」降级。
+enum WifiOnlineStatus { loading, online, sleeping, shutdown, local, offline, unknown }
 
 /// 休眠中蓝（同小程序 `.is-sleeping`）。
 const Color kWifiSleepBlue = Color(0xFF2F80ED);
 
-/// 接口 / WS 返回 → online / sleeping / shutdown / offline：认 status，没有或不认识时按 online 回退。
+/// 本地模式紫（同小程序 `.is-local`）。
+const Color kWifiLocalPurple = Color(0xFF8E5BD9);
+
+/// 接口 / WS 返回 → online / sleeping / shutdown / local / offline / unknown：认 status；
+/// 没有 status（旧服务端）按 online 回退；有但不认识按「状态未知」降级（2026-10-29 对接文档一.4）。
 WifiOnlineStatus wifiDeviceState(Map<String, dynamic>? info) {
-  switch ('${info?['status'] ?? ''}'.toUpperCase()) {
+  final status = '${info?['status'] ?? ''}'.trim().toUpperCase();
+  switch (status) {
     case 'ONLINE':
       return WifiOnlineStatus.online;
     case 'SLEEPING':
@@ -30,12 +38,18 @@ WifiOnlineStatus wifiDeviceState(Map<String, dynamic>? info) {
       return WifiOnlineStatus.shutdown;
     case 'OFFLINE':
       return WifiOnlineStatus.offline;
+    case 'LOCAL_TF':
+      return WifiOnlineStatus.local;
+  }
+  if (status.isNotEmpty) {
+    return WifiOnlineStatus.unknown;
   }
   return info?['online'] == true ? WifiOnlineStatus.online : WifiOnlineStatus.offline;
 }
 
-/// 不能操作时的提示（休眠 / 关机 / 离线）；其余返回空串。
+/// 不能操作时的提示（本地模式 / 休眠 / 关机 / 离线）；其余返回空串。
 String wifiBlockedTip(AppL10n l10n, WifiOnlineStatus status) => switch (status) {
+  WifiOnlineStatus.local => l10n.wifiLocalTip,
   WifiOnlineStatus.sleeping => l10n.wifiSleepingTip,
   WifiOnlineStatus.shutdown => l10n.wifiShutdownTip,
   WifiOnlineStatus.offline => l10n.wifiOfflineTip,
@@ -96,6 +110,7 @@ class WifiDeviceStatus {
     WifiOnlineStatus.online => l10n.wifiStatusOnline,
     WifiOnlineStatus.sleeping => l10n.wifiStatusSleeping,
     WifiOnlineStatus.shutdown => l10n.wifiStatusShutdown,
+    WifiOnlineStatus.local => l10n.wifiStatusLocal,
     WifiOnlineStatus.offline => l10n.wifiStatusOffline,
     WifiOnlineStatus.unknown => l10n.wifiStatusUnknown,
   };
@@ -184,4 +199,46 @@ Future<String> wifiOfflineTipFor(AppL10n l10n, String deviceNo) async {
   } catch (_) {
     return l10n.wifiOfflineTip;
   }
+}
+
+/// 投屏严格口径（2026-10-29 同小程序 `projectBlockedTip`：我的相册再次投屏、预览页「开始投屏」）：
+/// 只放行在线；离线 / 本地模式 / 查不到（状态未知）一律「设备不在线」，休眠 / 关机沿用各自提示。
+/// 返回给用户看的提示，可投时返回空串。
+Future<String> wifiProjectBlockedTip(AppL10n l10n, DeviceItem device) async {
+  WifiOnlineStatus state;
+  try {
+    state = wifiDeviceState(await IotApi.getDeviceOnline(device.serialNumber));
+  } catch (_) {
+    state = WifiOnlineStatus.unknown;
+  }
+  return switch (state) {
+    WifiOnlineStatus.online => '',
+    WifiOnlineStatus.sleeping || WifiOnlineStatus.shutdown => wifiBlockedTip(l10n, state),
+    _ => l10n.wifiNotOnlineTip,
+  };
+}
+
+/// 保存类操作前查一次（轮播保存，2026-10-29）：明确不可操作给对应提示；查不到返回空串，交给接口裁决。
+Future<String> wifiQueryBlockedTip(AppL10n l10n, String deviceNo) async {
+  try {
+    return wifiBlockedTip(l10n, wifiDeviceState(await IotApi.getDeviceOnline(deviceNo)));
+  } catch (_) {
+    return '';
+  }
+}
+
+/// 选择投屏设备列表（AI 生图、官方图库，2026-10-29 同小程序 `filterPickable`）：WiFi 版查一次状态，
+/// 离线 / 本地模式 / 状态未知的不进列表；休眠 / 关机保留（点了沿用原提示），蓝牙版原样保留。
+Future<List<DeviceItem>> filterPickableDevices(List<DeviceItem> devices) async {
+  const hidden = {WifiOnlineStatus.offline, WifiOnlineStatus.local, WifiOnlineStatus.unknown};
+  final keep = await Future.wait(
+    devices.map((device) async {
+      if (!device.isWifi) {
+        return true;
+      }
+      final status = await WifiStatusStore.instance.refresh(device);
+      return !hidden.contains(status.status);
+    }),
+  );
+  return [for (var i = 0; i < devices.length; i++) if (keep[i]) devices[i]];
 }

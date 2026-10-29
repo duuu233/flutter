@@ -863,6 +863,7 @@ class _WifiDeviceCard extends StatelessWidget {
     final stateColor = switch (status.status) {
       WifiOnlineStatus.online => kWifiGreen,
       WifiOnlineStatus.sleeping => kWifiSleepBlue,
+      WifiOnlineStatus.local => kWifiLocalPurple,
       _ => const Color(0xFF9BA2AD),
     };
     final battery = status.battery;

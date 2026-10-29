@@ -11,7 +11,6 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/low_battery_tip.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
-import '../../wifi/presentation/wifi_slideshow_page.dart';
 import '../../wifi/wifi_cast_entry.dart';
 import '../../wifi/wifi_status.dart';
 import '../../wifi/wifi_watch.dart';
@@ -213,16 +212,9 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
           // WiFi 版「投屏」：不连蓝牙，离线先拦，选图后进同一个预览页（预览页导出后去 WiFi 投屏结果页）
           onWifiCast: (deviceId) =>
               startWifiCast(context, state, state.deviceById(deviceId)),
-          // WiFi 版「轮播设置」（V1.4 更新说明 1.5，取代原「刷新状态」）：查询只要权限、离线也能看，不拦离线；
-          // 保存时由接口裁决（离线 4041）
-          onWifiSlideshow: (deviceId) {
-            Navigator.of(context).push<void>(
-              AppPageRoute(
-                builder: (_) =>
-                    WifiSlideshowPage(state: state, deviceId: deviceId),
-              ),
-            );
-          },
+          // WiFi 版「轮播设置」（V1.4 更新说明 1.5，取代原「刷新状态」）：离线也能看，本地模式只提示
+          onWifiSlideshow: (deviceId) =>
+              openWifiSlideshow(context, state, state.deviceById(deviceId)),
           onAddDevice: () {
             Navigator.of(
               context,

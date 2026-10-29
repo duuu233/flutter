@@ -161,6 +161,14 @@ class _WifiSlideshowPageState extends State<WifiSlideshowPage> {
     }
     debugPrint('[WiFi轮播] 保存 $payload');
     setState(() => _saving = true);
+    // 保存前判断设备状态（2026-10-29 同小程序）：本地模式 / 离线 / 休眠 / 关机直接提示，不发请求；查不到交给接口裁决
+    final blocked = await wifiQueryBlockedTip(l10n, _deviceNo);
+    if (!mounted) return;
+    if (blocked.isNotEmpty) {
+      setState(() => _saving = false);
+      AppToast.warn(context, blocked);
+      return;
+    }
     try {
       await IotApi.setStrategy(payload);
     } catch (error) {

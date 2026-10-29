@@ -174,6 +174,7 @@ extension WifiL10n on AppL10n {
   String get wifiStatusSleeping => pick('休眠中', 'Sleeping', 'スリープ中');
   String get wifiStatusShutdown => pick('已关机', 'Powered off', '電源オフ');
   String get wifiStatusUnknown => pick('状态未知', 'Status unknown', '状態不明');
+  String get wifiStatusLocal => pick('本地模式', 'Local mode', 'ローカルモード');
   String get wifiRefreshStatus => pick('刷新状态', 'Refresh', '状態を更新');
   String get wifiSleepingTip => pick(
     '设备休眠中，唤醒后可操作',
@@ -184,6 +185,17 @@ extension WifiL10n on AppL10n {
     '设备已关机，开机后可操作',
     'The device is powered off. Try again after turning it on.',
     'デバイスの電源がオフです。電源を入れてから操作してください',
+  );
+  String get wifiLocalTip => pick(
+    '当前设备状态：本地模式，请恢复设备网络再试',
+    'The device is in local mode. Restore its network and try again.',
+    'デバイスはローカルモードです。ネットワークを復旧してから再度お試しください',
+  );
+  String get wifiNotOnlineTip => pick('设备不在线', 'The device is not online', 'デバイスがオンラインではありません');
+  String get wifiNoPickableDevice => pick(
+    '暂无可投屏的电子纸设备',
+    'No frame is available for casting',
+    'キャストできるフォトフレームがありません',
   );
   String get wifiOfflineTip => pick(
     '设备已离线，请检查设备网络',
@@ -482,6 +494,7 @@ extension WifiL10n on AppL10n {
     'LOW_BATTERY' => pick('设备电量低', 'Low battery', 'バッテリー残量低下'),
     'WIFI_WEAK' => pick('设备 WiFi 信号弱', 'Weak Wi-Fi signal', 'Wi-Fi信号が弱い'),
     'TF_FULL' => pick('TF 卡容量将满', 'TF card almost full', 'TFカードの容量がまもなくいっぱいです'),
+    'TF_LOCAL_MODE' => pick('设备已进入本地模式', 'Device entered local mode', 'デバイスがローカルモードになりました'),
     'PLAY_SUCCESS' => pick('投屏成功', 'Cast succeeded', 'キャスト成功'),
     'PLAY_DOWNLOAD_FAILED' => pick('投屏失败：设备下载图片失败', 'Cast failed: the device could not download the image', 'キャスト失敗：デバイスが画像をダウンロードできませんでした'),
     'PLAY_STORAGE_ERROR' => pick('投屏失败：设备存储异常', 'Cast failed: device storage error', 'キャスト失敗：デバイスのストレージエラー'),
@@ -503,4 +516,84 @@ extension WifiL10n on AppL10n {
     'BUSINESS' => pick('业务', 'Activity', '利用'),
     _ => pick('消息', 'Message', 'メッセージ'),
   };
+
+  // ── WiFi 设备详情改版（2026-10-29）：功能栏、设备信息、解绑 / 删除 ──
+  String get wifiDeviceInfo => pick('设备信息', 'Device info', 'デバイス情報');
+  String get wifiShareDevice => pick('分享设备', 'Share device', 'デバイスを共有');
+  String get wifiUnbindMessage => pick(
+    '解除绑定后，照片将保留，您可以稍后重新绑定电子纸设备。',
+    'After unbinding, your photos are kept and you can bind the frame again later.',
+    'バインド解除後も写真は保持され、後でフォトフレームを再バインドできます。',
+  );
+  String get wifiDeleteDeviceMessage => pick(
+    '删除设备将清空该设备的云端照片及小程序/APP内的照片，防止隐私泄露；已分享的成员也将同时失去这台设备及其照片。是否确认删除设备？',
+    "Deleting the device clears its cloud photos and the photos in the mini program/app to protect your privacy. Members you shared it with also lose the device and its photos. Delete the device?",
+    'デバイスを削除すると、プライバシー保護のためクラウドとミニプログラム/アプリ内の写真が消去されます。共有したメンバーもこのデバイスと写真を利用できなくなります。削除しますか？',
+  );
+  String wifiCloudDeleteFailed(String reason) => pick(
+    '云端照片删除失败：$reason',
+    'Failed to delete cloud photos: $reason',
+    'クラウドの写真を削除できませんでした：$reason',
+  );
+
+  // ── TF 卡设置（2026-10-29） ──
+  String get wifiTfSettingsTitle => pick('TF卡设置', 'TF card settings', 'TFカード設定');
+  String get wifiTfCapacity => pick('TF卡容量', 'TF card storage', 'TFカード容量');
+  String get wifiTfPlay => pick('TF卡播放', 'Play from TF card', 'TFカード再生');
+  String get wifiTfTip => pick(
+    '开启后设备将进入本地模式，无法进行APP投屏和取消本地模式，如需恢复请将设备重新入网。',
+    'Once enabled, the device enters local mode: you cannot cast from the app or turn local mode off here. To restore it, set up the device network again.',
+    '有効にするとデバイスはローカルモードになり、アプリからのキャストやローカルモードの解除はできません。復旧するにはデバイスのネットワークを再設定してください。',
+  );
+  String get wifiTfConfirmTitle => pick('开启TF卡播放', 'Play from TF card', 'TFカード再生を有効にする');
+  String get wifiTfConfirmMessage => pick(
+    '开启后设备将断开网络进入本地模式，无法进行APP投屏，也无法在APP取消本地模式；如需恢复，请在设备上重新入网。确认开启？',
+    'The device will disconnect and enter local mode. You cannot cast from the app or turn local mode off in the app; to restore, set up the network on the device again. Enable it?',
+    'デバイスはネットワークから切断されローカルモードになります。アプリからのキャストやアプリでの解除はできません。復旧するにはデバイスでネットワークを再設定してください。有効にしますか？',
+  );
+  String get wifiTfOpen => pick('开启', 'Enable', '有効にする');
+  String get wifiTfChecking => pick('检查设备', 'Checking device', 'デバイスを確認中');
+  String get wifiTfSwitching => pick('切换中', 'Switching', '切り替え中');
+  String get wifiTfNoCard => pick('设备未插TF卡，无法开启', 'No TF card in the device', 'TFカードが挿入されていないため有効にできません');
+  String get wifiTfUnknownCard => pick('未检测到TF卡，请稍后重试', 'No TF card detected. Please try again later.', 'TFカードを検出できません。しばらくしてからお試しください');
+  String get wifiTfNotOnline => pick('设备不在线，无法开启', 'The device is not online', 'デバイスがオンラインでないため有効にできません');
+  String get wifiTfUpgrading => pick('设备升级中，请稍后', 'The device is upgrading. Please wait.', 'デバイスはアップグレード中です。しばらくお待ちください');
+  String get wifiTfNoPermission => pick('无该设备操作权限', 'No permission for this device', 'このデバイスを操作する権限がありません');
+  String get wifiTfOpenFailed => pick('开启失败，请稍后重试', 'Failed to enable. Please try again later.', '有効にできませんでした。しばらくしてからお試しください');
+  String get wifiTfAccepted => pick('设备已切换，即将进入本地模式', 'Switched. The device is entering local mode.', '切り替えました。まもなくローカルモードになります');
+  String wifiTfRejected(Object? result) => pick('设备拒绝切换（result=$result）', 'The device refused (result=$result)', 'デバイスが拒否しました（result=$result）');
+  String get wifiTfNoResponse => pick('设备未响应，请稍后重试', 'The device did not respond. Please try again later.', 'デバイスが応答しません。しばらくしてからお試しください');
+  String get wifiTfRestoreHint => pick(
+    '如需恢复联网，请在设备上重新入网',
+    'To go back online, set up the network on the device again',
+    'オンラインに戻すには、デバイスでネットワークを再設定してください',
+  );
+
+  // ── 分享设备（2026-10-29，简化版：微信小程序卡片） ──
+  String get wifiShareOwner => pick('所有者', 'Owner', 'オーナー');
+  String get wifiShareShared => pick('已分享', 'Shared with', '共有中');
+  String get wifiShareEmpty => pick('暂未分享给其他人', 'Not shared with anyone yet', 'まだ誰とも共有していません');
+  String wifiShareJoinedAt(String time) => pick('加入时间 $time', 'Joined $time', '参加日時 $time');
+  String get wifiShareRemove => pick('移除', 'Remove', '削除');
+  String get wifiShareRemoveTitle => pick('移除成员', 'Remove member', 'メンバーを削除');
+  String wifiShareRemoveMessage(String name) => pick(
+    '移除后「$name」将不能再使用这台设备，确认移除？',
+    '"$name" will no longer be able to use this device. Remove?',
+    '「$name」はこのデバイスを使用できなくなります。削除しますか？',
+  );
+  String get wifiShareRemoved => pick('已移除', 'Removed', '削除しました');
+  String get wifiShareRemoving => pick('移除中', 'Removing', '削除中');
+  String get wifiShareUnavailable => pick('暂时无法分享，请稍后重试', 'Sharing is not available right now. Please try again later.', '現在共有できません。しばらくしてからお試しください');
+  String get wifiShareTip => pick(
+    '通过微信发送给对方，对方在小程序中确认后即可共用这台设备',
+    'Send it via WeChat. Once they accept in the mini program, they can use this device too.',
+    'WeChatで送信し、相手がミニプログラムで承認するとこのデバイスを共用できます',
+  );
+  String wifiShareCardTitle(String owner, String device) => pick(
+    '${owner.isNotEmpty ? owner : '好友'}邀请你共用电子纸设备「$device」',
+    '${owner.isNotEmpty ? owner : 'A friend'} invited you to share the frame "$device"',
+    '${owner.isNotEmpty ? owner : '友だち'}がフォトフレーム「$device」の共用に招待しています',
+  );
+  String get wifiShareNoWeChat => pick('请先安装微信', 'Please install WeChat first', '先にWeChatをインストールしてください');
+  String get wifiShareFailed => pick('分享失败，请稍后重试', 'Sharing failed. Please try again later.', '共有に失敗しました。しばらくしてからお試しください');
 }

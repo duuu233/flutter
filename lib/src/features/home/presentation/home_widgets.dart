@@ -998,10 +998,11 @@ class _WifiCardStatus extends StatelessWidget {
       builder: (context, _) {
         final status = WifiStatusStore.instance.of(deviceId);
         final battery = status.battery;
-        // 在线青绿（与 WiFi版 角标同色），休眠中蓝，离线 / 关机 / 未知 / 查询中灰
+        // 在线青绿（与 WiFi版 角标同色），休眠中蓝，本地模式紫，离线 / 关机 / 未知 / 查询中灰
         final color = switch (status.status) {
           WifiOnlineStatus.online => kWifiGreen,
           WifiOnlineStatus.sleeping => kWifiSleepBlue,
+          WifiOnlineStatus.local => kWifiLocalPurple,
           _ => null,
         };
         return Row(

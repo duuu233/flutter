@@ -99,6 +99,13 @@ abstract final class IotApi {
     return _asMap(await _iot.post('/api/device/strategy/stop', body: {'deviceNo': plainDeviceNo(deviceNo)}));
   }
 
+  /// 切到 TF 卡本地播放（2026-10-29 前端对接变更说明）：`{ deviceNo }` → `{ msgid }`。HTTP 成功只表示指令已下发，
+  /// 设备是否接受看 WS `command.result`（action=play_tf，按 msgid 匹配）。前置校验：403 无权限、4045 升级中、
+  /// 4041 离线（含已是本地模式）、4000 影子 tfStatus=absent 未插卡（tfStatus 未知时服务端不拦）。
+  static Future<Map<String, dynamic>> playTf(String deviceNo) async {
+    return _asMap(await _iot.post('/api/device/play-tf', body: {'deviceNo': plainDeviceNo(deviceNo)}));
+  }
+
   /// 删除云端照片 bin（V1.4 更新说明九）：相册记录由 App 先调老服务删，这里只删 OSS 上的 bin 并清设备拉列表的缓存。
   /// payload：`{ deviceNo, imgUrls（imgBle，最多 200）, nextImageUrl? }`；删的是屏上当前图且带了 nextImageUrl 时服务端自动 play 下一张。
   /// 返回 `{ requested, deleted, failed, skipped, current, deviceAction: NONE / PLAY_NEXT / CLEAN_TF, deviceNotified }`。

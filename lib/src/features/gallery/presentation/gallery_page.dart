@@ -768,7 +768,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     _recasting = true;
     try {
       final l10n = AppL10n.of(context);
-      if (!await ensureWifiDeviceOnline(context, device) || !mounted) {
+      // 2026-10-29（同小程序）：离线 / 本地模式 / 状态未知一律提示「设备不在线」（休眠 / 关机沿用各自提示）；删除照片不受影响
+      final blocked = await wifiProjectBlockedTip(l10n, device);
+      if (!mounted) {
+        return;
+      }
+      if (blocked.isNotEmpty) {
+        AppToast.warn(context, blocked);
         return;
       }
       final paths = <String>[];

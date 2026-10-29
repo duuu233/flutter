@@ -310,7 +310,6 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
     final done = !_running;
     final allSuccess = done && total > 0 && _successCount == total;
     final retryable = done && total > 0 && !allSuccess;
-    final current = total > 0 ? _items[_current < total ? _current : total - 1] : null;
     return FigmaScreen(
       title: l10n.wifiCastTitle,
       body: Column(
@@ -322,16 +321,18 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
             padding: const EdgeInsets.all(18),
             child: Column(
               children: [
-                if (current != null)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(10),
-                    child: Image.file(
-                      File(current.path),
-                      height: 220,
-                      fit: BoxFit.contain,
-                      errorBuilder: (context, error, stackTrace) => const SizedBox(height: 220),
-                    ),
-                  ),
+                // 2026-10-29（同小程序）：中间不再放投屏图片，改为状态图标（与蓝牙版投屏页同一组：进行中 / 成功 / 失败）
+                Image.asset(
+                  !done
+                      ? 'assets/images/upload-icon01.png'
+                      : allSuccess
+                      ? 'assets/images/upload-icon03.png'
+                      : 'assets/images/upload-icon02.png',
+                  width: 130,
+                  height: 110,
+                  fit: BoxFit.contain,
+                  errorBuilder: (context, error, stackTrace) => const SizedBox(height: 110),
+                ),
                 const SizedBox(height: 12),
                 Text(
                   total > 1

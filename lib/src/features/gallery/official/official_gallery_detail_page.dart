@@ -14,6 +14,7 @@ import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../cast/recast_download.dart';
+import '../../wifi/wifi_l10n.dart';
 import '../../wifi/wifi_status.dart';
 import 'official_gallery_api.dart';
 
@@ -222,7 +223,18 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
     }
     // ⚠️ 只有一台时也照样弹（2026-08-13）：投屏不可撤销，「只有一台就替他选」同样是端上
     // 替用户做了选择——用户按下「连接并投屏」之前，谁都不该开始往设备写图。
-    target ??= await showDevicePickerSheet(context, devices: devices);
+    if (target == null) {
+      // 2026-10-29（同小程序）：离线 / 本地模式 / 状态未知的 WiFi 版不进选择列表，蓝牙版不受影响
+      final pickable = await filterPickableDevices(devices);
+      if (!mounted) {
+        return;
+      }
+      if (pickable.isEmpty) {
+        AppToast.show(context, l10n.wifiNoPickableDevice);
+        return;
+      }
+      target = await showDevicePickerSheet(context, devices: pickable);
+    }
     if (target == null || !mounted) {
       return;
     }

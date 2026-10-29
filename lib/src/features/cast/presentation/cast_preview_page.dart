@@ -20,6 +20,7 @@ import '../../../network/dithering_api.dart';
 import '../../../network/iot/iot_api.dart';
 import '../../wifi/presentation/wifi_cast_result_page.dart';
 import '../../wifi/wifi_l10n.dart';
+import '../../wifi/wifi_status.dart';
 import 'casting_progress_page.dart';
 
 /// 投屏预览页。**2026-07-25 按小程序 07-22 ~ 07-24 的三轮重构整页重写**
@@ -1313,6 +1314,18 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       return;
     }
     setState(() => _projecting = true);
+    // WiFi 版（2026-10-29 同小程序）：点「开始投屏」再查一次状态，离线 / 本地模式 / 状态未知不允许（休眠 / 关机沿用各自提示）
+    if (widget.device.isWifi) {
+      final blocked = await wifiProjectBlockedTip(AppL10n.of(context), widget.device);
+      if (!mounted) {
+        return;
+      }
+      if (blocked.isNotEmpty) {
+        setState(() => _projecting = false);
+        AppToast.warn(context, blocked);
+        return;
+      }
+    }
     AppLoadingDialog.show(context, AppL10n.of(context).castProcessing);
 
     final dev = _deviceSize;

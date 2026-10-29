@@ -2,31 +2,38 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../network/boltfox_api.dart';
 import '../../../network/iot/iot_api.dart';
 import '../../../network/iot/iot_ws.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../wifi_cast_entry.dart';
 import '../wifi_l10n.dart';
+import '../wifi_share.dart';
 import '../wifi_status.dart';
+import '../wifi_tf.dart';
 import '../wifi_widgets.dart';
+import 'wifi_device_info_page.dart';
 import 'wifi_messages_page.dart';
+import 'wifi_remove_flow.dart';
+import 'wifi_share_page.dart';
 import 'wifi_sleep_page.dart';
-import 'wifi_slideshow_page.dart';
+import 'wifi_tf_page.dart';
 
-/// WiFi 版设备详情，同步小程序 `subpackages/device/wifi-detail`（对接进度 STEP 4 设备查询 + STEP 3 投屏入口）。
+/// WiFi 版设备详情，同步小程序 `subpackages/device/wifi-detail`（2026-10-27 建页；2026-10-29 按产品要求改版，布局与蓝牙版详情对齐）。
 ///
-/// 蓝牙版详情（[DeviceDetailsPage]）全是蓝牙能力（连接、读 0x01、轮播、清空、OTA），WiFi 版一个都用不上，单独成页：
-///   · 设备记录：设备列表里的这一条（名称、设备 ID、尺寸、设备图）；
-///   · 状态：IoT GET /api/device/info（在线、最后上线、固件版本、影子：电量 / WiFi 信号与名称 / TF / 国家码 / 最后心跳）；
-///     订阅 WS device.status，上下线时自动重查（只推信号不推详情）；
-///   · 操作：「投屏」（拍照 / 相册 → 预览构图 → WiFi 投屏结果页）、「轮播设置」（V1.4 更新说明 1.5，取代原「刷新状态」，
-///     进 [WifiSlideshowPage]；状态随进页与 WS device.status 自动重查）；
-///   · 入口（V1.4 实现报告反馈二 / 三）：「休眠设置」进 [WifiSleepPage]；「消息中心」进 [WifiMessagesPage]，带未读角标
-///     （IoT GET /api/notification/unread-count，进页时、从消息中心返回时查，收到本设备 WS notification.new 再查）。
-/// 刷新屏幕、TF、OTA 等设备控制属于后续 STEP，未接；App 也没有删除 / 重新配网操作。
+/// 蓝牙版详情（[DeviceDetailsPage]）全是蓝牙能力，WiFi 版单独成页：
+///   · 设备记录：设备列表里的这一条（名称、设备 ID、尺寸、设备图）；所有者身份另查 getUserProductDetail（isToHave / shareUserId）；
+///   · 状态：IoT GET /api/device/info，订阅 WS device.status，上下线时自动重查；电量放在在线状态那一栏（仅在线时显示）；
+///   · 设备卡下方「投屏 | 轮播设置」（与蓝牙版位置一致）；
+///   · 功能栏依次：设备信息（[WifiDeviceInfoPage]）、休眠设置、消息中心（未读角标）、TF卡（未插卡不可点；有卡显示已用/总量，
+///     进 [WifiTfPage]）、分享设备（仅所有者，[WifiSharePage]）、解除绑定（只删设备）；页底「删除设备」（仅所有者，
+///     样式与弹窗同蓝牙版，先删云端图片再删设备，见 wifi_remove_flow.dart）；
+///   · 本地模式（status=LOCAL_TF）：投屏 / 轮播设置 / TF卡 可以点，但只提示「当前设备状态：本地模式，请恢复设备网络再试」；
+///     设备信息、休眠设置、消息中心、分享、解绑、删除照常。WiFi 版暂无 OTA 入口。
 class WifiDeviceDetailPage extends StatefulWidget {
   const WifiDeviceDetailPage({super.key, required this.state, required this.deviceId});
 
@@ -42,6 +49,9 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   StreamSubscription<Map<String, dynamic>>? _noticeSub;
   String _subscribed = '';
   int _unreadCount = 0;
+
+  /// 是否所有者：查到详情前按否（分享 / 删除入口先不出），避免成员误删所有者的云端照片。
+  bool _isOwner = false;
 
   DeviceItem get _device => widget.state.deviceById(widget.deviceId);
 
@@ -72,6 +82,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
       if (mounted) {
         WifiStatusStore.instance.refresh(_device);
         _refreshUnread();
+        _loadOwner();
       }
     });
   }
@@ -84,6 +95,24 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
       IotWs.instance.unsubscribe(_subscribed);
     }
     super.dispose();
+  }
+
+  /// 查设备详情里的 isToHave / shareUserId 判定所有者；查不到保持「否」。
+  Future<void> _loadOwner() async {
+    bool owner;
+    try {
+      final data = await BoltFoxApi.getUserProductDetail(userProductId: widget.deviceId);
+      if (data is! Map) {
+        return;
+      }
+      owner = wifiIsOwner(data.map((k, v) => MapEntry(k.toString(), v)));
+    } catch (error) {
+      debugPrint('[WiFi详情] 所有者查询失败 $error');
+      return;
+    }
+    if (mounted) {
+      setState(() => _isOwner = owner);
+    }
   }
 
   /// 消息中心未读角标；查不到不显示，不弹错。
@@ -104,17 +133,8 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     }
   }
 
-  /// 「轮播设置」：查询离线也能看，不拦状态；保存时由接口裁决。
-  void _openSlideshow() {
-    Navigator.of(context).push<void>(
-      AppPageRoute(builder: (_) => WifiSlideshowPage(state: widget.state, deviceId: widget.deviceId)),
-    );
-  }
-
-  void _openSleep() {
-    Navigator.of(context).push<void>(
-      AppPageRoute(builder: (_) => WifiSleepPage(state: widget.state, deviceId: widget.deviceId)),
-    );
+  void _push(Widget page) {
+    Navigator.of(context).push<void>(AppPageRoute(builder: (_) => page));
   }
 
   Future<void> _openMessages() async {
@@ -127,8 +147,29 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     }
   }
 
-  Widget _buildEntries(AppL10n l10n) {
-    Widget entry(String label, VoidCallback onTap, {Widget? trailing}) {
+  /// 「TF卡」：未插卡 / 没上报过不可点；本地模式只提示；有卡进 TF 卡设置。
+  void _openTf(WifiOnlineStatus status, WifiTfState tf) {
+    if (tf != WifiTfState.present) {
+      return;
+    }
+    if (status == WifiOnlineStatus.local) {
+      AppToast.warn(context, AppL10n.of(context).wifiLocalTip);
+      return;
+    }
+    _push(WifiTfPage(state: widget.state, deviceId: widget.deviceId));
+  }
+
+  Widget _buildEntries(AppL10n l10n, WifiDeviceStatus status) {
+    final tf = wifiTfState(l10n, status.shadow);
+    Widget entry(
+      String label,
+      VoidCallback onTap, {
+      Widget? trailing,
+      String value = '',
+      bool chevron = true,
+      Color labelColor = const Color(0xFF33373D),
+      FontWeight labelWeight = FontWeight.w600,
+    }) {
       return GestureDetector(
         behavior: HitTestBehavior.opaque,
         onTap: onTap,
@@ -136,27 +177,38 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
           height: 50,
           child: Row(
             children: [
+              Text(label, style: TextStyle(color: labelColor, fontSize: 14, fontWeight: labelWeight)),
+              const SizedBox(width: 12),
               Expanded(
                 child: Text(
-                  label,
-                  style: const TextStyle(color: Color(0xFF33373D), fontSize: 14, fontWeight: FontWeight.w600),
+                  value,
+                  textAlign: TextAlign.right,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Color(0xFF777E88), fontSize: 13),
                 ),
               ),
-              if (trailing != null) ...[trailing, const SizedBox(width: 8)],
-              const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF777E88)),
+              if (trailing != null) ...[const SizedBox(width: 8), trailing],
+              if (chevron) ...[
+                const SizedBox(width: 6),
+                const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF777E88)),
+              ],
             ],
           ),
         ),
       );
     }
 
+    const divider = Divider(height: 1, thickness: 0.5, color: Color(0x0F2A2B2B));
     return FigmaGlassCard(
       borderRadius: 18,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       child: Column(
         children: [
-          entry(l10n.wifiSleepSettings, _openSleep),
-          const Divider(height: 1, thickness: 0.5, color: Color(0x0F2A2B2B)),
+          entry(l10n.wifiDeviceInfo, () => _push(WifiDeviceInfoPage(state: widget.state, deviceId: widget.deviceId))),
+          divider,
+          entry(l10n.wifiSleepSettings, () => _push(WifiSleepPage(state: widget.state, deviceId: widget.deviceId))),
+          divider,
           entry(
             l10n.wifiMessageCenter,
             _openMessages,
@@ -174,24 +226,30 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                   )
                 : null,
           ),
+          divider,
+          // TF卡：未插卡不可点；有卡显示已用/总量 + 箭头
+          entry(
+            l10n.wifiRowTf,
+            () => _openTf(status.status, tf.state),
+            value: tf.text,
+            chevron: tf.state == WifiTfState.present,
+          ),
+          if (_isOwner) ...[
+            divider,
+            entry(l10n.wifiShareDevice, () => _push(WifiSharePage(state: widget.state, deviceId: widget.deviceId))),
+          ],
+          divider,
+          // 解除绑定：红字，同蓝牙版；只删设备记录，照片保留
+          entry(
+            l10n.devUnbindDevice,
+            () => startWifiUnbindFlow(context, widget.state, _device),
+            value: l10n.devUnbindDeviceValue,
+            labelColor: const Color(0xFFFF3045),
+            labelWeight: FontWeight.w500,
+          ),
         ],
       ),
     );
-  }
-
-  String _tfText(AppL10n l10n, Map<String, dynamic> shadow) {
-    final status = '${shadow['tfStatus'] ?? ''}';
-    if (status == 'absent') return l10n.wifiTfAbsent;
-    if (status != 'present') return '';
-    final total = num.tryParse('${shadow['tfTotal'] ?? ''}') ?? 0;
-    final used = num.tryParse('${shadow['tfUsed'] ?? ''}') ?? 0;
-    return total > 0 ? l10n.wifiTfUsage(used, total) : l10n.wifiTfPresent;
-  }
-
-  String _countryText(AppL10n l10n, Object? code) {
-    final value = '${code ?? ''}'.trim();
-    if (value.isEmpty) return '';
-    return value == '1' || value == '01' ? l10n.wifiCountryWorld : value;
   }
 
   @override
@@ -202,36 +260,11 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
       builder: (context, _) {
         final device = _device;
         final status = WifiStatusStore.instance.of(device.id);
-        final online = status.online;
-        final shadow = status.shadow;
-        final info = status.info;
-        final rssi = num.tryParse('${shadow['wifiRssi'] ?? ''}');
-        final known = status.status != WifiOnlineStatus.loading && status.status != WifiOnlineStatus.unknown;
-        final rows = <({String label, String value, Widget? leading})>[
-          (
-            label: l10n.wifiRowBattery,
-            value: online && status.battery != null ? '${status.battery}%' : '',
-            leading: null,
-          ),
-          (
-            label: l10n.wifiRowSignal,
-            value: online && rssi != null && rssi < 0 ? '${rssi.round()}dBm' : '',
-            leading: online && status.signalBars > 0 ? SignalBars(level: status.signalBars) : null,
-          ),
-          (label: l10n.wifiRowName, value: '${shadow['wifiName'] ?? ''}', leading: null),
-          (
-            label: l10n.wifiRowVersion,
-            value: '${info['firmwareVersion'] ?? shadow['espVersion'] ?? shadow['version'] ?? ''}',
-            leading: null,
-          ),
-          (label: l10n.wifiRowTf, value: _tfText(l10n, shadow), leading: null),
-          (label: l10n.wifiRowCountry, value: _countryText(l10n, shadow['countryCode']), leading: null),
-          (label: l10n.wifiRowLastOnline, value: '${info['lastOnlineAt'] ?? ''}', leading: null),
-          (label: l10n.wifiRowLastHeart, value: '${shadow['lastHeartAt'] ?? ''}', leading: null),
-        ];
+        final battery = status.online ? status.battery : null;
         final stateColor = switch (status.status) {
           WifiOnlineStatus.online => kWifiGreen,
           WifiOnlineStatus.sleeping => kWifiSleepBlue,
+          WifiOnlineStatus.local => kWifiLocalPurple,
           WifiOnlineStatus.offline || WifiOnlineStatus.shutdown => const Color(0xFF9BA2AD),
           _ => const Color(0xFF8B9098),
         };
@@ -292,6 +325,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                             ),
                           ],
                           const SizedBox(height: 8),
+                          // 状态与电量一栏（2026-10-29，与蓝牙版一致），电量仅在线时显示
                           Row(
                             children: [
                               if (status.status == WifiOnlineStatus.loading)
@@ -304,6 +338,18 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                                 ),
                               const SizedBox(width: 6),
                               Text(status.text(l10n), style: TextStyle(color: stateColor, fontSize: 13)),
+                              if (battery != null) ...[
+                                const SizedBox(width: 14),
+                                Image.asset(
+                                  _batteryAsset(battery),
+                                  width: 24,
+                                  fit: BoxFit.contain,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Icons.battery_std_rounded, size: 14, color: Color(0xFF2A2D32)),
+                                ),
+                                const SizedBox(width: 4),
+                                Text('$battery%', style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 13)),
+                              ],
                             ],
                           ),
                         ],
@@ -312,46 +358,40 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                   ],
                 ),
               ),
-              if (known) ...[
-                const SizedBox(height: 14),
-                FigmaGlassCard(
-                  borderRadius: 18,
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
-                  child: Column(
-                    children: [
-                      for (final row in rows)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 10),
-                          child: Row(
-                            children: [
-                              Text(row.label, style: const TextStyle(color: Color(0xFF5E6470), fontSize: 14)),
-                              const Spacer(),
-                              if (row.leading != null) ...[row.leading!, const SizedBox(width: 6)],
-                              Flexible(
-                                child: Text(
-                                  row.value.isNotEmpty ? row.value : '--',
-                                  textAlign: TextAlign.right,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-              ],
+              // 投屏 / 轮播设置放在设备卡与功能栏之间（与蓝牙版位置一致）
               const SizedBox(height: 14),
               WifiActionBar(
                 castLabel: l10n.devCast,
                 slideshowLabel: l10n.wifiSlideshowSettings,
                 onCast: () => startWifiCast(context, widget.state, device),
-                onSlideshow: _openSlideshow,
+                onSlideshow: () => openWifiSlideshow(context, widget.state, device),
               ),
               const SizedBox(height: 14),
-              _buildEntries(l10n),
+              _buildEntries(l10n, status),
+              // 删除设备（仅所有者）：页底独立入口，样式同蓝牙版 _OutlineDeleteDeviceButton
+              if (_isOwner) ...[
+                const SizedBox(height: 32),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: () => startWifiDeleteFlow(context, widget.state, device),
+                  child: SizedBox(
+                    height: 56,
+                    child: Center(
+                      child: Text(
+                        l10n.devDeleteDevice,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFFFF3045),
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
             ],
           ),
@@ -360,6 +400,9 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     );
   }
 }
+
+/// 电量 → `BatteryLevel/battery-{档}.png`（按 10 取最近档，同我的设备卡片）。
+String _batteryAsset(int battery) => 'assets/images/BatteryLevel/battery-${((battery.clamp(0, 100) + 5) ~/ 10) * 10}.png';
 
 /// WiFi 版设备的操作栏「投屏 | 轮播设置」（我的设备卡片与 WiFi 设备详情共用，同蓝牙版卡片的操作栏样式）。
 /// V1.4 更新说明 1.5：原「刷新状态」改为「轮播设置」；状态随进页与 WS device.status 自动重查。

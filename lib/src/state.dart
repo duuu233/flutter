@@ -131,6 +131,10 @@ class UserProfile {
   /// 后端头像地址（登录后 getUserInfo 下发）；空则用本地默认头像。
   String avatarUrl = '';
 
+  /// 老服务数字主键 userId（2026-10-29 getUserInfo 新增出参）：设备分享时作 addUserProduct 的 shareUserId；
+  /// 与上面的 [id]（展示用 userNo）不是一回事，不要混用。空串 = 还没拿到。
+  String userId = '';
+
   /// 后端统计的图片数 / 设备数（`UserInfoApiOut.imgCount` / `productCount`）。
   /// 「我的」页优先展示它们，未下发（0）时才回退本地列表长度，对齐小程序 mine.js。
   int imgCount = 0;
@@ -3471,6 +3475,10 @@ class PhotoFrameState extends ChangeNotifier {
       // 选图上限按 userNo 放宽（2026-08-01）：CastPhotoPicker 是静态入口、拿不到状态对象，
       // 在这里把 userNo 单向同步过去（退出登录时由 logout 清空）。
       CastUploadLimit.currentUserNo = _currentUser.id;
+    }
+    final userId = data['userId'];
+    if (userId != null && '$userId'.trim().isNotEmpty) {
+      _currentUser.userId = '$userId'.trim();
     }
     final nick = data['nickName'];
     if (nick is String && nick.isNotEmpty) {

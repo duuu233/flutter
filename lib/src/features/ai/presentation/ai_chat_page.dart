@@ -22,6 +22,8 @@ import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../star/star_coin_api.dart';
+import '../../wifi/wifi_l10n.dart';
+import '../../wifi/wifi_status.dart';
 import '../ai_i18n.dart';
 import '../ai_image_compress.dart';
 import '../ai_last_session.dart';
@@ -2394,7 +2396,13 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       if (target == null || !mounted) {
         return;
       }
-      if (!widget.state.isDeviceActuallyConnected(target.id)) {
+      // WiFi 版（2026-10-29 同小程序，原先没接）：不连蓝牙，确认云端在线后带去预览页，
+      // 预览页认出 WiFi 版、导出后去 WiFi 投屏结果页
+      if (target.isWifi) {
+        if (!await ensureWifiDeviceOnline(context, target) || !mounted) {
+          return;
+        }
+      } else if (!widget.state.isDeviceActuallyConnected(target.id)) {
         AppLoadingDialog.show(context, AppL10n.of(context).castConnectingDevice);
         final feedback = await widget.state.connectDevice(target.id);
         AppLoadingDialog.hide(context);
@@ -2412,7 +2420,8 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     // 「投屏」是主动操作：本来就连着 / 刚在弹层里连上，都提醒一次电量
     // （2026-08-27 补齐 08-21 遗留入口）。放在下载蒙层之前，不与蒙层抢屏。
     final tipTarget = target;
-    if (tipTarget != null) {
+    // 电量提醒读的是蓝牙会话的电量，WiFi 版不提醒（同官方图库）
+    if (tipTarget != null && !tipTarget.isWifi) {
       await showLowBatteryTipIfNeeded(context, widget.state, tipTarget.id);
       if (!mounted) {
         return;
@@ -2460,7 +2469,16 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       AppToast.show(context, l10n.aiNoBoundDevice);
       return null;
     }
-    return showDevicePickerSheet(context, devices: devices);
+    // 2026-10-29（同小程序）：离线 / 本地模式 / 状态未知的 WiFi 版不进选择列表，蓝牙版不受影响
+    final pickable = await filterPickableDevices(devices);
+    if (!mounted) {
+      return null;
+    }
+    if (pickable.isEmpty) {
+      AppToast.show(context, l10n.wifiNoPickableDevice);
+      return null;
+    }
+    return showDevicePickerSheet(context, devices: pickable);
   }
 
   // ── 滚动 ─────────────────────────────────────────────────

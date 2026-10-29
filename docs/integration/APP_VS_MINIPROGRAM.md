@@ -1,4 +1,4 @@
-# BoltStar App ↔ 微信小程序当前对齐矩阵
+﻿# BoltStar App ↔ 微信小程序当前对齐矩阵
 
 > 文档类型：Cross-client Integration  
 > 状态：Active  
@@ -63,7 +63,10 @@
 | 首页 / 图库详情 / 选设备弹层 | `home`、`gallery/detail`、`device-picker-sheet` | `home_*`、`official_gallery_detail_page.dart`、`device_picker_sheet.dart` | ✅⚠️ | WiFi 卡云端状态、类型·尺寸标签、状态与电量同行、投屏只确认在线、弹层「WiFi版」角标；首页可见时订阅状态推送 |
 | 我的相册（WiFi 照片） | `album/list` | `gallery_page.dart` | ✅⚠️ | 删除：删记录 → 删云端 bin + nextImageUrl，「可能需手动切换」提示；再次投屏不连蓝牙（2026-10-28） |
 | IoT 联调卡 / 全页面日志浮窗 | `subpackages/device/debug`、`components/debug-log` | — | 🔶 | App 未加（只有 WiFi 投屏结果页的投屏日志） |
-| AI 对话 | 未接 | 未接 | ⚠️ | 两端一致：选 WiFi 版仍走蓝牙，会失败 |
+| AI 对话 | `ai/chat` | `ai_chat_page.dart` | ✅⚠️ | 2026-10-29 两端接上：选 WiFi 版不连蓝牙、确认在线后进预览；选设备列表过滤离线 / 本地模式 / 未知 |
+| 本地模式 / TF 卡 | `wifi-status.js`、`wifi-tf.js`、`wifi-tf` | `wifi_status.dart`、`wifi_tf.dart`、`wifi_tf_page.dart` | ✅⚠️ | `LOCAL_TF`「本地模式」与操作限制；play-tf + `command.result`；开关只看状态 |
+| 设备信息 / 解绑 / 删除 | `wifi-info`、`wifi-detail` | `wifi_device_info_page.dart`、`wifi_remove_flow.dart` | ✅⚠️ | 删除仅所有者：清记录 → 删云端 bin → 删设备；弹窗同蓝牙版 |
+| 设备分享（简化版） | `wifi-share`、`wifi-share-accept` | `wifi_share_page.dart`、`wifi_wechat_share.dart` | ✅⚠️🔶 | 两端同一张小程序卡片、同一接受页；🔶 App 用 fluwx 发小程序卡片，需配置小程序原始 ID；App 无接受入口 |
 
 ⚠️ App 侧未编译、未真机、未与 IoT 联调。
 

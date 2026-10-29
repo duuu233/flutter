@@ -732,10 +732,14 @@ class BoltFoxApi {
   /// 添加 / 绑定用户设备。
   ///
   /// 关闭超时重试：超时时后端可能已建绑定记录，重试是否重复绑定取决于后端去重，不赌。
+  /// [isToHave] / [shareUserId]（2026-10-29 新增入参，同小程序）：自己绑定（蓝牙 / WiFi 配网）= 所有者 1 / 0；
+  /// 接受别人分享 = 非所有者 0 / 分享者 userId（App 暂无接受入口，接受在小程序完成）。
   static Future<dynamic> addUserProduct({
     required int productId,
     required String productName,
     required String productSerialNo,
+    int isToHave = 1,
+    int shareUserId = 0,
   }) {
     return _http.postJson(
       '/Client/UserProduct/addUserProduct',
@@ -744,8 +748,19 @@ class BoltFoxApi {
         'productName': productName,
         // 硬件序列号：完全对齐已通过测试的小程序 `api.bindDevice` —— 用字段名 `deviceId` 提交（同一后端）。
         'deviceId': productSerialNo,
+        'isToHave': isToHave,
+        'shareUserId': shareUserId,
       },
       retryOnTimeout: false,
+    );
+  }
+
+  /// 设备分享的用户（2026-10-29，WiFi 版分享列表，同小程序 `getShareUsers`）：[deviceId] 为后端设备号（原样，带冒号）。
+  /// retData 为分页：pageData `[{ avatar, userName, isToHave(1=所有者), userProductId }]`，暂无加入时间字段。
+  static Future<dynamic> getShareUserProductList({required String deviceId, int pageIndex = 1, int pageSize = 50}) {
+    return _http.getJson(
+      '/Client/UserProduct/getShareUserProductList',
+      query: {'deviceId': deviceId, 'pageIndex': pageIndex, 'pageSize': pageSize},
     );
   }
 
