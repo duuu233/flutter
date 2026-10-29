@@ -1435,9 +1435,10 @@ class _CastPreviewPageState extends State<CastPreviewPage>
       await Navigator.of(context).pushReplacement(
         AppPageRoute<void>(
           builder: (_) => WifiCastResultPage(
+            state: widget.state,
             device: widget.device,
             imagePaths: outPaths,
-            // 与蓝牙版抖动出帧同口径：按导出分辨率判型（评审回复 8.1）
+            // 结果页先取产品屏幕方向 screenType（2026-10-28）；产品没配才用这个按导出分辨率判型的旧口径
             type: DitheringApi.typeForDevice(dev.width, dev.height),
             // 只有轮播在运行且打开了开关才加入轮播
             addToCarousel: _carouselRunning && _addToCarousel,

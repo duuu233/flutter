@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.PowerManager
 import android.provider.MediaStore
 import android.provider.Settings
+import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -75,6 +76,15 @@ class MainActivity : FlutterActivity() {
                 4104,
             )
             "openGallery" -> openGallery(result)
+            // 屏幕常亮（2026-10-29，WiFi 配网全程约 1 分钟，息屏会让蓝牙被挂起；同小程序 setKeepScreenOn）。
+            "setKeepScreenOn" -> {
+                if (call.argument<Boolean>("on") == true) {
+                    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                } else {
+                    window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+                }
+                result.success(null)
+            }
             // 把本地文件存进系统相册（AI 生成图的「下载」，2026-08-28）。
             "saveImageToGallery" -> saveImageToGallery(call, result)
             "decodeImageRgba" -> decodeImageRgba(call, result)

@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
+import '../../../native_device_api.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../shared/widgets/home_figma_common.dart';
@@ -42,6 +45,7 @@ class _WifiProvisionPageState extends State<WifiProvisionPage> {
   @override
   void dispose() {
     _disposed = true;
+    unawaited(NativeDeviceApi.setKeepScreenOn(false));
     super.dispose();
   }
 
@@ -65,6 +69,8 @@ class _WifiProvisionPageState extends State<WifiProvisionPage> {
       });
       return;
     }
+    // 配网全程约 1 分钟，期间息屏会让蓝牙被挂起（同小程序 setKeepScreenOn，离开页面恢复）
+    unawaited(NativeDeviceApi.setKeepScreenOn(true));
     bool stale() => _disposed || runId != _runId;
     try {
       final deviceId = await WifiProvision.run(

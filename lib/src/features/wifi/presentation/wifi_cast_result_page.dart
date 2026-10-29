@@ -18,7 +18,7 @@ import '../wifi_widgets.dart';
 /// WiFi 版投屏结果页，同步小程序 `subpackages/projection/wifi-result`：预览页构图导出后 pushReplacement 到这里
 /// （蓝牙版去 [CastingProgressPage]）。
 ///
-/// 逐张调 [WifiProjection.projectOne]：上传进度条 0~100（上传进度）→ 图片处理中 → 接口返回即结束。
+/// 逐张调 [WifiProjection.projectOne]：图片上传中 → 图片处理中（两段合占进度条 0~99%）→ 接口返回成功才到 100%（2026-10-29）。
 /// V1.4 起不再等设备 ack：返回 SENT 就提示「已发送，屏幕即将刷新」，设备真正的成功 / 失败由服务端写消息通知。
 /// 多张按顺序一张一张传：本轮最后一张 refresh=true（刷屏），前面的 refresh=false（只上传、返回 UPLOADED、不刷屏），
 /// 整批只刷一次屏（更新说明 2.4）。重试时同样按「本轮最后一张刷屏」。
@@ -29,21 +29,26 @@ import '../wifi_widgets.dart';
 /// 「未成功加入轮播，请前往轮播设置添加」；true / null 不额外提示。
 /// 结束后：全部成功只给「完成」；有失败给「重试未成功的」+「完成」。
 /// 投屏日志（同小程序）：非正式包在页面下方显示、可一键复制；正式包不显示，只打控制台 [WiFi投屏]。重试不清空。
+/// type / renderMode（2026-10-28 同小程序）：首轮投屏前按设备取一次后台产品配置的屏幕方向 screenType 与渲染模式 renderMode
+/// （[PhotoFrameState.resolveScreenType] / [PhotoFrameState.resolveRenderMode]），每张原样带上，重试复用；screenType 没配才用 [type]
+/// （按分辨率的旧口径），renderMode 没配不传。
 class WifiCastResultPage extends StatefulWidget {
   const WifiCastResultPage({
     super.key,
+    required this.state,
     required this.device,
     required this.imagePaths,
     required this.type,
     this.addToCarousel = false,
   });
 
+  final PhotoFrameState state;
   final DeviceItem device;
 
   /// 预览页导出的本地图（设备物理分辨率）。
   final List<String> imagePaths;
 
-  /// 与蓝牙版抖动出帧同口径：480×720 传 '1'，其余 '0'（评审回复 8.1）。
+  /// 产品没配屏幕方向时的回退 type：与蓝牙版抖动出帧旧口径相同，480×720 传 '1'，其余 '0'（评审回复 8.1）。
   final String type;
 
   /// 预览页「同时加入轮播」：只有设备正在轮播且用户打开了开关才为 true。
@@ -78,6 +83,10 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
   bool _running = true;
   bool _disposed = false;
   int _current = 0;
+
+  /// 本次进页查到的 type / renderMode（null = 还没查，查一次后重试复用）。
+  String? _typeValue;
+  String? _renderMode;
   int _progress = 0;
   String _stageText = '';
   String _carouselTip = '';
@@ -175,6 +184,18 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
       _running = true;
       _carouselTip = '';
     });
+    if (_typeValue == null) {
+      final screenType = await widget.state.resolveScreenType(widget.device);
+      _typeValue = screenType.isNotEmpty ? screenType : widget.type;
+      _appendLog('type=$_typeValue（${screenType.isNotEmpty ? '产品屏幕方向 screenType' : '产品未配置 screenType，按分辨率回退'}）');
+    }
+    if (_renderMode == null) {
+      _renderMode = await widget.state.resolveRenderMode(widget.device);
+      _appendLog('渲染模式 renderMode=${_renderMode!.isNotEmpty ? _renderMode : '（产品未配置，不传）'}');
+    }
+    if (_disposed) return;
+    final type = _typeValue!;
+    final renderMode = _renderMode!;
     for (var n = 0; n < indexes.length; n++) {
       if (_disposed) return;
       final index = indexes[n];
@@ -201,7 +222,8 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
         l10n: l10n,
         deviceNo: widget.device.serialNumber,
         filePath: path,
-        type: widget.type,
+        type: type,
+        renderMode: renderMode,
         refresh: refresh,
         addToCarousel: widget.addToCarousel,
         isCancelled: () => _disposed,
@@ -217,8 +239,8 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
       );
       if (_disposed || result.status == 'CANCELLED') return;
       var text = result.message.isNotEmpty ? result.message : l10n.wifiCastStage(result.status);
+      // 写相册记录时不改阶段文案：100% 只显示「已发送，屏幕即将刷新」（2026-10-29 同小程序），过程只进日志
       if (result.sent) {
-        setState(() => _stageText = l10n.wifiCastSavingAlbum);
         final saved = await _saveAlbumRecord(path, result.binUrl);
         if (_disposed) return;
         if (!saved) {

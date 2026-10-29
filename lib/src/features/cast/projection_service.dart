@@ -132,7 +132,11 @@ class ServerImageProjectionService {
     int? deviceShapeType,
     // 所属产品广播名（机型），决定图片容量/选槽上限（v1.6 EC-370 只有 11 槽）。
     String deviceBroadcastId = '',
+    // 抖动出帧 type（2026-10-28 同小程序）：后台产品配置的屏幕方向 screenType（0=竖屏、1=横屏），调用方先发起查询
+    //（PhotoFrameState.resolveScreenType），本轮出帧共用这一次结果；为空 / 没给才按分辨率回退旧口径。
+    Future<String>? screenType,
   }) async {
+    _screenType = screenType;
     final client = _ble.client;
     // [filePaths]=预览处理后的设备分辨率图（喂抖动接口出帧）；[recordFilePaths]=对应的原图
     //（建投屏记录/后端存图，小程序 _origSrc 语义），缺省/缺项时回退用处理后的图。逐项配对，
@@ -646,6 +650,20 @@ class ServerImageProjectionService {
 
   /// 设备帧：预览处理后的设备分辨率图 → 统一压缩（已是设备尺寸则原样通过，见 _prepareUploadSource
   /// 的 400KB 触发门）→ 抖动接口出六色 4bpp 帧（[DitheringApi.requestFrameBin]）。
+  /// 本轮投屏的产品屏幕方向查询（见 [castImages] 的 screenType）。
+  Future<String>? _screenType;
+
+  /// 出帧 type：产品屏幕方向 screenType 原样传；产品没配 / 查不到才按分辨率回退（480×720 传 1，其余 0）。
+  Future<String> _ditherType(int width, int height) async {
+    var fromProduct = '';
+    try {
+      fromProduct = (await _screenType) ?? '';
+    } catch (_) {
+      fromProduct = '';
+    }
+    return fromProduct.isNotEmpty ? fromProduct : DitheringApi.typeForDevice(width, height);
+  }
+
   Future<Uint8List> _fetchDitheringFrame({
     required String filePath,
     required int width,
@@ -666,15 +684,16 @@ class ServerImageProjectionService {
     } catch (_) {}
     final shrunk = uploadPath == filePath ? '(原样)' : '(已压缩)';
     final devFrame = (width * height + 1) ~/ 2;
+    final type = await _ditherType(width, height);
     debugPrint(
       '[投屏][出帧] 喂给抖动接口：${(uploadBytes / 1024).toStringAsFixed(0)}KB $shrunk '
-      '设备=${width}x$height type=${DitheringApi.typeForDevice(width, height)} '
+      '设备=${width}x$height type=$type '
       '设备需=$devFrame 字节 file=$uploadPath',
     );
     try {
       return await DitheringApi.requestFrameBin(
         filePath: uploadPath,
-        type: DitheringApi.typeForDevice(width, height),
+        type: type,
       );
     } finally {
       if (uploadPath != filePath) {

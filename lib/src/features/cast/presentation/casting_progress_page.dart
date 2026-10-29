@@ -180,6 +180,10 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             deviceHeight: target?.screenHeight ?? 0,
             deviceShapeType: target?.shapeType,
             deviceBroadcastId: target?.broadcastId ?? '',
+            // 出帧 type 取产品屏幕方向 screenType（2026-10-28 同小程序），与第一张出帧并行查，没配才按分辨率回退
+            screenType: widget.state != null && target != null
+                ? widget.state!.resolveScreenType(target)
+                : null,
             filePaths: widget.imagePaths,
             recordFilePaths: widget.originalPaths.isEmpty
                 ? null

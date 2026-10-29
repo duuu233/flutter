@@ -53,7 +53,7 @@
 | --- | --- | --- | --- | --- |
 | 广播匹配 / 扫描 | `utils/broadcast-match.js`、`bluetooth.js includeWifi` | `device/wifi/broadcast_match.dart`、`FrameBleClient.scan(includeWifi)` | ✅⚠️ | `*` 模板 + 内置 `IJ_*`，中间 12 位为 deviceNo；只有搜索页收录 WiFi 版 |
 | 搜索设备列表 | `subpackages/device/bind` | `bind_device_flow.dart` / `bind_device_found.dart` | ✅⚠️ | 第二行「类型标签包住尺寸 → 电量 → 信号 + 信号格」；WiFi 行查规格、未知设备拦截、「立即配网」先 BluFi 连接 |
-| 配网三页 | `wifi-list` / `wifi-config` / `wifi-provision` | `features/wifi/presentation/` 三页 | ✅⚠️🔶 | 流程、文案、四步时序一致；🔶 App 不保持屏幕常亮、手机网络判断改为解析 IoT 域名 |
+| 配网三页 | `wifi-list` / `wifi-config` / `wifi-provision` | `features/wifi/presentation/` 三页 | ✅⚠️🔶 | 流程、文案、四步时序一致；配网全程屏幕常亮（2026-10-29 起两端一致）；选择 WiFi 页 2.4G 提示条与标题两端一致；🔶 手机网络判断 App 改为解析 IoT 域名 |
 | BluFi | `utils/blufi.js` | `device/wifi/blufi.dart` | ✅⚠️ | 帧格式、分片、两种 WiFi 列表回包、JSON 指令回执口径一致；不加密 |
 | IoT 服务 | `utils/iot-*.js` | `network/iot/` | ✅⚠️ | 错误码同表（App 四语种）；401 登出、503 不登出；WS 心跳 / 退避 / 补订一致 |
 | 我的设备 | `subpackages/device/list` | `my_devices_page.dart` | ✅⚠️ | WiFi版 / 蓝牙版分组；WiFi 卡云端状态（含休眠中 / 已关机）+ 投屏 / 轮播设置；两类卡「尺寸 · 设备ID」；可见时订阅状态推送（2026-10-28） |
@@ -62,6 +62,7 @@
 | 轮播设置 / 休眠设置 / 消息中心 | `wifi-slideshow` / `wifi-sleep` / `wifi-messages` | `wifi_slideshow_page.dart` / `wifi_sleep_page.dart` / `wifi_messages_page.dart` | ✅⚠️ | 逻辑与文案同小程序（轮播上限 100）；App 选择器用 Material 时间 / 日期选择与底部列表 |
 | 首页 / 图库详情 / 选设备弹层 | `home`、`gallery/detail`、`device-picker-sheet` | `home_*`、`official_gallery_detail_page.dart`、`device_picker_sheet.dart` | ✅⚠️ | WiFi 卡云端状态、类型·尺寸标签、状态与电量同行、投屏只确认在线、弹层「WiFi版」角标；首页可见时订阅状态推送 |
 | 我的相册（WiFi 照片） | `album/list` | `gallery_page.dart` | ✅⚠️ | 删除：删记录 → 删云端 bin + nextImageUrl，「可能需手动切换」提示；再次投屏不连蓝牙（2026-10-28） |
+| 投屏 type / 渲染模式 / 进度条 | `api.resolveScreenType` / `resolveRenderMode`、`wifi-projection.js` | `PhotoFrameState.resolveScreenType` / `resolveRenderMode`、`wifi_projection.dart` | ✅⚠️ | 2026-10-29 两端一致：type 取产品 screenType（蓝牙出帧 / WiFi play / 轮播首张），没配按分辨率回退；WiFi play 带产品 renderMode；进度条上传 0~50、处理爬向 99、成功才 100 |
 | IoT 联调卡 / 全页面日志浮窗 | `subpackages/device/debug`、`components/debug-log` | — | 🔶 | App 未加（只有 WiFi 投屏结果页的投屏日志） |
 | AI 对话 | `ai/chat` | `ai_chat_page.dart` | ✅⚠️ | 2026-10-29 两端接上：选 WiFi 版不连蓝牙、确认在线后进预览；选设备列表过滤离线 / 本地模式 / 未知 |
 | 本地模式 / TF 卡 | `wifi-status.js`、`wifi-tf.js`、`wifi-tf` | `wifi_status.dart`、`wifi_tf.dart`、`wifi_tf_page.dart` | ✅⚠️ | `LOCAL_TF`「本地模式」与操作限制；play-tf + `command.result`；开关只看状态 |

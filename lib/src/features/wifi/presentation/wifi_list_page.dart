@@ -185,7 +185,8 @@ class _WifiListPageState extends State<WifiListPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 16),
-          // 顶部「设备仅支持 2.4G WiFi 配网」提示条已去掉（同小程序 2026-10-27）；列表仍只留 2.4G
+          // 顶部「设备仅支持 2.4G WiFi 配网」提示条：10-27 曾去掉，2026-10-29 按产品口径恢复（同小程序）
+          WifiTipRow(text: l10n.wifiOnly24G),
           // 搜不到时的手动入口：灰字，点击进账号密码页手动填名称
           GestureDetector(
             behavior: HitTestBehavior.opaque,

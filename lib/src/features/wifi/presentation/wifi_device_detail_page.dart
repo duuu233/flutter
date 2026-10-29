@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -402,7 +403,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
 }
 
 /// 电量 → `BatteryLevel/battery-{档}.png`（按 10 取最近档，同我的设备卡片）。
-String _batteryAsset(int battery) => 'assets/images/BatteryLevel/battery-${((battery.clamp(0, 100) + 5) ~/ 10) * 10}.png';
+String _batteryAsset(int battery) => 'assets/images/BatteryLevel/battery-${((math.min(100, math.max(0, battery)) + 5) ~/ 10) * 10}.png';
 
 /// WiFi 版设备的操作栏「投屏 | 轮播设置」（我的设备卡片与 WiFi 设备详情共用，同蓝牙版卡片的操作栏样式）。
 /// V1.4 更新说明 1.5：原「刷新状态」改为「轮播设置」；状态随进页与 WS device.status 自动重查。

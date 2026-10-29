@@ -45,12 +45,14 @@ abstract final class IotApi {
   /// [addToCarousel]（实现报告反馈追加内容第二节，默认 false）：true 把本次图片加入当前轮播选择，与 refresh 独立；
   /// 返回多 carouselUpdated：null 没传 / true 已加入（全部相册时为清缓存）/ false 未加入（未开轮播、已满 100、锁冲突等），
   /// 未加入不影响投屏本身。
+  /// [renderMode]（2026-10-28）：后台产品配置的渲染模式（esp32 / fpga16），有值才带、原样传（见 PhotoFrameState.resolveRenderMode）。
   static Future<Map<String, dynamic>> play(
     String deviceNo,
     String filePath,
     String type, {
     bool refresh = true,
     bool addToCarousel = false,
+    String renderMode = '',
     void Function(double percent)? onProgress,
   }) async {
     return _asMap(
@@ -62,6 +64,7 @@ abstract final class IotApi {
           'type': type,
           if (!refresh) 'refresh': 'false',
           if (addToCarousel) 'addToCarousel': 'true',
+          if (renderMode.trim().isNotEmpty) 'renderMode': renderMode.trim(),
         },
         timeout: playTimeout,
         onProgress: onProgress,

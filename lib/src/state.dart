@@ -2650,7 +2650,16 @@ class PhotoFrameState extends ChangeNotifier {
   /// 请求本身照常跑完，成功了下次刷新列表就用上（与小程序 `PRODUCT_CATALOG_WAIT_MS` 同值）。
   static const Duration _productCatalogWait = Duration(seconds: 3);
 
+  /// 产品列表按 productId 的原始行（2026-10-28 同小程序：投屏取产品的 renderMode / screenType）。
+  Map<int, Map<String, dynamic>> _productRows = const {};
+
   Map<int, String> _cacheProductBroadcastIds(List<Map<String, dynamic>> rows) {
+    if (rows.isNotEmpty) {
+      _productRows = {
+        for (final row in rows)
+          if (_asInt(row['productId']) > 0) _asInt(row['productId']): row,
+      };
+    }
     final map = <int, String>{};
     for (final row in rows) {
       final productId = _asInt(row['productId']);
@@ -2671,6 +2680,35 @@ class PhotoFrameState extends ChangeNotifier {
     }
     return map;
   }
+
+  /// 读设备所属产品的一个配置字段（同小程序 `api.resolveRenderMode / resolveScreenType` 的查找顺序）：
+  /// 按 productId 查产品列表（最多等 [_productCatalogWait]），没有再按设备ID查 getProductByDevice；都取不到返回空串，不抛错。
+  /// 只读产品接口的字段：DeviceItem.screenType 是固件 / 广播的型号字节，不能拿来当投屏 type。
+  Future<String> _productField(DeviceItem device, String field) async {
+    String read(Map<String, dynamic>? row) {
+      final value = row?[field];
+      return value == null ? '' : '$value'.trim();
+    }
+
+    if (device.productId > 0) {
+      await _loadProductBroadcastIds().timeout(_productCatalogWait, onTimeout: () => const <int, String>{});
+      final fromCatalog = read(_productRows[device.productId]);
+      if (fromCatalog.isNotEmpty) {
+        return fromCatalog;
+      }
+    }
+    if (device.serialNumber.trim().isEmpty) {
+      return '';
+    }
+    return read((await BoltFoxApi.lookupProductByDevice(device.serialNumber)).product);
+  }
+
+  /// WiFi 投屏的渲染模式（2026-10-28 同小程序）：后台产品配置的 renderMode（esp32 / fpga16），原样传给 play；取不到为空串（不传）。
+  Future<String> resolveRenderMode(DeviceItem device) => _productField(device, 'renderMode');
+
+  /// 投屏 type（2026-10-28 同小程序）：后台产品配置的屏幕方向 screenType（0=竖屏、1=横屏），蓝牙版抖动出帧、WiFi play、
+  /// 轮播投第一张三处同口径原样传；取不到为空串，由调用方按分辨率回退旧口径（[DitheringApi.typeForDevice]）。
+  Future<String> resolveScreenType(DeviceItem device) => _productField(device, 'screenType');
 
   /// 产品列表的「广播名 → 尺寸型号」（会话缓存，与设备图回查共用一次请求；失败静默返回空表）。
   /// 绑定页搜索列表据此按蓝牙广播名显示尺寸（见 [ProductBroadcastId.sizeModelOfScan]）。

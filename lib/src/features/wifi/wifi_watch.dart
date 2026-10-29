@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../network/iot/iot_api.dart';
 import '../../network/iot/iot_ws.dart';
@@ -17,6 +18,8 @@ import '../../state.dart';
 ///       - 长连接断线后重连成功（如熄屏回前台，[IotWs] 回前台立即重连）→ 断线期间的推送会丢，全部重查一次。
 /// 订阅归属：只退订自己订阅的；某台设备已被别处（如 WiFi 详情页）订阅时不重复订阅，也不替它退订。
 /// 电量只在设备心跳（600 秒）时更新、推送不带电量：停留在页面期间电量不会自己变，需后端心跳时也推送。
+/// 进后台（2026-10-29 同小程序 onHide 含进后台）：App 切到后台时退订，回前台按上次的设备重新订阅并全部重查一次；
+/// 页面已 [stop] 的不受影响。
 class WifiWatch {
   WifiWatch(this.onChange);
 
@@ -26,8 +29,49 @@ class WifiWatch {
   final List<String> _owned = <String>[];
   final List<StreamSubscription<Object>> _subs = <StreamSubscription<Object>>[];
 
+  /// 页面在用（[update] 之后、[stop] 之前）时跟随 App 前后台；后台期间只记设备，回前台再订。
+  AppLifecycleListener? _lifecycle;
+  List<DeviceItem> _lastDevices = const [];
+  bool _active = false;
+  bool _background = false;
+
+  void _ensureLifecycle() {
+    _lifecycle ??= AppLifecycleListener(
+      onStateChange: (state) {
+        if (!_active) {
+          return;
+        }
+        if (state == AppLifecycleState.paused && !_background) {
+          _background = true;
+          _release();
+        } else if (state == AppLifecycleState.resumed && _background) {
+          _background = false;
+          update(_lastDevices);
+          if (_watching.isNotEmpty) {
+            _notify(_watching.toSet(), 'resume');
+          }
+        }
+      },
+    );
+  }
+
+  /// 退订自己订阅的、摘掉监听，但保留 [_lastDevices]（进后台用）。
+  void _release() {
+    for (final deviceNo in _owned) {
+      IotWs.instance.unsubscribe(deviceNo);
+    }
+    _owned.clear();
+    _watching.clear();
+    _unlisten();
+  }
+
   void _notify(Set<String> deviceNos, String reason) {
-    debugPrint('[WiFi订阅] ${reason == 'push' ? '收到状态推送，重查' : '长连接重连，全部重查'} ${deviceNos.join(',')}');
+    final what = switch (reason) {
+      'push' => '收到状态推送，重查',
+      'resume' => '回到前台，全部重查',
+      _ => '长连接重连，全部重查',
+    };
+    debugPrint('[WiFi订阅] $what ${deviceNos.join(',')}');
     try {
       onChange(deviceNos);
     } catch (error) {
@@ -67,6 +111,12 @@ class WifiWatch {
 
   /// 传当前页面上的设备（只订阅其中的 WiFi 版）。
   void update(Iterable<DeviceItem> devices) {
+    _lastDevices = devices.toList();
+    _active = true;
+    _ensureLifecycle();
+    if (_background) {
+      return; // 后台期间只记设备，回前台再订
+    }
     final next = <String>[];
     for (final device in devices) {
       final deviceNo = device.isWifi ? IotApi.plainDeviceNo(device.serialNumber) : '';
@@ -98,11 +148,11 @@ class WifiWatch {
   }
 
   void stop() {
-    for (final deviceNo in _owned) {
-      IotWs.instance.unsubscribe(deviceNo);
-    }
-    _owned.clear();
-    _watching.clear();
-    _unlisten();
+    _active = false;
+    _background = false;
+    _lastDevices = const [];
+    _lifecycle?.dispose();
+    _lifecycle = null;
+    _release();
   }
 }

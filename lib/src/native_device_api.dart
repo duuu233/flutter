@@ -72,6 +72,15 @@ class NativeDeviceApi {
     return DevicePermissionStatus.fromMap(result);
   }
 
+  /// 屏幕常亮开关（2026-10-29，WiFi 配网期间用，同小程序 `wx.setKeepScreenOn`）。best-effort：通道异常吞掉。
+  static Future<void> setKeepScreenOn(bool on) async {
+    try {
+      await _channel.invokeMethod<void>('setKeepScreenOn', {'on': on});
+    } catch (_) {
+      // 未实现的平台 / 通道异常：不影响配网
+    }
+  }
+
   static Future<DevicePermissionStatus> requestBluetoothPermissions() async {
     // 通道异常（方法未实现的平台 / PlatformException）不能冒泡：
     // ensurePermission 等调用方没有兜底 try/catch，会直接崩掉连接流程。

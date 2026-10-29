@@ -209,11 +209,15 @@ class _WifiSlideshowPageState extends State<WifiSlideshowPage> {
       outcome = l10n.wifiSlideFirstDownloadFailed;
     } else {
       final device = _device;
+      // type 取产品屏幕方向 screenType（2026-10-28 同小程序），产品没配才按分辨率回退；带产品的 renderMode
+      final screenType = await widget.state.resolveScreenType(device);
+      final renderMode = await widget.state.resolveRenderMode(device);
       final result = await WifiProjection.projectOne(
         l10n: l10n,
         deviceNo: _deviceNo,
         filePath: filePath,
-        type: DitheringApi.typeForDevice(device.screenWidth, device.screenHeight),
+        type: screenType.isNotEmpty ? screenType : DitheringApi.typeForDevice(device.screenWidth, device.screenHeight),
+        renderMode: renderMode,
         refresh: true,
         onStage: (_, _) {},
         isCancelled: () => !mounted,

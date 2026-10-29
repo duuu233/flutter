@@ -110,6 +110,13 @@ final class DeviceApiHandler: NSObject {
       decodeImageRgba(call, result: result)
     case "openBluetoothSettings", "openAppSettings":
       openAppSettings(result)
+    case "setKeepScreenOn":
+      // 屏幕常亮（2026-10-29，WiFi 配网全程约 1 分钟，息屏会让蓝牙被挂起；同小程序 setKeepScreenOn）
+      let on = ((call.arguments as? [String: Any])?["on"] as? Bool) ?? false
+      DispatchQueue.main.async {
+        UIApplication.shared.isIdleTimerDisabled = on
+        result(nil)
+      }
     default:
       result(FlutterMethodNotImplemented)
     }

@@ -41,7 +41,7 @@ extension WifiL10n on AppL10n {
     "Can't find your Wi-Fi? Enter it manually",
     'Wi-Fiが見つからない場合は手動で入力してください',
   );
-  String get wifiListHead => pick('设备附近的WiFi', 'Wi-Fi near the device', 'デバイス付近のWi-Fi');
+  String get wifiListHead => pick('设备附近的2.4G WiFi', '2.4 GHz Wi-Fi near the device', 'デバイス付近の2.4GHz Wi-Fi');
   String get wifiRescan => pick('重新搜索', 'Search again', '再検索');
   String get wifiConnectingDevice => pick('正在连接设备...', 'Connecting to device...', 'デバイスに接続中...');
   String get wifiSearchingNetwork => pick('正在搜索网络...', 'Searching for networks...', 'ネットワークを検索中...');
@@ -232,9 +232,9 @@ extension WifiL10n on AppL10n {
       pick('第 $current / $total 张', '$current / $total', '$current / $total 枚目');
   String wifiCastItemNo(int index) => pick('第 $index 张', 'Photo $index', '$index 枚目');
   String get wifiCastNote => pick(
-    '进度为图片上传进度；发送后设备会自行下载并刷新屏幕，多张时只在最后一张刷屏',
-    'Progress shows the upload. After sending, the device downloads and refreshes the screen; with several photos it refreshes only on the last one.',
-    '進捗はアップロードの進捗です。送信後、デバイスがダウンロードして画面を更新します。複数枚の場合は最後の1枚でのみ更新します',
+    '进度含图片上传与处理；发送后设备会自行下载并刷新屏幕，多张时只在最后一张刷屏',
+    'Progress covers uploading and processing. After sending, the device downloads and refreshes the screen; with several photos it refreshes only on the last one.',
+    '進捗にはアップロードと処理が含まれます。送信後、デバイスがダウンロードして画面を更新します。複数枚の場合は最後の1枚でのみ更新します',
   );
   String get wifiCastRetryFailed => pick('重试未成功的', 'Retry unsuccessful', '失敗分を再試行');
   String get wifiCastDone => pick('完成', 'Done', '完了');
