@@ -6,12 +6,12 @@
 
 ## 需求
 
-1. 抖动出帧的基地址不再固定：先调 `https://iot.boltfox.cn/api/device/download-endpoint`，返回结构与 IoT 接口一致（`{ code: 0, msg, data }`），`data` 为基地址，如 `https://api.boltfox.cn/` 或其它反代域名；最终请求 基地址 + `Client/Basic/imageDitheringBinDownload`，参数不变。
+1. 抖动出帧的基地址不再固定：先调 `https://iot.boltfox.cn/api/device/download-endpoint`，返回结构与 IoT 接口一致（`{ code: 0, msg, data }`），`data` 为 `{ region, endpoint }`，取 `data.endpoint` 为基地址（联调实测 `{"region":"CN","endpoint":"https://apirp.boltstar.net"}`；最初按 `data` 直接是字符串实现，同日更正，字符串形式仍兼容）；最终请求 基地址 + `Client/Basic/imageDitheringBinDownload`，参数不变。
 2. 「我的设备」蓝牙设备连接后，连上的设备排到第一张，列表当前位置要平滑滚回顶部。
 
 ## 改动
 
-- `DitheringApi.resolveBaseUrl`：`GET download-endpoint`（Header `userToken`，5 秒超时，走 `ApiClient.instance.httpClient`），`code=0` 且 `data` 是 http(s) 地址时去掉末尾 `/` 作为基地址，内存缓存 10 分钟；网络失败、`code≠0`、`data` 不是地址时回落 `ApiConfig.baseUrl`，不缓存，下次重新取。`requestFrameBin` 先取基地址再上传，form 字段、公共参数、报错与重试均不变。
+- `DitheringApi.resolveBaseUrl`：`GET download-endpoint`（Header `userToken`，5 秒超时，走 `ApiClient.instance.httpClient`），`code=0` 且 `data.endpoint`（兼容 `data` 为字符串）是 http(s) 地址时去掉末尾 `/` 作为基地址，内存缓存 10 分钟；网络失败、`code≠0`、`data` 不是地址时回落 `ApiConfig.baseUrl`，不缓存，下次重新取。`requestFrameBin` 先取基地址再上传，form 字段、公共参数、报错与重试均不变。
 - `ApiClient.postMultipartForBytes` 新增可选 `baseUrl`，`_uri` 支持覆盖默认基地址；`/Client/` 公共 query 仍按路径判定照常拼，其它调用不受影响。
 - `MyDevicesPage`：`ListView` 挂 `ScrollController`；`promotedDeviceId` 由空变为某台（连接设备切换、那台已排到第一张并开始播上移动效）时，下一帧 `animateTo(0, 300ms, easeOutCubic)`，已在顶部不动。
 - 小程序后台域名限制不适用于 APP；APP 需能访问 `iot.boltfox.cn` 与下发的基地址域名。

@@ -590,7 +590,8 @@ Logout / successful account deletion / session expiry
    `/Client/Basic/imageDitheringBinDownload` with the normal common params/userToken; a 401/406 is a
    normal session expiry (no separate third-party token, no forced re-login retry). Since 2026-11-02 the
    base URL is not fixed: `GET https://iot.boltfox.cn/api/device/download-endpoint` (header `userToken`,
-   `{ code: 0, data: base }`, e.g. `https://api.boltfox.cn/` or a reverse-proxy domain) is called first and
+   `{ code: 0, data: { region, endpoint } }`; `data.endpoint` is the base, e.g. `https://apirp.boltstar.net`;
+   a plain string `data` is still accepted) is called first and
    the frame request goes to base (trailing `/` stripped) + the same path; any failure falls back to
    `ApiConfig.baseUrl` (not cached), success is cached for 10 minutes.
 7. **Real device slot is persisted.** Successful projection records the device's physical

@@ -40,7 +40,7 @@ BoltStar 当前使用两套不同的远端服务（2026-10-23 起抖动出帧并
 | 版本检查 | `GET /Client/Basic/getLastVersion` | `getLastVersion` | Android/iOS 均使用 |
 | Android 下载 | `GET /Client/Basic/getAndroidDownload` | `getAndroidDownload` | 仅 Android 安装引导 |
 | 基础数据 | `GET /Client/Basic/getBasicData` | `getBasicData` | 配置/字典 |
-| 图片抖动出帧 | `POST /Client/Basic/imageDitheringBinDownload` | `DitheringApi.requestFrameBin` | form-data：`color=BWRYGB`、`imageDitheringModes=2`、`type`、`file`；返回 .bin 二进制（2026-10-23 替代第三方接口与 `getXTYUserToken`）；2026-11-02 起基地址先 `GET https://iot.boltfox.cn/api/device/download-endpoint`（Header `userToken`，返回 `{ code: 0, msg, data }`，`data` 为基地址如 `https://api.boltfox.cn/`）取得，再拼本路径，参数不变；取不到回落 `ApiConfig.baseUrl` |
+| 图片抖动出帧 | `POST /Client/Basic/imageDitheringBinDownload` | `DitheringApi.requestFrameBin` | form-data：`color=BWRYGB`、`imageDitheringModes=2`、`type`、`file`；返回 .bin 二进制（2026-10-23 替代第三方接口与 `getXTYUserToken`）；2026-11-02 起基地址先 `GET https://iot.boltfox.cn/api/device/download-endpoint`（Header `userToken`，返回 `{ code: 0, msg, data: { region, endpoint } }`，`data.endpoint` 为基地址如 `https://apirp.boltstar.net`）取得，再拼本路径，参数不变；取不到回落 `ApiConfig.baseUrl` |
 | 通用文件上传 | `POST /Client/Basic/setFileUpload` | `setFileUpload` | form-data 字段 `fileParam` |
 | 投屏原图上传 | `POST /Client/Basic/setUserProductUpload` | `setUserProductUpload` | 建记录并上传原图 |
 

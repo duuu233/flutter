@@ -14,7 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// 抖动出帧 2026-10-23 起改调我方后端 /Client/Basic/imageDitheringBinDownload：
 /// 参数同原第三方接口，鉴权用本 App 用户自己的 userToken，不再有第三方 token。
-/// 2026-11-02 起基地址先取 download-endpoint 的 data（如 https://api.boltfox.cn/），再拼同一路径，参数不变；
+/// 2026-11-02 起基地址先取 download-endpoint 的 data.endpoint（data 形如 { region, endpoint }；兼容字符串），再拼同一路径，参数不变；
 /// 取不到回落 ApiConfig.baseUrl，成功缓存。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -52,7 +52,7 @@ void main() {
     sent = <http.Request>[];
     endpointSent = <http.Request>[];
     endpointHandle = (_) async =>
-        json({'code': 0, 'msg': 'ok', 'data': 'https://api.boltfox.cn/'});
+        json({'code': 0, 'msg': 'ok', 'data': {'region': 'CN', 'endpoint': 'https://api.boltfox.cn/'}});
     DitheringApi.resetEndpointCache();
     SharedPreferences.setMockInitialValues({});
     ApiSession.instance.setTokens(userToken: 'user-token', jwtToken: 'jwt');
@@ -151,7 +151,7 @@ void main() {
 
   test('反代域名带路径：基地址去尾 / 后照拼', () async {
     endpointHandle = (_) async =>
-        json({'code': 0, 'data': 'https://proxy.example.com/api/'});
+        json({'code': 0, 'data': {'region': 'CN', 'endpoint': 'https://proxy.example.com/api/'}});
     final frame = Uint8List.fromList(List<int>.generate(8, (i) => i));
     useClient((_) async => frameResponse(frame));
     await DitheringApi.requestFrameBin(filePath: imagePath, type: '0');
@@ -160,6 +160,26 @@ void main() {
       'https://proxy.example.com/api/Client/Basic/imageDitheringBinDownload',
     );
     expect(sent.single.url.queryParameters['userToken'], 'user-token');
+  });
+
+  test('联调实测返回 data={region, endpoint}：取 endpoint；data 是字符串也兼容', () async {
+    final frame = Uint8List.fromList(List<int>.generate(8, (i) => i));
+    useClient((_) async => frameResponse(frame));
+    endpointHandle = (_) async => json({
+          'code': 0,
+          'data': {'region': 'CN', 'endpoint': 'https://apirp.boltstar.net'},
+        });
+    await DitheringApi.requestFrameBin(filePath: imagePath, type: '0');
+    expect(
+      '${sent.last.url.origin}${sent.last.url.path}',
+      'https://apirp.boltstar.net/Client/Basic/imageDitheringBinDownload',
+    );
+
+    DitheringApi.resetEndpointCache();
+    endpointHandle = (_) async =>
+        json({'code': 0, 'data': 'https://str.example.com/'});
+    await DitheringApi.requestFrameBin(filePath: imagePath, type: '0');
+    expect(sent.last.url.origin, 'https://str.example.com');
   });
 
   test('取基地址失败（网络 / code≠0 / data 非地址）回落默认域名且不缓存', () async {
@@ -178,6 +198,14 @@ void main() {
     await DitheringApi.requestFrameBin(filePath: imagePath, type: '0');
     expect(sent.last.url.origin, Uri.parse(ApiConfig.baseUrl).origin);
 
-    expect(endpointSent, hasLength(3), reason: '失败不缓存，每次重新取');
+    endpointHandle = (_) async => json({
+          'code': 0,
+          'data': {'region': 'CN'},
+        });
+    await DitheringApi.requestFrameBin(filePath: imagePath, type: '0');
+    expect(sent.last.url.origin, Uri.parse(ApiConfig.baseUrl).origin,
+        reason: 'data 里没有 endpoint 回落默认');
+
+    expect(endpointSent, hasLength(4), reason: '失败不缓存，每次重新取');
   });
 }
