@@ -1,14 +1,17 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart' show MediaType;
 
 import '../device/ble/frame_protocol.dart';
 import 'api_client.dart';
+import 'api_config.dart';
 import 'api_exception.dart';
+import 'api_session.dart';
 
 /// 抖动出帧接口封装（对齐小程序 `utils/dithering.js`）：
 /// 把「设备分辨率的图片文件」multipart 上传，收回**二进制六色 4bpp 帧(.bin)**，
@@ -17,6 +20,11 @@ import 'api_exception.dart';
 /// 2026-10-23 起改调我方后端 `POST /Client/Basic/imageDitheringBinDownload`（form-data，参数与原第三方
 /// seekink 接口一致：color / imageDitheringModes / type / file）；原第三方接口及其 token
 /// （`/Client/Basic/getXTYUserToken`）不再使用。
+///
+/// 2026-11-02 起基地址不再固定（对齐小程序）：先 `GET https://iot.boltfox.cn/api/device/download-endpoint`
+/// （Header `userToken`，返回 `{ code: 0, msg, data }`，data 即基地址，如 `https://api.boltfox.cn/` 或其它反代域名），
+/// 再请求 基地址（去尾 /）+ `/Client/Basic/imageDitheringBinDownload`，参数全部不变。取基地址失败时回落
+/// [ApiConfig.baseUrl]，不缓存失败结果；成功结果缓存 10 分钟。
 ///
 /// 实现要点/注意：
 ///   · 公共参数 terminal/language/device/userToken 由 [ApiClient.postMultipartForBytes] 与其它接口
@@ -27,6 +35,70 @@ class DitheringApi {
   DitheringApi._();
 
   static const String _path = '/Client/Basic/imageDitheringBinDownload';
+
+  /// 出帧服务基地址由该接口下发（data 字段）
+  static const String endpointUrl =
+      'https://iot.boltfox.cn/api/device/download-endpoint';
+  static const Duration _endpointTimeout = Duration(seconds: 5);
+  static const Duration _endpointCacheTtl = Duration(minutes: 10);
+
+  static String? _cachedBaseUrl;
+  static DateTime? _cachedAt;
+
+  @visibleForTesting
+  static void resetEndpointCache() {
+    _cachedBaseUrl = null;
+    _cachedAt = null;
+  }
+
+  /// 基地址规整：去掉末尾 /，只认 http(s) 绝对地址；不合格返回 null
+  static String? _normalizeBaseUrl(Object? value) {
+    if (value is! String) return null;
+    final text = value.trim();
+    if (!RegExp(r'^https?://[^/\s]+', caseSensitive: false).hasMatch(text)) {
+      return null;
+    }
+    return text.replaceAll(RegExp(r'/+$'), '');
+  }
+
+  /// 取出帧服务基地址；任何失败都回落 [ApiConfig.baseUrl]（不缓存）
+  static Future<String> resolveBaseUrl() async {
+    final cachedAt = _cachedAt;
+    if (_cachedBaseUrl != null &&
+        cachedAt != null &&
+        DateTime.now().difference(cachedAt) < _endpointCacheTtl) {
+      return _cachedBaseUrl!;
+    }
+    try {
+      final token = ApiSession.instance.userToken;
+      final response = await ApiClient.instance.httpClient
+          .get(
+            Uri.parse(endpointUrl),
+            headers: token.isEmpty ? null : {'userToken': token},
+          )
+          .timeout(_endpointTimeout);
+      final ok = response.statusCode >= 200 && response.statusCode < 300;
+      final decoded = ok && response.bodyBytes.isNotEmpty
+          ? jsonDecode(utf8.decode(response.bodyBytes))
+          : null;
+      final code = decoded is Map ? decoded['code'] : null;
+      final baseUrl = decoded is Map && (code == 0 || code == '0')
+          ? _normalizeBaseUrl(decoded['data'])
+          : null;
+      if (baseUrl != null) {
+        _cachedBaseUrl = baseUrl;
+        _cachedAt = DateTime.now();
+        debugPrint('[抖动bin] 出帧地址：$baseUrl');
+        return baseUrl;
+      }
+      debugPrint(
+        '[抖动bin] 取出帧地址失败，回落默认域名：HTTP ${response.statusCode} ${response.body}',
+      );
+    } catch (error) {
+      debugPrint('[抖动bin] 取出帧地址异常，回落默认域名：$error');
+    }
+    return ApiConfig.baseUrl;
+  }
 
   /// 与 ApiConfig.uploadTimeout 约定一致；网络类失败退避重试（接口是纯转换、无记账副作用，重试安全）
   static const Duration _timeout = Duration(seconds: 20);
@@ -54,6 +126,7 @@ class DitheringApi {
   }) async {
     final fileBytes = await File(filePath).readAsBytes();
     debugPrint('[抖动bin] 请求：color=BWRYGB imageDitheringModes=2 type=$type 上传=${fileBytes.length}字节');
+    final baseUrl = await resolveBaseUrl();
 
     var attemptsLeft = _retryAttempts;
     while (true) {
@@ -72,6 +145,7 @@ class DitheringApi {
             contentType: MediaType('image', 'jpeg'),
           ),
           timeout: _timeout,
+          baseUrl: baseUrl,
         );
         debugPrint('[抖动bin] 返回：字节数=${bytes.length}');
         return bytes;

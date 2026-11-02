@@ -588,7 +588,11 @@ Logout / successful account deletion / session expiry
    response model merely because both use HTTP.
 6. **Dithering uses the user's own session.** Since 2026-10-23 frames come from BoltFox
    `/Client/Basic/imageDitheringBinDownload` with the normal common params/userToken; a 401/406 is a
-   normal session expiry (no separate third-party token, no forced re-login retry).
+   normal session expiry (no separate third-party token, no forced re-login retry). Since 2026-11-02 the
+   base URL is not fixed: `GET https://iot.boltfox.cn/api/device/download-endpoint` (header `userToken`,
+   `{ code: 0, data: base }`, e.g. `https://api.boltfox.cn/` or a reverse-proxy domain) is called first and
+   the frame request goes to base (trailing `/` stripped) + the same path; any failure falls back to
+   `ApiConfig.baseUrl` (not cached), success is cached for 10 minutes.
 7. **Real device slot is persisted.** Successful projection records the device's physical
    `imgIndex`; `0` is valid, `-1` means unknown, and device mask validation protects destructive
    commands.
