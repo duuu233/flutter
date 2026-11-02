@@ -22,7 +22,8 @@ import 'api_session.dart';
 /// （`/Client/Basic/getXTYUserToken`）不再使用。
 ///
 /// 2026-11-02 起基地址不再固定（对齐小程序）：先 `GET https://iot.boltfox.cn/api/device/download-endpoint`
-/// （Header `userToken`，返回 `{ code: 0, msg, data }`，data 即基地址，如 `https://api.boltfox.cn/` 或其它反代域名），
+/// （Header `userToken`，返回 `{ code: 0, msg, data: { region, endpoint } }`，取 `data.endpoint` 为基地址，
+/// 如 `https://apirp.boltstar.net`；同日联调确认 data 是对象，兼容起见 data 直接是地址字符串也认），
 /// 再请求 基地址（去尾 /）+ `/Client/Basic/imageDitheringBinDownload`，参数全部不变。取基地址失败时回落
 /// [ApiConfig.baseUrl]，不缓存失败结果；成功结果缓存 10 分钟。
 ///
@@ -36,7 +37,7 @@ class DitheringApi {
 
   static const String _path = '/Client/Basic/imageDitheringBinDownload';
 
-  /// 出帧服务基地址由该接口下发（data 字段）
+  /// 出帧服务基地址由该接口下发（data.endpoint 字段）
   static const String endpointUrl =
       'https://iot.boltfox.cn/api/device/download-endpoint';
   static const Duration _endpointTimeout = Duration(seconds: 5);
@@ -49,6 +50,13 @@ class DitheringApi {
   static void resetEndpointCache() {
     _cachedBaseUrl = null;
     _cachedAt = null;
+  }
+
+  /// download-endpoint 的 data → 基地址：`{ region: 'CN', endpoint: 'https://apirp.boltstar.net' }` 取 endpoint；字符串原样
+  static Object? _endpointOf(Object? data) {
+    if (data is String) return data;
+    if (data is Map) return data['endpoint'];
+    return null;
   }
 
   /// 基地址规整：去掉末尾 /，只认 http(s) 绝对地址；不合格返回 null
@@ -83,7 +91,7 @@ class DitheringApi {
           : null;
       final code = decoded is Map ? decoded['code'] : null;
       final baseUrl = decoded is Map && (code == 0 || code == '0')
-          ? _normalizeBaseUrl(decoded['data'])
+          ? _normalizeBaseUrl(_endpointOf(decoded['data']))
           : null;
       if (baseUrl != null) {
         _cachedBaseUrl = baseUrl;
