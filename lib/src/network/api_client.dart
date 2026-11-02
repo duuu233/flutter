@@ -136,8 +136,11 @@ class ApiClient {
   }
 
   /// 拼接 URL，绝对地址原样使用，并按需附加 query（自动过滤 null / 空串）。
-  Uri _uri(String path, [Map<String, dynamic>? query]) {
-    final base = path.startsWith('http') ? path : '${ApiConfig.baseUrl}$path';
+  /// [baseUrl] 为空时用 [ApiConfig.baseUrl]（抖动出帧的基地址由接口下发，见 `DitheringApi`）。
+  Uri _uri(String path, [Map<String, dynamic>? query, String? baseUrl]) {
+    final base = path.startsWith('http')
+        ? path
+        : '${(baseUrl == null || baseUrl.isEmpty) ? ApiConfig.baseUrl : baseUrl}$path';
     final uri = Uri.parse(base);
     if (query == null || query.isEmpty) {
       return uri;
@@ -440,13 +443,15 @@ class ApiClient {
   /// 回的是 JSON/文本（业务报错、登录过期 401/406）或非 2xx 时交给 [_parse] 同一套判定抛
   /// [ApiException]，绝不把错误体当文件返回。不做自动重试：网络失败原样抛
   /// TimeoutException / http.ClientException / IOException，由调用方决定是否重试。
+  /// [baseUrl]（2026-11-02）：换掉默认的 [ApiConfig.baseUrl]，公共参数照常拼（`/Client/` 判定看 [path]）。
   Future<Uint8List> postMultipartForBytes(
     String path, {
     required Map<String, String> fields,
     required http.MultipartFile file,
     Duration timeout = ApiConfig.uploadTimeout,
+    String? baseUrl,
   }) async {
-    final uri = _uri(path, _clientQuery(path));
+    final uri = _uri(path, _clientQuery(path), baseUrl);
     _logRequest(
       'POST multipart',
       uri,

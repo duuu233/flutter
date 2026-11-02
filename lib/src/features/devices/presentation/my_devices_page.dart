@@ -113,6 +113,37 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
   // 列表数据以上层传入的 `widget.devices` 为准（单一数据源）；未传入时为空列表（不再用演示数据）。
   List<MyDeviceOverview> get _devices => widget.devices ?? const [];
 
+  /// 设备列表滚动位置：新连上的设备排到第一张时要平滑滚回顶部（对齐小程序 2026-11-02）。
+  final ScrollController _scroll = ScrollController();
+
+  @override
+  void didUpdateWidget(MyDevicesPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // promotedDeviceId 由空变为某台 = 连接设备刚切换、那台已被排到第一张并开始播上移动效；
+    // 用户停在列表下方时看不到它，所以同时把列表平滑滚回顶部。
+    final promoted = widget.promotedDeviceId;
+    if (promoted.isNotEmpty && promoted != oldWidget.promotedDeviceId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToTop());
+    }
+  }
+
+  void _scrollToTop() {
+    if (!mounted || !_scroll.hasClients || _scroll.offset <= 0) {
+      return;
+    }
+    _scroll.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return FigmaScreen(
@@ -148,6 +179,7 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
                     // 按 WiFi 版 / 蓝牙版分组（2026-10-27 同步小程序 main-wifi）：WiFi 版在前；某组没有设备就不出该组标题。
                     // 组内仍按上层排好的顺序（已连接 → 最近绑定 → 接口原序）。
                     child: ListView(
+                      controller: _scroll,
                       padding: const EdgeInsets.only(bottom: 12),
                       physics: const AlwaysScrollableScrollPhysics(),
                       children: _groupedCards(context),
