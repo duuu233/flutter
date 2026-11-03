@@ -22,7 +22,8 @@ class WifiShareMember {
     id: '${row['userProductId'] ?? ''}',
     name: '${row['userName'] ?? row['nickName'] ?? ''}'.trim(),
     avatar: '${row['avatar'] ?? row['avatarUrl'] ?? ''}'.trim(),
-    joinedAt: '${row['createTime'] ?? row['joinTime'] ?? row['addTime'] ?? ''}'.trim(),
+    // 加入时间取分享列表接口的 joinTime，原样显示；为空页面显示「--」（2026-10-29 同小程序，不再拿 createTime 兜底）
+    joinedAt: '${row['joinTime'] ?? ''}'.trim(),
   );
 
   final String id;

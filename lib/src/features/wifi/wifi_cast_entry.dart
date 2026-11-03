@@ -48,12 +48,13 @@ Future<void> startWifiCast(BuildContext context, PhotoFrameState state, DeviceIt
 
 /// WiFi 版「轮播设置」入口（我的设备卡片 / WiFi 设备详情共用）：查询只要权限、离线也能看，不拦离线；
 /// 本地模式（2026-10-29）按钮可点，只提示「当前设备状态：本地模式，请恢复设备网络再试」。保存时轮播页再判断状态。
-void openWifiSlideshow(BuildContext context, PhotoFrameState state, DeviceItem device) {
+/// 返回的 Future 在轮播页关闭后完成（调用方据此重查轮播中标记）。
+Future<void> openWifiSlideshow(BuildContext context, PhotoFrameState state, DeviceItem device) async {
   if (WifiStatusStore.instance.of(device.id).status == WifiOnlineStatus.local) {
     AppToast.warn(context, AppL10n.of(context).wifiLocalTip);
     return;
   }
-  Navigator.of(context).push<void>(
+  await Navigator.of(context).push<void>(
     AppPageRoute(builder: (_) => WifiSlideshowPage(state: state, deviceId: device.id)),
   );
 }

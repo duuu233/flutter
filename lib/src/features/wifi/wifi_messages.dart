@@ -47,6 +47,18 @@ abstract final class WifiMessages {
   static String detailText(AppL10n l10n, WifiMessage message) {
     final p = message.payload;
     final parts = <String>[];
+    // 固件升级通知（2026-11-02 同小程序）：版本变化一行；reason 是短码（timeout 超时），翻成文案
+    if (message.type.startsWith('OTA_')) {
+      if (_has(p['baseVersion']) && _has(p['version'])) {
+        parts.add(l10n.wifiOtaVersionChange('${p['baseVersion']}', '${p['version']}'));
+      } else if (_has(p['version'])) {
+        parts.add(l10n.wifiOtaTargetVersion('${p['version']}'));
+      }
+      if (p['reason'] == 'timeout') {
+        parts.add(l10n.wifiOtaTimeout);
+      }
+      return parts.join(l10n.wifiMsgSeparator);
+    }
     if (_has(p['level'])) {
       parts.add(message.type == 'WIFI_WEAK' ? l10n.wifiMsgSignalLevel('${p['level']}') : l10n.wifiMsgBatteryLevel('${p['level']}'));
     }

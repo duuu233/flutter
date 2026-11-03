@@ -499,6 +499,9 @@ extension WifiL10n on AppL10n {
     'PLAY_DOWNLOAD_FAILED' => pick('投屏失败：设备下载图片失败', 'Cast failed: the device could not download the image', 'キャスト失敗：デバイスが画像をダウンロードできませんでした'),
     'PLAY_STORAGE_ERROR' => pick('投屏失败：设备存储异常', 'Cast failed: device storage error', 'キャスト失敗：デバイスのストレージエラー'),
     'PLAY_FAILED' => pick('投屏失败', 'Cast failed', 'キャスト失敗'),
+    // 2026-11-02（前端对接文档 20261031 第四节）：只在设备重启后服务端确认版本时发
+    'OTA_SUCCESS' => pick('固件升级成功', 'Firmware updated', 'ファームウェアを更新しました'),
+    'OTA_FAILED' => pick('固件升级失败', 'Firmware update failed', 'ファームウェアの更新に失敗しました'),
     'EXCEPTION_UP_PARSE' => pick('设备上报数据解析失败', 'Failed to parse device data', 'デバイスのデータを解析できませんでした'),
     'EXCEPTION_UNKNOWN_ACTION' => pick('设备上报了未知指令', 'The device reported an unknown command', 'デバイスが不明なコマンドを報告しました'),
     'EXCEPTION_COMMAND_BUILD' => pick('平台下发指令构造失败', 'Failed to build the command', 'コマンドの作成に失敗しました'),
@@ -508,6 +511,95 @@ extension WifiL10n on AppL10n {
       type.isNotEmpty ? 'デバイスメッセージ（$type）' : 'デバイスメッセージ',
     ),
   };
+
+  // ── WiFi 版固件升级（2026-11-02，同小程序 wifi-ota）──
+  String get wifiOtaTitle => pick('固件升级', 'Firmware update', 'ファームウェア更新');
+  String get wifiOtaInProgress => pick('升级中', 'Updating', '更新中');
+  String get wifiOtaChecking => pick('检测版本中', 'Checking version', 'バージョンを確認中');
+  String get wifiOtaCheckingHint => pick('正在检查固件版本，请稍候…', 'Checking the firmware version…', 'ファームウェアのバージョンを確認しています…');
+  String get wifiOtaCheckFailed => pick('检查失败', 'Check failed', '確認に失敗しました');
+  String get wifiOtaDeviceLoadFailed =>
+      pick('设备信息加载失败，请稍后重试', 'Failed to load the device. Please try again later.', 'デバイス情報を読み込めませんでした。しばらくしてから再試行してください。');
+  String get wifiOtaNoDeviceNo =>
+      pick('缺少设备编号，无法检查固件版本', 'Missing device ID. Cannot check the firmware.', 'デバイスIDがないため、ファームウェアを確認できません');
+  String wifiOtaNewVersion(String version) => pick('发现新版本 $version', 'New version $version', '新しいバージョン $version');
+  String get wifiOtaAvailableHint => pick(
+    '升级期间设备会自动重启，请保持设备通电和网络连接',
+    'The device restarts during the update. Keep it powered on and connected.',
+    '更新中にデバイスが再起動します。電源とネットワークを維持してください。',
+  );
+  String get wifiOtaUnknownTitle => pick('暂时无法判断是否有新版本', 'Unable to check for updates', '更新の有無を判断できません');
+  String get wifiOtaUnknownHint => pick(
+    '设备尚未上报当前固件版本，请确认设备在线后重新检查',
+    'The device has not reported its firmware version. Make sure it is online and check again.',
+    'デバイスがファームウェアバージョンを報告していません。オンラインを確認して再確認してください。',
+  );
+  String get wifiOtaInvalidHint => pick(
+    '升级包信息不完整，暂时无法升级，请稍后再试',
+    'The update package is incomplete. Please try again later.',
+    '更新パッケージの情報が不完全です。しばらくしてから再試行してください。',
+  );
+  String get wifiOtaLatest => pick('已是最新版本', 'Up to date', '最新バージョンです');
+  String wifiOtaCurrentVersionHint(String version) =>
+      pick('当前固件版本 $version', 'Current firmware $version', '現在のファームウェア $version');
+  String get wifiOtaNoUpdateHint => pick('当前没有可用的固件更新', 'No firmware update available', '利用可能な更新はありません');
+  String get wifiOtaCurrentVersion => pick('当前版本', 'Current version', '現在のバージョン');
+  String get wifiOtaLatestVersion => pick('最新版本', 'Latest version', '最新バージョン');
+  List<String> get wifiOtaSteps => [
+    pick('已下发，等待设备响应', 'Sent, waiting for the device', '送信済み、デバイスの応答待ち'),
+    pick('设备下载固件中', 'Device downloading firmware', 'デバイスがファームウェアをダウンロード中'),
+    pick('设备写入固件中', 'Device writing firmware', 'デバイスがファームウェアを書き込み中'),
+    pick('升级完成', 'Update complete', '更新完了'),
+  ];
+  String get wifiOtaRunningTitle => pick('设备正在升级', 'Device updating', 'デバイスを更新中');
+  String get wifiOtaRunningHint => pick(
+    '升级期间请保持设备通电和网络连接，可离开本页，进度不受影响',
+    'Keep the device powered on and connected. You can leave this page; the update continues.',
+    '電源とネットワークを維持してください。このページを離れても更新は続きます。',
+  );
+  String wifiOtaElapsed(int minutes, int seconds) => minutes > 0
+      ? pick('已进行 $minutes 分 $seconds 秒', '$minutes min $seconds s elapsed', '$minutes 分 $seconds 秒経過')
+      : pick('已进行 $seconds 秒', '$seconds s elapsed', '$seconds 秒経過');
+  String get wifiOtaFailed => pick('升级失败', 'Update failed', '更新に失敗しました');
+  String get wifiOtaTimeout => pick('升级超时', 'Update timed out', '更新がタイムアウトしました');
+  String get wifiOtaFailHint => pick(
+    '请确认设备在线、网络稳定后重新升级',
+    'Make sure the device is online with a stable network, then try again.',
+    'デバイスがオンラインでネットワークが安定していることを確認して、再度更新してください。',
+  );
+  String get wifiOtaDone => pick('升级完成', 'Update complete', '更新完了');
+  String get wifiOtaWaitReboot => pick('等待设备重启', 'Waiting for the device to restart', 'デバイスの再起動待ち');
+  String get wifiOtaWaitRebootTitle => pick('升级完成 · 等待设备重启', 'Update complete · Waiting for restart', '更新完了・再起動待ち');
+  String get wifiOtaWaitRebootHint => pick(
+    '设备重启后会确认升级结果，并通过消息中心通知您',
+    'The result will be confirmed after the device restarts and sent to the message center.',
+    '再起動後に結果を確認し、メッセージセンターでお知らせします。',
+  );
+  String get wifiOtaVerifyingHint => pick(
+    '等待设备重启，结果将通过消息中心通知您',
+    'Waiting for the device to restart. The result will be sent to the message center.',
+    'デバイスの再起動待ちです。結果はメッセージセンターでお知らせします。',
+  );
+  String get wifiOtaSuccessHint => pick('设备已重启，固件升级成功', 'The device restarted. Firmware updated.', 'デバイスが再起動し、ファームウェアを更新しました');
+  String get wifiOtaBusyTip => pick('设备正在升级，请稍候', 'The device is updating. Please wait.', 'デバイスを更新中です。しばらくお待ちください。');
+  String get wifiOtaBusyHint => pick(
+    '设备已有进行中的升级任务，结果将通过消息中心通知您',
+    'An update is already in progress. The result will be sent to the message center.',
+    '更新が進行中です。結果はメッセージセンターでお知らせします。',
+  );
+  String get wifiOtaUpgradeNow => pick('立即升级', 'Update now', '今すぐ更新');
+  String get wifiOtaRetry => pick('重新升级', 'Try again', '再度更新');
+  String get wifiOtaRecheck => pick('重新检查', 'Check again', '再確認');
+  String get wifiOtaFinish => pick('完成', 'Done', '完了');
+  String wifiOtaConfirm(String version) => pick(
+    '将升级到 $version，升级期间设备会自动重启，请保持设备通电和网络连接',
+    'Update to $version? The device restarts during the update. Keep it powered on and connected.',
+    '$version に更新します。更新中にデバイスが再起動します。電源とネットワークを維持してください。',
+  );
+  String get wifiOtaSending => pick('下发中', 'Sending', '送信中');
+  String get wifiOtaSendFailed => pick('升级指令下发失败，请重试', 'Failed to send the update. Please try again.', '更新指示を送信できませんでした。再試行してください。');
+  String wifiOtaVersionChange(String from, String to) => '$from → $to';
+  String wifiOtaTargetVersion(String version) => pick('目标版本 $version', 'Target $version', '目標バージョン $version');
 
   String wifiMessageCategory(String category) => switch (category) {
     'DEVICE' => pick('设备', 'Device', 'デバイス'),

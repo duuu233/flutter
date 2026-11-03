@@ -1,0 +1,629 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+
+import '../../../network/iot/iot_api.dart';
+import '../../../network/iot/iot_client.dart';
+import '../../../network/iot/iot_ws.dart';
+import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/app_dialog.dart';
+import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/app_widgets.dart';
+import '../../../shared/widgets/figma_common.dart';
+import '../../../shared/widgets/home_figma_common.dart';
+import '../../../state.dart';
+import '../wifi_l10n.dart';
+import '../wifi_ota.dart';
+import '../wifi_status.dart';
+import '../wifi_widgets.dart';
+import 'wifi_provision_page.dart';
+
+/// WiFi 版设备固件升级（2026-11-02，同小程序 `subpackages/device/wifi-ota`；纯逻辑见 [wifi_ota.dart]）。
+///
+/// 页面形态与配网状态页相同：插画 + 标题 + 说明 + 四步状态圈 + 底部按钮。
+///   · 进页先看本地有没有这台设备进行中的升级记录（`ota_inflight:{deviceNo}`）：
+///       有且 SENT / DOWNLOADING / FLASHING → 直接接着展示步骤；
+///       VERIFYING → 显示「升级完成 · 等待设备重启」，不提示升级；终态 / 4044 → 清记录，按正常检查走。
+///   · 正常检查：老服务设备详情的 newVersionNo / downloadPath 对比 IoT 设备信息 firmwareVersion，
+///     显示「发现新版本」（立即升级）/「已是最新版本」/「暂时无法判断」/「升级包信息不完整」。
+///   · 下发成功立即存 msgid（带 type: 'ota'），3 秒轮询 `GET /api/device/ota/status`，WS `ota.result` 到了立即刷新
+///     （WS 只是加速，断线丢事件由轮询兜底；重连后补查一次）。VERIFYING 第 4 步打勾即可离开；
+///     FAILED / TIMEOUT 在当前步打叉、给「重新升级」。4000 / 4045（已有进行中的升级）切到「设备正在升级」。
+///   · 最终结果由服务端通过消息中心通知（OTA_SUCCESS / OTA_FAILED）。
+class WifiOtaPage extends StatefulWidget {
+  const WifiOtaPage({super.key, required this.state, required this.deviceId});
+
+  final PhotoFrameState state;
+  final String deviceId;
+
+  @override
+  State<WifiOtaPage> createState() => _WifiOtaPageState();
+}
+
+enum _Phase { checking, available, latest, unknown, invalid, error, running, verifying, failed, busy }
+
+enum _Art { progress, fail, success }
+
+class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
+  static const Duration _pollEvery = Duration(seconds: 3);
+
+  _Phase _phase = _Phase.checking;
+  String _title = '';
+  String _hint = '';
+  _Art _art = _Art.progress;
+  List<WifiOtaStepState>? _steps;
+  String _currentVersion = '';
+  String _latestVersion = '';
+  bool _showVersions = false;
+
+  DeviceItem? _device;
+  WifiOtaCheck? _check;
+  WifiOnlineStatus _deviceState = WifiOnlineStatus.unknown;
+  String _msgid = '';
+  int _lastStep = -1;
+  Timer? _poll;
+  bool _polling = false;
+  bool _starting = false;
+  bool _hidden = false;
+  String _subscribed = '';
+  StreamSubscription<Map<String, dynamic>>? _otaSub;
+  StreamSubscription<IotWsState>? _stateSub;
+
+  String get _deviceNo => IotApi.plainDeviceNo(_device?.serialNumber);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    // WS 只推状态信号：带了 status 就先按它画，再补查一次
+    _otaSub = IotWs.instance.on('ota.result').listen((event) {
+      if (_msgid.isEmpty || '${event['msgid']}' != _msgid) {
+        return;
+      }
+      final status = '${event['status'] ?? ''}';
+      if (status.isNotEmpty) {
+        _applyStatus(status, null);
+      }
+      _pollOnce();
+    });
+    // 重连期间的事件会丢，重连后补查
+    _stateSub = IotWs.instance.states.listen((state) {
+      if (state.state == 'open' && state.reconnect && _msgid.isNotEmpty) {
+        _pollOnce();
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _load();
+      }
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // 进后台停轮询，回前台接着查（同小程序 onHide / onShow）
+    if (state == AppLifecycleState.paused) {
+      _hidden = true;
+      _stopPolling();
+    } else if (state == AppLifecycleState.resumed && _hidden) {
+      _hidden = false;
+      if (_phase == _Phase.running) {
+        _startPolling();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopPolling();
+    unawaited(_otaSub?.cancel());
+    unawaited(_stateSub?.cancel());
+    if (_subscribed.isNotEmpty) {
+      IotWs.instance.unsubscribe(_subscribed);
+    }
+    super.dispose();
+  }
+
+  void _setScreen({
+    required _Phase phase,
+    required String title,
+    required String hint,
+    required _Art art,
+    List<WifiOtaStepState>? steps,
+    bool showVersions = false,
+    String currentVersion = '',
+    String latestVersion = '',
+  }) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _phase = phase;
+      _title = title;
+      _hint = hint;
+      _art = art;
+      _steps = steps;
+      _showVersions = showVersions;
+      _currentVersion = currentVersion;
+      _latestVersion = latestVersion;
+    });
+  }
+
+  Future<void> _load() async {
+    final l10n = AppL10n.of(context);
+    _stopPolling();
+    _msgid = '';
+    _lastStep = -1;
+    _setScreen(phase: _Phase.checking, title: l10n.wifiOtaChecking, hint: l10n.wifiOtaCheckingHint, art: _Art.progress);
+    final device = await widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
+    if (!mounted) {
+      return;
+    }
+    if (device == null) {
+      _showError(l10n.wifiOtaDeviceLoadFailed);
+      return;
+    }
+    _device = device;
+    final deviceNo = _deviceNo;
+    if (deviceNo.isEmpty) {
+      _showError(l10n.wifiOtaNoDeviceNo);
+      return;
+    }
+    if (_subscribed != deviceNo && !IotWs.instance.subscriptions.contains(deviceNo)) {
+      IotWs.instance.subscribe(deviceNo);
+      _subscribed = deviceNo;
+    }
+
+    // ① 先看本地进行中的升级（展示「有新版本」之前必须先查）
+    final inflight = await WifiOtaStore.refresh(deviceNo);
+    if (!mounted) {
+      return;
+    }
+    if (inflight.record != null) {
+      _resumeInflight(inflight);
+      return;
+    }
+
+    // ② 没有进行中的任务：正常比对版本
+    Map<String, dynamic>? info;
+    try {
+      info = await IotApi.getDeviceInfo(deviceNo);
+    } catch (_) {
+      info = null;
+    }
+    if (!mounted) {
+      return;
+    }
+    _deviceState = info == null ? WifiOnlineStatus.unknown : wifiDeviceState(info);
+    _check = evaluateWifiOta(wifiFirmwareVersion(info), device.newVersionNo, device.downloadPath);
+    _showEvaluation(_check!);
+  }
+
+  void _showError(String message) {
+    _setScreen(phase: _Phase.error, title: AppL10n.of(context).wifiOtaCheckFailed, hint: message, art: _Art.fail);
+  }
+
+  void _showEvaluation(WifiOtaCheck result) {
+    final l10n = AppL10n.of(context);
+    final current = result.current.isNotEmpty ? result.current : '--';
+    final latest = result.latest.isNotEmpty ? result.latest : '--';
+    switch (result.state) {
+      case WifiOtaCheckState.available:
+        _setScreen(
+          phase: _Phase.available,
+          title: l10n.wifiOtaNewVersion(result.latest),
+          hint: l10n.wifiOtaAvailableHint,
+          art: _Art.progress,
+          showVersions: true,
+          currentVersion: current,
+          latestVersion: latest,
+        );
+      case WifiOtaCheckState.unknown:
+        // 当前版本还是旧格式或没上报过：按「无法判断」处理，不报错
+        _setScreen(
+          phase: _Phase.unknown,
+          title: l10n.wifiOtaUnknownTitle,
+          hint: l10n.wifiOtaUnknownHint,
+          art: _Art.progress,
+          showVersions: true,
+          currentVersion: current,
+          latestVersion: latest,
+        );
+      case WifiOtaCheckState.invalid:
+        _setScreen(
+          phase: _Phase.invalid,
+          title: l10n.wifiOtaNewVersion(result.latest),
+          hint: l10n.wifiOtaInvalidHint,
+          art: _Art.fail,
+          showVersions: true,
+          currentVersion: current,
+          latestVersion: latest,
+        );
+      case WifiOtaCheckState.latest:
+        _setScreen(
+          phase: _Phase.latest,
+          title: l10n.wifiOtaLatest,
+          hint: result.current.isNotEmpty ? l10n.wifiOtaCurrentVersionHint(result.current) : l10n.wifiOtaNoUpdateHint,
+          art: _Art.success,
+          showVersions: true,
+          currentVersion: current,
+          latestVersion: result.latest.isNotEmpty ? result.latest : current,
+        );
+    }
+  }
+
+  /// 重进页面时接着展示本地记录的任务。
+  void _resumeInflight(WifiOtaRefresh inflight) {
+    final record = inflight.record!;
+    _msgid = record.msgid;
+    _lastStep = record.lastStep;
+    final status = normalizeOtaStatus(
+      inflight.status.isNotEmpty ? inflight.status : (record.status.isNotEmpty ? record.status : 'SENT'),
+    );
+    if (status == 'VERIFYING') {
+      _showWaitingReboot();
+      return;
+    }
+    _applyStatus(status, inflight.data);
+    if (_phase == _Phase.running) {
+      _startPolling();
+    }
+  }
+
+  /// VERIFYING 之后重进：不进步骤页、不提示升级，等设备重启后服务端确认。
+  void _showWaitingReboot() {
+    final l10n = AppL10n.of(context);
+    _stopPolling();
+    _setScreen(phase: _Phase.busy, title: l10n.wifiOtaWaitRebootTitle, hint: l10n.wifiOtaWaitRebootHint, art: _Art.success);
+  }
+
+  /// 已有进行中的升级（4000 / 4045，本地没有 msgid 可查）。
+  void _showBusy() {
+    final l10n = AppL10n.of(context);
+    _stopPolling();
+    _setScreen(phase: _Phase.busy, title: l10n.wifiOtaBusyTip, hint: l10n.wifiOtaBusyHint, art: _Art.progress);
+  }
+
+  /// 按服务端状态画步骤；[data] 为状态查询结果（可为空）。
+  void _applyStatus(String rawStatus, Map<String, dynamic>? data) {
+    if (!mounted) {
+      return;
+    }
+    final l10n = AppL10n.of(context);
+    final status = normalizeOtaStatus(rawStatus);
+    final index = otaStepIndex(status);
+    if (index > _lastStep) {
+      _lastStep = index;
+    }
+    final deviceNo = _deviceNo;
+    if (isOtaFinal(status)) {
+      unawaited(WifiOtaStore.clear(deviceNo));
+    } else if (index > -1) {
+      unawaited(WifiOtaStore.update(deviceNo, status: status, lastStep: _lastStep));
+    }
+
+    // SUCCESS 不在步骤口径内；万一跳过 VERIFYING 直接到了，也按完成收尾，不让第 4 步一直转圈
+    final view = otaStepsFor(status == 'SUCCESS' ? 'VERIFYING' : status, _lastStep);
+    if (view.phase == WifiOtaViewPhase.failed) {
+      _stopPolling();
+      _setScreen(
+        phase: _Phase.failed,
+        title: isOtaTimeout(status) ? l10n.wifiOtaTimeout : l10n.wifiOtaFailed,
+        hint: l10n.wifiOtaFailHint,
+        art: _Art.fail,
+        steps: view.steps,
+      );
+      return;
+    }
+    if (view.phase == WifiOtaViewPhase.verifying) {
+      _stopPolling();
+      _setScreen(
+        phase: _Phase.verifying,
+        title: l10n.wifiOtaDone,
+        hint: status == 'SUCCESS' ? l10n.wifiOtaSuccessHint : l10n.wifiOtaVerifyingHint,
+        art: _Art.success,
+        steps: view.steps,
+      );
+      return;
+    }
+    final seconds = int.tryParse('${data?['elapsedSeconds'] ?? ''}') ?? 0;
+    final elapsed = seconds > 0 ? l10n.wifiOtaElapsed(seconds ~/ 60, seconds % 60) : '';
+    _setScreen(
+      phase: _Phase.running,
+      title: l10n.wifiOtaRunningTitle,
+      hint: elapsed.isNotEmpty ? '$elapsed，${l10n.wifiOtaRunningHint}' : l10n.wifiOtaRunningHint,
+      art: _Art.progress,
+      steps: view.steps,
+    );
+  }
+
+  void _startPolling() {
+    _stopPolling();
+    if (!mounted || _msgid.isEmpty) {
+      return;
+    }
+    _poll = Timer.periodic(_pollEvery, (_) => _pollOnce());
+  }
+
+  void _stopPolling() {
+    _poll?.cancel();
+    _poll = null;
+  }
+
+  Future<void> _pollOnce() async {
+    final msgid = _msgid;
+    if (msgid.isEmpty || _polling || !mounted) {
+      return;
+    }
+    _polling = true;
+    Map<String, dynamic> data;
+    try {
+      data = await IotApi.getOtaStatus(msgid);
+    } catch (error) {
+      _polling = false;
+      if (error is IotException && int.tryParse('${error.code}') == 4044 && msgid == _msgid && mounted) {
+        // 任务过期（服务端只留 2 小时）：清记录，回到正常检查
+        await WifiOtaStore.clear(_deviceNo);
+        _msgid = '';
+        if (mounted) {
+          _load();
+        }
+      }
+      return; // 网络 / 503 等：保持当前画面，下一轮再查
+    }
+    _polling = false;
+    if (msgid != _msgid || !mounted) {
+      return;
+    }
+    // 已经停在完成 / 失败上的，迟到的查询结果不再改画面
+    if (_phase != _Phase.running) {
+      return;
+    }
+    _applyStatus('${data['status'] ?? ''}', data);
+  }
+
+  /// 「立即升级」/「重新升级」。
+  Future<void> _startUpgrade() async {
+    final result = _check;
+    if (_starting || result == null || _device == null) {
+      return;
+    }
+    final l10n = AppL10n.of(context);
+    final tip = wifiBlockedTip(l10n, _deviceState);
+    if (tip.isNotEmpty) {
+      AppToast.warn(context, tip);
+      return;
+    }
+    final confirmed = await showAppConfirmDialog(
+      context,
+      icon: Icons.system_update_alt_rounded,
+      title: l10n.wifiOtaTitle,
+      message: l10n.wifiOtaConfirm(result.latest),
+      confirmLabel: l10n.wifiOtaUpgradeNow,
+    );
+    if (confirmed == true && mounted) {
+      await _sendUpgrade();
+    }
+  }
+
+  Future<void> _sendUpgrade() async {
+    final result = _check;
+    final deviceNo = _deviceNo;
+    if (_starting || result == null || deviceNo.isEmpty) {
+      return;
+    }
+    final l10n = AppL10n.of(context);
+    _starting = true;
+    AppLoadingDialog.show(context, l10n.wifiOtaSending);
+    Map<String, dynamic> res;
+    try {
+      res = await IotApi.startOta(deviceNo: deviceNo, url: result.url, type: kWifiOtaTypeMain, version: result.latest);
+    } catch (error) {
+      _starting = false;
+      AppLoadingDialog.hideIfAny();
+      if (!mounted) {
+        return;
+      }
+      if (isWifiOtaBusyError(error)) {
+        AppToast.warn(context, l10n.wifiOtaBusyTip);
+        _showBusy();
+        return;
+      }
+      AppToast.warn(context, error is IotException && error.message.isNotEmpty ? error.message : l10n.wifiOtaSendFailed);
+      return;
+    }
+    _starting = false;
+    AppLoadingDialog.hideIfAny();
+    if (!mounted) {
+      return;
+    }
+    final msgid = '${res['msgid'] ?? ''}';
+    if (msgid.isEmpty) {
+      AppToast.warn(context, l10n.wifiOtaSendFailed);
+      return;
+    }
+    // 下发成功立即保存（带类型），一台设备只留一条
+    await WifiOtaStore.save(deviceNo, msgid, version: result.latest, baseVersion: result.current);
+    if (!mounted) {
+      return;
+    }
+    _msgid = msgid;
+    _lastStep = -1;
+    _applyStatus('SENT', null);
+    _startPolling();
+  }
+
+  /// 失败后的「重新升级」：本页走过版本比对的直接再下发；从本地记录恢复进来的没有比对结果，先重新检查。
+  void _retryUpgrade() {
+    if (_check?.state == WifiOtaCheckState.available) {
+      _startUpgrade();
+      return;
+    }
+    _load();
+  }
+
+  void _finish() => Navigator.of(context).maybePop();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    final titleColor = switch (_phase) {
+      _Phase.failed || _Phase.error => const Color(0xFFE5533D),
+      _Phase.verifying => const Color(0xFFFF5A1E),
+      _ => const Color(0xFF2A2D32),
+    };
+    final art = switch (_art) {
+      _Art.progress => 'assets/images/upload-icon01.png',
+      _Art.fail => 'assets/images/upload-icon02.png',
+      _Art.success => 'assets/images/upload-icon03.png',
+    };
+    final texts = l10n.wifiOtaSteps;
+    final steps = _steps;
+    return FigmaScreen(
+      title: l10n.wifiOtaTitle,
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 24),
+          Image.asset(
+            art,
+            height: 110,
+            fit: BoxFit.contain,
+            errorBuilder: (context, error, stackTrace) => const SizedBox(height: 110),
+          ),
+          const SizedBox(height: 20),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_phase == _Phase.checking) ...[const WifiMiniSpinner(size: 16), const SizedBox(width: 8)],
+              Flexible(
+                child: Text(
+                  _title,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: titleColor, fontSize: 19, fontWeight: FontWeight.w700, height: 1.4),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            _hint,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12, height: 1.5),
+          ),
+          if (_showVersions) ...[
+            const SizedBox(height: 20),
+            FigmaGlassCard(
+              borderRadius: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+              child: Column(
+                children: [
+                  _VersionRow(label: l10n.wifiOtaCurrentVersion, value: _currentVersion),
+                  _VersionRow(label: l10n.wifiOtaLatestVersion, value: _latestVersion),
+                ],
+              ),
+            ),
+          ],
+          if (steps != null) ...[
+            const SizedBox(height: 20),
+            FigmaGlassCard(
+              borderRadius: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              child: Column(
+                children: [
+                  for (var i = 0; i < 4; i++)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Row(
+                        children: [
+                          WifiStepIcon(index: i, status: steps[i].name),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              texts[i],
+                              style: TextStyle(
+                                color: steps[i] == WifiOtaStepState.fail
+                                    ? const Color(0xFFE5533D)
+                                    : steps[i] == WifiOtaStepState.pending
+                                    ? const Color(0xFF8B9098)
+                                    : const Color(0xFF2A2D32),
+                                fontSize: 15,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+          const SizedBox(height: 24),
+        ],
+      ),
+      bottom: switch (_phase) {
+        _Phase.available => FigmaHomePrimaryButton(
+          key: const ValueKey('wifi-ota-start'),
+          label: l10n.wifiOtaUpgradeNow,
+          fontWeight: FontWeight.w700,
+          onPressed: _startUpgrade,
+        ),
+        _Phase.verifying || _Phase.busy => FigmaHomePrimaryButton(
+          label: l10n.wifiOtaFinish,
+          fontWeight: FontWeight.w700,
+          onPressed: _finish,
+        ),
+        _Phase.failed => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            FigmaHomePrimaryButton(
+              key: const ValueKey('wifi-ota-retry'),
+              label: l10n.wifiOtaRetry,
+              fontWeight: FontWeight.w700,
+              onPressed: _retryUpgrade,
+            ),
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: _finish,
+              child: SizedBox(
+                height: 44,
+                child: Center(
+                  child: Text(l10n.wifiCancel, style: const TextStyle(color: Color(0xFFFF621F), fontSize: 16)),
+                ),
+              ),
+            ),
+          ],
+        ),
+        _Phase.unknown || _Phase.error => FigmaHomePrimaryButton(
+          label: l10n.wifiOtaRecheck,
+          fontWeight: FontWeight.w700,
+          onPressed: _load,
+        ),
+        _ => null,
+      },
+    );
+  }
+}
+
+class _VersionRow extends StatelessWidget {
+  const _VersionRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 40,
+      child: Row(
+        children: [
+          Text(label, style: const TextStyle(color: Color(0xFF33373D), fontSize: 14, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          Text(value, style: const TextStyle(color: Color(0xFF777E88), fontSize: 13)),
+        ],
+      ),
+    );
+  }
+}

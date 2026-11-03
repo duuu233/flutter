@@ -77,6 +77,7 @@ class MyDeviceOverview {
     this.wifiStatus = WifiDeviceStatus.loading,
     this.sizeModel = '',
     this.serialNumber = '',
+    this.wifiSlideshowOn = false,
   });
 
   final String id;
@@ -96,6 +97,9 @@ class MyDeviceOverview {
   final String sizeModel;
   final String serialNumber;
 
+  /// WiFi 版轮播开启中（2026-11-02，strategy.running）：「轮播设置」旁显示绿点 +「轮播中」。
+  final bool wifiSlideshowOn;
+
   MyDeviceOverview copy() => MyDeviceOverview(
     id: id,
     name: name,
@@ -106,6 +110,7 @@ class MyDeviceOverview {
     wifiStatus: wifiStatus,
     sizeModel: sizeModel,
     serialNumber: serialNumber,
+    wifiSlideshowOn: wifiSlideshowOn,
   );
 }
 
@@ -997,6 +1002,7 @@ class _WifiDeviceCard extends StatelessWidget {
             slideshowLabel: l10n.wifiSlideshowSettings,
             onCast: onCast,
             onSlideshow: onSlideshow,
+            slideshowOn: device.wifiSlideshowOn,
           ),
         ],
       ),

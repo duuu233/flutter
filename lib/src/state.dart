@@ -2122,9 +2122,12 @@ class PhotoFrameState extends ChangeNotifier {
   /// 映射为 [CastRecord]，仅在后端返回非空时替换本地列表（失败保留当前数据）。
   /// [deviceUploadState] 传 1=只取成功 / 0=只取失败（对齐小程序 records.js 按 tab 传 filter，
   /// 后端按状态过滤），缺省不传取全部。分状态拉取避免 >100 条时本地切片丢行。
+  /// [deviceId]（可选，2026-11-03 同小程序）：设备完整 6 字节 ID。传了后端按设备 ID 查、不再按用户 ID；
+  /// 不传维持按用户查。目前只有「我的上传」（图库页）选了具体设备时传。
   Future<ActionFeedback> refreshCastRecords({
     String? userProductId,
     int? deviceUploadState,
+    String? deviceId,
   }) async {
     final epoch = _sessionEpoch;
     try {
@@ -2133,6 +2136,7 @@ class PhotoFrameState extends ChangeNotifier {
         'pageSize': 100,
         'userProductId': ?userProductId,
         'deviceUploadState': ?deviceUploadState,
+        'deviceId': ?deviceId,
       });
       if (epoch != _sessionEpoch) {
         // 会话代际已变（登出/换号）：丢弃旧会话的在途响应，防跨账号串屏。

@@ -77,6 +77,29 @@ abstract final class IotApi {
     return _asMap(await _iot.get('/api/device/play/status', query: {'msgid': msgid}));
   }
 
+  /// 固件升级下发（2026-10-31 前端对接变更说明 / 草稿 3.9，同小程序 2026-11-02）：
+  /// `{ deviceNo, url（http/https 固件包）, type（main 主控 / fpga）, version（目标版本）}` → `{ msgid }`。
+  /// 同一设备同时只允许一个升级任务：重复下发 4000「已有升级任务进行中」，升级中 4045；MQTT 发布失败 5000；离线 4041。
+  static Future<Map<String, dynamic>> startOta({
+    required String deviceNo,
+    required String url,
+    required String version,
+    String type = 'main',
+  }) async {
+    return _asMap(
+      await _iot.post(
+        '/api/device/ota',
+        body: {'deviceNo': plainDeviceNo(deviceNo), 'url': url, 'type': type, 'version': version},
+      ),
+    );
+  }
+
+  /// 升级状态（草稿 3.9.1）：`{ msgid, status, type, version, baseVersion, sentAt, elapsedSeconds }`；
+  /// 任务只保留 2 小时，过期 / 不存在 4044。
+  static Future<Map<String, dynamic>> getOtaStatus(String msgid) async {
+    return _asMap(await _iot.get('/api/device/ota/status', query: {'msgid': msgid}));
+  }
+
   /// 轮播查询（V1.4 更新说明五）：`{ configured, running, updateType, beginTime, endTime, intervalMinutes, updateDays,
   /// updateTimeList, mode, idle, imgUrls, updatedAt }`。imgUrls：null = 未选择（轮播全部相册），[] = 选的照片已全部失效。
   /// 只校验权限，设备离线也能查。

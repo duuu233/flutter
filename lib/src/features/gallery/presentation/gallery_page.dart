@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
+import '../../../device/serial_match.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
@@ -110,7 +111,23 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   Future<void> _refreshRecords() => state.refreshCastRecords(
     userProductId: _deviceFilter,
     deviceUploadState: 1,
+    deviceId: _filterDeviceId,
   );
+
+  /// 选了具体设备时，该设备的完整 6 字节设备 ID：投屏记录接口带上它，后端改按设备查（2026-11-03 同小程序）。
+  /// 未选设备、设备列表里找不到、或没有完整 ID 时返回 null，不传，仍按用户查。
+  String? get _filterDeviceId {
+    final id = _deviceFilter;
+    if (id == null || id.isEmpty) {
+      return null;
+    }
+    final matches = state.devices.where((device) => device.id == id);
+    if (matches.isEmpty) {
+      return null;
+    }
+    final serial = canonicalDeviceSerial(matches.first.serialNumber);
+    return serial.isEmpty ? null : serial;
+  }
 
   @override
   void didChangeDependencies() {

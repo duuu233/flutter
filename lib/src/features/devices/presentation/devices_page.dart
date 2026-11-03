@@ -164,6 +164,8 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
     }
     // WiFi 版设备的在线 / 信号 / 电量（IoT 云端，不走蓝牙）：沿用上一次的结果先显示，查询回来再替换
     WifiStatusStore.instance.refreshAll(widget.state.devices);
+    // 轮播中标记：随每次拉列表（含从轮播设置页返回的 didPopNext）重查（2026-11-02 同小程序）
+    WifiSlideshowStore.instance.refreshAll(widget.state.devices);
     _wifiWatch.update(widget.state.devices);
     for (final device in widget.state.devices) {
       if (device.connected) {
@@ -177,7 +179,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
   Widget build(BuildContext context) {
     final state = widget.state;
     return AnimatedBuilder(
-      animation: Listenable.merge([state, WifiStatusStore.instance]),
+      animation: Listenable.merge([state, WifiStatusStore.instance, WifiSlideshowStore.instance]),
       builder: (context, _) {
         final ordered = _sortedDevices();
         // 已连接的那台排序后必然在第一位（若有）；连接目标变了就播一次上移动效。
@@ -206,6 +208,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
                   wifiStatus: WifiStatusStore.instance.of(device.id),
                   sizeModel: device.sizeModel,
                   serialNumber: device.serialNumber,
+                  wifiSlideshowOn: WifiSlideshowStore.instance.of(device.id),
                 ),
               )
               .toList(),

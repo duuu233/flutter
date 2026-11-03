@@ -242,3 +242,48 @@ Future<List<DeviceItem>> filterPickableDevices(List<DeviceItem> devices) async {
   );
   return [for (var i = 0; i < devices.length; i++) if (keep[i]) devices[i]];
 }
+
+/// WiFi 版「轮播设置」旁的轮播中标记（同小程序 2026-11-02 `wifiStatus.fetchSlideshowRunning`）：
+/// GET /api/device/strategy 的 `running`。只要权限、离线也能查；查不到（403 / 503 / 网络）保持上一次的显示，不弹错。
+/// 我的设备每次拉列表、WiFi 设备详情进页和从轮播设置页回来时重查；各台带序号，旧请求晚到不覆盖。
+class WifiSlideshowStore extends ChangeNotifier {
+  WifiSlideshowStore._();
+
+  static final WifiSlideshowStore instance = WifiSlideshowStore._();
+
+  final Map<String, bool> _byId = <String, bool>{};
+  final Map<String, int> _seq = <String, int>{};
+
+  /// 轮播是否开启中；还没查到按否（不显示标记）。
+  bool of(String deviceId) => _byId[deviceId] ?? false;
+
+  Future<void> refresh(DeviceItem device) async {
+    if (!device.isWifi) {
+      return;
+    }
+    final key = device.id;
+    final seq = (_seq[key] ?? 0) + 1;
+    _seq[key] = seq;
+    bool running;
+    try {
+      final strategy = await IotApi.getStrategy(device.serialNumber);
+      running = strategy['running'] == true;
+    } catch (error) {
+      debugPrint('[WiFi轮播] 状态查询失败 ${device.id} $error');
+      return;
+    }
+    if (_seq[key] != seq || _byId[key] == running) {
+      return;
+    }
+    _byId[key] = running;
+    notifyListeners();
+  }
+
+  void refreshAll(Iterable<DeviceItem> devices) {
+    for (final device in devices) {
+      if (device.isWifi) {
+        refresh(device);
+      }
+    }
+  }
+}

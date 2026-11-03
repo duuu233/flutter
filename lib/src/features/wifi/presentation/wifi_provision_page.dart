@@ -170,7 +170,7 @@ class _WifiProvisionPageState extends State<WifiProvisionPage> {
                     padding: const EdgeInsets.symmetric(vertical: 10),
                     child: Row(
                       children: [
-                        _StepIcon(index: i, status: _steps[i]),
+                        WifiStepIcon(index: i, status: _steps[i]),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
@@ -231,9 +231,9 @@ class _WifiProvisionPageState extends State<WifiProvisionPage> {
   }
 }
 
-/// 状态圈：未开始显示序号；执行中转圈，通过打勾，失败打叉。
-class _StepIcon extends StatelessWidget {
-  const _StepIcon({required this.index, required this.status});
+/// 状态圈：未开始显示序号；执行中转圈，通过打勾，失败打叉（配网状态页与固件升级页共用）。
+class WifiStepIcon extends StatelessWidget {
+  const WifiStepIcon({super.key, required this.index, required this.status});
 
   final int index;
   final String status;

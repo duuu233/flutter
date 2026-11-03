@@ -13,12 +13,14 @@ import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../wifi_cast_entry.dart';
 import '../wifi_l10n.dart';
+import '../wifi_ota.dart';
 import '../wifi_share.dart';
 import '../wifi_status.dart';
 import '../wifi_tf.dart';
 import '../wifi_widgets.dart';
 import 'wifi_device_info_page.dart';
 import 'wifi_messages_page.dart';
+import 'wifi_ota_page.dart';
 import 'wifi_remove_flow.dart';
 import 'wifi_share_page.dart';
 import 'wifi_sleep_page.dart';
@@ -34,7 +36,8 @@ import 'wifi_tf_page.dart';
 ///     进 [WifiTfPage]）、分享设备（仅所有者，[WifiSharePage]）、解除绑定（只删设备）；页底「删除设备」（仅所有者，
 ///     样式与弹窗同蓝牙版，先删云端图片再删设备，见 wifi_remove_flow.dart）；
 ///   · 本地模式（status=LOCAL_TF）：投屏 / 轮播设置 / TF卡 可以点，但只提示「当前设备状态：本地模式，请恢复设备网络再试」；
-///     设备信息、休眠设置、消息中心、分享、解绑、删除照常。WiFi 版暂无 OTA 入口。
+///     设备信息、休眠设置、消息中心、分享、解绑、删除照常。
+///   · 固件升级（2026-11-02，同小程序）：「消息中心」之后，右侧当前固件版本，有新版本亮红点；本机有进行中的升级显示「升级中」，进 [WifiOtaPage]。
 class WifiDeviceDetailPage extends StatefulWidget {
   const WifiDeviceDetailPage({super.key, required this.state, required this.deviceId});
 
@@ -48,6 +51,10 @@ class WifiDeviceDetailPage extends StatefulWidget {
 class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   StreamSubscription<Map<String, dynamic>>? _statusSub;
   StreamSubscription<Map<String, dynamic>>? _noticeSub;
+  StreamSubscription<Map<String, dynamic>>? _otaSub;
+
+  /// 本机有这台设备进行中的固件升级（ota_inflight 记录）：「固件升级」行显示「升级中」、不亮红点。
+  bool _otaInflight = false;
   String _subscribed = '';
   int _unreadCount = 0;
 
@@ -67,6 +74,12 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         WifiStatusStore.instance.refresh(_device);
       }
     });
+    // 升级状态推送：本地进行中的记录随之更新 / 清掉，「固件升级」行跟着刷新（2026-11-02 同小程序）
+    _otaSub = IotWs.instance.on('ota.result').listen((event) {
+      if (IotApi.plainDeviceNo(event['deviceNo']) == _deviceNo) {
+        _refreshOta(query: true);
+      }
+    });
     // 新消息只推信号：收到就重查未读数
     _noticeSub = IotWs.instance.on('notification.new').listen((event) {
       if (IotApi.plainDeviceNo(event['deviceNo']) == _deviceNo) {
@@ -82,6 +95,11 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         WifiStatusStore.instance.refresh(_device);
+        // 轮播中标记：每次进页查一次（2026-11-02 同小程序）
+        WifiSlideshowStore.instance.refresh(_device);
+        // 固件升级行：目标版本 / 升级包来自设备详情接口，先核对本地进行中的升级
+        unawaited(widget.state.fetchDeviceFirmwareInfo(widget.deviceId));
+        _refreshOta(query: true);
         _refreshUnread();
         _loadOwner();
       }
@@ -92,6 +110,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   void dispose() {
     unawaited(_statusSub?.cancel());
     unawaited(_noticeSub?.cancel());
+    unawaited(_otaSub?.cancel());
     if (_subscribed.isNotEmpty) {
       IotWs.instance.unsubscribe(_subscribed);
     }
@@ -132,6 +151,29 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     if (mounted) {
       setState(() => _unreadCount = count);
     }
+  }
+
+  /// 「固件升级」行。[query]=true 时先向服务端核对本地进行中的升级（终态 / 4044 会清掉记录）。
+  Future<void> _refreshOta({bool query = false}) async {
+    final deviceNo = _deviceNo;
+    if (deviceNo.isEmpty) {
+      return;
+    }
+    var inflight = await WifiOtaStore.read(deviceNo);
+    if (inflight != null && query) {
+      inflight = (await WifiOtaStore.refresh(deviceNo)).record;
+    }
+    if (mounted && _otaInflight != (inflight != null)) {
+      setState(() => _otaInflight = inflight != null);
+    }
+  }
+
+  /// 「固件升级」：进步骤页（版本检查、下发与进度都在那页；离线等由那页下发前判断），回来刷新这一行。
+  Future<void> _openOta() async {
+    await Navigator.of(context).push<void>(
+      AppPageRoute(builder: (_) => WifiOtaPage(state: widget.state, deviceId: widget.deviceId)),
+    );
+    _refreshOta();
   }
 
   void _push(Widget page) {
@@ -207,6 +249,14 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
       child: Column(
         children: [
           entry(l10n.wifiDeviceInfo, () => _push(WifiDeviceInfoPage(state: widget.state, deviceId: widget.deviceId))),
+          // 设备信息下：设备ID、屏幕尺寸两行，只展示不可点（2026-11-02 同小程序 / 蓝牙版详情样式）；
+          // 设备ID 没有显示「--」，屏幕尺寸没配整行不展示；顶部卡片不再重复显示这两项
+          divider,
+          entry(l10n.devDeviceId, () {}, value: _device.serialNumber.isNotEmpty ? _device.serialNumber : '--', chevron: false),
+          if (_device.sizeModel.isNotEmpty) ...[
+            divider,
+            entry(l10n.wifiScreenSize, () {}, value: _device.sizeModel, chevron: false),
+          ],
           divider,
           entry(l10n.wifiSleepSettings, () => _push(WifiSleepPage(state: widget.state, deviceId: widget.deviceId))),
           divider,
@@ -226,6 +276,28 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                     ),
                   )
                 : null,
+          ),
+          divider,
+          // 固件升级（2026-11-02 同小程序）：右侧当前固件版本（读不到「--」）；有新版本亮红点；本机有进行中的升级显示「升级中」
+          Builder(
+            builder: (context) {
+              final firmware = wifiFirmwareVersion(status.info);
+              final hasUpdate = !_otaInflight &&
+                  evaluateWifiOta(firmware, _device.newVersionNo, _device.downloadPath).state == WifiOtaCheckState.available;
+              return entry(
+                l10n.wifiOtaTitle,
+                _openOta,
+                value: _otaInflight ? l10n.wifiOtaInProgress : (firmware.isNotEmpty ? firmware : '--'),
+                trailing: hasUpdate
+                    ? Container(
+                        key: const ValueKey('wifi-ota-dot'),
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(color: Color(0xFFE5533D), shape: BoxShape.circle),
+                      )
+                    : null,
+              );
+            },
           ),
           divider,
           // TF卡：未插卡不可点；有卡显示已用/总量 + 箭头
@@ -257,7 +329,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
     return ListenableBuilder(
-      listenable: Listenable.merge([widget.state, WifiStatusStore.instance]),
+      listenable: Listenable.merge([widget.state, WifiStatusStore.instance, WifiSlideshowStore.instance]),
       builder: (context, _) {
         final device = _device;
         final status = WifiStatusStore.instance.of(device.id);
@@ -311,20 +383,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                               CommBadge.plain(context, wifi: true),
                             ],
                           ),
-                          if (device.serialNumber.isNotEmpty) ...[
-                            const SizedBox(height: 6),
-                            Text(
-                              '${l10n.devDeviceId} ${device.serialNumber}',
-                              style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12),
-                            ),
-                          ],
-                          if (device.sizeModel.isNotEmpty) ...[
-                            const SizedBox(height: 4),
-                            Text(
-                              '${l10n.wifiScreenSize} ${device.sizeModel}',
-                              style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12),
-                            ),
-                          ],
+                          // 设备ID、屏幕尺寸移到下方功能栏「设备信息」后（2026-11-02 同小程序）
                           const SizedBox(height: 8),
                           // 状态与电量一栏（2026-10-29，与蓝牙版一致），电量仅在线时显示
                           Row(
@@ -365,7 +424,13 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                 castLabel: l10n.devCast,
                 slideshowLabel: l10n.wifiSlideshowSettings,
                 onCast: () => startWifiCast(context, widget.state, device),
-                onSlideshow: () => openWifiSlideshow(context, widget.state, device),
+                slideshowOn: WifiSlideshowStore.instance.of(device.id),
+                // 从轮播设置页保存 / 暂停回来重查轮播中标记
+                onSlideshow: () => openWifiSlideshow(context, widget.state, device).then((_) {
+                  if (mounted) {
+                    WifiSlideshowStore.instance.refresh(_device);
+                  }
+                }),
               ),
               const SizedBox(height: 14),
               _buildEntries(l10n, status),
@@ -414,12 +479,16 @@ class WifiActionBar extends StatelessWidget {
     required this.slideshowLabel,
     required this.onCast,
     required this.onSlideshow,
+    this.slideshowOn = false,
   });
 
   final String castLabel;
   final String slideshowLabel;
   final VoidCallback onCast;
   final VoidCallback onSlideshow;
+
+  /// 轮播开启中（2026-11-02，strategy.running）：「轮播设置」图标右上角绿点 +「轮播中」小标签。
+  final bool slideshowOn;
 
   @override
   Widget build(BuildContext context) {
@@ -428,6 +497,7 @@ class WifiActionBar extends StatelessWidget {
       required String label,
       required Color color,
       required VoidCallback onTap,
+      Widget? trailing,
     }) {
       return Expanded(
         child: GestureDetector(
@@ -438,7 +508,15 @@ class WifiActionBar extends StatelessWidget {
             children: [
               icon,
               const SizedBox(width: 5),
-              Text(label, style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w500, height: 1)),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w500, height: 1),
+                ),
+              ),
+              if (trailing != null) ...[const SizedBox(width: 4), trailing],
             ],
           ),
         ),
@@ -474,16 +552,50 @@ class WifiActionBar extends StatelessWidget {
             child: SizedBox(width: 1, height: 19, child: ColoredBox(color: Color(0xFFDADDDF))),
           ),
           action(
-            icon: Image.asset(
-              'assets/images/device-detail-icon01.png',
-              width: 18,
-              height: 18,
-              errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.slideshow_rounded, size: 16, color: kWifiGreen),
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Image.asset(
+                  'assets/images/device-detail-icon01.png',
+                  width: 18,
+                  height: 18,
+                  errorBuilder: (context, error, stackTrace) =>
+                      const Icon(Icons.slideshow_rounded, size: 16, color: kWifiGreen),
+                ),
+                if (slideshowOn)
+                  Positioned(
+                    key: const ValueKey('wifi-slideshow-on-dot'),
+                    top: -2,
+                    right: -3,
+                    child: Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: kWifiGreen,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             label: slideshowLabel,
             color: kWifiGreen,
             onTap: onSlideshow,
+            trailing: slideshowOn
+                ? Container(
+                    key: const ValueKey('wifi-slideshow-on-tag'),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: kWifiGreen.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      AppL10n.of(context).wifiSlideRunning,
+                      style: const TextStyle(color: kWifiGreen, fontSize: 10, fontWeight: FontWeight.w500, height: 1.2),
+                    ),
+                  )
+                : null,
           ),
         ],
       ),
