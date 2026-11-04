@@ -18,6 +18,7 @@ import '../wifi_wechat_share.dart';
 ///   · 第一栏固定所有者（头像 + 昵称 + 身份），橙色底与接收者区分；下面是接收者（头像 + 昵称 + 加入时间 + 移除）；
 ///   · 底部「分享设备」：把小程序接受页卡片发到微信会话（简化版，无邀请码，见 [WifiWeChatShare]），
 ///     对方在小程序里接受。拿不到自己的 userId / 产品 ID，或没配置小程序原始 ID 时按钮置灰、点了提示；
+///     分享这一刻取服务器时间戳写进卡片 t（2026-11-04 分享链接有效期，小程序接受页校验），取不到不发卡片；
 ///   · 移除：二次确认后 delUserProduct 删成员那条记录（服务端口径：成员即失去设备），再刷新列表。
 /// 数据：老服务 getShareUserProductList（按后端设备号）；服务端暂无加入时间字段，显示「--」。
 class WifiSharePage extends StatefulWidget {
@@ -143,6 +144,20 @@ class _WifiSharePageState extends State<WifiSharePage> {
         }
         return;
       }
+      // 分享这一刻取服务器时间戳写进卡片 t（2026-11-04 分享链接有效期，同小程序）；取不到不发卡片——
+      // 小程序接受页对不带 t 的卡片一律显示「分享链接无效」。
+      String? shareTime;
+      try {
+        shareTime = wifiShareTime(await BoltFoxApi.getCurrentTime());
+      } catch (error) {
+        debugPrint('[WiFi分享] 获取服务器时间戳失败 $error');
+      }
+      if (shareTime == null) {
+        if (mounted) {
+          AppToast.warn(context, l10n.wifiShareUnavailable);
+        }
+        return;
+      }
       final device = _device;
       final user = _user;
       final ok = await WifiWeChatShare.shareMiniProgram(
@@ -152,6 +167,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
           ownerUserId: user.userId,
           deviceName: device.name,
           ownerName: user.nickname,
+          shareTime: shareTime,
         ),
         title: l10n.wifiShareCardTitle(user.nickname, device.name),
       );

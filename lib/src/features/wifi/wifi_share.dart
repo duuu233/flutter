@@ -2,7 +2,8 @@
 /// 详情页「分享设备 / 删除设备」只给所有者，分享列表页分出所有者与接收者，卡片路径与小程序接受页一致。
 /// 简化版（服务端未做邀请码）：卡片路径带设备号 / 产品 ID / 设备名 / 所有者 userId 与昵称，
 /// 对方在小程序接受页以非所有者绑定（isToHave=0、shareUserId=所有者 userId）。
-/// 已知风险：没有一次性 / 过期 / 撤回，卡片被转发时拿到的人都能加入，由服务端校验兜底。
+/// 有效期（2026-11-04，同小程序）：卡片带分享时的服务器时间戳 t（getCurrentTime），小程序接受页用 chkTimeValid 判断是否过期，
+/// 过期规则在服务端；不带 t 的卡片小程序按无效处理。仍没有一次性 / 撤回，有效期内卡片被转发时拿到的人都能加入。
 library;
 
 /// 是否所有者：isToHave=1 是；带分享者 shareUserId 的是接收者；两者都没有的是分享上线前绑定的老记录，按所有者算。
@@ -50,7 +51,17 @@ class WifiShareMember {
   return (owner: owner ?? fallbackOwner, members: members);
 }
 
-/// 小程序接受页路径（与小程序 `buildAcceptPath` 同格式）：d 设备号（带冒号）、p 产品 ID、u 所有者 userId、n 设备名、o 所有者昵称。
+/// getCurrentTime 的 retData → 时间戳字符串（原样，不换算单位）；不是正整数返回 null（不能分享）。
+String? wifiShareTime(dynamic data) {
+  final text = '${data ?? ''}'.trim();
+  if (!RegExp(r'^\d+$').hasMatch(text) || (int.tryParse(text) ?? 0) <= 0) {
+    return null;
+  }
+  return text;
+}
+
+/// 小程序接受页路径（与小程序 `buildAcceptPath` 同格式）：d 设备号（带冒号）、p 产品 ID、u 所有者 userId、n 设备名、o 所有者昵称、
+/// t 分享时的服务器时间戳（原样）。
 class WifiShareLink {
   WifiShareLink._();
 
@@ -62,6 +73,7 @@ class WifiShareLink {
     required String ownerUserId,
     String deviceName = '',
     String ownerName = '',
+    String shareTime = '',
   }) {
     final pairs = <String, String>{
       'd': deviceId,
@@ -69,6 +81,7 @@ class WifiShareLink {
       'u': ownerUserId,
       'n': deviceName,
       'o': ownerName,
+      't': shareTime,
     }..removeWhere((_, value) => value.trim().isEmpty);
     return '$acceptPage?${pairs.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
   }

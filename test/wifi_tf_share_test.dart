@@ -105,5 +105,22 @@ void main() {
       );
       expect(path, '/subpackages/device/wifi-share-accept/wifi-share-accept?d=E3%3A48%3AC2%3A1E%3AD4%3A28&p=12&u=34&n=%E5%AE%A2%E5%8E%85%20%E7%9B%B8%E6%A1%86');
     });
+
+    test('卡片带分享时间戳 t（2026-11-04，同小程序）', () {
+      final path = WifiShareLink.acceptPath(
+        deviceId: 'E3:48:C2:1E:D4:28',
+        productId: 12,
+        ownerUserId: '34',
+        ownerName: '小明',
+        shareTime: '1762240000000',
+      );
+      expect(path, '/subpackages/device/wifi-share-accept/wifi-share-accept?d=E3%3A48%3AC2%3A1E%3AD4%3A28&p=12&u=34&o=%E5%B0%8F%E6%98%8E&t=1762240000000');
+      expect(wifiShareTime(1762240000000), '1762240000000', 'retData 为数字');
+      expect(wifiShareTime(' 1762240000 '), '1762240000', '字符串去空白');
+      expect(wifiShareTime(null), isNull);
+      expect(wifiShareTime(0), isNull);
+      expect(wifiShareTime('abc'), isNull);
+      expect(wifiShareTime(1.5), isNull);
+    });
   });
 }

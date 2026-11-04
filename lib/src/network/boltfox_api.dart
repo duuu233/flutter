@@ -757,6 +757,12 @@ class BoltFoxApi {
 
   /// 设备分享的用户（2026-10-29，WiFi 版分享列表，同小程序 `getShareUsers`）：[deviceId] 为后端设备号（原样，带冒号）。
   /// retData 为分页：pageData `[{ avatar, userName, isToHave(1=所有者), userProductId }]`，暂无加入时间字段。
+  /// 获取服务器当前时间戳（2026-11-04，分享链接有效期）：retData 为 long，原样写进分享卡片参数 t，
+  /// 对方在小程序接受页拿它调 chkTimeValid 判断是否过期。解析见 [wifiShareTime]。
+  static Future<dynamic> getCurrentTime() {
+    return _http.getJson('/Client/UserProduct/getCurrentTime');
+  }
+
   static Future<dynamic> getShareUserProductList({required String deviceId, int pageIndex = 1, int pageSize = 50}) {
     return _http.getJson(
       '/Client/UserProduct/getShareUserProductList',
