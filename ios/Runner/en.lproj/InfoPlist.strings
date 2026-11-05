@@ -1,0 +1,9 @@
+/* System permission prompts (English). Keep the keys in sync with Info.plist. */
+"NSBluetoothAlwaysUsageDescription" = "BoltStar uses Bluetooth to find and connect to your photo frame and send photos to it.";
+"NSBluetoothPeripheralUsageDescription" = "BoltStar uses Bluetooth to connect to your photo frame and transfer photos.";
+"NSLocationWhenInUseUsageDescription" = "BoltStar uses your location only to search for nearby Bluetooth photo frames.";
+"NSPhotoLibraryUsageDescription" = "BoltStar needs access to your photos so you can choose pictures to show on your photo frame.";
+"NSPhotoLibraryAddUsageDescription" = "BoltStar saves AI-generated images to your photo library.";
+"NSCameraUsageDescription" = "BoltStar uses the camera so you can take a photo and show it on your photo frame.";
+"NSMicrophoneUsageDescription" = "BoltStar uses the microphone so you can press and hold to talk to the AI Assistant.";
+"NSSpeechRecognitionUsageDescription" = "BoltStar uses speech recognition to turn what you say into text for the AI Assistant.";

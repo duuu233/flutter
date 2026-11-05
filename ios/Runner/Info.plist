@@ -6,6 +6,14 @@
 	<true/>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<!-- 声明 App 支持的语种（Flutter 文案不走 lproj，系统靠这里和 *.lproj 判断本地化语言）。 -->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>zh-Hans</string>
+		<string>zh-Hant</string>
+		<string>ja</string>
+	</array>
 	<key>CFBundleDisplayName</key>
 	<string>BoltStar</string>
 	<key>CFBundleExecutable</key>
@@ -111,21 +119,25 @@
 	<array>
 		<string>bluetooth-central</string>
 	</array>
+	<!-- 权限弹框文案：这里的值是英文兜底（系统语言不在四语种内时显示，与 App 内兜底英文一致），
+	     各语种实际文案在 en / zh-Hans / zh-Hant / ja.lproj/InfoPlist.strings，弹框语言跟随系统语言。
+	     审核（Guideline 4，1.0.1(2)）要求权限文案与 App 本地化语言一致：新增或改动权限键时，
+	     四个 InfoPlist.strings 要一起补齐。 -->
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>需要蓝牙来搜索、连接相框设备并向其投屏照片。</string>
+	<string>BoltStar uses Bluetooth to find and connect to your photo frame and send photos to it.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>需要蓝牙来连接相框设备并传输照片。</string>
+	<string>BoltStar uses Bluetooth to connect to your photo frame and transfer photos.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>iOS 搜索附近的蓝牙相框设备需要定位权限。</string>
+	<string>BoltStar uses your location only to search for nearby Bluetooth photo frames.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>需要访问相册以选择照片投屏到相框。</string>
+	<string>BoltStar needs access to your photos so you can choose pictures to show on your photo frame.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>需要将 AI 生成的图片保存到你的相册。</string>
+	<string>BoltStar saves AI-generated images to your photo library.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>需要使用相机拍照后投屏到相框。</string>
+	<string>BoltStar uses the camera so you can take a photo and show it on your photo frame.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>需要使用麦克风，以便在 AI 助手里按住说话。</string>
+	<string>BoltStar uses the microphone so you can press and hold to talk to the AI Assistant.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
-	<string>需要语音识别，把你说的话转成文字发送给 AI 助手。</string>
+	<string>BoltStar uses speech recognition to turn what you say into text for the AI Assistant.</string>
 </dict>
 </plist>
