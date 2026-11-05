@@ -96,6 +96,20 @@ void main() {
       expect(wifiSplitMembers(const [], me).owner?.name, '我');
     });
 
+    test('接收者进共享设备（2026-11-05，同小程序）：内容照常，没有所有者那条时不拿自己兜底', () {
+      expect(wifiIsOwner({'isToHave': 0, 'shareUserId': 34}), isFalse, '带分享者的是接收者');
+      final split = wifiSplitMembers([
+        {'userProductId': 7, 'userName': '小明', 'isToHave': 1},
+        {'userProductId': 9, 'userName': '小红', 'isToHave': 0},
+      ], null);
+      expect(split.owner?.name, '小明', '所有者栏照常显示');
+      expect(split.members.map((m) => m.name), ['小红'], '成员列表照常显示');
+      final noOwner = wifiSplitMembers([
+        {'userProductId': 9, 'userName': '小红', 'isToHave': 0},
+      ], null);
+      expect(noOwner.owner, isNull, '接收者传 null 兜底：所有者栏不显示，不把自己当所有者');
+    });
+
     test('卡片路径与小程序接受页同格式', () {
       final path = WifiShareLink.acceptPath(
         deviceId: 'E3:48:C2:1E:D4:28',

@@ -14,7 +14,10 @@ import '../wifi_l10n.dart';
 import '../wifi_share.dart';
 import '../wifi_wechat_share.dart';
 
-/// WiFi 版分享列表（2026-10-29，同小程序 `subpackages/device/wifi-share`）。入口：WiFi 详情「分享设备」（仅所有者）。
+/// WiFi 版共享设备列表（2026-10-29，同小程序 `subpackages/device/wifi-share`）。入口：WiFi 详情「共享设备」（2026-11-05 起所有者与接收者都能进）。
+///   · 接收者（2026-11-05，同小程序）：内容与所有者一致（所有者栏 + 已分享成员），只是没有「移除」和底部「分享设备」；
+///     身份进页面时按 getUserProductDetail（isToHave / shareUserId，[wifiIsOwner]）自己查，查不到按加载失败；
+///     列表里没有所有者那条时接收者不拿自己兜底（所有者栏不显示）。
 ///   · 第一栏固定所有者（头像 + 昵称 + 身份），橙色底与接收者区分；下面是接收者（头像 + 昵称 + 加入时间 + 移除）；
 ///   · 底部「分享设备」：把小程序接受页卡片发到微信会话（简化版，无邀请码，见 [WifiWeChatShare]），
 ///     对方在小程序里接受。拿不到自己的 userId / 产品 ID，或没配置小程序原始 ID 时按钮置灰、点了提示；
@@ -35,6 +38,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
   bool _loading = true;
   bool _loadError = false;
   bool _busy = false;
+  bool _isOwner = false;
   WifiShareMember? _owner;
   List<WifiShareMember> _members = const [];
 
@@ -43,6 +47,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
   UserProfile get _user => widget.state.currentUser;
 
   bool get _canShare =>
+      _isOwner &&
       WifiWeChatShare.configured && _user.userId.isNotEmpty && _device.productId > 0 && _device.serialNumber.isNotEmpty;
 
   @override
@@ -56,20 +61,32 @@ class _WifiSharePageState extends State<WifiSharePage> {
       _loading = true;
       _loadError = false;
     });
-    if (_user.userId.isEmpty) {
+    // 身份按设备详情判断（同小程序 wifiShare.isOwner）；查不到不猜，按加载失败处理
+    bool? owner;
+    try {
+      final data = await BoltFoxApi.getUserProductDetail(userProductId: widget.deviceId);
+      if (data is Map) {
+        owner = wifiIsOwner(data.map((k, v) => MapEntry(k.toString(), v)));
+      }
+    } catch (error) {
+      debugPrint('[WiFi分享] 所有者查询失败 $error');
+    }
+    if (owner == true && _user.userId.isEmpty) {
       await widget.state.refreshCurrentUser();
     }
     List<Map<String, dynamic>>? rows;
-    try {
-      rows = extractApiRows(await BoltFoxApi.getShareUserProductList(deviceId: _device.serialNumber));
-    } catch (error) {
-      debugPrint('[WiFi分享] 成员列表查询失败 $error');
-      rows = null;
+    if (owner != null) {
+      try {
+        rows = extractApiRows(await BoltFoxApi.getShareUserProductList(deviceId: _device.serialNumber));
+      } catch (error) {
+        debugPrint('[WiFi分享] 成员列表查询失败 $error');
+        rows = null;
+      }
     }
     if (!mounted) {
       return;
     }
-    if (rows == null) {
+    if (owner == null || rows == null) {
       setState(() {
         _loading = false;
         _loadError = true;
@@ -79,17 +96,18 @@ class _WifiSharePageState extends State<WifiSharePage> {
     final user = _user;
     final split = wifiSplitMembers(
       rows,
-      WifiShareMember(id: widget.deviceId, name: user.nickname, avatar: user.avatarUrl, joinedAt: ''),
+      owner ? WifiShareMember(id: widget.deviceId, name: user.nickname, avatar: user.avatarUrl, joinedAt: '') : null,
     );
     setState(() {
       _loading = false;
+      _isOwner = owner;
       _owner = split.owner;
       _members = split.members;
     });
   }
 
   Future<void> _remove(WifiShareMember member) async {
-    if (_busy) {
+    if (_busy || !_isOwner) {
       return;
     }
     final l10n = AppL10n.of(context);
@@ -129,6 +147,9 @@ class _WifiSharePageState extends State<WifiSharePage> {
 
   Future<void> _share() async {
     final l10n = AppL10n.of(context);
+    if (!_isOwner) {
+      return;
+    }
     if (!_canShare) {
       AppToast.warn(context, l10n.wifiShareUnavailable);
       return;
@@ -307,59 +328,63 @@ class _WifiSharePageState extends State<WifiSharePage> {
                             ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () => _remove(member),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 5),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: const Color(0x66FF3045)),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              l10n.wifiShareRemove,
-                              style: const TextStyle(color: Color(0xFFFF3045), fontSize: 12),
+                        if (_isOwner)
+                          GestureDetector(
+                            onTap: () => _remove(member),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 5),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: const Color(0x66FF3045)),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                l10n.wifiShareRemove,
+                                style: const TextStyle(color: Color(0xFFFF3045), fontSize: 12),
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
               ],
             ),
           ),
-          const SizedBox(height: 24),
-          Opacity(
-            opacity: _canShare ? 1 : 0.5,
-            child: GestureDetector(
-              onTap: _share,
-              child: Container(
-                height: 48,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
+          // 底部「分享设备」与提示只给所有者（2026-11-05，同小程序：接收者没有分享设备按钮）
+          if (_isOwner) ...[
+            const SizedBox(height: 24),
+            Opacity(
+              opacity: _canShare ? 1 : 0.5,
+              child: GestureDetector(
+                onTap: _share,
+                child: Container(
+                  height: 48,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
+                    ),
+                    borderRadius: BorderRadius.circular(999),
                   ),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  l10n.wifiShareDevice,
-                  style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                  child: Text(
+                    l10n.wifiShareDevice,
+                    style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            l10n.wifiShareTip,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12, height: 1.5),
-          ),
+            const SizedBox(height: 10),
+            Text(
+              l10n.wifiShareTip,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12, height: 1.5),
+            ),
+          ],
           const SizedBox(height: 24),
         ],
       );
     }
-    return FigmaScreen(title: l10n.wifiShareDevice, body: body);
+    return FigmaScreen(title: l10n.wifiSharedDevice, body: body);
   }
 }

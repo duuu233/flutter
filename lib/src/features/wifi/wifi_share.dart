@@ -1,5 +1,6 @@
 /// WiFi 版设备分享（2026-10-29，同小程序 `utils/wifi-share.js`）的纯逻辑：
-/// 详情页「分享设备 / 删除设备」只给所有者，分享列表页分出所有者与接收者，卡片路径与小程序接受页一致。
+/// 详情页「删除设备」只给所有者（「共享设备」入口 2026-11-05 起接收者也有，进去只看不改），共享设备页分出所有者与接收者，
+/// 卡片路径与小程序接受页一致。
 /// 简化版（服务端未做邀请码）：卡片路径带设备号 / 产品 ID / 设备名 / 所有者 userId 与昵称，
 /// 对方在小程序接受页以非所有者绑定（isToHave=0、shareUserId=所有者 userId）。
 /// 有效期（2026-11-04，同小程序）：卡片带分享时的服务器时间戳 t（getCurrentTime），小程序接受页用 chkTimeValid 判断是否过期，
@@ -34,7 +35,7 @@ class WifiShareMember {
 }
 
 /// 列表 → 所有者 + 接收者：isToHave=1 的是所有者（固定第一栏），其余是接收者；
-/// 列表里没有所有者时用 [fallbackOwner]（当前用户，进得来这页的就是所有者）。
+/// 列表里没有所有者时用 [fallbackOwner]：只有所有者本人进来时传当前用户；接收者传 null（否则会把自己显示成所有者）。
 ({WifiShareMember? owner, List<WifiShareMember> members}) wifiSplitMembers(
   List<Map<String, dynamic>> rows,
   WifiShareMember? fallbackOwner,

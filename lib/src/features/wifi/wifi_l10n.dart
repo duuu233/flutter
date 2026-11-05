@@ -612,6 +612,8 @@ extension WifiL10n on AppL10n {
   // ── WiFi 设备详情改版（2026-10-29）：功能栏、设备信息、解绑 / 删除 ──
   String get wifiDeviceInfo => pick('设备信息', 'Device info', 'デバイス情報');
   String get wifiShareDevice => pick('分享设备', 'Share device', 'デバイスを共有');
+  /// 详情页入口与共享设备页标题（2026-11-05，同小程序）：所有者与接收者都能进；底部按钮仍用 [wifiShareDevice]。
+  String get wifiSharedDevice => pick('共享设备', 'Device sharing', 'デバイス共有');
   String get wifiUnbindMessage => pick(
     '解除绑定后，照片将保留，您可以稍后重新绑定电子纸设备。',
     'After unbinding, your photos are kept and you can bind the frame again later.',

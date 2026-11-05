@@ -33,7 +33,7 @@ import 'wifi_tf_page.dart';
 ///   · 状态：IoT GET /api/device/info，订阅 WS device.status，上下线时自动重查；电量放在在线状态那一栏（仅在线时显示）；
 ///   · 设备卡下方「投屏 | 轮播设置」（与蓝牙版位置一致）；
 ///   · 功能栏依次：设备信息（[WifiDeviceInfoPage]）、休眠设置、消息中心（未读角标）、TF卡（未插卡不可点；有卡显示已用/总量，
-///     进 [WifiTfPage]）、分享设备（仅所有者，[WifiSharePage]）、解除绑定（只删设备）；页底「删除设备」（仅所有者，
+///     进 [WifiTfPage]）、共享设备（2026-11-05 起所有者与接收者都显示，[WifiSharePage]，接收者只看不改）、解除绑定（只删设备）；页底「删除设备」（仅所有者，
 ///     样式与弹窗同蓝牙版，先删云端图片再删设备，见 wifi_remove_flow.dart）；
 ///   · 本地模式（status=LOCAL_TF）：投屏 / 轮播设置 / TF卡 可以点，但只提示「当前设备状态：本地模式，请恢复设备网络再试」；
 ///     设备信息、休眠设置、消息中心、分享、解绑、删除照常。
@@ -307,10 +307,9 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
             value: tf.text,
             chevron: tf.state == WifiTfState.present,
           ),
-          if (_isOwner) ...[
-            divider,
-            entry(l10n.wifiShareDevice, () => _push(WifiSharePage(state: widget.state, deviceId: widget.deviceId))),
-          ],
+          // 共享设备（2026-11-05，同小程序）：接收者也显示；身份由 [WifiSharePage] 自己查，接收者没有移除 / 分享按钮
+          divider,
+          entry(l10n.wifiSharedDevice, () => _push(WifiSharePage(state: widget.state, deviceId: widget.deviceId))),
           divider,
           // 解除绑定：红字，同蓝牙版；只删设备记录，照片保留
           entry(
