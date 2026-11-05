@@ -1,0 +1,9 @@
+/* システム権限ダイアログの文言（日本語）。キーは Info.plist と揃えること。 */
+"NSBluetoothAlwaysUsageDescription" = "フォトフレームの検索・接続と写真のキャストにBluetoothを使用します。";
+"NSBluetoothPeripheralUsageDescription" = "フォトフレームへの接続と写真の転送にBluetoothを使用します。";
+"NSLocationWhenInUseUsageDescription" = "位置情報は近くのBluetoothフォトフレームの検索にのみ使用します。";
+"NSPhotoLibraryUsageDescription" = "フォトフレームにキャストする写真を選ぶため、写真ライブラリへのアクセスが必要です。";
+"NSPhotoLibraryAddUsageDescription" = "AIで生成した画像を写真ライブラリに保存します。";
+"NSCameraUsageDescription" = "写真を撮影してフォトフレームにキャストするため、カメラを使用します。";
+"NSMicrophoneUsageDescription" = "AIアシスタントで長押しして話すため、マイクを使用します。";
+"NSSpeechRecognitionUsageDescription" = "話した内容を文字に変換してAIアシスタントに送るため、音声認識を使用します。";

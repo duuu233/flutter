@@ -299,7 +299,10 @@ fallback table, OTA failure details — 919 strings) was diffed against OpenCC `
 module) still showed Simplified characters. 48 characters and 26 phrases were added and three wrong entries fixed (浏→濟 and
 赞→賞 code-point typos, 复制→復制); 了解/发布/公布 are intentionally kept. **When adding copy with
 uncommon characters, rerun that diff** (method in `docs/history/2026-09/2026-09-14-繁体中文转换表补齐.md`). iOS permission prompts
-(`Info.plist`) have no `.lproj` localizations at all and are Simplified Chinese for every language.
+are localized since 2026-11-05 (App Review Guideline 4 rejection of 1.0.1(2): prompts must match the app's language):
+`ios/Runner/{en,zh-Hans,zh-Hant,ja}.lproj/InfoPlist.strings`, registered as the `InfoPlist.strings` variant group in
+`project.pbxproj`; `Info.plist` holds English fallbacks plus `CFBundleLocalizations`. Prompts follow the **system** language,
+not the in-app language setting. **When adding or changing a permission key, update all four files.**
 
 ## Data Flow
 

@@ -241,8 +241,10 @@ flutter build ipa --release --export-method app-store \
   （本次已创建 `Runner.entitlements` 并接线三个构建配置）。
 - `ITSAppUsesNonExemptEncryption=false` 已写入 Info.plist，上传免答加密题。
 - iPhone 已锁竖屏（页面全按 375 宽竖屏设计）。
-- 权限文案（蓝牙/相册/相机/定位）目前是中文；若主打海外市场，
-  建议补 `InfoPlist.strings` 英/日本地化。
+- 权限文案已按四语种本地化（2026-11-05，1.0.1(2) 因 Guideline 4「权限文案与 App 语言不一致」被拒后补）：
+  `ios/Runner/{en,zh-Hans,zh-Hant,ja}.lproj/InfoPlist.strings`，`Info.plist` 里是英文兜底和
+  `CFBundleLocalizations`。弹框语言跟随系统语言。**新增 / 改动权限键时四份要一起补**，打包前
+  在英文、日文系统下各触发一次蓝牙 / 相册 / 相机 / 麦克风授权核对。
 
 ## 三、每次发版检查清单
 

@@ -1,0 +1,9 @@
+/* 系統權限彈框文案（繁體中文）。鍵名與 Info.plist 保持一致。 */
+"NSBluetoothAlwaysUsageDescription" = "需要藍牙來搜尋、連接相框裝置並向其投屏照片。";
+"NSBluetoothPeripheralUsageDescription" = "需要藍牙來連接相框裝置並傳輸照片。";
+"NSLocationWhenInUseUsageDescription" = "iOS 搜尋附近的藍牙相框裝置需要定位權限。";
+"NSPhotoLibraryUsageDescription" = "需要存取相簿以選擇照片投屏到相框。";
+"NSPhotoLibraryAddUsageDescription" = "需要將 AI 生成的圖片儲存到你的相簿。";
+"NSCameraUsageDescription" = "需要使用相機拍照後投屏到相框。";
+"NSMicrophoneUsageDescription" = "需要使用麥克風，以便在 AI 助手裡按住說話。";
+"NSSpeechRecognitionUsageDescription" = "需要語音辨識，把你說的話轉成文字傳送給 AI 助手。";
