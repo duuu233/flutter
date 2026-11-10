@@ -310,6 +310,11 @@ extension WifiL10n on AppL10n {
     'Deleted. If the frame does not update, switch manually or set up the slideshow again.',
     '削除しました。フォトフレームが更新されない場合は、手動で切り替えるかスライドショーを再設定してください',
   );
+  String get wifiDeleteRestoredBuiltin => pick(
+    '已删除，相框将恢复显示内置图片',
+    'Deleted. The frame will go back to its built-in images.',
+    '削除しました。フォトフレームは内蔵画像の表示に戻ります',
+  );
   String get wifiDeleteSwitched => pick(
     '已删除，相框已切换到下一张',
     'Deleted. The frame has switched to the next photo.',

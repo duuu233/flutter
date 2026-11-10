@@ -665,9 +665,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// nextImageUrl 取相册里剩下的第一张：删到屏上当前图时服务端用它换图。服务端靠设备下载记录反推当前图，
   /// 反推不到就不切图（实现报告反馈追加内容第三节），所以没自动切图时提示「若相框未更新，请手动切换或重新设置轮播」。
   /// 结果以响应的 deviceAction / deviceNotified 为准。
+  /// 全删（2026-11-10，同小程序）：当前设备的照片已加载完（没有下一页）且全选，记录与云端都删成功后，
+  /// 再调 [_restoreBuiltinAfterDeleteAll]（restore-builtin，scene=DELETE_ALL_PHOTOS）让相框回到内置图片。
   Future<void> _deleteWifiPhotos(List<CastRecord> records, DeviceItem device) async {
     final l10n = AppL10n.of(context);
     final ids = [for (final record in records) record.id];
+    // 删之前判：删完列表会重载
+    final deletesAll = !state.castRecordsHasMore && _records.every((record) => ids.contains(record.id));
     final remaining = _records.where((record) => !ids.contains(record.id) && (record.imgBle ?? '').isNotEmpty).toList();
     final nextImageUrl = remaining.isEmpty ? '' : remaining.first.imgBle!;
     _showBlockingLoading(l10n.galDeleting);
@@ -675,6 +679,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     var cloudError = '';
     var offline = false;
     var switched = false;
+    var restored = false;
     try {
       recordResult = await state.deleteCastRecords(ids, logTag: '[相册删除][WiFi]');
       final imgUrls = <String>[];
@@ -708,6 +713,9 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
           cloudError = error is IotException ? error.message : l10n.wifiCloudDeleteFailed;
         }
       }
+      if (deletesAll && recordResult.failed == 0 && recordResult.total > 0 && cloudError.isEmpty) {
+        restored = await _restoreBuiltinAfterDeleteAll(device);
+      }
     } finally {
       _dismissBlockingLoading();
     }
@@ -724,6 +732,8 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     }
     if (deletedCount <= 0) {
       AppToast.warn(context, l10n.wifiDeleteFailed);
+    } else if (restored) {
+      _showFeedback(l10n.wifiDeleteRestoredBuiltin);
     } else if (cloudError.isNotEmpty) {
       AppToast.warn(context, l10n.wifiDeleteCloudFailed(cloudError));
     } else if (recordResult.failed > 0) {
@@ -734,6 +744,32 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       _showFeedback(l10n.wifiDeleteSwitched);
     } else {
       _showFeedback(l10n.wifiDeleteDoneMaySwitch);
+    }
+  }
+
+  /// 「我的相册」把这台 WiFi 版设备的照片全删了（2026-11-10，同小程序 restoreBuiltinAfterDeleteAll）：
+  /// 调 restore-builtin 并带 scene=DELETE_ALL_PHOTOS，renderMode 同投屏取产品配置（取不到不传）。
+  /// 照片已经删掉，这一步出错只记日志（401 已由接口层引导重登）、不改删除结果。
+  /// 返回 true = 已下发（status=SENT）；SKIPPED（离线 / 休眠 / 本地模式等没下发）或出错返回 false，照原提示收场。
+  Future<bool> _restoreBuiltinAfterDeleteAll(DeviceItem device) async {
+    try {
+      final renderMode = await state.resolveRenderMode(device);
+      final logBody = IotApi.restoreBuiltinBody(
+        device.serialNumber,
+        renderMode: renderMode,
+        scene: IotApi.restoreSceneDeleteAllPhotos,
+      );
+      debugPrint('[相册删除][WiFi] 接口【恢复内置图片】POST /api/device/restore-builtin 参数 $logBody');
+      final res = await IotApi.restoreBuiltin(
+        device.serialNumber,
+        renderMode: renderMode,
+        scene: IotApi.restoreSceneDeleteAllPhotos,
+      );
+      debugPrint('[相册删除][WiFi] → 返回 $res');
+      return res['status'] == 'SENT';
+    } catch (error) {
+      debugPrint('[相册删除][WiFi] → 失败 ${error is IotException ? '${error.code} ${error.message}' : error}');
+      return false;
     }
   }
 

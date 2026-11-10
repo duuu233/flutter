@@ -17,6 +17,7 @@ import '../wifi_l10n.dart';
 ///   · 解除绑定（所有人都有）：只删自己那条设备记录，照片保留；不调 restore-builtin；
 ///   · 删除设备（仅所有者）：[_wipePhotos] 三步 → ④ delUserProduct。服务端口径：所有者删除时分享成员的记录与照片一并删除；
 ///   · 一键清空（2026-11-09，仅所有者，同小程序）：[_wipePhotos] 三步，设备记录保留；
+///     ③ restore-builtin 带 scene=DELETE_ALL_PHOTOS（2026-11-10），删除设备那次不带；
 ///   · [_wipePhotos]：① clearUserProductImg 清这台设备的相册记录 → ② IoT photo/delete all=true 删全部云端 bin
 ///     → ③ IoT restore-builtin 恢复设备内置图片（2026-11-06，renderMode 同投屏，取不到不传）。
 ///     ①② 失败就停下；③ 返回 status 只有 SENT / SKIPPED，都继续、不重试；出错只有 401（登录失效，接口层已引导重登）
@@ -135,7 +136,14 @@ Future<void> startWifiClearFlow(
     if (step2 != true || !context.mounted) {
       return;
     }
-    final ok = await _wipePhotos(context, state, device, '[WiFi一键清空]', l10n.devClearing);
+    final ok = await _wipePhotos(
+      context,
+      state,
+      device,
+      '[WiFi一键清空]',
+      l10n.devClearing,
+      scene: IotApi.restoreSceneDeleteAllPhotos,
+    );
     if (!ok || !context.mounted) {
       return;
     }
@@ -148,14 +156,16 @@ Future<void> startWifiClearFlow(
 
 /// 清掉这台设备的照片（删除设备与一键清空共用，同小程序 wipePhotos）：
 /// ① 老服务清相册记录 → ② IoT 删全部云端 bin → ③ IoT 恢复内置图片。蒙层 loading 在这里开关。
+/// [scene] 交给 restore-builtin（2026-11-10）：一键清空传 DELETE_ALL_PHOTOS，删除设备不传。
 /// 返回 true 可以继续；false 已停下（需要提示的已提示）。
 Future<bool> _wipePhotos(
   BuildContext context,
   PhotoFrameState state,
   DeviceItem device,
   String tag,
-  String loadingText,
-) async {
+  String loadingText, {
+  String scene = '',
+}) async {
   final l10n = AppL10n.of(context);
   AppLoadingDialog.show(context, loadingText);
   String failure = '';
@@ -183,7 +193,7 @@ Future<bool> _wipePhotos(
     if (!stopped) {
       try {
         final renderMode = await state.resolveRenderMode(device);
-        final res = await IotApi.restoreBuiltin(device.serialNumber, renderMode: renderMode);
+        final res = await IotApi.restoreBuiltin(device.serialNumber, renderMode: renderMode, scene: scene);
         debugPrint('$tag 恢复内置图片返回 ${res['status']} $res');
       } catch (error) {
         final code = error is IotException ? error.numericCode : null;

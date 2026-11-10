@@ -145,20 +145,35 @@ abstract final class IotApi {
   }
 
   /// 恢复设备内置图片（2026-11-06，同小程序）：`{ deviceNo, renderMode }` → POST /api/device/restore-builtin（JSON）。
-  /// 在 WiFi 版「删除设备」（删完云端照片之后、删设备记录之前）和「一键清空」里调；解除绑定不调。
+  /// 在 WiFi 版「删除设备」（删完云端照片之后、删设备记录之前）、「一键清空」和「我的相册」全删后调；解除绑定不调。
   /// [renderMode] 同投屏，取后台产品配置（PhotoFrameState.resolveRenderMode），有值才带、原样传。
+  /// [scene]（2026-11-10，选填，有值才带、原样传）：删光照片后调时传 [restoreSceneDeleteAllPhotos]
+  ///（一键清空、我的相册全删）；删除设备不传。入参其余字段与返回不变。
   /// 返回 `{ deviceNo, status }`：status 只有 SENT（已下发）/ SKIPPED（没下发，不用重试）；
   /// 错误码只有 4000 参数错误 / 401 登录失效 / 403 无权限 / 5000 服务异常，怎么收场由调用方决定（见 wifi_remove_flow.dart）。
-  static Future<Map<String, dynamic>> restoreBuiltin(String deviceNo, {String renderMode = ''}) async {
+  static Future<Map<String, dynamic>> restoreBuiltin(
+    String deviceNo, {
+    String renderMode = '',
+    String scene = '',
+  }) async {
     return _asMap(
       await _iot.post(
         '/api/device/restore-builtin',
-        body: {
-          'deviceNo': plainDeviceNo(deviceNo),
-          if (renderMode.trim().isNotEmpty) 'renderMode': renderMode.trim(),
-        },
+        body: restoreBuiltinBody(deviceNo, renderMode: renderMode, scene: scene),
       ),
     );
+  }
+
+  /// restore-builtin 的 scene（2026-11-10）：设备照片已全部删掉。
+  static const String restoreSceneDeleteAllPhotos = 'DELETE_ALL_PHOTOS';
+
+  /// restore-builtin 的请求 body（单独拿出来便于测试与打请求日志）。
+  static Map<String, Object?> restoreBuiltinBody(String deviceNo, {String renderMode = '', String scene = ''}) {
+    return {
+      'deviceNo': plainDeviceNo(deviceNo),
+      if (renderMode.trim().isNotEmpty) 'renderMode': renderMode.trim(),
+      if (scene.trim().isNotEmpty) 'scene': scene.trim(),
+    };
   }
 
   /// 休眠计划查询（实现报告反馈 2.1）：`{ configured, mode, enabled, beginTime, endTime, sleepTime, wakeTime, updatedAt }`。
