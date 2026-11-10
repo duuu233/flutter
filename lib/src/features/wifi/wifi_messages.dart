@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../shared/l10n/app_l10n.dart';
+import '../../state.dart' show AppLanguage;
 import 'wifi_l10n.dart';
 
 /// 消息中心的一条。
@@ -13,6 +14,8 @@ class WifiMessage {
     required this.payload,
     required this.read,
     required this.createdAt,
+    this.serverTitle,
+    this.serverContent,
   });
 
   final String id;
@@ -24,11 +27,41 @@ class WifiMessage {
   final Map<String, dynamic> payload;
   bool read;
   final String createdAt;
+
+  /// 服务端按 lang 翻译好的标题 / 正文（2026-11-09 列表接口新增，同小程序）：字段是字符串就收（去首尾空白），
+  /// 没有这个字段为 null，交给本地按 type 兜底。
+  final String? serverTitle;
+  final String? serverContent;
 }
 
 /// WiFi 版消息中心的纯逻辑，同步小程序 `utils/wifi-messages.js`（实现报告反馈第三节、对接文档第八节、V1.4 更新说明 2.2）。
-/// 服务端只给短码 type + payload，文案由 App 维护（见 [WifiL10n.wifiMessageTitle]）；未知 type 显示通用文案。
+/// 2026-11-09 起列表接口带 lang，返回服务端翻译好的 title / content，**有就直接显示**（[titleText] / [detailText]）；
+/// 按 type + payload 拼的本地文案（[WifiL10n.wifiMessageTitle]）只在接口没给时兜底，未知 type 显示通用文案。
 abstract final class WifiMessages {
+  /// 列表接口的 lang（2026-11-09）：按 App 当前语种传（接口可选 zh-CN / zh-TW / en / ja，不传按简中）。
+  /// 小程序语种入口已隐藏、固定传 zh-CN；App 有语种设置，跟着走。
+  static String notificationLang(AppLanguage language) => switch (language) {
+    AppLanguage.zh => 'zh-CN',
+    AppLanguage.zhHant => 'zh-TW',
+    AppLanguage.en => 'en',
+    AppLanguage.ja => 'ja',
+  };
+
+  static String? _serverText(Object? value) => value is String ? value.trim() : null;
+
+  /// 标题：服务端 title 非空用它，否则本地按 type 翻译。
+  static String titleText(AppL10n l10n, WifiMessage message) {
+    final title = message.serverTitle;
+    return title != null && title.isNotEmpty ? title : l10n.wifiMessageTitle(message.type);
+  }
+
+  /// 轮播未发送的那个时刻（HH:mm）：time / triggerTime / scheduledAt / planTime / triggerAt，带日期的只取时分（同小程序 carouselTime）。
+  static String carouselTime(Map<String, dynamic> p) {
+    final raw = '${p['time'] ?? p['triggerTime'] ?? p['scheduledAt'] ?? p['planTime'] ?? p['triggerAt'] ?? ''}'.trim();
+    final m = RegExp(r'(\d{1,2}:\d{2})(:\d{2})?\s*$').firstMatch(raw) ?? RegExp(r'(\d{1,2}:\d{2})').firstMatch(raw);
+    return m?.group(1) ?? '';
+  }
+
   static Map<String, dynamic> _parsePayload(Object? payload) {
     if (payload is Map) {
       return payload.map((k, v) => MapEntry(k.toString(), v));
@@ -43,10 +76,18 @@ abstract final class WifiMessages {
 
   static bool _has(Object? value) => value != null && '$value'.isNotEmpty;
 
-  /// payload 里值得给用户看的参数，拼成一行；看不懂的字段不展示。
+  /// 正文：服务端给了 content 就用它（空串即不显示），没给才按 payload 本地拼一行；看不懂的字段不展示。
   static String detailText(AppL10n l10n, WifiMessage message) {
+    final content = message.serverContent;
+    if (content != null) {
+      return content;
+    }
     final p = message.payload;
     final parts = <String>[];
+    // 轮播未发送（2026-11-05 对接文档 10.2，同小程序）：「18:00 的轮播图片未发送成功，请检查设备网络状态」；取不到时刻只给后半句
+    if (message.type == 'CAROUSEL_NOT_SENT') {
+      return l10n.wifiMsgCarouselNotSent(carouselTime(p));
+    }
     // 固件升级通知（2026-11-02 同小程序）：版本变化一行；reason 是短码（timeout 超时），翻成文案
     if (message.type.startsWith('OTA_')) {
       if (_has(p['baseVersion']) && _has(p['version'])) {
@@ -91,6 +132,8 @@ abstract final class WifiMessages {
       payload: _parsePayload(r['payload']),
       read: r['read'] == true,
       createdAt: '${r['createdAt'] ?? ''}',
+      serverTitle: _serverText(r['title']),
+      serverContent: _serverText(r['content']),
     );
   }
 

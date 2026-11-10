@@ -70,6 +70,17 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
 
   PhotoFrameState get state => widget.state;
 
+  /// 投屏记录每页条数（2026-11-03 同小程序）：3 列 × 7 行，滑到底加载下一页。只管本页，其它页照旧一次 100 条。
+  static const int _pageSize = 21;
+
+  /// 已加载到第几页（0 = 还没加载成功过）；静默刷新按它一次取 k × 21 条，之后第 k+1 页仍按每页 21 条接得上。
+  int _page = 0;
+  bool _loadingMore = false;
+  bool _moreError = false;
+
+  /// 作废在途的记录请求：切设备 / 重新加载时自增，翻页回包认这个序号，旧回包不得追加到新设备的列表。
+  int _recordSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -106,13 +117,90 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     _checkDeviceClearStatus();
   }
 
-  /// 只拉当前设备的**投屏成功**记录。设备为空（未绑定任何设备）时不带 userProductId，
-  /// 与原页面「没有设备也展示已有内容」的行为一致。
-  Future<void> _refreshRecords() => state.refreshCastRecords(
-    userProductId: _deviceFilter,
-    deviceUploadState: 1,
-    deviceId: _filterDeviceId,
-  );
+  /// 只拉当前设备的**投屏成功**记录第一页（每页 21 条），后面的页滑到底时由 [_loadMore] 追加。
+  /// 设备为空（未绑定任何设备）时不带 userProductId，与原页面「没有设备也展示已有内容」的行为一致。
+  /// [silent]（下拉刷新 / 从其它页面返回，2026-11-03 同小程序）：已翻到第 k 页就一次取 k × 21 条（pageIndex=1），
+  /// 回包后整表替换，翻页位置保留；失败保留现有内容。
+  Future<void> _refreshRecords({bool silent = false}) async {
+    final seq = ++_recordSeq;
+    final pages = silent && _page > 0 ? _page : 1;
+    if (!silent) {
+      _page = 0;
+    }
+    _loadingMore = false;
+    _moreError = false;
+    final feedback = await state.refreshCastRecords(
+      userProductId: _deviceFilter,
+      deviceUploadState: 1,
+      deviceId: _filterDeviceId,
+      pageIndex: 1,
+      pageSize: _pageSize * pages,
+      discardIf: () => seq != _recordSeq,
+    );
+    if (seq == _recordSeq && feedback.success) {
+      _page = pages;
+    }
+  }
+
+  /// 滑到底加载下一页，追加到网格末尾；已选状态保留。失败只在底部提示「点击重试」，不清已加载的照片。
+  Future<void> _loadMore() async {
+    if (_loading || _loadingMore || _page <= 0 || !state.castRecordsHasMore) {
+      return;
+    }
+    final seq = _recordSeq;
+    final pageIndex = _page + 1;
+    setState(() {
+      _loadingMore = true;
+      _moreError = false;
+    });
+    final feedback = await state.refreshCastRecords(
+      userProductId: _deviceFilter,
+      deviceUploadState: 1,
+      deviceId: _filterDeviceId,
+      pageIndex: pageIndex,
+      pageSize: _pageSize,
+      append: true,
+      discardIf: () => seq != _recordSeq,
+    );
+    if (!mounted || seq != _recordSeq) {
+      return;
+    }
+    setState(() {
+      _loadingMore = false;
+      if (feedback.success) {
+        _page = pageIndex;
+      } else {
+        _moreError = true;
+      }
+    });
+  }
+
+  /// 照片所属设备（删除、再次投屏共用，2026-11-06 同小程序 resolveOwnerDevice）：返回本人设备列表里的那台的 id，
+  /// 跨设备返回 `mixed`。每条记录依次按：① 记录的 userProductId 对上本人设备；② 记录的完整设备 ID 对上本人设备；
+  /// ③ 都对不上 → 当前设备下拉选中的那台。按设备 ID 查（2026-11-03 起）会带出这台设备上**所有人**上传的照片，
+  /// 共享成员 / 解绑重绑前上传的记录带的是上传人自己那条绑定的 userProductId，本人设备列表里没有，按 ②③ 归到这台。
+  ({String deviceId, bool mixed}) _ownerOf(List<CastRecord> records) {
+    final devices = state.devices;
+    final owners = <String>{};
+    for (final record in records) {
+      var owner = '';
+      if (record.deviceId.isNotEmpty && devices.any((device) => device.id == record.deviceId)) {
+        owner = record.deviceId;
+      } else if (record.productDeviceId.isNotEmpty) {
+        for (final device in devices) {
+          if (canonicalDeviceSerial(device.serialNumber) == record.productDeviceId) {
+            owner = device.id;
+            break;
+          }
+        }
+      }
+      owners.add(owner.isNotEmpty ? owner : (_deviceFilter ?? ''));
+    }
+    if (owners.length > 1) {
+      return (deviceId: '', mixed: true);
+    }
+    return (deviceId: owners.isEmpty ? '' : owners.first, mixed: false);
+  }
 
   /// 选了具体设备时，该设备的完整 6 字节设备 ID：投屏记录接口带上它，后端改按设备查（2026-11-03 同小程序）。
   /// 未选设备、设备列表里找不到、或没有完整 ID 时返回 null，不传，仍按用户查。
@@ -155,6 +243,8 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// （对齐小程序 onShow loadPhotos）。再次投屏会新增一条成功记录，必须重拉才能看到。
   @override
   void didPopNext() {
+    // 从下一级页面返回（再次投屏、预览等，可能多了新记录）：静默刷新，不清网格、不转圈。
+    // App 切后台再回来不经过这里（没有 onShow 那一跳），已加载的照片、已选与翻页原样保留（2026-11-03 同小程序）。
     _reloadFromBackend();
   }
 
@@ -165,9 +255,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     if (!mounted) {
       return;
     }
-    // 期间可能解绑了当前筛选的设备：重新定一次默认设备再拉数据。
+    // 期间可能解绑了当前筛选的设备：重新定一次默认设备再拉数据（换了设备就从第一页拉）。
+    final previous = _deviceFilter;
     _ensureDeviceFilter();
-    await _refreshRecords();
+    await _refreshRecords(silent: previous == _deviceFilter);
     if (!mounted) {
       return;
     }
@@ -276,11 +367,14 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// （后端忽略过滤参数时也不串设备、不串状态），与投屏管理页同一口径。
   List<CastRecord> get _records {
     final filter = _deviceFilter;
+    // 选了设备且带完整设备 ID 查的（2026-11-03 起后端按设备查）：返回的就是这台设备上所有人上传的照片
+    //（含共享成员 / 重绑前，userProductId 不是本人这条），不再按 userProductId 在端上过滤，同小程序
+    final byDevice = _filterDeviceId != null;
     return state.castRecords
         .where(
           (record) =>
               record.status == CastStatus.success &&
-              (filter == null || record.deviceId == filter),
+              (filter == null || byDevice || record.deviceId == filter),
         )
         .toList();
   }
@@ -456,10 +550,14 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       AppToast.warn(context, l10n.galDeleteNoSlot);
       return;
     }
-    // 目标设备 = 当前分类的这台（列表本就是按它向后端筛出来的）；记录带 userProductId 时以它为准。
-    final targetDeviceId = records.first.deviceId.isNotEmpty
-        ? records.first.deviceId
-        : (_deviceFilter ?? '');
+    // 目标设备 = 照片所属的那台（[_ownerOf]：记录的 userProductId → 完整设备 ID → 当前分类的这台）；
+    // 跨设备直接拦下（同一份掩码解析出的槽位只对一台设备成立）。
+    final owner = _ownerOf(records);
+    if (owner.mixed) {
+      AppToast.warn(context, l10n.galOnlySameDevice);
+      return;
+    }
+    final targetDeviceId = owner.deviceId;
     if (targetDeviceId.isEmpty) {
       AppToast.warn(context, l10n.galRecastNoDevice);
       return;
@@ -503,6 +601,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       if (!deviceOutcome.blocked) {
         recordResult = await state.deleteCastRecords(
           records.map((record) => record.id),
+          logTag: '[相册删除]',
         );
       }
     } finally {
@@ -550,10 +649,9 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
   /// 照片属于同一台 WiFi 版设备时返回那台设备，其余（蓝牙版 / 跨设备 / 找不到）一律返回 null，
   /// 交回原蓝牙链路（同小程序 album/list.js ownerIfWifi）。
   DeviceItem? _wifiOwnerOf(List<CastRecord> records) {
-    final owners = {for (final record in records) record.deviceId};
-    final ownerId = owners.length == 1
-        ? (owners.first.isNotEmpty ? owners.first : (_deviceFilter ?? ''))
-        : '';
+    // 所属设备同 [_ownerOf]（2026-11-06 起共享成员上传的照片也归到当前这台）
+    final owner = _ownerOf(records);
+    final ownerId = owner.mixed ? '' : owner.deviceId;
     if (ownerId.isEmpty) {
       return null;
     }
@@ -578,7 +676,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     var offline = false;
     var switched = false;
     try {
-      recordResult = await state.deleteCastRecords(ids);
+      recordResult = await state.deleteCastRecords(ids, logTag: '[相册删除][WiFi]');
       final imgUrls = <String>[];
       for (final record in records) {
         final url = record.imgBle ?? '';
@@ -589,20 +687,24 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       debugPrint('[相册删除][WiFi] 记录删除 ${recordResult.total} 条失败 ${recordResult.failed}，待删云端 ${imgUrls.length} 张，下一张 $nextImageUrl');
       for (var start = 0; start < imgUrls.length; start += 200) {
         final end = start + 200 < imgUrls.length ? start + 200 : imgUrls.length;
+        final body = <String, Object?>{
+          'deviceNo': device.serialNumber,
+          'imgUrls': imgUrls.sublist(start, end),
+          if (nextImageUrl.isNotEmpty) 'nextImageUrl': nextImageUrl,
+        };
+        // 请求日志（2026-11-06 同小程序）：记实际 body，deviceNo 已去冒号
+        final logBody = <String, Object?>{...body, 'deviceNo': IotApi.plainDeviceNo(device.serialNumber)};
+        debugPrint('[相册删除][WiFi] 接口【删除云端照片】POST /api/device/photo/delete 参数 $logBody');
         try {
-          final res = await IotApi.deletePhotos({
-            'deviceNo': device.serialNumber,
-            'imgUrls': imgUrls.sublist(start, end),
-            if (nextImageUrl.isNotEmpty) 'nextImageUrl': nextImageUrl,
-          });
-          debugPrint('[相册删除][WiFi] 云端删除返回 $res');
+          final res = await IotApi.deletePhotos(body);
+          debugPrint('[相册删除][WiFi] → 返回 $res');
           if (res['deviceNotified'] == false) {
             offline = true;
           } else if (res['deviceAction'] == 'PLAY_NEXT') {
             switched = true;
           }
         } catch (error) {
-          debugPrint('[相册删除][WiFi] 云端删除失败 $error');
+          debugPrint('[相册删除][WiFi] → 失败 ${error is IotException ? '${error.code} ${error.message}' : error}');
           cloudError = error is IotException ? error.message : l10n.wifiCloudDeleteFailed;
         }
       }
@@ -689,10 +791,13 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
       _showFeedback(l10n.galRecastNoImage);
       return;
     }
-    // 目标设备 = 当前分类的这台（列表本就是按它向后端筛出来的）；记录带 userProductId 时以它为准。
-    final targetDeviceId = records.first.deviceId.isNotEmpty
-        ? records.first.deviceId
-        : (_deviceFilter ?? '');
+    // 目标设备 = 照片所属的那台（[_ownerOf]，同删除）；跨设备拦下。
+    final owner = _ownerOf(records);
+    if (owner.mixed) {
+      _showFeedback(l10n.galOnlySameDevice);
+      return;
+    }
+    final targetDeviceId = owner.deviceId;
     if (targetDeviceId.isEmpty) {
       _showFeedback(l10n.galRecastNoDevice);
       return;
@@ -880,7 +985,10 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                       ),
                       const SizedBox(width: 9),
                       Text(
-                        AppL10n.of(context).galTotalCount(records.length),
+                        // 「共 N 张」：后端按状态过滤时取 recordCount（含没翻到的页），否则按已加载的张数
+                        AppL10n.of(context).galTotalCount(
+                          state.castRecordsTotal > records.length ? state.castRecordsTotal : records.length,
+                        ),
                         style: const TextStyle(
                           color: Color(0xFF777E88),
                           fontSize: 14,
@@ -896,32 +1004,69 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
                   child: RefreshIndicator(
                     onRefresh: _reloadFromBackend,
                     color: const Color(0xFFEB5F1B),
-                    child: GridView.builder(
-                      padding: EdgeInsets.fromLTRB(
-                        23,
-                        0,
-                        23,
-                        hasSelection ? 16 : 17,
-                      ),
-                      physics: const BouncingScrollPhysics(
-                        parent: AlwaysScrollableScrollPhysics(),
-                      ),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            mainAxisSpacing: 7,
-                            crossAxisSpacing: 7,
-                            childAspectRatio: 1,
-                          ),
-                      itemCount: records.length,
-                      itemBuilder: (context, index) {
-                        final record = records[index];
-                        return _GalleryTile(
-                          record: record,
-                          selected: _selectedIds.contains(record.id),
-                          onTap: () => _toggleOne(record.id),
-                        );
+                    // 滑到离底部不到一屏的 1/4 时加载下一页（每页 21 张，2026-11-03 同小程序）
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        final metrics = notification.metrics;
+                        if (metrics.axis == Axis.vertical &&
+                            metrics.maxScrollExtent - metrics.pixels <= metrics.viewportDimension / 4) {
+                          _loadMore();
+                        }
+                        return false;
                       },
+                      child: CustomScrollView(
+                        physics: const BouncingScrollPhysics(
+                          parent: AlwaysScrollableScrollPhysics(),
+                        ),
+                        slivers: [
+                          SliverPadding(
+                            padding: const EdgeInsets.symmetric(horizontal: 23),
+                            sliver: SliverGrid(
+                              gridDelegate:
+                                  const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 3,
+                                    mainAxisSpacing: 7,
+                                    crossAxisSpacing: 7,
+                                    childAspectRatio: 1,
+                                  ),
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) {
+                                  final record = records[index];
+                                  return _GalleryTile(
+                                    record: record,
+                                    selected: _selectedIds.contains(record.id),
+                                    onTap: () => _toggleOne(record.id),
+                                  );
+                                },
+                                childCount: records.length,
+                              ),
+                            ),
+                          ),
+                          // 分页尾：加载中 / 加载失败点击重试 / 上拉加载更多 / 没有更多了（只有一页时不显示）
+                          if (_loadingMore || _moreError || state.castRecordsHasMore || records.length > _pageSize)
+                            SliverToBoxAdapter(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onTap: _moreError ? _loadMore : null,
+                                child: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 14),
+                                  child: Text(
+                                    _loadingMore
+                                        ? AppL10n.of(context).galLoadingMore
+                                        : _moreError
+                                        ? AppL10n.of(context).galLoadMoreFailed
+                                        : state.castRecordsHasMore
+                                        ? AppL10n.of(context).galPullToLoadMore
+                                        : AppL10n.of(context).galNoMore,
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          SliverToBoxAdapter(child: SizedBox(height: hasSelection ? 16 : 17)),
+                        ],
+                      ),
                     ),
                   ),
                 ),

@@ -6,11 +6,14 @@ import 'package:flutter/services.dart';
 
 import '../../../network/boltfox_api.dart';
 import '../../../network/iot/iot_client.dart';
+import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../shared/widgets/home_figma_common.dart';
 import '../../../state.dart';
+import '../../cast/cast_photo_picker.dart';
+import '../../cast/presentation/cast_preview_page.dart';
 import '../wifi_l10n.dart';
 import '../wifi_projection.dart';
 import '../wifi_widgets.dart';
@@ -27,7 +30,14 @@ import '../wifi_widgets.dart';
 /// 同时加入轮播（实现报告反馈追加内容第二节）：预览页打开了「同时加入轮播」时 [addToCarousel]=true，每张（含只上传的）
 /// 都带 addToCarousel=true；有任何一张成功投出但 carouselUpdated=false，结束后在结果下方追加
 /// 「未成功加入轮播，请前往轮播设置添加」；true / null 不额外提示。
-/// 结束后：全部成功只给「完成」；有失败给「重试未成功的」+「完成」。
+/// 记录的 img 存原图（2026-11-06 同小程序）：投屏用的那张是预览页按设备 verticalRotation / rotationDegree 转过的成品，
+/// 竖向 180° 的机型（如 IJ_101）存进去，「我的相册」和轮播选图就是倒的；与蓝牙版（[CastingProgressPage.originalPaths]）同口径，
+/// 改存进预览页前的原图 [originalPaths]（选图时已按 [CastPhotoPicker] 降到长边 1920，不再另缩）；缺原图时退回投屏图。
+/// 逐张列表缩略图同样用原图；列表文案跟着进度条阶段走（上传中 / 处理中，2026-11-06），最多露 4 行、可上下滑，
+/// 投到第几张就滚到那一行（2026-11-06）。
+/// 结束后两个按钮，与蓝牙版结果页一致（2026-11-05 对接文档 20261105 第一节第 10 项，同小程序）：
+///   全部成功 →「继续投屏」（本页弹拍照 / 相册，选图后同一台设备进预览页）+「返回首页」；
+///   有失败 →「重试未成功的」+「返回首页」。
 /// 投屏日志（同小程序）：非正式包在页面下方显示、可一键复制；正式包不显示，只打控制台 [WiFi投屏]。重试不清空。
 /// type / renderMode（2026-10-28 同小程序）：首轮投屏前按设备取一次后台产品配置的屏幕方向 screenType 与渲染模式 renderMode
 /// （[PhotoFrameState.resolveScreenType] / [PhotoFrameState.resolveRenderMode]），每张原样带上，重试复用；screenType 没配才用 [type]
@@ -40,6 +50,7 @@ class WifiCastResultPage extends StatefulWidget {
     required this.imagePaths,
     required this.type,
     this.addToCarousel = false,
+    this.originalPaths = const [],
   });
 
   final PhotoFrameState state;
@@ -47,6 +58,9 @@ class WifiCastResultPage extends StatefulWidget {
 
   /// 预览页导出的本地图（设备物理分辨率）。
   final List<String> imagePaths;
+
+  /// 与 [imagePaths] 逐张对应的原图（进预览页前、未按设备旋转角转过）：写相册记录与列表缩略图用；缺项退回投屏图。
+  final List<String> originalPaths;
 
   /// 产品没配屏幕方向时的回退 type：与蓝牙版抖动出帧旧口径相同，480×720 传 '1'，其余 '0'（评审回复 8.1）。
   final String type;
@@ -59,9 +73,12 @@ class WifiCastResultPage extends StatefulWidget {
 }
 
 class _Item {
-  _Item(this.path);
+  _Item(this.path, String original) : original = original.isNotEmpty ? original : path;
 
   final String path;
+
+  /// 原图（相册记录 / 缩略图用）；没有时同 [path]。
+  final String original;
 
   /// pending / running / SENT / UPLOADED / FAILED
   String status = 'pending';
@@ -76,8 +93,17 @@ class _Item {
 class _WifiCastResultPageState extends State<WifiCastResultPage> {
   static const int _logLimit = 500;
 
-  late final List<_Item> _items = [for (final path in widget.imagePaths) _Item(path)];
+  late final List<_Item> _items = [
+    for (var i = 0; i < widget.imagePaths.length; i++)
+      _Item(widget.imagePaths[i], i < widget.originalPaths.length ? widget.originalPaths[i] : ''),
+  ];
   final ScrollController _logScroll = ScrollController();
+
+  /// 逐张列表（最多露 4 行）：投到第几张就滚到那一行。
+  final ScrollController _listScroll = ScrollController();
+  static const double _rowHeight = 52;
+  static const int _visibleRows = 4;
+  bool _picking = false;
   final List<String> _logs = <String>[];
   final bool _showLog = !kReleaseMode;
   bool _running = true;
@@ -122,6 +148,7 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
   void dispose() {
     _disposed = true;
     _logScroll.dispose();
+    _listScroll.dispose();
     super.dispose();
   }
 
@@ -157,7 +184,22 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
     }
   }
 
+  /// 逐张列表文案跟着进度条阶段走（2026-11-06 同小程序）：「图片上传中」→「上传中」、「图片处理中」→「处理中」，不再统一叫「投屏中」。
+  String _itemStageText(AppL10n l10n, String stage) => stage == 'PROCESSING' ? l10n.wifiCastItemProcessing : l10n.wifiCastItemUploading;
+
+  /// 列表滚到第 [index] 张（贴顶，下面露排队的）。
+  void _scrollListTo(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || !_listScroll.hasClients) {
+        return;
+      }
+      final target = (index * _rowHeight).clamp(0.0, _listScroll.position.maxScrollExtent);
+      _listScroll.animateTo(target, duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
+    });
+  }
+
   /// 写老服务相册记录（img + imgBle）。失败只记日志、返回 false，不影响投屏结果。
+  /// [filePath] 传原图（2026-11-06，见类注释），不传投屏图（已按设备旋转角转过）；imgBle 仍是这次投屏的 binUrl。
   Future<bool> _saveAlbumRecord(String filePath, String binUrl) async {
     final userProductId = widget.device.id;
     if (binUrl.isEmpty || userProductId.isEmpty) {
@@ -167,6 +209,7 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
       return false;
     }
     _appendLog('接口【写相册记录】setFileUpload + addUserProductImgRecord 参数 {userProductId: $userProductId, imgBle: $binUrl}');
+    _appendLog('相册记录用图：$filePath');
     try {
       final img = await BoltFoxApi.addWifiAlbumRecord(userProductId: userProductId, filePath: filePath, imgBle: binUrl);
       _appendLog('返回 img=$img');
@@ -206,8 +249,9 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
         _stageText = l10n.wifiCastStage('UPLOADING');
         _items[index]
           ..status = 'running'
-          ..text = l10n.wifiCastInProgress;
+          ..text = _itemStageText(l10n, 'UPLOADING');
       });
+      _scrollListTo(index);
       final path = _items[index].path;
       if (_showLog) {
         var size = '?KB';
@@ -233,6 +277,10 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
             setState(() {
               _stageText = l10n.wifiCastStage(stage);
               _progress = progress;
+              // 这一张还在进行中时，列表文案跟着阶段变（上传中 / 处理中）
+              if (_items[index].status == 'running' && (stage == 'UPLOADING' || stage == 'PROCESSING')) {
+                _items[index].text = _itemStageText(l10n, stage);
+              }
             });
           }
         },
@@ -241,7 +289,7 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
       var text = result.message.isNotEmpty ? result.message : l10n.wifiCastStage(result.status);
       // 写相册记录时不改阶段文案：100% 只显示「已发送，屏幕即将刷新」（2026-10-29 同小程序），过程只进日志
       if (result.sent) {
-        final saved = await _saveAlbumRecord(path, result.binUrl);
+        final saved = await _saveAlbumRecord(_items[index].original, result.binUrl);
         if (_disposed) return;
         if (!saved) {
           text = l10n.wifiCastAlbumNotSaved(text);
@@ -280,6 +328,44 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
     if (indexes.isNotEmpty) {
       _appendLog('重试未成功的：第 ${indexes.map((i) => i + 1).join('、')} 张');
       _run(indexes);
+    }
+  }
+
+  void _backHome() {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  }
+
+  /// 「继续投屏」：不跳首页，在本页弹「拍照 / 相册」二选一（与蓝牙版结果页同一做法）；选图后用本次投屏的同一台设备
+  /// 进预览页构图，预览页认出 WiFi 版、导出后再回到本页。结果页是流程终点，用 pushReplacement。用户取消选择不报错。
+  Future<void> _continueProjection() async {
+    if (_running || _picking) {
+      return;
+    }
+    _picking = true;
+    try {
+      final source = await CastPhotoPicker.chooseSource(context);
+      if (source == null || !mounted) {
+        return;
+      }
+      List<String> paths;
+      try {
+        paths = source == ImageSourceType.camera ? await CastPhotoPicker.takePhoto() : await CastPhotoPicker.pickFromAlbum();
+      } catch (_) {
+        if (mounted) {
+          AppToast.show(context, AppL10n.of(context).castCannotReadPhoto);
+        }
+        return;
+      }
+      if (paths.isEmpty || !mounted) {
+        return;
+      }
+      await Navigator.of(context).pushReplacement(
+        AppPageRoute<void>(
+          builder: (_) => CastPreviewPage(state: widget.state, device: widget.device, imagePaths: paths),
+        ),
+      );
+    } finally {
+      _picking = false;
     }
   }
 
@@ -418,17 +504,23 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
             FigmaGlassCard(
               borderRadius: 16,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              child: Column(
-                children: [
-                  for (var i = 0; i < total; i++)
-                    Padding(
+              // 逐张列表最多露 4 行，多出的上下滑动查看（2026-11-06 同小程序）；不足 4 张按实际高度
+              child: SizedBox(
+                height: _rowHeight * (total < _visibleRows ? total : _visibleRows),
+                child: ListView.builder(
+                  controller: _listScroll,
+                  padding: EdgeInsets.zero,
+                  itemExtent: _rowHeight,
+                  itemCount: total,
+                  itemBuilder: (context, i) => Padding(
                       padding: const EdgeInsets.symmetric(vertical: 6),
                       child: Row(
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(6),
+                            // 缩略图用原图（2026-11-06 同小程序），与「我的相册」记录图同方位
                             child: Image.file(
-                              File(_items[i].path),
+                              File(_items[i].original),
                               width: 40,
                               height: 40,
                               fit: BoxFit.cover,
@@ -457,7 +549,7 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
                         ],
                       ),
                     ),
-                ],
+                ),
               ),
             ),
           ],
@@ -465,6 +557,7 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
           const SizedBox(height: 24),
         ],
       ),
+      // 两个按钮，与蓝牙版结果页一致：成功「继续投屏」/ 有失败「重试未成功的」+「返回首页」
       bottom: done
           ? Column(
               mainAxisSize: MainAxisSize.min,
@@ -475,24 +568,15 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
                     label: l10n.wifiCastRetryFailed,
                     fontWeight: FontWeight.w700,
                     onPressed: _retryFailed,
-                  ),
-                if (retryable)
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: SizedBox(
-                      height: 44,
-                      child: Center(
-                        child: Text(l10n.wifiCastDone, style: const TextStyle(color: Color(0xFFFF621F), fontSize: 16)),
-                      ),
-                    ),
                   )
-                else
+                else if (total > 0)
                   FigmaHomePrimaryButton(
-                    label: l10n.wifiCastDone,
+                    label: l10n.castContinue,
                     fontWeight: FontWeight.w700,
-                    onPressed: () => Navigator.of(context).maybePop(),
+                    onPressed: _continueProjection,
                   ),
+                const SizedBox(height: 12),
+                FigmaSecondaryButton(label: l10n.castBackHome, onPressed: _backHome),
               ],
             )
           : null,

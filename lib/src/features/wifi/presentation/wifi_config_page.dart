@@ -93,8 +93,8 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                 const SizedBox(height: 12),
               ],
             ),
-          WifiTipRow(text: l10n.wifiOnly24G),
-          const SizedBox(height: 16),
+          // 「设备仅支持 2.4G WiFi 配网」提示条 2026-11-05 去掉（同小程序）
+          const SizedBox(height: 4),
           FigmaGlassCard(
             borderRadius: 16,
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),

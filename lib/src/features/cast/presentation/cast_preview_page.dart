@@ -1442,6 +1442,8 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             type: DitheringApi.typeForDevice(dev.width, dev.height),
             // 只有轮播在运行且打开了开关才加入轮播
             addToCarousel: _carouselRunning && _addToCarousel,
+            // 相册记录 / 缩略图存原图（2026-11-06 同小程序 _origSrc，同下面蓝牙版 originalPaths）
+            originalPaths: List<String>.from(_paths),
           ),
         ),
       );

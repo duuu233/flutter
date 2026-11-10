@@ -31,6 +31,7 @@ import '../ai_token.dart';
 import '../ai_voice_input.dart';
 import 'ai_sessions_page.dart';
 import 'ai_visuals.dart';
+import '../../../shared/tap_guard.dart';
 
 /// AI 对话（星宝）主界面。对齐小程序 `subpackages/ai/chat`
 /// （需求：`assets/ai/支付&ai&官方图库.docx`「一、AI对话模块」；接口：`BoltStar-API-Doc-v2-1.0.4.md`）。
@@ -2240,7 +2241,8 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       case 'download':
         await _downloadImage(url);
       case 'cast':
-        await _castImage(url);
+        // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）：选设备 / 连接 / 下载期间再点忽略
+        await TapGuard.run(this, 'projection', () => _castImage(url));
       case 'delete':
         final l10n = AppL10n.of(context);
         final confirmed = await showAppConfirmDialog(
@@ -2385,36 +2387,31 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     );
   }
 
-  /// 投屏：已连接活动设备 → 直接进投屏预览；未连接 → 弹已绑定设备列表，选中后连接再进。
-  /// 与手选照片完全同链路（AI 图先下载成本地文件，交给 [CastPreviewPage]）。
+  /// 投屏：一律弹已绑定设备列表（2026-11-06 同小程序：取消「已连上蓝牙设备就直接进投屏」，行上带连接状态），
+  /// 选中后蓝牙版未连接先连上再进。与手选照片完全同链路（AI 图先下载成本地文件，交给 [CastPreviewPage]）。
   Future<void> _castImage(String url) async {
-    final selected = widget.state.selectedDevice;
-    DeviceItem? target = selected.isPlaceholder ? null : selected;
-    if (target == null ||
-        !widget.state.isDeviceActuallyConnected(target.id)) {
-      target = await _pickDevice();
-      if (target == null || !mounted) {
+    DeviceItem? target = await _pickDevice();
+    if (target == null || !mounted) {
+      return;
+    }
+    // WiFi 版（2026-10-29 同小程序，原先没接）：不连蓝牙，确认云端在线后带去预览页，
+    // 预览页认出 WiFi 版、导出后去 WiFi 投屏结果页
+    if (target.isWifi) {
+      if (!await ensureWifiDeviceOnline(context, target) || !mounted) {
         return;
       }
-      // WiFi 版（2026-10-29 同小程序，原先没接）：不连蓝牙，确认云端在线后带去预览页，
-      // 预览页认出 WiFi 版、导出后去 WiFi 投屏结果页
-      if (target.isWifi) {
-        if (!await ensureWifiDeviceOnline(context, target) || !mounted) {
-          return;
-        }
-      } else if (!widget.state.isDeviceActuallyConnected(target.id)) {
-        AppLoadingDialog.show(context, AppL10n.of(context).castConnectingDevice);
-        final feedback = await widget.state.connectDevice(target.id);
-        AppLoadingDialog.hide(context);
-        if (!mounted) {
-          return;
-        }
-        if (!feedback.success) {
-          AppToast.show(context, feedback.message);
-          return;
-        }
-        target = widget.state.deviceById(target.id);
+    } else if (!widget.state.isDeviceActuallyConnected(target.id)) {
+      AppLoadingDialog.show(context, AppL10n.of(context).castConnectingDevice);
+      final feedback = await widget.state.connectDevice(target.id);
+      AppLoadingDialog.hide(context);
+      if (!mounted) {
+        return;
       }
+      if (!feedback.success) {
+        AppToast.show(context, feedback.message);
+        return;
+      }
+      target = widget.state.deviceById(target.id);
     }
 
     // 「投屏」是主动操作：本来就连着 / 刚在弹层里连上，都提醒一次电量
@@ -2449,9 +2446,9 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
     );
   }
 
-  /// 未连接时的设备选择弹层（与官方图库详情页共用 [showDevicePickerSheet]）。
+  /// 设备选择弹层（与官方图库详情页共用 [showDevicePickerSheet]；2026-11-06 起点投屏一律弹）。
   ///
-  /// 2026-08-13 起**不默认选中、点一行只选中**，按下弹层里的「连接并投屏」才返回设备——
+  /// 2026-08-13 起**不默认选中、点一行只选中**，按下弹层里的「投屏」才返回设备——
   /// 投屏是往设备写图且不可撤销，端上替用户选好、他顺手一点就投到了别的设备上。
   /// 弹层与本页此前那份自绘列表已整块删除（留着既不生效、又会误导下一个人）。
   Future<DeviceItem?> _pickDevice() async {
@@ -2469,16 +2466,17 @@ class _AiChatPageState extends State<AiChatPage> with RouteAware {
       AppToast.show(context, l10n.aiNoBoundDevice);
       return null;
     }
-    // 2026-10-29（同小程序）：离线 / 本地模式 / 状态未知的 WiFi 版不进选择列表，蓝牙版不受影响
-    final pickable = await filterPickableDevices(devices);
+    // 所有已绑定设备都列出（2026-11-06 同小程序），WiFi 版先查一次状态给行上显示；
+    // 不可投的 WiFi 版选了由 _castImage 里 ensureWifiDeviceOnline 提示
+    await refreshPickerWifiStatuses(devices);
     if (!mounted) {
       return null;
     }
-    if (pickable.isEmpty) {
-      AppToast.show(context, l10n.wifiNoPickableDevice);
-      return null;
-    }
-    return showDevicePickerSheet(context, devices: pickable);
+    return showDevicePickerSheet(
+      context,
+      devices: devices,
+      bleConnected: (device) => widget.state.isDeviceActuallyConnected(device.id),
+    );
   }
 
   // ── 滚动 ─────────────────────────────────────────────────

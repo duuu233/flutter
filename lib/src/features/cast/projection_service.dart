@@ -62,6 +62,11 @@ class CastProgress {
   final String message;
 }
 
+/// 批量投屏逐张进度（2026-11-06 同小程序 result.js BATCH_TEXT，仿 WiFi 版结果页的逐张列表）：
+/// 处理中（出帧 + 建记录，含与上一张图传并行的预取）→ 已发送（帧已就绪、排队等蓝牙）→ 传输中（蓝牙图传）→ 投屏完成。
+/// 失败 / 中断 / 未投屏由页面按结果收尾（服务只报往前走的阶段）。
+enum CastItemStage { processing, sent, transferring, done }
+
 /// 投屏进度页的阶段标题（对齐小程序 result.js）。
 class CastStage {
   CastStage._();
@@ -124,6 +129,8 @@ class ServerImageProjectionService {
     required List<String> filePaths,
     List<String>? recordFilePaths,
     void Function(CastProgress)? onProgress,
+    // 逐张阶段（2026-11-06）：index 为 [filePaths] 里非空项的序号（0 起），页面只在多张时显示列表
+    void Function(int index, CastItemStage stage)? onItemStage,
     bool Function()? shouldAbort,
     // 设备列表记录的物理宽高与形状（2026-10-22 同步小程序 10-19）：新机型（如 EB-169 400×400）
     // 的尺寸只能从这里来，0x01 型号表里没有。都为 0 时兼容旧的 0x01 型号表。
@@ -300,6 +307,7 @@ class ServerImageProjectionService {
       final prefetch = List<Future<_AcquiredFrame>?>.filled(total, null);
       void startPrefetch(int idx) {
         if (idx < 0 || idx >= total || prefetch[idx] != null) return;
+        onItemStage?.call(idx, CastItemStage.processing);
         prefetch[idx] = trace.measure(
           'prepare-image-${idx + 1}',
           () => _acquireFrame(
@@ -317,6 +325,13 @@ class ServerImageProjectionService {
         // PlatformDispatcher.onError 当成未处理异步错误写入 last_crash.txt，
         // 一次普通弱网下载失败就会在下次启动误弹「崩溃报告」。
         prefetch[idx]!.ignore();
+        // 帧就绪 → 这张标「已发送」（排队等蓝牙）；失败不在这里处理
+        unawaited(
+          prefetch[idx]!.then<void>(
+            (_) => onItemStage?.call(idx, CastItemStage.sent),
+            onError: (Object _) {},
+          ),
+        );
       }
 
       startPrefetch(0);
@@ -404,6 +419,7 @@ class ServerImageProjectionService {
           ),
         );
 
+        onItemStage?.call(i, CastItemStage.transferring);
         // 本张设备事务：只有 BLE 图传失败才回滚删掉刚传到设备的图，再向外抛出让整单判失败。
         try {
           final imgEnd = await trace.measure(
@@ -483,6 +499,7 @@ class ServerImageProjectionService {
         firstSuccessfulIndex ??= index; // 本批第一张成功写入的真实槽位，收尾刷屏用它
         usedIndexes = [...usedIndexes, index];
         uploaded++;
+        onItemStage?.call(i, CastItemStage.done);
         // 本张完成：停掉平滑器（100% 由下面的 emit 直接给——**只有真实完成才画得出 100%**，
         // 平滑器自身的前瞻永远被 99 封顶，见 SmoothProgress._upperBound）。
         smooth.dispose();

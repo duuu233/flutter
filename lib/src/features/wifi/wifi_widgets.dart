@@ -60,10 +60,14 @@ class CommBadge extends StatelessWidget {
     required this.text,
     this.textColor,
     this.trailing,
+    this.showIcon = true,
   });
 
   final bool wifi;
   final String text;
+
+  /// 文字前的 WiFi / 蓝牙小图标。首页卡片 2026-11-09 起不画（同小程序：WiFi 卡下面的在线状态行已有 WiFi 图标，两个重复）。
+  final bool showIcon;
 
   /// 文字颜色覆盖（「未知设备」用警示色），默认跟随类型色。
   final Color? textColor;
@@ -74,7 +78,7 @@ class CommBadge extends StatelessWidget {
     final color = wifi ? kWifiGreen : kBleBlue;
     return Container(
       height: 14,
-      padding: const EdgeInsets.only(left: 4, right: 6),
+      padding: EdgeInsets.only(left: showIcon ? 4 : 6, right: 6),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(999),
         gradient: LinearGradient(
@@ -92,8 +96,10 @@ class CommBadge extends StatelessWidget {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(wifi ? Icons.wifi_rounded : Icons.bluetooth_rounded, size: 10, color: color),
-          const SizedBox(width: 2),
+          if (showIcon) ...[
+            Icon(wifi ? Icons.wifi_rounded : Icons.bluetooth_rounded, size: 10, color: color),
+            const SizedBox(width: 2),
+          ],
           Text(
             text,
             maxLines: 1,

@@ -407,11 +407,17 @@ class CastRecord {
     this.thumbUrl,
     this.imgBle,
     this.deviceName = '',
+    this.productDeviceId = '',
   });
 
   final String id;
   final String title;
   final String deviceId;
+
+  /// 记录带的完整设备 ID（productDeviceId / deviceNo / serialNo，规范化后；没有为空串）。
+  /// 「我的相册」按设备 ID 查出的共享成员 / 重绑前上传的照片，[deviceId]（上传人自己那条绑定）不在本人设备列表里，
+  /// 删除 / 再次投屏时靠它归属到本人这台（2026-11-06 同小程序 resolveOwnerDevice）。
+  final String productDeviceId;
   final String ownerUserId;
   final CastStatus status;
   final ImageSourceType source;
@@ -586,6 +592,8 @@ class PhotoFrameState extends ChangeNotifier {
   // （空态文案只在确认成功且确实为空时出现）。成功刷新会清掉。
   bool _devicesLoadError = false;
   bool _castRecordsLoadError = false;
+  bool _castRecordsHasMore = false;
+  int _castRecordsTotal = 0;
 
   /// 设备列表首屏是否已出结果（false=仍在首次加载，页面应显示 loading 而非「未绑定」空态）。
   bool get devicesLoaded => _devicesLoaded;
@@ -598,6 +606,12 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// 最近一次投屏记录刷新是否失败。
   bool get castRecordsLoadError => _castRecordsLoadError;
+
+  /// 最近一次 [refreshCastRecords] 之后后端还有下一页（「我的相册」触底加载用）。
+  bool get castRecordsHasMore => _castRecordsHasMore;
+
+  /// 最近一次整表拉取的成功记录总数（后端确实按状态过滤时取 recordCount；否则 0，页面按已加载张数显示）。
+  int get castRecordsTotal => _castRecordsTotal;
 
   /// 用户资料首屏是否已出结果（「我的」页据此决定显示真实统计还是占位 `--`）。
   bool get userLoaded => _userLoaded;
@@ -2105,16 +2119,46 @@ class PhotoFrameState extends ChangeNotifier {
   //     `imgIndex`，缺了就整批终止，刻意不再推算。
 
   /// 某台设备的投屏成功记录（WiFi 轮播选图用）：与 [refreshCastRecords] 同一接口同一映射，
-  /// 但**不改** [castRecords]（「我的相册」页的列表与筛选不受影响）；失败抛给调用方。
-  Future<List<CastRecord>> fetchSuccessCastRecords(String userProductId) async {
-    final data = await BoltFoxApi.getUserProductImgRecordList({
-      'pageIndex': 1,
-      'pageSize': 100,
-      'userProductId': userProductId,
-      'deviceUploadState': 1,
-    });
-    final rows = extractApiRows(data);
-    return [for (var i = 0; i < rows.length; i++) _castRecordFromJson(rows[i], i)];
+  /// 但**不改** [castRecords]（「我的相册」页的列表与筛选不受影响）；失败抛给调用方（任一页失败整体失败）。
+  /// [deviceId]（2026-11-03 同小程序）：设备完整 6 字节 ID，有就带，后端按设备查（这台设备上所有人上传的都能查到）；
+  /// 每页 21 条按页取完（2026-11-05，回显校验 / 全选 / 「全部相册」判断都要整本相册），最多 [maxPages] 页兜底。
+  Future<List<CastRecord>> fetchSuccessCastRecords(
+    String userProductId, {
+    String? deviceId,
+    int pageSize = 21,
+    int maxPages = 30,
+  }) async {
+    final records = <CastRecord>[];
+    for (var pageIndex = 1; pageIndex <= maxPages; pageIndex++) {
+      final data = await BoltFoxApi.getUserProductImgRecordList({
+        'pageIndex': pageIndex,
+        'pageSize': pageSize,
+        'userProductId': userProductId,
+        'deviceUploadState': 1,
+        'deviceId': ?deviceId,
+      });
+      final rows = extractApiRows(data);
+      for (final row in rows) {
+        records.add(_castRecordFromJson(row, records.length));
+      }
+      final pageCount = data is Map ? _asInt(data['pageCount']) : 0;
+      final recordCount = data is Map ? _asInt(data['recordCount']) : 0;
+      final bool hasMore;
+      if (rows.isEmpty) {
+        hasMore = false;
+      } else if (pageCount > 0) {
+        hasMore = pageIndex < pageCount;
+      } else if (recordCount > 0) {
+        hasMore = (pageIndex - 1) * pageSize + rows.length < recordCount;
+      } else {
+        hasMore = rows.length >= pageSize;
+      }
+      if (!hasMore) {
+        return records;
+      }
+    }
+    debugPrint('[轮播选图] 已取满 $maxPages 页（每页 $pageSize），后面的不再取');
+    return records;
   }
 
   /// 投屏记录列表：`/Client/UserProduct/getUserProductImgRecordList`。
@@ -2124,16 +2168,25 @@ class PhotoFrameState extends ChangeNotifier {
   /// 后端按状态过滤），缺省不传取全部。分状态拉取避免 >100 条时本地切片丢行。
   /// [deviceId]（可选，2026-11-03 同小程序）：设备完整 6 字节 ID。传了后端按设备 ID 查、不再按用户 ID；
   /// 不传维持按用户查。目前只有「我的上传」（图库页）选了具体设备时传。
+  ///
+  /// 分页（2026-11-03 同小程序「我的上传」每页 21 条触底加载）：[pageIndex] / [pageSize] 缺省 1 / 100（投屏管理页等照旧）；
+  /// [append]=true 把这一页按 id 去重追加到现有列表后面（翻下一页），否则整表替换。
+  /// 每次都更新 [castRecordsHasMore]（判停优先信 pageCount / recordCount，都没回才看「本页条数 < pageSize」）与
+  /// [castRecordsTotal]（第一页整页都是成功记录 → 后端确实按状态过滤，recordCount 即总数；否则 0）。
   Future<ActionFeedback> refreshCastRecords({
     String? userProductId,
     int? deviceUploadState,
     String? deviceId,
+    int pageIndex = 1,
+    int pageSize = 100,
+    bool append = false,
+    bool Function()? discardIf,
   }) async {
     final epoch = _sessionEpoch;
     try {
       final data = await BoltFoxApi.getUserProductImgRecordList({
-        'pageIndex': 1,
-        'pageSize': 100,
+        'pageIndex': pageIndex,
+        'pageSize': pageSize,
         'userProductId': ?userProductId,
         'deviceUploadState': ?deviceUploadState,
         'deviceId': ?deviceId,
@@ -2142,15 +2195,39 @@ class PhotoFrameState extends ChangeNotifier {
         // 会话代际已变（登出/换号）：丢弃旧会话的在途响应，防跨账号串屏。
         return ActionFeedback(success: true, message: '');
       }
+      // 调用方已作废这次请求（「我的相册」翻页途中切了设备 / 重新加载）：不动列表
+      if (discardIf?.call() ?? false) {
+        return ActionFeedback(success: true, message: '');
+      }
       final rows = extractApiRows(data);
+      final pageCount = data is Map ? _asInt(data['pageCount']) : 0;
+      final recordCount = data is Map ? _asInt(data['recordCount']) : 0;
+      if (rows.isEmpty) {
+        _castRecordsHasMore = false;
+      } else if (pageCount > 0) {
+        _castRecordsHasMore = pageIndex < pageCount;
+      } else if (recordCount > 0) {
+        _castRecordsHasMore = (pageIndex - 1) * pageSize + rows.length < recordCount;
+      } else {
+        _castRecordsHasMore = rows.length >= pageSize;
+      }
       // 后端为准：即使返回空也覆盖本地（无记录时应显示空态，不保留旧数据）。
+      final offset = append ? _castRecords.length : 0;
       final mapped = <CastRecord>[];
       for (var i = 0; i < rows.length; i++) {
-        mapped.add(_castRecordFromJson(rows[i], i));
+        mapped.add(_castRecordFromJson(rows[i], offset + i));
       }
-      _castRecords
-        ..clear()
-        ..addAll(mapped);
+      if (append) {
+        // 翻页期间别处删过 / 新增过记录，后一页可能和已加载的重叠一两条：按 id 去重
+        final loaded = {for (final record in _castRecords) record.id};
+        _castRecords.addAll(mapped.where((record) => loaded.add(record.id)));
+      } else {
+        _castRecords
+          ..clear()
+          ..addAll(mapped);
+        final success = mapped.where((record) => record.status == CastStatus.success).length;
+        _castRecordsTotal = recordCount > 0 && mapped.isNotEmpty && success == mapped.length ? recordCount : 0;
+      }
       _castRecordsLoaded = true;
       _castRecordsLoadError = false;
       notifyListeners();
@@ -2260,16 +2337,28 @@ class PhotoFrameState extends ChangeNotifier {
   /// 不能因为记录没删干净就整体报错回滚（对齐小程序 `api.deleteProjectionRecords`）。
   /// 返回 `(total, failed, failedIds)` 由调用方决定提示文案。
   /// failedIds：WiFi 版删完记录还要删云端 bin，只能删记录真删掉了的那些（见「我的相册」WiFi 删除）。
+  /// [logTag]（2026-11-06 同小程序「我的上传」删除写请求日志）：给了就逐条打请求日志——发出前一行
+  /// 「接口【删除相册记录】POST 路径 参数」，结束一行「→ 返回 / → 失败 code message」，前缀用它（如 `[相册删除]`）。
   Future<({int total, int failed, List<String> failedIds})> deleteCastRecords(
-    Iterable<String> recordIds,
-  ) async {
+    Iterable<String> recordIds, {
+    String logTag = '',
+  }) async {
     final ids = recordIds.where((id) => id.isNotEmpty).toSet().toList();
     final failedIds = <String>[];
     for (final id in ids) {
+      if (logTag.isNotEmpty) {
+        debugPrint('$logTag 接口【删除相册记录】POST /Client/UserProduct/delUserProductImgRecord 参数 {"id":"$id"}');
+      }
       try {
-        await BoltFoxApi.delUserProductImgRecord(id);
+        final res = await BoltFoxApi.delUserProductImgRecord(id);
+        if (logTag.isNotEmpty) {
+          debugPrint('$logTag → 返回 ${res ?? 'null'}');
+        }
         _castRecords.removeWhere((record) => record.id == id);
-      } catch (_) {
+      } catch (error) {
+        if (logTag.isNotEmpty) {
+          debugPrint('$logTag → 失败 ${error is ApiException ? '${error.code} ${error.message}' : error}');
+        }
         failedIds.add(id);
       }
     }
@@ -3871,6 +3960,9 @@ class PhotoFrameState extends ChangeNotifier {
       imageUrl: url.isEmpty ? null : url,
       thumbUrl: thumb.isEmpty ? null : thumb,
       imgBle: imgBle.isEmpty ? null : imgBle,
+      productDeviceId: canonicalDeviceSerial(
+        '${data['productDeviceId'] ?? data['deviceNo'] ?? data['serialNo'] ?? ''}',
+      ),
     );
   }
 

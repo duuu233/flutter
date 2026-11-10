@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../features/wifi/wifi_status.dart';
 import '../../features/wifi/wifi_widgets.dart';
 import '../../state.dart';
 import '../l10n/app_l10n.dart';
@@ -19,10 +20,15 @@ import '../l10n/app_l10n.dart';
 /// 列表版式照搬绑定页的「搜索到的设备」行：`home-icon02` 设备图 + 设备名 + 设备ID +
 /// 右侧对勾，选中态是橙描边 + 浅橙底 + 橙色设备名。
 ///
+/// 2026-11-06（同小程序 device-picker-sheet / utils/picker-devices.js）：主按钮「连接并投屏」改「投屏」（蓝牙版按下后照旧先连上再投）；
+/// 每行带连接状态——WiFi 版读 [WifiStatusStore]（调用方先 [refreshPickerWifiStatuses] 查一次），显示在线 / 离线 / 休眠中等；
+/// 蓝牙版按 [bleConnected] 显示「已连接 / 未连接」。所有已绑定设备都列出，不可投的 WiFi 版选了由调用方投屏前提示。
+///
 /// 返回值：用户按下主按钮时返回选中的设备；取消 / 点遮罩返回 null。
 Future<DeviceItem?> showDevicePickerSheet(
   BuildContext context, {
   required List<DeviceItem> devices,
+  bool Function(DeviceItem device)? bleConnected,
 }) {
   return showModalBottomSheet<DeviceItem>(
     context: context,
@@ -30,14 +36,15 @@ Future<DeviceItem?> showDevicePickerSheet(
     barrierColor: const Color(0x6B1E1D1B),
     // 设备多时列表自己滚，主按钮不会被顶出屏幕
     isScrollControlled: true,
-    builder: (sheetContext) => _DevicePickerSheet(devices: devices),
+    builder: (sheetContext) => _DevicePickerSheet(devices: devices, bleConnected: bleConnected),
   );
 }
 
 class _DevicePickerSheet extends StatefulWidget {
-  const _DevicePickerSheet({required this.devices});
+  const _DevicePickerSheet({required this.devices, this.bleConnected});
 
   final List<DeviceItem> devices;
+  final bool Function(DeviceItem device)? bleConnected;
 
   @override
   State<_DevicePickerSheet> createState() => _DevicePickerSheetState();
@@ -97,6 +104,7 @@ class _DevicePickerSheetState extends State<_DevicePickerSheet> {
                 final device = widget.devices[index];
                 return _DevicePickerRow(
                   device: device,
+                  bleConnected: widget.bleConnected?.call(device) ?? device.connected,
                   selected: device.id == _selectedId,
                   onTap: () => setState(() => _selectedId = device.id),
                 );
@@ -143,11 +151,15 @@ class _DevicePickerSheetState extends State<_DevicePickerSheet> {
 class _DevicePickerRow extends StatelessWidget {
   const _DevicePickerRow({
     required this.device,
+    required this.bleConnected,
     required this.selected,
     required this.onTap,
   });
 
   final DeviceItem device;
+
+  /// 蓝牙版本机是否连着这台（WiFi 版不看）。
+  final bool bleConnected;
   final bool selected;
   final VoidCallback onTap;
 
@@ -212,12 +224,54 @@ class _DevicePickerRow extends StatelessWidget {
                             ),
                           ),
                         ),
-                        // WiFi 版挂角标（2026-10-27 同步小程序）：选它不连蓝牙，走 WiFi 投屏
-                        if (device.isWifi) ...[
-                          const SizedBox(width: 6),
-                          CommBadge.plain(context, wifi: true),
-                        ],
+                        // 类型角标：WiFi 版（2026-10-27）选它不连蓝牙、走 WiFi 投屏；
+                        // 蓝牙版（2026-11-06 同小程序）也挂「蓝牙版」，与搜索列表同款图标与蓝色，两类设备一眼分开
+                        const SizedBox(width: 6),
+                        CommBadge.plain(context, wifi: device.isWifi),
                       ],
+                    ),
+                    // 连接状态（2026-11-06 同小程序）：圆点 + 文字，WiFi 在线青绿、蓝牙已连接蓝、其余灰
+                    Builder(
+                      builder: (context) {
+                        final String text;
+                        final Color color;
+                        final Color dot;
+                        if (device.isWifi) {
+                          final status = WifiStatusStore.instance.of(device.id);
+                          text = status.text(l10n);
+                          final online = status.status == WifiOnlineStatus.online;
+                          color = online ? const Color(0xFF0E9F87) : const Color(0xFF8B9098);
+                          dot = online ? const Color(0xFF12B896) : const Color(0xFFC3C8CF);
+                        } else {
+                          text = bleConnected ? l10n.devConnected : l10n.devDisconnected;
+                          color = bleConnected ? const Color(0xFF2F6FEB) : const Color(0xFF8B9098);
+                          dot = bleConnected ? const Color(0xFF2F6FEB) : const Color(0xFFC3C8CF);
+                        }
+                        if (text.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(color: dot, shape: BoxShape.circle),
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  text,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(color: color, fontSize: 11, height: 1.2),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
                     ),
                     // 设备ID：同型号同名设备靠它区分（后端记录里的完整 6 字节）。
                     // 老记录可能没有，缺就不画这一行，不写「--」占位。

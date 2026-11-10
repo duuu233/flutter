@@ -892,8 +892,10 @@ class _ConnectedDeviceCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 6),
-                      // 类型 + 尺寸标签（同小程序 2026-10-27）：与搜索列表同款「WiFi版·5.89寸 / 蓝牙版·5.89寸」，没配尺寸显示 --寸
+                      // 类型 + 尺寸标签（同小程序 2026-10-27）：与搜索列表同款「WiFi版·5.89寸 / 蓝牙版·5.89寸」，没配尺寸显示 --寸。
+                      // 2026-11-09 去掉标签前的 WiFi / 蓝牙小图标（同小程序：WiFi 卡下面的在线状态行已有 WiFi 图标，两个重复）
                       CommBadge(
+                        showIcon: false,
                         wifi: device.isWifi,
                         text:
                             '${device.isWifi ? AppL10n.of(context).wifiBadge : AppL10n.of(context).bleBadge}'

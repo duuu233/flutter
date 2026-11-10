@@ -28,10 +28,16 @@ class BindDeviceEntry {
     this.specUnknown = false,
     this.batteryText = '',
     this.signalBars = 0,
+    this.nameLoading = false,
   });
 
   final String id;
+
+  /// 列表标题：用户名下已有的设备名称优先（2026-11-04 同小程序），没有才是蓝牙广播名 / 平台名。
   final String name;
+
+  /// 用户设备名称还没查回来：名称处显示 loading，不先显示广播名再跳（2026-11-05 同小程序）。
+  final bool nameLoading;
   final String subtitle;
   final String deviceId;
 
@@ -158,10 +164,11 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                 // 雷达与统计行之间 20、统计行与列表之间 12，统计行自身固定 [_kCountRowHeight]。
                 const double fixed = 20 + _kCountRowHeight + 12;
                 final double avail = constraints.maxHeight;
-                final double radarSize = (avail - _kListViewport - fixed).clamp(
-                  _kRadarMin,
-                  _kRadarMax,
-                );
+                // 搜索中雷达 gif 尺寸不变（2026-11-05 同小程序：原来搜到第一台就缩、列表变长还继续压），
+                // 列表拿剩下的；搜索结束换静态图后照旧按 4.5 张卡的账让高度。
+                final double radarSize = widget.scanning
+                    ? (avail - fixed).clamp(_kRadarMin, _kRadarMax)
+                    : (avail - _kListViewport - fixed).clamp(_kRadarMin, _kRadarMax);
                 final double listHeight = (avail - radarSize - fixed).clamp(
                   0.0,
                   _kListViewport,
@@ -258,6 +265,7 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                             for (var i = 0; i < entries.length; i++) ...[
                               FigmaBindDeviceCard(
                                 name: entries[i].name,
+                                nameLoading: entries[i].nameLoading,
                                 subtitle: entries[i].subtitle,
                                 subtitleWidget: _subtitleRow(l10n, entries[i]),
                                 deviceId: entries[i].deviceId,

@@ -63,7 +63,7 @@ class WifiProvisionError implements Exception {
 ///   3 设备正在连接Wi-Fi  —— 设备侧没有状态上报，这一步调老服务绑定；绑定失败停在本步，不开始轮询
 ///                          （绑定必须先于在线查询：在线接口会调老服务 checkPermission，未绑定返回 403）；
 ///   4 设备正在连接云端   —— 轮询 GET /api/device/online?deviceNo=&since=（since 为本次配网开始时间），online=true 即成功；
-///                          503 / 403 / 网络失败继续轮询，60s 超时；401 停止。
+///                          503 / 403 / 网络失败继续轮询，120s 超时（2026-11-05 起，原 60s，同小程序）；401 停止。
 ///
 /// 页面之间的交接放内存、不进路由：WiFi 密码不该出现在任何路由参数或日志里。
 abstract final class WifiProvision {
@@ -72,7 +72,7 @@ abstract final class WifiProvision {
   /// 国家码：统一传世界通用模式 01（设备入网流程 5.2；小程序同值）。
   static const String countryCode = '01';
   static const Duration onlinePollInterval = Duration(seconds: 2);
-  static const Duration onlineTimeout = Duration(seconds: 60);
+  static const Duration onlineTimeout = Duration(seconds: 120); // 2026-11-05 由 60 秒提到 120 秒（对接文档 20261105 第一节）
 
   static WifiProvisionTarget? _target;
   static ({String ssid, String password})? _credentials;

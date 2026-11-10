@@ -121,6 +121,25 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
   /// 设备列表滚动位置：新连上的设备排到第一张时要平滑滚回顶部（对齐小程序 2026-11-02）。
   final ScrollController _scroll = ScrollController();
 
+  /// 当前 Tab（2026-11-06 同小程序）：true = WiFi版，false = 蓝牙版。用户点过之前每次按 [_defaultWifiTab] 选，点过之后保持不变（不持久化）。
+  bool _wifiTab = true;
+  bool _tabChosen = false;
+
+  /// 默认 Tab：WiFi 版在前（同原分组顺序）；WiFi 版没有设备而蓝牙版有，就落到蓝牙版；两类都没有落在 WiFi 版（显示空态 + 添加）。
+  bool _defaultWifiTab(int wifiCount, int bleCount) => wifiCount > 0 || bleCount == 0;
+
+  void _switchTab(bool wifi) {
+    _tabChosen = true;
+    if (wifi == _wifiTab) {
+      return;
+    }
+    setState(() => _wifiTab = wifi);
+    // 切过去回到列表顶部（与投屏记录页一样点击即切，本地按类型过滤，不重新请求）
+    if (_scroll.hasClients) {
+      _scroll.jumpTo(0);
+    }
+  }
+
   @override
   void didUpdateWidget(MyDevicesPage oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -151,43 +170,55 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppL10n.of(context);
+    final wifiCount = _devices.where((device) => device.wifi).length;
+    final bleCount = _devices.length - wifiCount;
+    if (!_tabChosen) {
+      _wifiTab = _defaultWifiTab(wifiCount, bleCount);
+    }
+    final failed = _devices.isEmpty && widget.loadError;
     return FigmaScreen(
-      title: AppL10n.of(context).devMyDevicesTitle,
+      title: l10n.devMyDevicesTitle,
       scrollable: false,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 顶部工具栏：右对齐添加按钮（小程序 .device-toolbar，加载中/空态不显示——
-          // 空态卡片自带「添加设备」CTA）。
           const SizedBox(height: 20),
-          if (!widget.loading && _devices.isNotEmpty)
+          // WiFi 版 / 蓝牙版改为 Tab 切换（2026-11-06 同小程序，样式与交互同投屏记录页的胶囊 Tab：白底 + 滑动橙色指示器，点击即切），
+          // 取代 2026-10-27 的上下分组标题。添加按钮常驻（原只在有设备时显示），单独一行右对齐，Tab 在下一行占满宽度。
+          if (!widget.loading && !failed) ...[
             Align(
               alignment: Alignment.centerRight,
               child: _AddDeviceButton(onTap: widget.onAddDevice),
             ),
+            const SizedBox(height: 12),
+            _DeviceTypeTabs(
+              wifi: _wifiTab,
+              wifiLabel: l10n.wifiBadge,
+              bleLabel: l10n.bleBadge,
+              onChanged: _switchTab,
+            ),
+          ],
           const SizedBox(height: 12),
           Expanded(
-            // 四分支互斥链（loading 优先）：加载中 → 失败重试 → 空态 → 设备列表。
+            // 三分支互斥链（loading 优先）：加载中 → 失败重试 → 当前 Tab 的设备列表 / 空态。
             // 失败且无本地数据时显示「加载失败 + 重试」——断网时不能误显示「暂无设备」。
             child: widget.loading
                 ? const PageLoading()
-                : _devices.isEmpty && widget.loadError
+                : failed
                 ? PageLoadError(
                     onRetry: () => widget.onRefresh?.call(),
                   )
-                : _devices.isEmpty
-                ? _EmptyDevices(onAddDevice: widget.onAddDevice)
                 : RefreshIndicator(
                     // 下拉刷新：此前数据只在进页时刷新，无手动恢复手段。
                     onRefresh: () async => widget.onRefresh?.call(),
                     color: const Color(0xFFEB5F1B),
-                    // 按 WiFi 版 / 蓝牙版分组（2026-10-27 同步小程序 main-wifi）：WiFi 版在前；某组没有设备就不出该组标题。
                     // 组内仍按上层排好的顺序（已连接 → 最近绑定 → 接口原序）。
                     child: ListView(
                       controller: _scroll,
                       padding: const EdgeInsets.only(bottom: 12),
                       physics: const AlwaysScrollableScrollPhysics(),
-                      children: _groupedCards(context),
+                      children: _tabCards(context, _wifiTab ? wifiCount : bleCount),
                     ),
                   ),
           ),
@@ -196,14 +227,30 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
     );
   }
 
-  List<Widget> _groupedCards(BuildContext context) {
+  List<Widget> _tabCards(BuildContext context, int count) {
     final l10n = AppL10n.of(context);
-    final wifi = _devices.where((device) => device.wifi).toList();
-    final ble = _devices.where((device) => !device.wifi).toList();
-    final children = <Widget>[];
-    if (wifi.isNotEmpty) {
-      children.add(_GroupTitle(wifi: true, label: l10n.wifiBadge));
-      for (final device in wifi) {
+    // 当前 Tab 没有设备：默认设备图 + 右下角加号，整块点击进搜索设备页
+    if (count == 0) {
+      return [
+        _EmptyTab(
+          title: _wifiTab ? l10n.devEmptyWifiTab : l10n.devEmptyBleTab,
+          desc: l10n.devEmptyTabAdd,
+          onTap: widget.onAddDevice,
+        ),
+      ];
+    }
+    final children = <Widget>[
+      // 与投屏记录页「共 N 条记录」同款
+      Padding(
+        padding: const EdgeInsets.only(top: 6, bottom: 0),
+        child: Text(
+          l10n.devTotalDevices(count),
+          style: const TextStyle(color: Color(0xFF777E88), fontSize: 12, height: 1),
+        ),
+      ),
+    ];
+    if (_wifiTab) {
+      for (final device in _devices.where((device) => device.wifi)) {
         children
           ..add(const SizedBox(height: 12))
           ..add(
@@ -217,20 +264,12 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
             ),
           );
       }
+      return children;
     }
-    if (ble.isNotEmpty) {
-      if (wifi.isNotEmpty) {
-        children.add(const SizedBox(height: 22));
-      }
+    for (final device in _devices.where((device) => !device.wifi)) {
       children
-        ..add(_GroupTitle(wifi: false, label: l10n.bleBadge))
-        ..add(const SizedBox(height: 12));
-      for (var i = 0; i < ble.length; i++) {
-        final device = ble[i];
-        if (i > 0) {
-          children.add(const SizedBox(height: 12));
-        }
-        children.add(
+        ..add(const SizedBox(height: 12))
+        ..add(
           _PromotionTransition(
             // key 带上设备 id：列表重排后 Flutter 才不会把动画状态
             // 复用给恰好排在同一位置的另一台设备。
@@ -245,7 +284,6 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
             ),
           ),
         );
-      }
     }
     return children;
   }
@@ -407,142 +445,162 @@ class _AddDeviceButton extends StatelessWidget {
   }
 }
 
-/// 空态卡片（小程序 `.empty-device glass-panel`）：**全宽**玻璃面板 +
-/// 桃色圆角图标盒（内为 CSS 画法复刻的橙色「相框」图形，非图片资源）+
-/// 标题 + 说明 + 渐变「添加设备」CTA。
-class _EmptyDevices extends StatelessWidget {
-  const _EmptyDevices({this.onAddDevice});
+/// WiFi版 / 蓝牙版 Tab（2026-11-06 同小程序 `.device-tabs`，样式同投屏记录页的胶囊 Tab）：白色胶囊底 + 橙色滑动指示器。
+class _DeviceTypeTabs extends StatelessWidget {
+  const _DeviceTypeTabs({
+    required this.wifi,
+    required this.wifiLabel,
+    required this.bleLabel,
+    required this.onChanged,
+  });
 
-  final VoidCallback? onAddDevice;
+  final bool wifi;
+  final String wifiLabel;
+  final String bleLabel;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
-    // 面板与小程序一致占满页宽（原实现 Align 收缩包裹内容，卡片只有文字那么宽）。
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        FigmaGlassCard(
+    Widget tab(String label, bool value) => Expanded(
+      child: GestureDetector(
+        key: ValueKey(value ? 'device-tab-wifi' : 'device-tab-ble'),
+        behavior: HitTestBehavior.opaque,
+        onTap: () => onChanged(value),
+        child: Center(
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 320),
+            style: TextStyle(
+              color: wifi == value ? Colors.white : const Color(0xFF858B94),
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              height: 1.2,
+            ),
+            child: Text(label),
+          ),
+        ),
+      ),
+    );
+
+    return Container(
+      height: 41,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.84),
+        borderRadius: BorderRadius.circular(999),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF7E96B8).withValues(alpha: 0.08),
+            blurRadius: 19,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          AnimatedAlign(
+            duration: const Duration(milliseconds: 360),
+            curve: const Cubic(0.22, 0.61, 0.36, 1),
+            alignment: wifi ? Alignment.centerLeft : Alignment.centerRight,
+            child: FractionallySizedBox(
+              widthFactor: 0.5,
+              heightFactor: 1,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6A20),
+                  borderRadius: BorderRadius.circular(999),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFF6A20).withValues(alpha: 0.32),
+                      blurRadius: 12,
+                      offset: const Offset(0, 5),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Row(children: [tab(wifiLabel, true), tab(bleLabel, false)]),
+        ],
+      ),
+    );
+  }
+}
+
+/// 当前 Tab 没有设备（2026-11-06 同小程序 `.empty-tab`）：默认设备图 + 右下角加号 + 「暂无XX版设备」「点击添加设备」，
+/// 整块点击进搜索设备页。取代原来全页的「暂无设备 + 添加设备」空态卡片。
+class _EmptyTab extends StatelessWidget {
+  const _EmptyTab({required this.title, required this.desc, this.onTap});
+
+  final String title;
+  final String desc;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: FigmaGlassCard(
           borderRadius: 14,
-          // .empty-device padding: 76rpx 36rpx = 38 / 18。
-          padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 18),
+          padding: const EdgeInsets.fromLTRB(18, 28, 18, 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // 桃色圆角图标盒（.empty-device__art，112rpx=56，bg rgba(255,106,32,0.1)，radius 30rpx=15）。
-              Container(
-                width: 56,
-                height: 56,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFFF6A20).withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(15),
+              SizedBox(
+                width: 180,
+                height: 142,
+                child: Stack(
+                  children: [
+                    Positioned.fill(
+                      child: Image.asset(
+                        'assets/images/empty_device_art.png',
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) =>
+                            const Icon(Icons.photo_library_outlined, color: Color(0xFFEB5F1B), size: 56),
+                      ),
+                    ),
+                    Positioned(
+                      right: 18,
+                      bottom: 12,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFFF661F).withValues(alpha: 0.24),
+                              blurRadius: 12,
+                              offset: const Offset(0, 6),
+                            ),
+                          ],
+                        ),
+                        child: Image.asset(
+                          'assets/images/home-add-icon.png',
+                          width: 36,
+                          height: 36,
+                          errorBuilder: (context, error, stackTrace) =>
+                              const Icon(Icons.add_circle_rounded, color: Color(0xFFFF6A24), size: 36),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                child: const _FrameLogoGlyph(),
               ),
-              const SizedBox(height: 13),
+              const SizedBox(height: 10),
               Text(
-                AppL10n.of(context).devEmptyTitle,
-                style: const TextStyle(
-                  color: Color(0xFF2A2D32),
-                  fontSize: 17,
-                  fontWeight: FontWeight.w700,
-                  height: 1.2,
-                ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                AppL10n.of(context).devEmptySubtitle,
+                title,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: Color(0xFF7E858F),
-                  fontSize: 13,
-                  height: 1.2,
-                ),
+                style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 16, fontWeight: FontWeight.w700, height: 1.2),
               ),
-              const SizedBox(height: 17),
-              // 渐变 CTA「添加设备」（.empty-device__btn，110×36，#ff9140→#ff6a20，radius 999）。
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: onAddDevice,
-                child: Container(
-                  width: 110,
-                  height: 36,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Color(0xFFFF9140), Color(0xFFFF6A20)],
-                    ),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    AppL10n.of(context).devAddDevice,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                    ),
-                  ),
-                ),
-              ),
+              const SizedBox(height: 6),
+              Text(desc, style: const TextStyle(color: Color(0xFFFF6A20), fontSize: 13, height: 1.2)),
             ],
           ),
         ),
-      ],
-    );
-  }
-}
-
-/// 复刻小程序 app.wxss `.frame-logo`：橙色描边「相框 + 底座」图形
-/// （48×40rpx 边框 + 底部 U 形小支架，纯绘制，无图片资源）。
-class _FrameLogoGlyph extends StatelessWidget {
-  const _FrameLogoGlyph();
-
-  @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      width: 24,
-      height: 27,
-      child: CustomPaint(painter: _FrameLogoPainter()),
-    );
-  }
-}
-
-class _FrameLogoPainter extends CustomPainter {
-  const _FrameLogoPainter();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final stroke = Paint()
-      ..color = const Color(0xFFFF6A20)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    // 相框主体：24×20（rpx 值减半），2 描边、2 圆角。描边居中于路径，内缩 1。
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        const Rect.fromLTWH(1, 1, 22, 18),
-        const Radius.circular(2),
       ),
-      stroke,
     );
-
-    // 底座：相框下方 2 间隙处的开口朝上 U 形（.frame-logo::before，border-top: 0）。
-    const double left = 3, right = 21, top = 22, bottom = 26, radius = 2;
-    final path = Path()
-      ..moveTo(left, top)
-      ..lineTo(left, bottom - radius)
-      ..quadraticBezierTo(left, bottom, left + radius, bottom)
-      ..lineTo(right - radius, bottom)
-      ..quadraticBezierTo(right, bottom, right, bottom - radius)
-      ..lineTo(right, top);
-    canvas.drawPath(path, stroke);
   }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// 电量百分比文案（如 "80%"）→ `BatteryLevel/battery-{档}.png` 资源路径。
@@ -831,29 +889,6 @@ class _DeviceActionButton extends StatelessWidget {
   }
 }
 
-/// 分组标题（WiFi版 / 蓝牙版），同小程序 `.device-group-title`：某组有设备就出该组标题。
-class _GroupTitle extends StatelessWidget {
-  const _GroupTitle({required this.wifi, required this.label});
-
-  final bool wifi;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = wifi ? kWifiGreen : kBleBlue;
-    return Row(
-      children: [
-        Icon(wifi ? Icons.wifi_rounded : Icons.bluetooth_rounded, size: 16, color: color),
-        const SizedBox(width: 6),
-        Text(
-          label,
-          style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 15, fontWeight: FontWeight.w600),
-        ),
-      ],
-    );
-  }
-}
-
 /// 名称下一行「尺寸 · 设备ID xxx」（同小程序 list.wxml `.device-id`）：尺寸没配显示「--寸」，设备ID 为空时只剩尺寸。
 class _SizeIdLine extends StatelessWidget {
   const _SizeIdLine({required this.device});
@@ -1002,7 +1037,8 @@ class _WifiDeviceCard extends StatelessWidget {
             slideshowLabel: l10n.wifiSlideshowSettings,
             onCast: onCast,
             onSlideshow: onSlideshow,
-            slideshowOn: device.wifiSlideshowOn,
+            // 轮播中标记只在 running 且设备在线时显示（2026-11-05，同小程序）
+            slideshowOn: device.wifiSlideshowOn && status.status == WifiOnlineStatus.online,
           ),
         ],
       ),

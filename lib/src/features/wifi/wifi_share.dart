@@ -18,7 +18,13 @@ bool wifiIsOwner(Map<String, dynamic> detail) {
 
 /// 分享列表的一行。
 class WifiShareMember {
-  const WifiShareMember({required this.id, required this.name, required this.avatar, required this.joinedAt});
+  const WifiShareMember({
+    required this.id,
+    required this.name,
+    required this.avatar,
+    required this.joinedAt,
+    this.canDel = false,
+  });
 
   factory WifiShareMember.fromRow(Map<String, dynamic> row) => WifiShareMember(
     id: '${row['userProductId'] ?? ''}',
@@ -26,12 +32,17 @@ class WifiShareMember {
     avatar: '${row['avatar'] ?? row['avatarUrl'] ?? ''}'.trim(),
     // 加入时间取分享列表接口的 joinTime，原样显示；为空页面显示「--」（2026-10-29 同小程序，不再拿 createTime 兜底）
     joinedAt: '${row['joinTime'] ?? ''}'.trim(),
+    // 能否解绑（2026-11-05 接口新增 isCanDel，后端控制，== 1 才显示「移除」；字符串 '1' 也认，同小程序 toMember）
+    canDel: num.tryParse('${row['isCanDel'] ?? ''}') == 1,
   );
 
   final String id;
   final String name;
   final String avatar;
   final String joinedAt;
+
+  /// 成员接口 isCanDel == 1：这一行显示「移除」、能解绑；前端不再按所有者 / 接收者判断（2026-11-05，同小程序）。
+  final bool canDel;
 }
 
 /// 列表 → 所有者 + 接收者：isToHave=1 的是所有者（固定第一栏），其余是接收者；

@@ -144,6 +144,23 @@ abstract final class IotApi {
     );
   }
 
+  /// 恢复设备内置图片（2026-11-06，同小程序）：`{ deviceNo, renderMode }` → POST /api/device/restore-builtin（JSON）。
+  /// 在 WiFi 版「删除设备」（删完云端照片之后、删设备记录之前）和「一键清空」里调；解除绑定不调。
+  /// [renderMode] 同投屏，取后台产品配置（PhotoFrameState.resolveRenderMode），有值才带、原样传。
+  /// 返回 `{ deviceNo, status }`：status 只有 SENT（已下发）/ SKIPPED（没下发，不用重试）；
+  /// 错误码只有 4000 参数错误 / 401 登录失效 / 403 无权限 / 5000 服务异常，怎么收场由调用方决定（见 wifi_remove_flow.dart）。
+  static Future<Map<String, dynamic>> restoreBuiltin(String deviceNo, {String renderMode = ''}) async {
+    return _asMap(
+      await _iot.post(
+        '/api/device/restore-builtin',
+        body: {
+          'deviceNo': plainDeviceNo(deviceNo),
+          if (renderMode.trim().isNotEmpty) 'renderMode': renderMode.trim(),
+        },
+      ),
+    );
+  }
+
   /// 休眠计划查询（实现报告反馈 2.1）：`{ configured, mode, enabled, beginTime, endTime, sleepTime, wakeTime, updatedAt }`。
   /// configured=false 从未设置；mode 0 关闭 / 1 一次性（beginTime/endTime：yyyy-MM-dd HH:mm）/ 2 周期（sleepTime/wakeTime：HH:mm）。
   /// 只要权限，离线也能查。
@@ -162,13 +179,15 @@ abstract final class IotApi {
     );
   }
 
-  /// 消息列表（对接文档 8.1）：`{ total, page, size, unreadCount, list: [{ id, category, type, payload, read, createdAt }] }`，
-  /// 按时间倒序。
+  /// 消息列表（对接文档 8.1）：`{ total, page, size, unreadCount, list: [{ id, category, type, payload, read, createdAt, title, content }] }`，
+  /// 按时间倒序。2026-11-09 新增选填 [lang]（zh-CN / zh-TW / en / ja，不传按简中），返回多 title / content
+  /// （服务端按 lang 翻译好、可直接展示）；lang 有值才带，原参数不变。
   static Future<Map<String, dynamic>> getNotifications(
     String deviceNo, {
     int page = 1,
     int size = 20,
     bool unreadOnly = false,
+    String lang = '',
   }) async {
     return _asMap(
       await _iot.get(
@@ -178,6 +197,7 @@ abstract final class IotApi {
           'page': page,
           'size': size,
           if (unreadOnly) 'unreadOnly': 'true',
+          if (lang.isNotEmpty) 'lang': lang,
         },
       ),
     );

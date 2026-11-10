@@ -472,9 +472,13 @@ class FigmaBindDeviceCard extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.subtitleWidget,
+    this.nameLoading = false,
   });
 
   final String name;
+
+  /// 名称处显示小圆圈 loading（搜索设备页：用户设备名称还没查回来，2026-11-05 同小程序），行高不变。
+  final bool nameLoading;
 
   /// 第二行自定义内容（WiFi 版接入后：通信类型标签包住尺寸 + 电量 + 信号格，见 bind_device_found）。
   /// 传了就代替 [subtitle] 文字；高度与一行副标题相同，卡片高度不变。
@@ -549,12 +553,29 @@ class FigmaBindDeviceCard extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.center,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: FigmaHomeTextStyles.deviceName,
-                  ),
+                  if (nameLoading)
+                    const SizedBox(
+                      height: 22,
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 1.6,
+                            valueColor: AlwaysStoppedAnimation<Color>(Color(0xFFFF621F)),
+                            backgroundColor: Color(0x33FF621F),
+                          ),
+                        ),
+                      ),
+                    )
+                  else
+                    Text(
+                      name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: FigmaHomeTextStyles.deviceName,
+                    ),
                   if (subtitleWidget != null) ...[
                     const SizedBox(height: 3),
                     DefaultTextStyle.merge(

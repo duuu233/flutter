@@ -14,6 +14,7 @@ import '../../../state.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/tap_guard.dart';
 
 /// 当前会话 BLE 实读的固件版本（`0x03 GET_SW_VER`）。
 ///
@@ -180,7 +181,8 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
           deviceId: widget.deviceId,
           onEditName: () => _renameDevice(context),
           onConnectToggle: () => _toggleConnection(context),
-          onCast: () => _startCast(context),
+          // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
+          onCast: () => TapGuard.run(this, 'projection', () => _startCast(context)),
           onCarouselSettings: widget.onCarouselSettings,
           onClearDevice: widget.onClearDevice,
           onUnbindDevice: widget.onUnbindDevice,

@@ -20,7 +20,7 @@ import 'wifi_config_page.dart';
 ///   → 显示列表（名称 + 信号格）→ 点一行即带名称进账号密码页 → 配网状态页下发参数。
 ///
 ///   · 列表来自设备扫描，不用手机扫：iOS 拿不到附近列表、手机扫到的也不一定是设备那边收得到的；
-///     本设备是双频芯片，按回包里的信道只留 2.4G（ch 1~14）；没回信道（乐鑫标准格式）时照常列出；
+///     本设备是双频芯片，5G、2.4G 都列出（只留 2.4G 的过滤 10-28 取消、10-29 恢复，2026-11-05 再次取消，同小程序）；
 ///   · 设备分批回就边收边显示，最后一批后再等 5 秒才结束转圈；同名去重取信号强的、信号强的在前；
 ///     隐藏网络（名称为空）不列；
 ///   · 这条蓝牙连接一直留着给配网状态页复用（同一会话、序号连续），离开本页（返回搜索页）才断开；
@@ -66,12 +66,13 @@ class _WifiListPageState extends State<WifiListPage> {
     super.dispose();
   }
 
-  /// 设备回的列表整理成页面数据：只留 2.4G、去掉名称为空的隐藏网络、同名取信号强的、按信号排序。
+  /// 设备回的列表整理成页面数据：去掉名称为空的隐藏网络、同名取信号强的、按信号排序。
+  /// 不按频段过滤（2026-11-05 再次取消只留 2.4G，5G、2.4G 都显示）。
   static List<_WifiItem> _toList(List<BlufiWifi> list) {
     final best = <String, BlufiWifi>{};
     for (final item in list) {
       final ssid = item.ssid.trim();
-      if (ssid.isEmpty || Blufi.is24GChannel(item.channel) == false) {
+      if (ssid.isEmpty) {
         continue;
       }
       final current = best[ssid];
@@ -162,7 +163,7 @@ class _WifiListPageState extends State<WifiListPage> {
       return;
     }
     final items = _toList(list);
-    debugPrint('[WiFi列表] 设备返回 ${list.length} 条，显示 2.4G ${items.length} 条');
+    debugPrint('[WiFi列表] 设备返回 ${list.length} 条，显示 ${items.length} 条');
     setState(() {
       _scanning = false;
       _list = items;
@@ -185,8 +186,7 @@ class _WifiListPageState extends State<WifiListPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 16),
-          // 顶部「设备仅支持 2.4G WiFi 配网」提示条：10-27 曾去掉，2026-10-29 按产品口径恢复（同小程序）
-          WifiTipRow(text: l10n.wifiOnly24G),
+          // 顶部「设备仅支持 2.4G WiFi 配网」提示条：10-27 去掉、10-29 恢复，2026-11-05 再次去掉（同小程序）
           // 搜不到时的手动入口：灰字，点击进账号密码页手动填名称
           GestureDetector(
             behavior: HitTestBehavior.opaque,

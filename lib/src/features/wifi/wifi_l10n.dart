@@ -41,7 +41,8 @@ extension WifiL10n on AppL10n {
     "Can't find your Wi-Fi? Enter it manually",
     'Wi-Fiが見つからない場合は手動で入力してください',
   );
-  String get wifiListHead => pick('设备附近的2.4G WiFi', '2.4 GHz Wi-Fi near the device', 'デバイス付近の2.4GHz Wi-Fi');
+  // 2026-11-05 去掉 2.4G 限制（同小程序）：标题与搜不到提示不再写 2.4G
+  String get wifiListHead => pick('设备附近的WiFi', 'Wi-Fi near the device', 'デバイス付近のWi-Fi');
   String get wifiRescan => pick('重新搜索', 'Search again', '再検索');
   String get wifiConnectingDevice => pick('正在连接设备...', 'Connecting to device...', 'デバイスに接続中...');
   String get wifiSearchingNetwork => pick('正在搜索网络...', 'Searching for networks...', 'ネットワークを検索中...');
@@ -72,9 +73,9 @@ extension WifiL10n on AppL10n {
     'デバイスからWi-Fi一覧が返されませんでした。再検索するか、Wi-Fi名を手動で入力してください',
   );
   String get wifiScanNo24G => pick(
-    '设备附近没有搜到2.4G WiFi，请重新搜索或手动输入WiFi名称',
-    'No 2.4 GHz Wi-Fi found near the device. Search again or enter the name manually.',
-    'デバイス付近に2.4GHz Wi-Fiが見つかりません。再検索するか、手動で入力してください',
+    '设备附近没有搜到WiFi，请重新搜索或手动输入WiFi名称',
+    'No Wi-Fi found near the device. Search again or enter the name manually.',
+    'デバイス付近にWi-Fiが見つかりません。再検索するか、手動で入力してください',
   );
 
   // ── WiFi 账号密码页 ──
@@ -228,6 +229,9 @@ extension WifiL10n on AppL10n {
   String get wifiCastPrepare => pick('准备投屏', 'Preparing', '準備中');
   String get wifiCastWaiting => pick('等待投屏', 'Waiting', '待機中');
   String get wifiCastInProgress => pick('投屏中', 'Casting', 'キャスト中');
+  // 逐张列表文案跟着进度条阶段（2026-11-06 同小程序）
+  String get wifiCastItemUploading => pick('上传中', 'Uploading', 'アップロード中');
+  String get wifiCastItemProcessing => pick('处理中', 'Processing', '処理中');
   String wifiCastPageIndex(int current, int total) =>
       pick('第 $current / $total 张', '$current / $total', '$current / $total 枚目');
   String wifiCastItemNo(int index) => pick('第 $index 张', 'Photo $index', '$index 枚目');
@@ -401,8 +405,13 @@ extension WifiL10n on AppL10n {
   String get wifiSlideSaveInvalid => pick('保存失败：轮播设置有误，请检查后重试', 'Save failed: the slideshow settings are invalid. Please check and try again.', '保存に失敗しました：設定に誤りがあります。確認して再度お試しください');
   String get wifiSlideNeedTimes => pick('请选择轮播开始和结束时间', 'Choose the start and end times', '開始時刻と終了時刻を選択してください');
   String get wifiSlideNeedInterval => pick('请选择轮播间隔', 'Choose an interval', '間隔を選択してください');
-  String get wifiSlideDaysRange => pick('每隔天数需在 1~365 之间', 'Days must be between 1 and 365', '日数は1〜365の範囲で指定してください');
-  String get wifiSlideNeedTimePoint => pick('请至少添加一个更新时间', 'Add at least one update time', '更新時刻を1つ以上追加してください');
+  // 每 N 天 1~30（2026-11-05 对接文档 20261105-1，原 1~365）
+  String wifiSlideDaysRange(int max) => pick(
+    '每隔天数需在 1~$max 之间，请调整播放频率',
+    'The number of days must be between 1 and $max. Please adjust the frequency.',
+    '日数は1〜$maxの範囲で指定してください。再生頻度を調整してください',
+  );
+  String get wifiSlideNeedTimePoint => pick('请至少添加一个时间点', 'Add at least one time', '時刻を1つ以上追加してください');
   String get wifiSlideNeedPhoto => pick('请至少选择一张照片', 'Select at least one photo', '写真を1枚以上選択してください');
   String get wifiSlideTimeExists => pick('这个时间点已添加', 'This time has already been added', 'この時刻は追加済みです');
   String wifiSlideTimeMax(int max) => pick('最多添加 $max 个时间点', 'Up to $max times', '最大 $max 個まで追加できます');
@@ -418,6 +427,111 @@ extension WifiL10n on AppL10n {
   String get wifiSlideFirstNoImage => pick('第一张照片缺少原图，等下一个轮播周期再切换', 'The first photo has no original image; it will switch at the next cycle', '最初の写真に元画像がないため、次の周期で切り替わります');
   String get wifiSlideFirstDownloadFailed => pick('第一张照片下载失败，等下一个轮播周期再切换', 'Failed to download the first photo; it will switch at the next cycle', '最初の写真をダウンロードできなかったため、次の周期で切り替わります');
   String wifiSlideFirstFailed(String reason) => pick('切换第一张失败：$reason', 'Failed to switch to the first photo: $reason', '最初の写真への切り替えに失敗しました：$reason');
+
+  // ── 轮播服务端化（2026-11-05 对接文档 20261105 / 20261105-1，同小程序） ──
+  String get wifiSlideTimeZone => pick('时区', 'Time zone', 'タイムゾーン');
+  String get wifiSlideTimeZoneTitle => pick('选择时区', 'Choose time zone', 'タイムゾーンを選択');
+  String get wifiSlideTimeZoneSearch => pick('搜索国家或城市，如 东京 / Tokyo', 'Search country or city, e.g. Tokyo', '国や都市を検索（例：東京 / Tokyo）');
+  String get wifiSlideTimeZoneEmpty => pick('没有匹配的时区', 'No matching time zone', '一致するタイムゾーンがありません');
+  String get wifiSlideClose => pick('关闭', 'Close', '閉じる');
+  String wifiSlideSetAt(String time) => pick('设置时间：$time', 'Set at: $time', '設定日時：$time');
+  String wifiSlideNextRefresh(String text) => pick('下次刷新：$text', 'Next refresh: $text', '次回更新：$text');
+  String get wifiSlideSimple => pick('简单模式', 'Simple mode', 'シンプルモード');
+  String get wifiSlideSimpleOff => pick(
+    '已关闭：简单模式的时间与照片不会保存，需至少启用一张高级卡片（工作日 / 周末 / 纪念日）',
+    'Off: simple-mode times and photos will not be saved. Enable at least one advanced card (weekdays / weekends / anniversary).',
+    'オフ：シンプルモードの時刻と写真は保存されません。詳細カード（平日 / 週末 / 記念日）を1つ以上有効にしてください',
+  );
+  String get wifiSlidePlayFreq => pick('播放频率', 'Frequency', '再生頻度');
+  String get wifiSlidePlayTime => pick('播放时间', 'Play times', '再生時刻');
+  String get wifiSlidePickPhotos => pick('选择照片', 'Choose photos', '写真を選択');
+  String wifiSlidePickedCount(int n) => pick('已选 $n 张', '$n selected', '$n 枚選択');
+  String get wifiSlideAdvanced => pick('高级设置', 'Advanced settings', '詳細設定');
+  String wifiSlideAdvancedCount(int n) => pick('高级设置（$n 项）', 'Advanced settings ($n)', '詳細設定（$n 件）');
+  String get wifiSlideAdvancedCollapse => pick('收起高级设置', 'Hide advanced settings', '詳細設定を閉じる');
+  String get wifiSlideWeekday => pick('工作日', 'Weekdays', '平日');
+  String get wifiSlideWeekend => pick('周末', 'Weekends', '週末');
+  String get wifiSlideAnniversary => pick('纪念日', 'Anniversary', '記念日');
+  String get wifiSlideWeekdayDesc => pick(
+    '周一至周五按这张卡片轮播，启用后简单模式在工作日不生效',
+    'Monday to Friday use this card; when on, simple mode does not apply on weekdays.',
+    '月〜金はこのカードで再生します。有効にすると平日はシンプルモードが適用されません',
+  );
+  String get wifiSlideWeekendDesc => pick(
+    '周六、周日按这张卡片轮播，启用后简单模式在周末不生效',
+    'Saturday and Sunday use this card; when on, simple mode does not apply on weekends.',
+    '土・日はこのカードで再生します。有効にすると週末はシンプルモードが適用されません',
+  );
+  String get wifiSlideAnnivTag => pick('当天独占', 'Whole day', '当日専用');
+  String get wifiSlideAnnivDesc => pick(
+    '纪念日当天只按该纪念日卡片轮播，工作日 / 周末 / 简单模式当天都不执行；只支持公历，只选月和日',
+    'On an anniversary only its card plays; weekday / weekend / simple mode are skipped that day. Gregorian month and day only.',
+    '記念日当日はその記念日カードのみ再生し、平日 / 週末 / シンプルモードは実行しません。西暦の月日のみ',
+  );
+  String get wifiSlideAddAnniversary => pick('+ 添加纪念日', '+ Add anniversary', '+ 記念日を追加');
+  String get wifiSlideDelete => pick('删除', 'Delete', '削除');
+  String get wifiSlideDeleteAnnivTitle => pick('删除纪念日', 'Delete anniversary', '記念日を削除');
+  String wifiSlideDeleteAnnivMessage(String date) => pick(
+    '删除「$date」的纪念日轮播？保存后生效',
+    'Delete the anniversary slideshow for "$date"? Takes effect after saving.',
+    '「$date」の記念日スライドショーを削除しますか？保存後に反映されます',
+  );
+  String get wifiSlideAnnivTaken => pick('这个日期已添加纪念日', 'An anniversary already exists for this date', 'この日付の記念日は追加済みです');
+  String wifiSlideMonthDay(int month, int day) {
+    final mm = month.toString().padLeft(2, '0');
+    final dd = day.toString().padLeft(2, '0');
+    return pick('$mm月$dd日', '$mm/$dd', '$mm月$dd日');
+  }
+
+  String wifiSlideMonthLabel(int month) => pick('${month.toString().padLeft(2, '0')}月', month.toString().padLeft(2, '0'), '${month.toString().padLeft(2, '0')}月');
+  String wifiSlideDayLabel(int day) => pick('${day.toString().padLeft(2, '0')}日', day.toString().padLeft(2, '0'), '${day.toString().padLeft(2, '0')}日');
+  String get wifiSlideBaseHintBoth => pick(
+    '工作日与周末均已启用，简单模式将不会生效',
+    'Weekdays and weekends are both on, so simple mode will not apply.',
+    '平日と週末がどちらも有効のため、シンプルモードは適用されません',
+  );
+  String get wifiSlideBaseHintWeekday => pick(
+    '工作日已启用独立配置，简单模式在工作日不生效',
+    'Weekdays have their own card, so simple mode does not apply on weekdays.',
+    '平日は個別設定が有効のため、平日はシンプルモードが適用されません',
+  );
+  String get wifiSlideBaseHintWeekend => pick(
+    '周末已启用独立配置，简单模式在周末不生效',
+    'Weekends have their own card, so simple mode does not apply on weekends.',
+    '週末は個別設定が有効のため、週末はシンプルモードが適用されません',
+  );
+  String wifiSlideDaysOver(int days, int max) => pick(
+    '当前播放频率为每 $days 天，已超过 $max 天上限，请调整后再保存',
+    'The current frequency is every $days days, over the $max-day limit. Adjust it before saving.',
+    '現在の再生頻度は $days 日ごとで、上限の $max 日を超えています。調整してから保存してください',
+  );
+  String get wifiSlideSameBeginEnd => pick('开始和结束时间不能相同', 'Start and end times cannot be the same', '開始時刻と終了時刻を同じにはできません');
+  String get wifiSlideIntervalRange => pick(
+    '轮播间隔需在 10 分钟到 24 小时之间',
+    'The interval must be between 10 minutes and 24 hours',
+    '間隔は10分〜24時間の範囲で指定してください',
+  );
+  String get wifiSlideAnnivNeedDate => pick('请选择纪念日日期', 'Choose the anniversary date', '記念日の日付を選択してください');
+  String wifiSlideCardError(String name, String error) => pick('$name：$error', '$name: $error', '$name：$error');
+  String wifiSlideAnnivDuplicate(String date) => pick(
+    '纪念日 $date 重复，请修改日期',
+    'Anniversary $date is duplicated. Please change the date.',
+    '記念日 $date が重複しています。日付を変更してください',
+  );
+  String get wifiSlideNeedTimeZone => pick('请选择时区', 'Choose a time zone', 'タイムゾーンを選択してください');
+  String get wifiSlideNeedAnyConfig => pick('至少配置一项', 'Configure at least one item', '少なくとも1項目を設定してください');
+  String get wifiSlideEveryDay => pick('每天', 'Daily', '毎日');
+  String wifiSlideEveryNDays(int n) => pick('每 $n 天', 'Every $n days', '$n 日ごと');
+  String wifiSlideEveryNHours(int n) => pick('每 $n 小时', 'Every $n h', '$n 時間ごと');
+  String wifiSlideEveryNMinutes(int n) => pick('每 $n 分钟', 'Every $n min', '$n 分ごと');
+  String wifiSlideSheetTitle(String card) => pick('$card · 轮播照片', '$card · Photos', '$card · 写真');
+  String wifiSlideSheetCount(int count, int max) => pick(
+    '已选 $count/$max（至少 1 张，按选择顺序轮播）',
+    '$count/$max selected (at least 1; plays in the order selected)',
+    '$count/$max 枚選択（1枚以上、選んだ順に再生）',
+  );
+  String get wifiSlideSaved => pick('已保存', 'Saved', '保存しました');
+  String wifiSlideSavedRefresh(String saved) => pick('$saved，屏幕即将刷新', '$saved. The screen will refresh soon.', '$saved。まもなく画面が更新されます');
 
   // ── 休眠设置（实现报告反馈第二节） ──
   String get wifiSleepSettings => pick('休眠设置', 'Sleep settings', 'スリープ設定');
@@ -480,6 +594,17 @@ extension WifiL10n on AppL10n {
   );
   String get wifiMsgNoPermission => pick('没有查看该设备消息的权限', 'No permission to view this device’s messages', 'このデバイスのメッセージを表示する権限がありません');
   String get wifiMsgSeparator => pick('，', ', ', '、');
+  String wifiMsgCarouselNotSent(String at) => at.isNotEmpty
+      ? pick(
+          '$at 的轮播图片未发送成功，请检查设备网络状态',
+          'The slideshow photo for $at was not sent. Please check the device network.',
+          '$at のスライドショー画像を送信できませんでした。デバイスのネットワークを確認してください',
+        )
+      : pick(
+          '轮播图片未发送成功，请检查设备网络状态',
+          'The slideshow photo was not sent. Please check the device network.',
+          'スライドショー画像を送信できませんでした。デバイスのネットワークを確認してください',
+        );
   String wifiMsgSignalLevel(String level) => pick('信号等级 $level', 'Signal level $level', '信号レベル $level');
   String wifiMsgBatteryLevel(String level) => pick('电量等级 $level', 'Battery level $level', 'バッテリーレベル $level');
   String wifiMsgBattery(String battery) => pick('电量 $battery%', 'Battery $battery%', 'バッテリー $battery%');
@@ -502,6 +627,8 @@ extension WifiL10n on AppL10n {
     // 2026-11-02（前端对接文档 20261031 第四节）：只在设备重启后服务端确认版本时发
     'OTA_SUCCESS' => pick('固件升级成功', 'Firmware updated', 'ファームウェアを更新しました'),
     'OTA_FAILED' => pick('固件升级失败', 'Firmware update failed', 'ファームウェアの更新に失敗しました'),
+    // 2026-11-05（对接文档 20261105 10.2，同小程序）：到点该推轮播但设备不在线 / 下发失败
+    'CAROUSEL_NOT_SENT' => pick('轮播未发送成功', 'Slideshow not sent', 'スライドショーを送信できませんでした'),
     'EXCEPTION_UP_PARSE' => pick('设备上报数据解析失败', 'Failed to parse device data', 'デバイスのデータを解析できませんでした'),
     'EXCEPTION_UNKNOWN_ACTION' => pick('设备上报了未知指令', 'The device reported an unknown command', 'デバイスが不明なコマンドを報告しました'),
     'EXCEPTION_COMMAND_BUILD' => pick('平台下发指令构造失败', 'Failed to build the command', 'コマンドの作成に失敗しました'),
@@ -624,10 +751,27 @@ extension WifiL10n on AppL10n {
     "Deleting the device clears its cloud photos and the photos in the mini program/app to protect your privacy. Members you shared it with also lose the device and its photos. Delete the device?",
     'デバイスを削除すると、プライバシー保護のためクラウドとミニプログラム/アプリ内の写真が消去されます。共有したメンバーもこのデバイスと写真を利用できなくなります。削除しますか？',
   );
-  String wifiCloudDeleteFailed(String reason) => pick(
+  // 原与上面的 getter 同名（10-29 引入，扩展内重名编译不过），2026-11-10 改名
+  String wifiCloudPhotosDeleteFailed(String reason) => pick(
     '云端照片删除失败：$reason',
     'Failed to delete cloud photos: $reason',
     'クラウドの写真を削除できませんでした：$reason',
+  );
+  String wifiRestoreBuiltinFailed(String reason) => pick(
+    '恢复内置图片失败：${reason.isNotEmpty ? reason : '无该设备操作权限'}',
+    'Failed to restore the built-in images: ${reason.isNotEmpty ? reason : 'no permission for this device'}',
+    '内蔵画像を復元できませんでした：${reason.isNotEmpty ? reason : 'このデバイスの操作権限がありません'}',
+  );
+  // 一键清空（2026-11-09，同小程序 wifi-detail；WiFi 版清的是云端照片并恢复设备内置图片）
+  String get wifiClearStep1Message => pick(
+    '将清空该设备的云端照片并恢复设备内置图片，同时清空小程序/APP的图库，请谨慎选择是否继续。',
+    "This clears the device's cloud photos, restores its built-in images, and also clears the gallery in the Mini Program / App. Please continue with care.",
+    'このデバイスのクラウド写真を消去して内蔵画像に戻し、ミニプログラム／アプリのギャラリーも消去します。続行するかどうか慎重にご判断ください。',
+  );
+  String get wifiClearStep2Message => pick(
+    '我已阅读并了解此操作的结果，确认继续。',
+    'I have read and understood the consequences and want to continue.',
+    'この操作の結果を理解した上で、続行します。',
   );
 
   // ── TF 卡设置（2026-10-29） ──
@@ -675,6 +819,15 @@ extension WifiL10n on AppL10n {
     '"$name" will no longer be able to use this device. Remove?',
     '「$name」はこのデバイスを使用できなくなります。削除しますか？',
   );
+  String get wifiShareRemoveSelfMessage => pick(
+    '移除后你将不能再使用这台设备，确认移除？',
+    'You will no longer be able to use this device. Remove?',
+    '削除するとこのデバイスを使用できなくなります。削除しますか？',
+  );
+  String get wifiShareMe => pick('我', 'Me', '自分');
+  // 分享卡片封面（2026-11-04 同小程序 share-card）
+  String get wifiShareCardTag => pick('设备共享邀请', 'Device sharing invite', 'デバイス共有の招待');
+  String get wifiShareCardButton => pick('点击接受邀请', 'Tap to accept', 'タップして招待を承認');
   String get wifiShareRemoved => pick('已移除', 'Removed', '削除しました');
   String get wifiShareRemoving => pick('移除中', 'Removing', '削除中');
   String get wifiShareUnavailable => pick('暂时无法分享，请稍后重试', 'Sharing is not available right now. Please try again later.', '現在共有できません。しばらくしてからお試しください');

@@ -26,6 +26,7 @@ import '../../../device/device_thumb.dart';
 import '../../../device/product_broadcast_id.dart';
 import '../../../device/wifi/blufi.dart';
 import '../../../device/wifi/broadcast_match.dart';
+import '../../../network/api_rows.dart';
 import '../../../network/boltfox_api.dart';
 import '../../wifi/presentation/wifi_list_page.dart';
 import '../../wifi/wifi_l10n.dart';
@@ -99,6 +100,13 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
   /// WiFi 版「立即配网」的蓝牙连接进行中（防连点）。
   bool _wifiConnecting = false;
 
+  /// 当前用户已绑定设备的名称（完整 6 字节设备ID → productName，2026-11-04 同小程序 getBoundDeviceNames）：
+  /// 搜索列表标题优先显示它，没有才显示蓝牙广播名。只影响列表显示——绑定时的产品匹配、默认昵称、设备图都照旧用广播名。
+  /// null = 还没查回来（名称处显示 loading，2026-11-05）；最多等 [_boundNamesWait]，超时先显示广播名，晚到仍补上。
+  Map<String, String>? _boundNames;
+  bool _namesLoading = true;
+  static const Duration _boundNamesWait = Duration(seconds: 5);
+
   @override
   void initState() {
     super.initState();
@@ -110,7 +118,51 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
         }
       }),
     );
+    _loadBoundNames();
     WidgetsBinding.instance.addPostFrameCallback((_) => _startScan());
+  }
+
+  /// 与扫描并行静默拉 getUserProductList，按完整设备ID 索引名称；失败为空表（全部显示广播名）。
+  void _loadBoundNames() {
+    Future<void>.delayed(_boundNamesWait, () {
+      if (mounted && _boundNames == null && _namesLoading) {
+        setState(() => _namesLoading = false);
+      }
+    });
+    unawaited(() async {
+      final names = <String, String>{};
+      try {
+        final rows = extractApiRows(await BoltFoxApi.getUserProductList({'pageIndex': 1, 'pageSize': 100}));
+        for (final row in rows) {
+          var id = '';
+          for (final key in const ['productDeviceId', 'deviceNo', 'serialNo', 'productSerialNo', 'deviceId']) {
+            final value = canonicalDeviceSerial(row[key]);
+            if (value.isNotEmpty) {
+              id = value;
+              break;
+            }
+          }
+          final name = '${row['productName'] ?? ''}'.trim();
+          if (id.isNotEmpty && name.isNotEmpty) {
+            names.putIfAbsent(id, () => name);
+          }
+        }
+      } catch (error) {
+        debugPrint('[搜索设备] 用户设备名称查询失败，显示广播名 $error');
+      }
+      if (mounted) {
+        setState(() {
+          _boundNames = names;
+          _namesLoading = false;
+        });
+      }
+    }());
+  }
+
+  /// 这台在用户名下的名称（蓝牙版按广播里的完整设备ID，WiFi 版按广播名解析出的 deviceNo），没有为空串。
+  String _boundTitle(String deviceId) {
+    final id = canonicalDeviceSerial(deviceId);
+    return id.isEmpty ? '' : (_boundNames?[id] ?? '');
   }
 
   @override
@@ -309,9 +361,11 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       final product = lookup.product;
       final size = (product?['sizeModel'] ?? '').toString();
       final code = canonicalDeviceSerial(wifi.wifiDeviceNo);
+      final title = _boundTitle(wifi.wifiDeviceNo);
       return BindDeviceEntry(
         id: result.device.remoteId.str,
-        name: BleController.displayName(result),
+        name: title.isNotEmpty ? title : BleController.displayName(result),
+        nameLoading: _namesLoading,
         subtitle: '',
         deviceId: code.isNotEmpty ? code : wifi.wifiDeviceNo,
         thumbAsset: DeviceThumb.ofScanName(scanName),
@@ -331,9 +385,11 @@ class _BindDeviceFlowPageState extends State<BindDeviceFlowPage> {
       _productSizeModels,
     );
     final battery = BleController.batteryOf(result);
+    final title = _boundTitle(BleController.advertisingOf(result)?.deviceId ?? '');
     return BindDeviceEntry(
       id: result.device.remoteId.str,
-      name: BleController.displayName(result),
+      name: title.isNotEmpty ? title : BleController.displayName(result),
+      nameLoading: _namesLoading,
       subtitle: '',
       deviceId: _displayDeviceCode(result),
       // 设备图按本次广播名区分机型（name 与广播包里的 advName 都看，与扫描白名单同口径）。

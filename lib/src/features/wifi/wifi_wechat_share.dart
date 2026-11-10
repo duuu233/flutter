@@ -58,7 +58,8 @@ class WifiWeChatShare {
   }
 
   /// 发小程序卡片到微信会话；拉起微信成功返回 true（对方是否收到微信不回传）。
-  static Future<bool> shareMiniProgram({required String path, required String title}) async {
+  /// [cover]：卡片封面（2026-11-04 同小程序，见 wifi_share_card.dart）；没有时用设备图。thumbData 仍用小图（兼容低版本微信）。
+  static Future<bool> shareMiniProgram({required String path, required String title, Uint8List? cover}) async {
     if (!configured) {
       return false;
     }
@@ -78,7 +79,7 @@ class WifiWeChatShare {
         userName: miniProgramUserName.trim(),
         path: path,
         title: title,
-        hdImageData: thumb,
+        hdImageData: cover ?? thumb,
         thumbData: thumb,
         scene: WeChatScene.session,
       ),

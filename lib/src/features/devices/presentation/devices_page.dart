@@ -16,6 +16,7 @@ import '../../wifi/wifi_status.dart';
 import '../../wifi/wifi_watch.dart';
 import 'my_devices_page.dart';
 import '../../../state.dart';
+import '../../../shared/tap_guard.dart';
 
 /// 设备页：展示已绑定的相框设备，并提供进入设备相关页面的入口。
 ///
@@ -213,8 +214,9 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
               )
               .toList(),
           // WiFi 版「投屏」：不连蓝牙，离线先拦，选图后进同一个预览页（预览页导出后去 WiFi 投屏结果页）
+          // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
           onWifiCast: (deviceId) =>
-              startWifiCast(context, state, state.deviceById(deviceId)),
+              TapGuard.run(this, 'projection', () => startWifiCast(context, state, state.deviceById(deviceId))),
           // WiFi 版「轮播设置」（V1.4 更新说明 1.5，取代原「刷新状态」）：离线也能看，本地模式只提示
           onWifiSlideshow: (deviceId) =>
               openWifiSlideshow(context, state, state.deviceById(deviceId)),
@@ -230,7 +232,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
               arguments: deviceId,
             );
           },
-          onCast: (deviceId) => _startCast(context, deviceId),
+          onCast: (deviceId) => TapGuard.run(this, 'projection', () => _startCast(context, deviceId)),
           onRename: (deviceId, name) async {
             AppLoadingDialog.show(context, AppL10n.of(context).saving);
             final ActionFeedback feedback;

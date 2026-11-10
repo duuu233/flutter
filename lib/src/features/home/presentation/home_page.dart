@@ -24,6 +24,7 @@ import '../../wifi/wifi_l10n.dart';
 import '../../wifi/wifi_status.dart';
 import '../../wifi/wifi_watch.dart';
 import '../../wifi/wifi_widgets.dart';
+import '../../../shared/tap_guard.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
 part 'home_main_view.dart'; // 首页主视图（已绑定 / 未绑定）
@@ -283,8 +284,9 @@ class _HomePageState extends State<HomePage> with RouteAware {
                           _ensureConnected(device.id);
                         },
                         onShowCastSheet: _showCastMethodSheet,
-                        onCamera: () => _startCast(ImageSourceType.camera),
-                        onAlbum: () => _startCast(ImageSourceType.album),
+                        // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
+                        onCamera: () => TapGuard.run(this, 'projection', () => _startCast(ImageSourceType.camera)),
+                        onAlbum: () => TapGuard.run(this, 'projection', () => _startCast(ImageSourceType.album)),
                         // 六宫格另外三项（2026-08-21 同步小程序）：
                         // 「我的上传」= 我的相册页（与「我的」页那张卡同一个目的地）；
                         // AI / 官方图库原来在底栏中间两格，现在从首页进，目标页一字未变。
@@ -566,11 +568,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
         return _CastMethodSheet(
           onCamera: () {
             Navigator.of(context).pop();
-            _startCast(ImageSourceType.camera);
+            TapGuard.run(this, 'projection', () => _startCast(ImageSourceType.camera));
           },
           onAlbum: () {
             Navigator.of(context).pop();
-            _startCast(ImageSourceType.album);
+            TapGuard.run(this, 'projection', () => _startCast(ImageSourceType.album));
           },
         );
       },

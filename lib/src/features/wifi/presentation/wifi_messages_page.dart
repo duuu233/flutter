@@ -14,7 +14,8 @@ import '../wifi_messages.dart';
 /// WiFi 版消息中心，同步小程序 `subpackages/device/wifi-messages`（实现报告反馈第三节、对接文档第八节）。
 /// 入口：WiFi 设备详情「消息中心」。
 ///   · 列表：IoT GET /api/notification/list，按时间倒序，每页 20 条；下拉刷新回第一页、滑到底加载下一页（按 id 去重）；
-///   · 「只看未读」开关（unreadOnly=true）；文案按 type 翻译（[WifiMessages]），未知 type 显示通用文案；
+///   · 「只看未读」开关（unreadOnly=true）；文案直接用接口返回的 title / content（2026-11-09 起按 App 语种带 lang 请求），
+///     接口没给时才按 type 本地翻译（[WifiMessages]），未知 type 显示通用文案；
 ///   · 点单条：未读的标记已读（POST /api/notification/read ids=[id]，失败回滚），「全部已读」ids 传空数组；
 ///     只看未读时点过的那条不立刻移走，下拉刷新后才消失（免得列表跳）；
 ///   · 实时：订阅该设备，收到 WS notification.new（只推信号）或长连接重连成功后刷新第一页与未读数（合并 500ms）。
@@ -47,6 +48,9 @@ class _WifiMessagesPageState extends State<WifiMessagesPage> {
   bool _readingAll = false;
 
   String get _deviceNo => IotApi.plainDeviceNo(widget.deviceNo);
+
+  /// 列表接口 lang 按 App 当前语种（2026-11-09，服务端按它返回翻译好的 title / content）。
+  String get _lang => WifiMessages.notificationLang(AppL10n.of(context).language);
 
   @override
   void initState() {
@@ -119,7 +123,7 @@ class _WifiMessagesPageState extends State<WifiMessagesPage> {
     }
     Map<String, dynamic> res;
     try {
-      res = await IotApi.getNotifications(_deviceNo, page: 1, size: _pageSize, unreadOnly: _unreadOnly);
+      res = await IotApi.getNotifications(_deviceNo, page: 1, size: _pageSize, unreadOnly: _unreadOnly, lang: _lang);
     } catch (error) {
       if (!mounted || seq != _seq) return;
       debugPrint('[WiFi消息] 列表加载失败 $error');
@@ -161,7 +165,7 @@ class _WifiMessagesPageState extends State<WifiMessagesPage> {
     });
     Map<String, dynamic> res;
     try {
-      res = await IotApi.getNotifications(_deviceNo, page: _page + 1, size: _pageSize, unreadOnly: _unreadOnly);
+      res = await IotApi.getNotifications(_deviceNo, page: _page + 1, size: _pageSize, unreadOnly: _unreadOnly, lang: _lang);
     } catch (_) {
       if (mounted && seq == _seq) {
         setState(() {
@@ -267,7 +271,7 @@ class _WifiMessagesPageState extends State<WifiMessagesPage> {
                     ],
                     Expanded(
                       child: Text(
-                        l10n.wifiMessageTitle(item.type),
+                        WifiMessages.titleText(l10n, item),
                         style: TextStyle(
                           color: const Color(0xFF25282D),
                           fontSize: 14,

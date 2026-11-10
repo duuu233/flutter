@@ -200,7 +200,8 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
     }
   }
 
-  /// 「开始投屏」。已连接就直接用当前设备；未连接则先让用户选一台已绑定设备再连。
+  /// 「开始投屏」：一律先弹已绑定设备列表让用户选（2026-11-06 同小程序：取消「已连上蓝牙设备就直接进投屏」，
+  /// 行上带连接状态），按下「投屏」后蓝牙版未连接先连上。
   Future<void> _startProjection() async {
     if (_projecting || _imageUrl.isEmpty) {
       return;
@@ -212,29 +213,18 @@ class _OfficialGalleryDetailPageState extends State<OfficialGalleryDetailPage> {
       return;
     }
 
-    // 已连接的那台优先；都没连就弹选择框（与小程序 devicePicker 同一口径）。
-    // ⚠️ 不用 firstOrNull：那是 package:collection 的扩展，本项目没引这个包。
-    DeviceItem? target;
-    for (final device in devices) {
-      if (device.connected) {
-        target = device;
-        break;
-      }
-    }
     // ⚠️ 只有一台时也照样弹（2026-08-13）：投屏不可撤销，「只有一台就替他选」同样是端上
-    // 替用户做了选择——用户按下「连接并投屏」之前，谁都不该开始往设备写图。
-    if (target == null) {
-      // 2026-10-29（同小程序）：离线 / 本地模式 / 状态未知的 WiFi 版不进选择列表，蓝牙版不受影响
-      final pickable = await filterPickableDevices(devices);
-      if (!mounted) {
-        return;
-      }
-      if (pickable.isEmpty) {
-        AppToast.show(context, l10n.wifiNoPickableDevice);
-        return;
-      }
-      target = await showDevicePickerSheet(context, devices: pickable);
+    // 替用户做了选择——用户按下「投屏」之前，谁都不该开始往设备写图。
+    // 所有已绑定设备都列出（2026-11-06），WiFi 版先查一次状态给行上显示；不可投的选了由下面 ensureWifiDeviceOnline 提示
+    await refreshPickerWifiStatuses(devices);
+    if (!mounted) {
+      return;
     }
+    final DeviceItem? target = await showDevicePickerSheet(
+      context,
+      devices: devices,
+      bleConnected: (device) => state.isDeviceActuallyConnected(device.id),
+    );
     if (target == null || !mounted) {
       return;
     }

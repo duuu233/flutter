@@ -23,8 +23,8 @@ import 'wifi_messages_page.dart';
 import 'wifi_ota_page.dart';
 import 'wifi_remove_flow.dart';
 import 'wifi_share_page.dart';
-import 'wifi_sleep_page.dart';
 import 'wifi_tf_page.dart';
+import '../../../shared/tap_guard.dart';
 
 /// WiFi 版设备详情，同步小程序 `subpackages/device/wifi-detail`（2026-10-27 建页；2026-10-29 按产品要求改版，布局与蓝牙版详情对齐）。
 ///
@@ -32,9 +32,13 @@ import 'wifi_tf_page.dart';
 ///   · 设备记录：设备列表里的这一条（名称、设备 ID、尺寸、设备图）；所有者身份另查 getUserProductDetail（isToHave / shareUserId）；
 ///   · 状态：IoT GET /api/device/info，订阅 WS device.status，上下线时自动重查；电量放在在线状态那一栏（仅在线时显示）；
 ///   · 设备卡下方「投屏 | 轮播设置」（与蓝牙版位置一致）；
-///   · 功能栏依次：设备信息（[WifiDeviceInfoPage]）、休眠设置、消息中心（未读角标）、TF卡（未插卡不可点；有卡显示已用/总量，
-///     进 [WifiTfPage]）、共享设备（2026-11-05 起所有者与接收者都显示，[WifiSharePage]，接收者只看不改）、解除绑定（只删设备）；页底「删除设备」（仅所有者，
-///     样式与弹窗同蓝牙版，先删云端图片再删设备，见 wifi_remove_flow.dart）；
+///   · 功能栏依次：设备信息（[WifiDeviceInfoPage]）、设备ID、屏幕尺寸、消息中心（未读红点，2026-11-06 起不显示数字）、
+///     固件升级、TF卡（未插卡不可点；有卡显示已用/总量，进 [WifiTfPage]）、共享设备（2026-11-05 起所有者与接收者都显示，
+///     [WifiSharePage]，接收者只看不改）。休眠设置入口 2026-11-09 按产品要求隐藏（[WifiSleepPage] 保留，恢复时把入口加回功能栏即可）；
+///   · 功能栏下一张卡片（2026-11-09，布局样式同蓝牙版详情的操作卡片）：一键清空（仅所有者：清相册记录 → 删全部云端图片 →
+///     恢复内置图片，设备记录保留）+ 解除绑定（只删设备记录）；页底「删除设备」（仅所有者，样式与弹窗同蓝牙版，
+///     先删云端图片、再恢复内置图片（2026-11-06）、最后删设备，见 wifi_remove_flow.dart）；
+///   · 轮播中标记（2026-11-05，同小程序）：只在 running 且设备在线时显示，图标换绿色版 + 右上角绿点，去掉「轮播中」文字；
 ///   · 本地模式（status=LOCAL_TF）：投屏 / 轮播设置 / TF卡 可以点，但只提示「当前设备状态：本地模式，请恢复设备网络再试」；
 ///     设备信息、休眠设置、消息中心、分享、解绑、删除照常。
 ///   · 固件升级（2026-11-02，同小程序）：「消息中心」之后，右侧当前固件版本，有新版本亮红点；本机有进行中的升级显示「升级中」，进 [WifiOtaPage]。
@@ -257,23 +261,18 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
             divider,
             entry(l10n.wifiScreenSize, () {}, value: _device.sizeModel, chevron: false),
           ],
-          divider,
-          entry(l10n.wifiSleepSettings, () => _push(WifiSleepPage(state: widget.state, deviceId: widget.deviceId))),
+          // 休眠设置入口 2026-11-09 按产品要求隐藏（WifiSleepPage 保留，恢复时把入口加回这里即可）
           divider,
           entry(
             l10n.wifiMessageCenter,
             _openMessages,
+            // 有未读只亮红点、不显示具体数字（2026-11-06，同小程序），样式同固件升级行；消息列表页不变
             trailing: _unreadCount > 0
                 ? Container(
-                    constraints: const BoxConstraints(minWidth: 18),
-                    height: 18,
-                    padding: const EdgeInsets.symmetric(horizontal: 5),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(color: const Color(0xFFE5533D), borderRadius: BorderRadius.circular(999)),
-                    child: Text(
-                      _unreadCount > 99 ? '99+' : '$_unreadCount',
-                      style: const TextStyle(color: Colors.white, fontSize: 11, height: 1),
-                    ),
+                    key: const ValueKey('wifi-unread-dot'),
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(color: Color(0xFFE5533D), shape: BoxShape.circle),
                   )
                 : null,
           ),
@@ -310,14 +309,47 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
           // 共享设备（2026-11-05，同小程序）：接收者也显示；身份由 [WifiSharePage] 自己查，接收者没有移除 / 分享按钮
           divider,
           entry(l10n.wifiSharedDevice, () => _push(WifiSharePage(state: widget.state, deviceId: widget.deviceId))),
-          divider,
-          // 解除绑定：红字，同蓝牙版；只删设备记录，照片保留
-          entry(
-            l10n.devUnbindDevice,
-            () => startWifiUnbindFlow(context, widget.state, _device),
-            value: l10n.devUnbindDeviceValue,
+        ],
+      ),
+    );
+  }
+
+  /// 一键清空 + 解除绑定（2026-11-09，同小程序）：布局样式同蓝牙版详情的操作卡片（图标 + 橙 / 红字，中间细分隔线）。
+  /// 一键清空仅所有者（会删掉这台设备全部云端照片），接收者这张卡片只有解除绑定。
+  Widget _buildActions(AppL10n l10n) {
+    return FigmaGlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 19),
+      child: Column(
+        children: [
+          if (_isOwner) ...[
+            _WifiActionRow(
+              iconAsset: 'assets/images/device-detail-icon05.png',
+              fallbackIcon: Icons.cleaning_services_outlined,
+              label: l10n.devClearAll,
+              labelColor: const Color(0xFFFF6A20),
+              value: l10n.devClearAllValue,
+              onTap: () => startWifiClearFlow(
+                context,
+                widget.state,
+                _device,
+                // 照片删了，服务端会把轮播里对应的图移掉：重查一次轮播标记
+                onCleared: () {
+                  if (mounted) {
+                    WifiSlideshowStore.instance.refresh(_device);
+                  }
+                },
+              ),
+            ),
+            Container(height: 1, color: const Color(0xFF2A2B2B).withValues(alpha: 0.08)),
+          ],
+          // 解除绑定：只删设备记录，照片保留
+          _WifiActionRow(
+            iconAsset: 'assets/images/device-detail-icon06.png',
+            fallbackIcon: Icons.link_off_rounded,
+            label: l10n.devUnbindDevice,
             labelColor: const Color(0xFFFF3045),
-            labelWeight: FontWeight.w500,
+            value: l10n.devUnbindDeviceValue,
+            onTap: () => startWifiUnbindFlow(context, widget.state, _device),
           ),
         ],
       ),
@@ -422,8 +454,10 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
               WifiActionBar(
                 castLabel: l10n.devCast,
                 slideshowLabel: l10n.wifiSlideshowSettings,
-                onCast: () => startWifiCast(context, widget.state, device),
-                slideshowOn: WifiSlideshowStore.instance.of(device.id),
+                // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
+                onCast: () => TapGuard.run(this, 'projection', () => startWifiCast(context, widget.state, device)),
+                // 轮播中标记只在 running 且设备在线时显示（2026-11-05，同小程序）
+                slideshowOn: WifiSlideshowStore.instance.of(device.id) && status.status == WifiOnlineStatus.online,
                 // 从轮播设置页保存 / 暂停回来重查轮播中标记
                 onSlideshow: () => openWifiSlideshow(context, widget.state, device).then((_) {
                   if (mounted) {
@@ -433,6 +467,8 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
               ),
               const SizedBox(height: 14),
               _buildEntries(l10n, status),
+              const SizedBox(height: 12),
+              _buildActions(l10n),
               // 删除设备（仅所有者）：页底独立入口，样式同蓝牙版 _OutlineDeleteDeviceButton
               if (_isOwner) ...[
                 const SizedBox(height: 32),
@@ -486,7 +522,8 @@ class WifiActionBar extends StatelessWidget {
   final VoidCallback onCast;
   final VoidCallback onSlideshow;
 
-  /// 轮播开启中（2026-11-02，strategy.running）：「轮播设置」图标右上角绿点 +「轮播中」小标签。
+  /// 轮播开启中（2026-11-02，strategy.running）：「轮播设置」图标换绿色版 + 右上角绿点。
+  /// 2026-11-05 起（同小程序）去掉「轮播中」文字标签，调用方只在 running 且设备在线时传 true。
   final bool slideshowOn;
 
   @override
@@ -555,7 +592,7 @@ class WifiActionBar extends StatelessWidget {
               clipBehavior: Clip.none,
               children: [
                 Image.asset(
-                  'assets/images/device-detail-icon01.png',
+                  slideshowOn ? 'assets/images/device-detail-icon01-on.png' : 'assets/images/device-detail-icon01.png',
                   width: 18,
                   height: 18,
                   errorBuilder: (context, error, stackTrace) =>
@@ -581,22 +618,69 @@ class WifiActionBar extends StatelessWidget {
             label: slideshowLabel,
             color: kWifiGreen,
             onTap: onSlideshow,
-            trailing: slideshowOn
-                ? Container(
-                    key: const ValueKey('wifi-slideshow-on-tag'),
-                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: kWifiGreen.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      AppL10n.of(context).wifiSlideRunning,
-                      style: const TextStyle(color: kWifiGreen, fontSize: 10, fontWeight: FontWeight.w500, height: 1.2),
-                    ),
-                  )
-                : null,
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 详情页操作卡片的一行（同蓝牙版详情 _DetailRow 的样式：20 图标 + 14 / w500 标签 + 右对齐说明 + 箭头）。
+class _WifiActionRow extends StatelessWidget {
+  const _WifiActionRow({
+    required this.iconAsset,
+    required this.fallbackIcon,
+    required this.label,
+    required this.labelColor,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String iconAsset;
+  final IconData fallbackIcon;
+  final String label;
+  final Color labelColor;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(
+        height: 60,
+        child: Row(
+          children: [
+            Image.asset(
+              iconAsset,
+              width: 20,
+              height: 20,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => Icon(fallbackIcon, size: 20, color: labelColor),
+            ),
+            const SizedBox(width: 15),
+            Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: labelColor, fontSize: 14, fontWeight: FontWeight.w500, height: 1.2),
+            ),
+            const SizedBox(width: 11),
+            Expanded(
+              child: Text(
+                value,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.right,
+                style: const TextStyle(color: Color(0xFF777E88), fontSize: 14, height: 1.2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Icon(Icons.chevron_right_rounded, color: Color(0xFF777E88), size: 18),
+          ],
+        ),
       ),
     );
   }

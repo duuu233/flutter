@@ -227,20 +227,14 @@ Future<String> wifiQueryBlockedTip(AppL10n l10n, String deviceNo) async {
   }
 }
 
-/// 选择投屏设备列表（AI 生图、官方图库，2026-10-29 同小程序 `filterPickable`）：WiFi 版查一次状态，
-/// 离线 / 本地模式 / 状态未知的不进列表；休眠 / 关机保留（点了沿用原提示），蓝牙版原样保留。
-Future<List<DeviceItem>> filterPickableDevices(List<DeviceItem> devices) async {
-  const hidden = {WifiOnlineStatus.offline, WifiOnlineStatus.local, WifiOnlineStatus.unknown};
-  final keep = await Future.wait(
-    devices.map((device) async {
-      if (!device.isWifi) {
-        return true;
-      }
-      final status = await WifiStatusStore.instance.refresh(device);
-      return !hidden.contains(status.status);
-    }),
-  );
-  return [for (var i = 0; i < devices.length; i++) if (keep[i]) devices[i]];
+/// 选择投屏设备弹层（AI 生图、官方图库）打开前：WiFi 版各查一次云端状态，弹层每行显示在线 / 离线等（读 [WifiStatusStore]）。
+/// 2026-11-06 起（同小程序 `utils/picker-devices.js`）所有已绑定设备都进列表——原 2026-10-29「离线 / 本地模式 / 状态未知的
+/// WiFi 版不进列表」取消（那样「离线」永远显示不出来）；选了不可投的 WiFi 版，投屏前照旧由 ensureWifiDeviceOnline 提示并停下。
+Future<void> refreshPickerWifiStatuses(List<DeviceItem> devices) async {
+  await Future.wait([
+    for (final device in devices)
+      if (device.isWifi) WifiStatusStore.instance.refresh(device),
+  ]);
 }
 
 /// WiFi 版「轮播设置」旁的轮播中标记（同小程序 2026-11-02 `wifiStatus.fetchSlideshowRunning`）：

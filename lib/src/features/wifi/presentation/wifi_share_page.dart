@@ -12,16 +12,21 @@ import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../wifi_l10n.dart';
 import '../wifi_share.dart';
+import '../wifi_share_card.dart';
 import '../wifi_wechat_share.dart';
 
 /// WiFi 版共享设备列表（2026-10-29，同小程序 `subpackages/device/wifi-share`）。入口：WiFi 详情「共享设备」（2026-11-05 起所有者与接收者都能进）。
-///   · 接收者（2026-11-05，同小程序）：内容与所有者一致（所有者栏 + 已分享成员），只是没有「移除」和底部「分享设备」；
+///   · 接收者（2026-11-05，同小程序）：内容与所有者一致（所有者栏 + 已分享成员），没有底部「分享设备」；
 ///     身份进页面时按 getUserProductDetail（isToHave / shareUserId，[wifiIsOwner]）自己查，查不到按加载失败；
 ///     列表里没有所有者那条时接收者不拿自己兜底（所有者栏不显示）。
+///     成员列表里接收者自己那行（成员 userProductId = 本人记录）在原「移除」位置显示灰字「我」（该行能解绑时显示「移除」）。
+///   · 「移除」（2026-11-05 起后端控制，同小程序）：成员接口每条带 isCanDel，== 1 才显示、才能移除（[WifiShareMember.canDel]），
+///     不再按所有者 / 接收者判断。移除的是自己（接收者解绑自己）时走 [PhotoFrameState.deleteDevice] 清本机记录，提示后回首页。
 ///   · 第一栏固定所有者（头像 + 昵称 + 身份），橙色底与接收者区分；下面是接收者（头像 + 昵称 + 加入时间 + 移除）；
 ///   · 底部「分享设备」：把小程序接受页卡片发到微信会话（简化版，无邀请码，见 [WifiWeChatShare]），
 ///     对方在小程序里接受。拿不到自己的 userId / 产品 ID，或没配置小程序原始 ID 时按钮置灰、点了提示；
 ///     分享这一刻取服务器时间戳写进卡片 t（2026-11-04 分享链接有效期，小程序接受页校验），取不到不发卡片；
+///     卡片封面（2026-11-04 同小程序）由 [WifiShareCard] 画（邀请标签 + 设备图 + 设备名 / 规格 + 接受按钮），画不出来用设备图；
 ///   · 移除：二次确认后 delUserProduct 删成员那条记录（服务端口径：成员即失去设备），再刷新列表。
 /// 数据：老服务 getShareUserProductList（按后端设备号）；服务端暂无加入时间字段，显示「--」。
 class WifiSharePage extends StatefulWidget {
@@ -106,15 +111,19 @@ class _WifiSharePageState extends State<WifiSharePage> {
     });
   }
 
+  /// 接收者自己那行：成员 userProductId = 本人这条记录（所有者那栏不标「我」）。
+  bool _isMe(WifiShareMember member) => !_isOwner && member.id.isNotEmpty && member.id == widget.deviceId;
+
   Future<void> _remove(WifiShareMember member) async {
-    if (_busy || !_isOwner) {
+    if (_busy || !member.canDel) {
       return;
     }
     final l10n = AppL10n.of(context);
+    final isMe = _isMe(member);
     final confirmed = await showAppConfirmDialog(
       context,
       title: l10n.wifiShareRemoveTitle,
-      message: l10n.wifiShareRemoveMessage(member.name.isNotEmpty ? member.name : '--'),
+      message: isMe ? l10n.wifiShareRemoveSelfMessage : l10n.wifiShareRemoveMessage(member.name.isNotEmpty ? member.name : '--'),
       iconAsset: 'assets/images/device-detail-icon06.png',
       icon: Icons.person_remove_outlined,
       tone: AppDialogTone.danger,
@@ -127,7 +136,15 @@ class _WifiSharePageState extends State<WifiSharePage> {
     AppLoadingDialog.show(context, l10n.wifiShareRemoving);
     Object? failure;
     try {
-      await BoltFoxApi.delUserProduct(member.id);
+      if (isMe) {
+        // 解绑的是自己：走 state.deleteDevice，连同本机设备列表 / 缓存一起清掉
+        final feedback = await widget.state.deleteDevice(member.id);
+        if (!feedback.success) {
+          failure = feedback.message;
+        }
+      } else {
+        await BoltFoxApi.delUserProduct(member.id);
+      }
     } catch (error) {
       failure = error;
     } finally {
@@ -138,10 +155,16 @@ class _WifiSharePageState extends State<WifiSharePage> {
       return;
     }
     if (failure != null) {
-      AppToast.warn(context, failure is ApiException && failure.message.isNotEmpty ? failure.message : l10n.wifiShareFailed);
+      final message = failure is ApiException ? failure.message : (failure is String ? failure : '');
+      AppToast.warn(context, message.isNotEmpty ? message : l10n.wifiShareFailed);
       return;
     }
     AppToast.show(context, l10n.wifiShareRemoved);
+    if (isMe) {
+      // 设备已不在自己名下，留在这页（和下面的详情页）只会加载失败：回首页
+      Navigator.of(context).popUntil((route) => route.isFirst);
+      return;
+    }
     await _load();
   }
 
@@ -181,7 +204,19 @@ class _WifiSharePageState extends State<WifiSharePage> {
       }
       final device = _device;
       final user = _user;
+      // 卡片封面（2026-11-04 同小程序）：画一张 5:4 的邀请封面；画不出来 / 超出微信大小上限时用设备图，不用页面截图
+      final cover = await WifiShareCard.render(
+        name: device.name,
+        spec: device.sizeModel.trim().isNotEmpty ? '${l10n.wifiBadge} · ${device.sizeModel.trim()}' : l10n.wifiBadge,
+        tag: l10n.wifiShareCardTag,
+        button: l10n.wifiShareCardButton,
+        thumbAsset: device.thumbAsset,
+      );
+      if (!mounted) {
+        return;
+      }
       final ok = await WifiWeChatShare.shareMiniProgram(
+        cover: cover,
         path: WifiShareLink.acceptPath(
           deviceId: device.serialNumber,
           productId: device.productId,
@@ -328,7 +363,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
                             ],
                           ),
                         ),
-                        if (_isOwner)
+                        if (member.canDel)
                           GestureDetector(
                             onTap: () => _remove(member),
                             child: Container(
@@ -341,6 +376,15 @@ class _WifiSharePageState extends State<WifiSharePage> {
                                 l10n.wifiShareRemove,
                                 style: const TextStyle(color: Color(0xFFFF3045), fontSize: 12),
                               ),
+                            ),
+                          )
+                        else if (_isMe(member))
+                          // 接收者自己那行：原「移除」位置的「我」（只是标记，不可点；同小程序 .share-me）
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 5),
+                            child: Text(
+                              l10n.wifiShareMe,
+                              style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12),
                             ),
                           ),
                       ],

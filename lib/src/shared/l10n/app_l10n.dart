@@ -612,6 +612,22 @@ class AppL10n {
     'The e-paper device information does not match this cast. Check the device settings and try again.',
     '電子ペーパーの設定情報が一致しません。デバイス情報を確認して再試行してください。',
   );
+  // 图传卡住（2026-11-06 同小程序 result.js STALL_MESSAGE）
+  String get castFailureStall => _pick(
+    '电子纸设备忙或处理不过来，请重新尝试',
+    'The e-paper device is busy or cannot keep up. Please try again.',
+    '電子ペーパーが混雑しているか処理が追いつきません。もう一度お試しください。',
+  );
+  // 批量投屏逐张状态（2026-11-06 同小程序 result.js BATCH_TEXT）
+  String get castBatchPending => _pick('等待投屏', 'Waiting', '待機中');
+  String get castBatchProcessing => _pick('处理中', 'Processing', '処理中');
+  String get castBatchSent => _pick('已发送', 'Sent', '送信済み');
+  String get castBatchTransferring => _pick('传输中', 'Transferring', '転送中');
+  String get castBatchDone => _pick('投屏完成', 'Cast complete', 'キャスト完了');
+  String get castBatchFailed => _pick('投屏失败', 'Cast failed', 'キャスト失敗');
+  String get castBatchAborted => _pick('已中断', 'Interrupted', '中断されました');
+  String get castBatchSkipped => _pick('未投屏', 'Not cast', '未キャスト');
+  String castBatchItemNo(int index) => _pick('第 $index 张', 'Photo $index', '$index 枚目');
   String get castFailureTimeout => _pick(
     '传输超时，请将手机靠近电子纸设备后重试',
     'Transfer timed out. Move the phone closer to the e-paper device and try again.',
@@ -1555,6 +1571,11 @@ class AppL10n {
     'まず近くの電子ペーパーを検索してペアリングしてください。',
   );
   String get devAddDevice => _pick('添加设备', 'Add Device', 'デバイスを追加');
+  // 我的设备 WiFi版 / 蓝牙版 Tab（2026-11-06 同小程序）
+  String get devEmptyWifiTab => _pick('暂无WiFi版设备', 'No Wi-Fi devices', 'Wi-Fi版デバイスがありません');
+  String get devEmptyBleTab => _pick('暂无蓝牙版设备', 'No Bluetooth devices', 'Bluetooth版デバイスがありません');
+  String get devEmptyTabAdd => _pick('点击添加设备', 'Tap to add a device', 'タップしてデバイスを追加');
+  String devTotalDevices(int count) => _pick('共 $count 台设备', '$count device${count == 1 ? '' : 's'}', '全 $count 台');
   String get devClearStep1Message => _pick(
     '将清空电子纸设备内所有照片，同时清空小程序/APP的图库，请谨慎选择是否继续。',
     'This will erase all photos on the e-paper device and also clear the gallery in the Mini Program / App. Please continue with care.',
@@ -2395,15 +2416,25 @@ class AppL10n {
   // 2026-08-13 起改「先选再连」：文案不能再说「选完自动连接」，那正是本轮要去掉的行为。
   String get devicePickerTitle =>
       _pick('选择投屏设备', 'Choose a device', 'キャスト先を選択');
+  // 2026-11-06（同小程序）：「连接并投屏」改「投屏」，说明随之改「开始投屏」（蓝牙版按下后照旧先连上再投）
   String get devicePickerDesc => _pick(
-    '选择要投屏的电子纸设备，点击下方按钮开始连接',
-    'Pick the e-paper device to cast to, then tap the button below to connect.',
-    'キャスト先の電子ペーパーを選び、下のボタンで接続してください',
+    '选择要投屏的电子纸设备，点击下方按钮开始投屏',
+    'Pick the e-paper device to cast to, then tap the button below to cast.',
+    'キャスト先の電子ペーパーを選び、下のボタンでキャストしてください',
   );
-  String get devicePickerConfirm =>
-      _pick('连接并投屏', 'Connect and cast', '接続してキャスト');
+  String get devicePickerConfirm => _pick('投屏', 'Cast', 'キャスト');
 
   String get galSelectAll => _pick('全选', 'Select All', 'すべて選択');
+  // 「我的相册」分页尾（2026-11-03 同小程序）与跨设备拦截（2026-11-06）
+  String get galLoadingMore => _pick('加载中…', 'Loading…', '読み込み中…');
+  String get galLoadMoreFailed => _pick('加载失败，点击重试', 'Failed to load. Tap to retry.', '読み込みに失敗しました。タップして再試行');
+  String get galPullToLoadMore => _pick('上拉加载更多', 'Pull up to load more', '上にスワイプしてさらに読み込む');
+  String get galNoMore => _pick('没有更多了', 'No more photos', 'これ以上ありません');
+  String get galOnlySameDevice => _pick(
+    '只能操作同一台电子纸设备的照片',
+    'You can only operate on photos from the same e-paper device.',
+    '同じ電子ペーパーの写真のみ操作できます',
+  );
   String galTotalCount(int count) =>
       _pick('共 $count 张', '$count total', '合計$count枚');
   String get galDeletePhotos => _pick('删除照片', 'Delete Photos', '写真を削除');

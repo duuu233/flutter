@@ -110,6 +110,17 @@ void main() {
       expect(noOwner.owner, isNull, '接收者传 null 兜底：所有者栏不显示，不把自己当所有者');
     });
 
+    test('移除按成员接口 isCanDel（2026-11-05，同小程序）：== 1 才能移除，字符串也认，不带一律不能', () {
+      final split = wifiSplitMembers([
+        {'userProductId': 7, 'userName': '小明', 'isToHave': 1, 'isCanDel': 0},
+        {'userProductId': 9, 'userName': '小红', 'isToHave': 0, 'isCanDel': 1},
+        {'userProductId': 10, 'userName': '小刚', 'isToHave': 0, 'isCanDel': '1'},
+        {'userProductId': 11, 'userName': '小强', 'isToHave': 0},
+      ], null);
+      expect(split.owner?.canDel, isFalse);
+      expect(split.members.map((m) => m.canDel), [true, true, false]);
+    });
+
     test('卡片路径与小程序接受页同格式', () {
       final path = WifiShareLink.acceptPath(
         deviceId: 'E3:48:C2:1E:D4:28',

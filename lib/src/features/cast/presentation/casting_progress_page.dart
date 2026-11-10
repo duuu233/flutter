@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,7 @@ import '../../../device/ble/device_ble.dart' show FrameBleErrorKind;
 import '../../../device/frame_device_protocol.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/tap_guard.dart';
 import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
 import '../cast_photo_picker.dart';
@@ -74,6 +76,32 @@ class CastingProgressPage extends StatefulWidget {
 
 enum _CastStatus { progress, success, fail }
 
+/// 批量投屏逐张状态（2026-11-06 同小程序 result.js BATCH_TEXT / BATCH_RANK）：
+/// 等待投屏 → 处理中 → 已发送 → 传输中 → 投屏完成；失败那张「投屏失败」/ 中断「已中断」，之后没投的「未投屏」。
+/// 状态只往前走（[rank]），迟到的预取回调不会把「传输中」拉回「已发送」。
+enum _BatchStatus {
+  pending(0),
+  processing(1),
+  sent(2),
+  transferring(3),
+  done(4),
+  failed(4),
+  aborted(4),
+  skipped(4);
+
+  const _BatchStatus(this.rank);
+
+  final int rank;
+}
+
+class _BatchItem {
+  _BatchItem(this.thumb);
+
+  /// 列表缩略图：原图（与「我的相册」记录图同方位；投屏用图已按设备旋转角转过）。
+  final String thumb;
+  _BatchStatus status = _BatchStatus.pending;
+}
+
 class _CastingProgressPageState extends State<CastingProgressPage> {
   _CastStatus _status = _CastStatus.progress;
 
@@ -94,6 +122,55 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   int _failCount = 0;
   int _selectedTotal = 0;
 
+  /// 批量逐张状态（只在多张时显示，单张界面不变）；最多露 4 行，传到第几张就滚到那一行。
+  late final List<_BatchItem> _batch = [
+    for (var i = 0; i < widget.imagePaths.length; i++)
+      if (widget.imagePaths[i].isNotEmpty)
+        _BatchItem(
+          i < widget.originalPaths.length && widget.originalPaths[i].isNotEmpty
+              ? widget.originalPaths[i]
+              : widget.imagePaths[i],
+        ),
+  ];
+  final ScrollController _batchScroll = ScrollController();
+  static const double _batchRowHeight = 48;
+  static const int _batchVisibleRows = 4;
+
+  /// 逐张状态只往前推进；单张 / 越界不处理。
+  void _setBatch(int index, _BatchStatus status) {
+    if (_batch.length < 2 || index < 0 || index >= _batch.length) {
+      return;
+    }
+    final item = _batch[index];
+    if (status.rank <= item.status.rank) {
+      return;
+    }
+    if (mounted) {
+      setState(() => item.status = status);
+    } else {
+      item.status = status;
+    }
+    if (status == _BatchStatus.transferring) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_batchScroll.hasClients) {
+          return;
+        }
+        final target = (index * _batchRowHeight).clamp(0.0, _batchScroll.position.maxScrollExtent);
+        _batchScroll.animateTo(target, duration: const Duration(milliseconds: 260), curve: Curves.easeOut);
+      });
+    }
+  }
+
+  /// 批量收尾：出错那张（[failedIndex]，-1 = 还没进逐张）标失败 / 中断，后面没投的标「未投屏」，已完成的不动。
+  void _closeBatch(int failedIndex, bool aborted) {
+    if (failedIndex >= 0) {
+      _setBatch(failedIndex, aborted ? _BatchStatus.aborted : _BatchStatus.failed);
+    }
+    for (var j = failedIndex + 1 < 0 ? 0 : failedIndex + 1; j < _batch.length; j++) {
+      _setBatch(j, _BatchStatus.skipped);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -112,6 +189,7 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
   @override
   void dispose() {
     _aborted = true; // 离开页面：中止投屏（切后台/离开会挂起蓝牙）。
+    _batchScroll.dispose();
     super.dispose();
   }
 
@@ -190,7 +268,20 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
                 : widget.originalPaths,
             shouldAbort: () => _aborted,
             onProgress: handleProgress,
+            onItemStage: (index, stage) => _setBatch(index, switch (stage) {
+              CastItemStage.processing => _BatchStatus.processing,
+              CastItemStage.sent => _BatchStatus.sent,
+              CastItemStage.transferring => _BatchStatus.transferring,
+              CastItemStage.done => _BatchStatus.done,
+            }),
           );
+    // 批量列表收尾：逐张是顺序投的，第一张没完成的（= 已成功张数）就是出错 / 中断的那张；没进逐张（连接失败）全部「未投屏」
+    if (result.uploaded < _batch.length) {
+      _closeBatch(
+        connectError != null ? -1 : result.uploaded,
+        result.failureKind == FrameBleErrorKind.aborted,
+      );
+    }
     if (!mounted) return;
     if (widget.state != null && widget.userProductId != null) {
       await widget.state!.refreshConnectedDeviceInfo(
@@ -271,6 +362,11 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
         break; // 落回子串匹配
     }
     final lower = raw.toLowerCase();
+    // 图传卡住（2026-11-06 同小程序）：device_ble 抛「图传中断：设备停在已接收第 N 包不再前进（窗口 / 间隔）… MTU、每包字节」，
+    // 包号、窗口、MTU 只对排查有用，用户看不懂；改成一句能照做的话。原文仍在服务层日志里。必须在「忙」之前判（原文含「设备忙」）。
+    if (raw.contains('图传中断') || raw.contains('不再前进') || raw.contains('处理不过来')) {
+      return l10n.castFailureStall;
+    }
     if (raw.contains('繁忙') ||
         raw.contains('忙') ||
         lower.contains('busy') ||
@@ -397,6 +493,74 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
     Navigator.of(context).pushReplacementNamed(AppRoutes.figmaGallery);
   }
 
+  String _batchText(AppL10n l10n, _BatchStatus status) => switch (status) {
+    _BatchStatus.pending => l10n.castBatchPending,
+    _BatchStatus.processing => l10n.castBatchProcessing,
+    _BatchStatus.sent => l10n.castBatchSent,
+    _BatchStatus.transferring => l10n.castBatchTransferring,
+    _BatchStatus.done => l10n.castBatchDone,
+    _BatchStatus.failed => l10n.castBatchFailed,
+    _BatchStatus.aborted => l10n.castBatchAborted,
+    _BatchStatus.skipped => l10n.castBatchSkipped,
+  };
+
+  /// 批量逐张列表（仿 WiFi 版结果页；多张才显示）：缩略图（原图）+ 第 N 张 + 状态，最多露 4 行、可上下滑。
+  /// 进行中橙色（处理中 / 已发送 / 传输中），完成绿色，失败 / 中断红色，等待 / 未投屏灰色。
+  Widget _buildBatchList(AppL10n l10n) {
+    final rows = _batch.length < _batchVisibleRows ? _batch.length : _batchVisibleRows;
+    return FigmaGlassCard(
+      borderRadius: 16,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: SizedBox(
+        height: _batchRowHeight * rows,
+        child: ListView.separated(
+          controller: _batchScroll,
+          padding: EdgeInsets.zero,
+          itemCount: _batch.length,
+          separatorBuilder: (context, index) => Container(height: 0.5, color: const Color(0x0F2A2B2B)),
+          itemBuilder: (context, i) {
+            final item = _batch[i];
+            final color = switch (item.status) {
+              _BatchStatus.processing || _BatchStatus.sent || _BatchStatus.transferring => const Color(0xFFFF621F),
+              _BatchStatus.done => const Color(0xFF0E9F87),
+              _BatchStatus.failed || _BatchStatus.aborted => const Color(0xFFE5533D),
+              _ => const Color(0xFF8B9098),
+            };
+            return SizedBox(
+              height: _batchRowHeight - 0.5,
+              child: Row(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: Image.file(
+                      File(item.thumb),
+                      width: 32,
+                      height: 32,
+                      fit: BoxFit.cover,
+                      cacheWidth: 96,
+                      errorBuilder: (context, error, stackTrace) => const SizedBox(width: 32, height: 32),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Text(l10n.castBatchItemNo(i + 1), style: const TextStyle(color: Color(0xFF4A5059), fontSize: 13)),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _batchText(l10n, item.status),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: color, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
   String get _art {
     switch (_status) {
       case _CastStatus.success:
@@ -482,6 +646,11 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
             ProjectionPercent(percent: _percent),
             const SizedBox(height: 14), // .progress-wrap margin-top 28rpx
             ProjectionProgress(percent: _percent, label: '$_current/$_total'),
+            // 批量逐张状态在进度条下方、注意事项之前（2026-11-06 同小程序）
+            if (_batch.length > 1) ...[
+              const SizedBox(height: 18),
+              _buildBatchList(l10n),
+            ],
             const SizedBox(height: 22), // .progress-tips margin-top 44rpx
             ProjectionTips(
               tips: [
@@ -505,6 +674,11 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
               total: _selectedTotal,
               onTapRecords: _goRecords,
             ),
+            // 批量逐张状态：结束后留在结果卡片下方
+            if (_batch.length > 1) ...[
+              const SizedBox(height: 14),
+              _buildBatchList(l10n),
+            ],
           ],
 
           // ── 失败：固定排查提示 ────────────────────────────────────────
@@ -528,11 +702,14 @@ class _CastingProgressPageState extends State<CastingProgressPage> {
               label: _status == _CastStatus.success
                   ? l10n.castContinue
                   : l10n.castRecast,
+              // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）：选图 / 跳转期间再点忽略
               onPressed: widget.userProductId == null
                   ? null
-                  : (_status == _CastStatus.success
-                        ? _continueProjection
-                        : _retry),
+                  : () => TapGuard.run(
+                      this,
+                      'projection',
+                      _status == _CastStatus.success ? _continueProjection : () async => _retry(),
+                    ),
             ),
             const SizedBox(height: 12), // .result-actions gap 24rpx
             // 返回首页：白 0.86 药丸按钮（对齐小程序 .result-secondary），不是灰色文字链接。
