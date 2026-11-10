@@ -30,7 +30,12 @@ class BindDeviceNotFound extends StatelessWidget {
             child: SizedBox(
               width: 280,
               height: 280,
-              child: FigmaDeviceRadar(state: FigmaRadarState.notFound),
+              // 同小程序 device_not_found_art.png，与搜索中页 gif 同一个 280 框、同样 contain：
+              // 各状态只换图标、宽高不变（2026-11-10，原为代码画的雷达）。
+              child: Image(
+                image: AssetImage('assets/images/device_not_found_art.png'),
+                fit: BoxFit.contain,
+              ),
             ),
           ),
           const SizedBox(height: 20),

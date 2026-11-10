@@ -123,7 +123,8 @@ const double _kListViewport = _kCardHeight * 4 + _kCardGap * 4 + _kCardHeight / 
 const double _kCountRowHeight = 44;
 
 /// 雷达尺寸的上下限。上限 280 = 搜索中页的尺寸（两页切换时不缩一圈）；
-/// 下限 150 是「还看得出是个雷达」的底线——到这儿还装不下，就轮到列表让高度了。
+/// 2026-11-10 起各状态都按 280 摆（同小程序：只换图标、宽高不变），装不下由列表让；
+/// 下限 150 只在一屏连 280 雷达 + 统计行都放不下（分屏 / 横屏）时兜底，免得整页溢出。
 const double _kRadarMax = 280;
 const double _kRadarMin = 150;
 
@@ -149,26 +150,22 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
         children: [
           const BindDebugEntryCard(),
           const SizedBox(height: 12),
-          // ⚠️ 雷达与列表**一起**放进这个 LayoutBuilder（2026-09-16）：产品要的是
-          // 「列表高度 = 4.5 张设备卡，最后一张露一半表示还能滑」，而这一屏的高度是固定的
-          // ——列表要长到 4.5 张，只能从雷达那儿要。所以两者的高度在这里一次算完：
-          //   · 列表优先拿到 [_kListViewport]（4 张整 + 半张）；
-          //   · 雷达拿剩下的，夹在 [_kRadarMin]~[_kRadarMax] 之间；
-          //   · 屏幕再矮（小屏 / 分屏 / 系统大字号）连雷达的下限都保不住时，才反过来压列表
-          //     ——那是「一屏装不下」的降级，不是把卡片塞到按钮底下。
-          // 对齐小程序 `bind.wxss`：那边是同一套做法（`.bind-content` 竖向 flex，
-          // 雷达 `flex-shrink: 40`、列表 `max-height: 844rpx` + `flex-shrink: 1`）。
+          // 雷达与列表**一起**放进这个 LayoutBuilder，两者的高度在这里一次算完：
+          //   · 雷达各状态尺寸不变（2026-11-10 产品要求，同小程序 `bind.wxss` `.radar-wrap`
+          //     固定 500rpx、`flex-shrink: 0`）：搜索中 gif ↔ 搜索结束的「已搜到」图只换图标，
+          //     一律 [_kRadarMax]，与搜索中页同尺寸；
+          //   · 列表拿剩下的，最多 [_kListViewport]（4 张整 + 半张），不够就短一些（可滚动）。
+          // 沿革：2026-09-16 起搜索结束后雷达让位给列表（夹在 [_kRadarMin]~[_kRadarMax]、
+          // 优先凑满 4.5 张卡），2026-11-05 改为搜索中不缩；勾选设备 / 结束搜索 / 立即绑定
+          // 都会停扫，停扫那一下换图又缩小，所以这次连搜索结束后也不让了。
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
                 // 雷达与统计行之间 20、统计行与列表之间 12，统计行自身固定 [_kCountRowHeight]。
                 const double fixed = 20 + _kCountRowHeight + 12;
                 final double avail = constraints.maxHeight;
-                // 搜索中雷达 gif 尺寸不变（2026-11-05 同小程序：原来搜到第一台就缩、列表变长还继续压），
-                // 列表拿剩下的；搜索结束换静态图后照旧按 4.5 张卡的账让高度。
-                final double radarSize = widget.scanning
-                    ? (avail - fixed).clamp(_kRadarMin, _kRadarMax)
-                    : (avail - _kListViewport - fixed).clamp(_kRadarMin, _kRadarMax);
+                // 不看 widget.scanning：同一屏高下搜索中 / 搜索结束算出来的尺寸相同。
+                final double radarSize = (avail - fixed).clamp(_kRadarMin, _kRadarMax);
                 final double listHeight = (avail - radarSize - fixed).clamp(
                   0.0,
                   _kListViewport,
@@ -178,20 +175,21 @@ class _BindDeviceFoundState extends State<BindDeviceFound> {
                   children: [
                     Center(
                       child: SizedBox(
-                        // 搜索中页的雷达是 280×280；本页在「还搜得到 4.5 张卡的空间」的前提下
-                        // 尽量贴近它，屏幕不够高时才按上面那笔账缩小（下限 [_kRadarMin]）。
-                        // 首台设备出现时页面会从 searching 切到 found，尺寸因此可能跳一下，
-                        // 这是把高度让给列表的代价（产品这轮明确要列表）。
+                        // 与搜索中页同为 280×280（见上面那笔账），searching → found、停扫换图都不跳。
                         width: radarSize,
                         height: radarSize,
                         // 搜索期间雷达一直转（哪怕已经搜到设备）：下面的列表同步追加，两者并存才是
                         // 「边搜边显示」。用的是搜索中页那张同款 gif，两页视觉连续、不闪一下静态图。
-                        child: widget.scanning
-                            ? const Image(
-                                image: AssetImage('assets/images/search-devices.gif'),
-                                fit: BoxFit.contain,
-                              )
-                            : const FigmaBluetoothRadar(state: FigmaRadarState.found),
+                        // 搜索结束换「已搜到」图（同小程序 device_found_art.png，原为代码画的雷达），
+                        // 同一个框、同样 contain，只换图标不变宽高。
+                        child: Image(
+                          image: AssetImage(
+                            widget.scanning
+                                ? 'assets/images/search-devices.gif'
+                                : 'assets/images/device_found_art.png',
+                          ),
+                          fit: BoxFit.contain,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 20),
