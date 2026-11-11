@@ -8,7 +8,7 @@ import '../../../shared/widgets/home_figma_common.dart';
 import '../../../state.dart';
 import '../wifi_l10n.dart';
 import '../wifi_provision.dart';
-import '../wifi_widgets.dart';
+import 'wifi_glyphs.dart';
 import 'wifi_list_page.dart';
 import 'wifi_provision_page.dart';
 
@@ -38,8 +38,16 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
     super.dispose();
   }
 
+  /// 离开本页前先收起键盘。只靠路由切换移走焦点不可靠：11-11 用户反馈在密码框打开键盘后点「下一步」，
+  /// 键盘留在配网状态页上关不掉（该页没有输入框，点空白也收不回），连后续页面也一直挡着底部按钮。
+  /// 先在本页解除焦点，让输入连接在仍挂着时正常关闭并收起键盘（同登录页提交前的做法）。
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+  }
+
   /// 切换图标：回到 WiFi 列表重选（正常从列表页进来，返回上一页即可）。
   void _openWifiList() {
+    _dismissKeyboard();
     final navigator = Navigator.of(context);
     if (navigator.canPop()) {
       navigator.pop();
@@ -62,6 +70,7 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
       return;
     }
     WifiProvision.setCredentials(ssid, _password.text);
+    _dismissKeyboard();
     Navigator.of(context).push<void>(
       AppPageRoute(builder: (_) => WifiProvisionPage(state: widget.state)),
     );
@@ -71,33 +80,42 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
   Widget build(BuildContext context) {
     final l10n = AppL10n.of(context);
     final target = WifiProvision.target;
+    final deviceName = target == null ? '' : (target.name.isNotEmpty ? target.name : target.deviceNo);
     return FigmaScreen(
       title: l10n.wifiConfigTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 20),
+          // 头图：手机 → 设备 → 云（与小程序同一张图，见 wifi_glyphs.dart）
           const WifiProvisionArt(),
-          const SizedBox(height: 16),
-          if (target != null)
-            Column(
-              children: [
-                Text(
-                  target.name.isNotEmpty ? target.name : target.deviceNo,
-                  style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 17, fontWeight: FontWeight.w700),
-                ),
-                if (target.spec.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(target.spec, style: const TextStyle(color: Color(0xFF8B9098), fontSize: 13)),
+          // 设备名与尺寸同一行（同小程序 .wifi-device）
+          if (deviceName.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 14),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Flexible(
+                    child: Text(
+                      deviceName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 15, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  if (target!.spec.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    Text(target.spec, style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12)),
+                  ],
                 ],
-                const SizedBox(height: 12),
-              ],
+              ),
             ),
           // 「设备仅支持 2.4G WiFi 配网」提示条 2026-11-05 去掉（同小程序）
-          const SizedBox(height: 4),
+          const SizedBox(height: 18),
           FigmaGlassCard(
             borderRadius: 16,
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            padding: const EdgeInsets.fromLTRB(16, 6, 16, 18),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -105,25 +123,20 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
                   label: l10n.wifiSsidLabel,
                   controller: _ssid,
                   hint: l10n.wifiSsidHint,
-                  trailing: IconButton(
+                  trailing: _FieldAction(
                     tooltip: l10n.wifiListTitle,
-                    onPressed: _openWifiList,
-                    icon: const Icon(Icons.swap_horiz_rounded, color: Color(0xFFFF6A24), size: 22),
+                    onTap: _openWifiList,
+                    child: const WifiSwitchGlyph(size: 22),
                   ),
                 ),
-                const SizedBox(height: 14),
                 _Field(
                   label: l10n.wifiPasswordLabel,
                   controller: _password,
                   hint: l10n.wifiPasswordHint,
                   obscure: !_showPassword,
-                  trailing: IconButton(
-                    onPressed: () => setState(() => _showPassword = !_showPassword),
-                    icon: Icon(
-                      _showPassword ? Icons.visibility_rounded : Icons.visibility_off_rounded,
-                      color: const Color(0xFF8B9098),
-                      size: 20,
-                    ),
+                  trailing: _FieldAction(
+                    onTap: () => setState(() => _showPassword = !_showPassword),
+                    child: WifiEyeGlyph(open: _showPassword, size: 20),
                   ),
                 ),
               ],
@@ -141,7 +154,31 @@ class _WifiConfigPageState extends State<WifiConfigPage> {
   }
 }
 
-class _Field extends StatelessWidget {
+/// 输入框右侧的图标点击区（同小程序 .wifi-field__switch：80rpx 见方 = 40）。
+class _FieldAction extends StatelessWidget {
+  const _FieldAction({required this.onTap, required this.child, this.tooltip});
+
+  final VoidCallback onTap;
+  final Widget child;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    final button = GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: SizedBox(width: 40, height: 40, child: Center(child: child)),
+    );
+    return tooltip == null ? button : Tooltip(message: tooltip!, child: button);
+  }
+}
+
+/// 一行输入：标题 + 输入框（同小程序 .wifi-field / .wifi-field__box）。
+///
+/// 聚焦时整个输入框描橙色边。⚠️ 内层 TextField 必须把 `enabledBorder` / `focusedBorder` 也写成 none、
+/// 并关掉 `filled`：全局 `AppTheme.inputDecorationTheme` 给了 `filled` 白底和带橙色描边的 `focusedBorder`，
+/// 只写 `border: none` 盖不住，聚焦时会在内层紧贴文字画出一圈被裁掉的橙框（11-11 用户反馈的「橙色边框不正常」）。
+class _Field extends StatefulWidget {
   const _Field({
     required this.label,
     required this.controller,
@@ -157,74 +194,87 @@ class _Field extends StatelessWidget {
   final bool obscure;
 
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(label, style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600)),
-        const SizedBox(height: 8),
-        Container(
-          height: 48,
-          padding: const EdgeInsets.only(left: 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: const Color(0xFFE6E8EC)),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: controller,
-                  obscureText: obscure,
-                  autocorrect: false,
-                  enableSuggestions: !obscure,
-                  style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 15),
-                  decoration: InputDecoration(
-                    isCollapsed: true,
-                    border: InputBorder.none,
-                    hintText: hint,
-                    hintStyle: const TextStyle(color: Color(0xFFB7BBC0), fontSize: 15),
-                  ),
-                ),
-              ),
-              trailing,
-            ],
-          ),
-        ),
-      ],
-    );
-  }
+  State<_Field> createState() => _FieldState();
 }
 
-/// 配网头图：手机 → 设备 → 云（小程序用 svg 头图，这里用图标拼，不新增图片资源）。
-class WifiProvisionArt extends StatelessWidget {
-  const WifiProvisionArt({super.key});
+class _FieldState extends State<_Field> {
+  final FocusNode _focus = FocusNode();
+
+  @override
+  void initState() {
+    super.initState();
+    _focus.addListener(_onFocusChanged);
+  }
+
+  void _onFocusChanged() {
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.removeListener(_onFocusChanged);
+    _focus.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    Widget node(IconData icon, Color color) => Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        shape: BoxShape.circle,
+    final focused = _focus.hasFocus;
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.label,
+            style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 7),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            height: 48,
+            padding: const EdgeInsets.only(left: 14, right: 4),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.86),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: focused ? const Color(0xFFFF6A24) : const Color(0x0F2A2B2B),
+                width: focused ? 1.2 : 1,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: widget.controller,
+                    focusNode: _focus,
+                    obscureText: widget.obscure,
+                    autocorrect: false,
+                    enableSuggestions: !widget.obscure,
+                    cursorColor: const Color(0xFFFF6A24),
+                    style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 15),
+                    decoration: InputDecoration(
+                      isCollapsed: true,
+                      filled: false,
+                      border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      focusedErrorBorder: InputBorder.none,
+                      hintText: widget.hint,
+                      hintStyle: const TextStyle(color: Color(0xFFB3B8C0), fontSize: 15),
+                    ),
+                  ),
+                ),
+                widget.trailing,
+              ],
+            ),
+          ),
+        ],
       ),
-      child: Icon(icon, color: color, size: 28),
-    );
-    const dots = Padding(
-      padding: EdgeInsets.symmetric(horizontal: 8),
-      child: Icon(Icons.more_horiz_rounded, color: Color(0xFFB7BBC0)),
-    );
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        node(Icons.smartphone_rounded, const Color(0xFFFF6A24)),
-        dots,
-        node(Icons.photo_outlined, kWifiGreen),
-        dots,
-        node(Icons.cloud_outlined, const Color(0xFF2F6FEB)),
-      ],
     );
   }
 }

@@ -13,6 +13,7 @@ import '../wifi_l10n.dart';
 import '../wifi_provision.dart';
 import '../wifi_widgets.dart';
 import 'wifi_config_page.dart';
+import 'wifi_glyphs.dart';
 
 /// WiFi 版设备配网第一步：选择 WiFi，同步小程序 `subpackages/device/wifi-list`。
 ///
@@ -364,7 +365,8 @@ class _WifiListPageState extends State<WifiListPage> {
                             padding: const EdgeInsets.symmetric(vertical: 14),
                             child: Row(
                               children: [
-                                const Icon(Icons.wifi_rounded, size: 18, color: kWifiGreen),
+                                // 与小程序同一枚图标（badge-wifi.svg，见 wifi_glyphs.dart）
+                                const WifiBadgeGlyph(size: 20),
                                 const SizedBox(width: 10),
                                 Expanded(
                                   child: Text(
