@@ -126,8 +126,8 @@ int? parseOtaProgress(Object? value) {
   if (n == null || n.isNaN || n.isInfinite) {
     return null;
   }
-  final value = n.round();
-  return value < 0 ? 0 : (value > 100 ? 100 : value);
+  final rounded = n.round();
+  return rounded < 0 ? 0 : (rounded > 100 ? 100 : rounded);
 }
 
 /// 显示值能走到的上限。[reported]：本次升级收到过的最大进度（null = 一次都没收到）。

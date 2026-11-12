@@ -23,3 +23,7 @@
 
 - `test/wifi_ota_test.dart` 新增「进度条」一组：`parseOtaProgress`、`otaProgressCap` 各档上限、`otaActiveStep`、本地记录保存最大进度且 null 不覆盖。
 - 本机无 Flutter / Dart，analyze / test / 编译 / 真机都没跑；OTA 进度未联调。
+
+## 补丁：release 编译错误（同日）
+
+`parseOtaProgress` 里取整后的局部变量与参数同名 `value`，Dart 判为「声明前引用」，`compileFlutterBuildRelease` 失败。局部变量改名 `rounded`，逻辑不变。
