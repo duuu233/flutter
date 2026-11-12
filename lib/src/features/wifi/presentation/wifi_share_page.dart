@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../device/serial_match.dart';
 import '../../../network/api_exception.dart';
 import '../../../network/api_rows.dart';
 import '../../../network/boltfox_api.dart';
@@ -27,6 +28,8 @@ import '../wifi_wechat_share.dart';
 ///   · 底部「分享设备」（2026-11-12 改）：生成设备共享邀请 H5 链接（[WifiShareLink.h5Url]），可「发给微信好友」（网页卡片）
 ///     或「复制链接」；对方打开链接拉起 BoltStar App，在 App 接受页（WifiShareAcceptPage）接受。不再需要小程序原始 ID。
 ///     拿不到自己的 userId / 产品 ID / 设备号时按钮置灰、点了提示，原因写进联调日志；
+///     产品 ID / 设备号取进页面时查的 getUserProductDetail（同小程序 getDeviceDetail），本地设备缓存只兜底——
+///     设备列表接口 getUserProductList 不下发 productId，缓存里恒为 0，单靠它分享永远置灰（2026-11-12）；
 ///     分享这一刻取服务器时间戳写进链接 t（分享链接有效期，接受页 chkTimeValid 校验），取不到不分享；
 ///   · 移除：二次确认后 delUserProduct 删成员那条记录（服务端口径：成员即失去设备），再刷新列表。
 /// 数据：老服务 getShareUserProductList（按后端设备号）；服务端暂无加入时间字段，显示「--」。
@@ -48,27 +51,37 @@ class _WifiSharePageState extends State<WifiSharePage> {
   WifiShareMember? _owner;
   List<WifiShareMember> _members = const [];
 
+  /// 进页面时 getUserProductDetail 下发的产品 ID / 设备号（没下发为 0 / 空串）。
+  int _detailProductId = 0;
+  String _detailSerial = '';
+
   DeviceItem get _device => widget.state.deviceById(widget.deviceId);
+
+  /// 分享用的产品 ID：详情接口为准，没下发才回落本地设备缓存（列表接口不带 productId，缓存多半是 0）。
+  int get _productId => _detailProductId > 0 ? _detailProductId : _device.productId;
+
+  /// 分享用的设备号：详情接口为准，没下发才回落本地设备缓存。
+  String get _serial => _detailSerial.isNotEmpty ? _detailSerial : _device.serialNumber;
 
   UserProfile get _user => widget.state.currentUser;
 
   bool get _canShare =>
-      _isOwner && _user.userId.isNotEmpty && _device.productId > 0 && _device.serialNumber.isNotEmpty;
+      _isOwner && _user.userId.isNotEmpty && _productId > 0 && _serial.isNotEmpty;
 
   /// 「分享设备」置灰的原因（2026-11-12 排查「点了提示暂时无法分享」）：逐条对应 [_canShare] 的条件，
   /// 进页面加载完与点按钮时写进联调日志。
   List<String> _shareBlockers() => [
     if (!_isOwner) '不是所有者',
     if (_user.userId.isEmpty) '取不到当前用户 userId',
-    if (_device.productId <= 0) '设备没有产品ID（productId=${_device.productId}）',
-    if (_device.serialNumber.isEmpty) '设备没有设备号（serialNumber 为空）',
+    if (_productId <= 0) '设备没有产品ID（productId=$_productId）',
+    if (_serial.isEmpty) '设备没有设备号（deviceId 为空）',
   ];
 
   void _logShareState() {
     final blockers = _shareBlockers();
     debugPrint(
       blockers.isEmpty
-          ? '[WiFi分享] 可以分享 设备 ${_device.serialNumber} 产品 ${_device.productId} 用户 ${_user.userId}'
+          ? '[WiFi分享] 可以分享 设备 $_serial 产品 $_productId 用户 ${_user.userId}'
           : '[WiFi分享] 分享按钮置灰：${blockers.join('；')}',
     );
   }
@@ -89,7 +102,11 @@ class _WifiSharePageState extends State<WifiSharePage> {
     try {
       final data = await BoltFoxApi.getUserProductDetail(userProductId: widget.deviceId);
       if (data is Map) {
-        owner = wifiIsOwner(data.map((k, v) => MapEntry(k.toString(), v)));
+        final detail = data.map((k, v) => MapEntry(k.toString(), v));
+        owner = wifiIsOwner(detail);
+        final productId = detail['productId'];
+        _detailProductId = productId is num ? productId.toInt() : int.tryParse('${productId ?? ''}'.trim()) ?? 0;
+        _detailSerial = canonicalDeviceSerial(detail['deviceId']);
       }
     } catch (error) {
       debugPrint('[WiFi分享] 所有者查询失败 $error');
@@ -100,7 +117,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
     List<Map<String, dynamic>>? rows;
     if (owner != null) {
       try {
-        rows = extractApiRows(await BoltFoxApi.getShareUserProductList(deviceId: _device.serialNumber));
+        rows = extractApiRows(await BoltFoxApi.getShareUserProductList(deviceId: _serial));
       } catch (error) {
         debugPrint('[WiFi分享] 成员列表查询失败 $error');
         rows = null;
@@ -227,8 +244,8 @@ class _WifiSharePageState extends State<WifiSharePage> {
       final device = _device;
       final user = _user;
       final url = WifiShareLink.h5Url(
-        deviceId: device.serialNumber,
-        productId: device.productId,
+        deviceId: _serial,
+        productId: _productId,
         ownerUserId: user.userId,
         deviceName: device.name,
         ownerName: user.nickname,

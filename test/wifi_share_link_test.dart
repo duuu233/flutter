@@ -89,4 +89,17 @@ void main() {
     expect(share, contains('Clipboard.setData(ClipboardData(text: url))'));
     expect(share, isNot(contains('shareMiniProgram')));
   });
+
+  test('分享页产品 ID / 设备号取详情接口（列表接口不下发 productId，缓存恒为 0 会一直置灰）', () {
+    final share = read('lib/src/features/wifi/presentation/wifi_share_page.dart');
+    final load = share.substring(share.indexOf('Future<void> _load() async {'));
+    expect(load, contains("_detailProductId = productId is num ? productId.toInt() : int.tryParse('\${productId ?? ''}'.trim()) ?? 0;"));
+    expect(load, contains("_detailSerial = canonicalDeviceSerial(detail['deviceId']);"));
+    expect(share, contains('int get _productId => _detailProductId > 0 ? _detailProductId : _device.productId;'));
+    expect(share, contains('_isOwner && _user.userId.isNotEmpty && _productId > 0 && _serial.isNotEmpty;'));
+    final link = share.substring(share.indexOf('WifiShareLink.h5Url('));
+    expect(link, contains('deviceId: _serial,'));
+    expect(link, contains('productId: _productId,'));
+    expect(share, isNot(contains('_device.productId > 0')));
+  });
 }
