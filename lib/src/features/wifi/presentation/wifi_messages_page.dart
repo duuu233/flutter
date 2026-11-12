@@ -7,6 +7,7 @@ import '../../../network/iot/iot_client.dart';
 import '../../../network/iot/iot_ws.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../wifi_l10n.dart';
 import '../wifi_messages.dart';
@@ -333,7 +334,7 @@ class _WifiMessagesPageState extends State<WifiMessagesPage> {
     final l10n = AppL10n.of(context);
     Widget content;
     if (_loading) {
-      content = const Center(child: CircularProgressIndicator());
+      content = const PageLoading();
     } else if (_loadError.isNotEmpty) {
       content = ListView(children: [_buildState(l10n.wifiLoadFailed, _loadError, onRetry: _loadFirst)]);
     } else if (_items.isEmpty) {
@@ -386,19 +387,16 @@ class _WifiMessagesPageState extends State<WifiMessagesPage> {
             child: Row(
               children: [
                 Text(l10n.wifiMsgUnreadOnly, style: const TextStyle(color: Color(0xFF33373D), fontSize: 14)),
-                Transform.scale(
-                  scale: 0.8,
-                  child: Switch(
-                    value: _unreadOnly,
-                    activeTrackColor: const Color(0xFFFF6A20),
-                    onChanged: (value) {
-                      setState(() {
-                        _unreadOnly = value;
-                        _items = <WifiMessage>[];
-                      });
-                      _loadFirst();
-                    },
-                  ),
+                const SizedBox(width: 8),
+                AppSwitch(
+                  value: _unreadOnly,
+                  onChanged: (value) {
+                    setState(() {
+                      _unreadOnly = value;
+                      _items = <WifiMessage>[];
+                    });
+                    _loadFirst();
+                  },
                 ),
                 const Spacer(),
                 GestureDetector(

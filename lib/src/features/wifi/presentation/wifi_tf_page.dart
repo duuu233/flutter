@@ -202,9 +202,8 @@ class _WifiTfPageState extends State<WifiTfPage> {
                         children: [
                           Text(l10n.wifiTfPlay, style: labelStyle),
                           const Spacer(),
-                          Switch(
+                          AppSwitch(
                             value: _isOn(status.status),
-                            activeTrackColor: const Color(0xFFFF6A20),
                             onChanged: _switching ? null : _toggle,
                           ),
                         ],

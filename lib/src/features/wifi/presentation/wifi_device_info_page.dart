@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/l10n/app_l10n.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../wifi_l10n.dart';
@@ -64,7 +65,7 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
             children: [
               const SizedBox(height: 16),
               if (status.status == WifiOnlineStatus.loading)
-                const Padding(padding: EdgeInsets.only(top: 80), child: Center(child: CircularProgressIndicator()))
+                const Padding(padding: EdgeInsets.only(top: 80), child: PageLoading())
               else
                 FigmaGlassCard(
                   borderRadius: 18,

@@ -519,13 +519,9 @@ class _CastPreviewPageState extends State<CastPreviewPage>
             style: const TextStyle(color: Color(0xFF25282D), fontSize: 14),
           ),
           const SizedBox(width: 8),
-          Transform.scale(
-            scale: 0.8,
-            child: Switch(
-              value: _addToCarousel,
-              activeTrackColor: const Color(0xFFFF6A20),
-              onChanged: (value) => setState(() => _addToCarousel = value),
-            ),
+          AppSwitch(
+            value: _addToCarousel,
+            onChanged: (value) => setState(() => _addToCarousel = value),
           ),
         ],
       ),

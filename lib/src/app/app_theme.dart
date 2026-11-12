@@ -20,6 +20,8 @@ ThemeData buildAppTheme() {
       error: const Color(0xFFB5412F),
     ),
     scaffoldBackgroundColor: surface,
+    // 没指定颜色的转圈 / 进度条统一品牌橙（2026-11-12）；不设时取 primary 深青，看着是个深色圆环
+    progressIndicatorTheme: const ProgressIndicatorThemeData(color: Color(0xFFEB5F1B)),
     textTheme: const TextTheme(
       displaySmall: TextStyle(
         fontSize: 32,

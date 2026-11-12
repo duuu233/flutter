@@ -1,6 +1,35 @@
+import 'package:flutter/cupertino.dart' show CupertinoSwitch;
 import 'package:flutter/material.dart';
 
 import '../l10n/app_l10n.dart';
+
+/// 全站加载转圈的品牌橙（同小程序 app.wxss `.page-loading__spinner` 的 #eb5f1b）。
+/// 主题 `progressIndicatorTheme` 也设成它，没指定颜色的转圈默认就是橙色（2026-11-12）。
+const Color kLoadingOrange = Color(0xFFEB5F1B);
+
+/// 开关（2026-11-12，同小程序原生 `<switch color="#ff6a20">`）：打开橙色底，关闭浅灰底、白色圆钮，
+/// 两态都没有描边、圆钮大小不变。Material 3 的 Switch 关闭时是白底灰描边、小灰钮，与小程序不一致，
+/// 所以统一用这个。[onChanged] 为 null 时置灰不可点。
+class AppSwitch extends StatelessWidget {
+  const AppSwitch({super.key, required this.value, required this.onChanged});
+
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+
+  static const Color activeColor = Color(0xFFFF6A20);
+  static const Color inactiveColor = Color(0xFFE5E5E5);
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoSwitch(
+      value: value,
+      onChanged: onChanged,
+      activeTrackColor: activeColor,
+      inactiveTrackColor: inactiveColor,
+      thumbColor: Colors.white,
+    );
+  }
+}
 
 /// 首屏加载态（对应小程序 app.wxss 的全局 `.page-loading`：转圈 + 「加载中…」）。
 ///
@@ -20,7 +49,7 @@ class PageLoading extends StatelessWidget {
   /// 品牌橙。**不要用 `Theme.of(context).colorScheme.primary`** —— 主题的 primary 是
   /// 深青色 `#234E52`（见 app_theme.dart），而全 App 视觉上的主色其实是这个橙。
   /// 之前 CircularProgressIndicator 不指定颜色，默认取到那个深青，看着就是个深色圆环。
-  static const _accent = Color(0xFFEB5F1B);
+  static const _accent = kLoadingOrange;
 
   @override
   Widget build(BuildContext context) {

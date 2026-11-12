@@ -169,6 +169,7 @@ class _StarCoinRecordsPageState extends State<StarCoinRecordsPage> {
     }
     return RefreshIndicator(
       onRefresh: _load,
+      color: kLoadingOrange,
       child: ListView.builder(
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),

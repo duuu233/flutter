@@ -252,6 +252,7 @@ class _OfficialGalleryFavoritesPageState
     }
     return RefreshIndicator(
       onRefresh: _load,
+      color: kLoadingOrange,
       child: SingleChildScrollView(
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),

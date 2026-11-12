@@ -351,6 +351,7 @@ class _OfficialGalleryPageState extends State<OfficialGalleryPage> {
     return RefreshIndicator(
       // 下拉刷新自带转圈，再清屏一次是两个加载态叠着闪
       onRefresh: () => _loadPhotos(_activeCategoryId, silent: true),
+      color: kLoadingOrange,
       child: SingleChildScrollView(
         controller: _scroll,
         physics: const AlwaysScrollableScrollPhysics(),

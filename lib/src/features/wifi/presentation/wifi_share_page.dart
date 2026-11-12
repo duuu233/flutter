@@ -299,7 +299,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
     final owner = _owner;
     Widget body;
     if (_loading) {
-      body = const Padding(padding: EdgeInsets.only(top: 120), child: Center(child: CircularProgressIndicator()));
+      body = const Padding(padding: EdgeInsets.only(top: 120), child: PageLoading());
     } else if (_loadError) {
       body = Padding(
         padding: const EdgeInsets.only(top: 16),

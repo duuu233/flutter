@@ -6,6 +6,7 @@ import '../../../network/iot/iot_client.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../shared/widgets/home_figma_common.dart';
 import '../../../state.dart';
@@ -514,7 +515,7 @@ class _WifiSlideshowPageState extends State<WifiSlideshowPage> {
         children: [
           Text(title, style: _titleStyle),
           const Spacer(),
-          Switch(value: value, activeTrackColor: const Color(0xFFFF6A20), onChanged: onChanged),
+          AppSwitch(value: value, onChanged: onChanged),
         ],
       ),
     );
@@ -762,7 +763,7 @@ class _WifiSlideshowPageState extends State<WifiSlideshowPage> {
     return FigmaScreen(
       title: l10n.wifiSlideshowSettings,
       body: _loading
-          ? const Padding(padding: EdgeInsets.only(top: 120), child: Center(child: CircularProgressIndicator()))
+          ? const Padding(padding: EdgeInsets.only(top: 120), child: PageLoading())
           : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
