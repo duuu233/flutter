@@ -1,5 +1,6 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../network/api_exception.dart';
 import '../../../network/api_rows.dart';
@@ -12,7 +13,6 @@ import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../wifi_l10n.dart';
 import '../wifi_share.dart';
-import '../wifi_share_card.dart';
 import '../wifi_wechat_share.dart';
 
 /// WiFi 版共享设备列表（2026-10-29，同小程序 `subpackages/device/wifi-share`）。入口：WiFi 详情「共享设备」（2026-11-05 起所有者与接收者都能进）。
@@ -23,10 +23,10 @@ import '../wifi_wechat_share.dart';
 ///   · 「移除」（2026-11-05 起后端控制，同小程序）：成员接口每条带 isCanDel，== 1 才显示、才能移除（[WifiShareMember.canDel]），
 ///     不再按所有者 / 接收者判断。移除的是自己（接收者解绑自己）时走 [PhotoFrameState.deleteDevice] 清本机记录，提示后回首页。
 ///   · 第一栏固定所有者（头像 + 昵称 + 身份），橙色底与接收者区分；下面是接收者（头像 + 昵称 + 加入时间 + 移除）；
-///   · 底部「分享设备」：把小程序接受页卡片发到微信会话（简化版，无邀请码，见 [WifiWeChatShare]），
-///     对方在小程序里接受。拿不到自己的 userId / 产品 ID，或没配置小程序原始 ID 时按钮置灰、点了提示；
-///     分享这一刻取服务器时间戳写进卡片 t（2026-11-04 分享链接有效期，小程序接受页校验），取不到不发卡片；
-///     卡片封面（2026-11-04 同小程序）由 [WifiShareCard] 画（邀请标签 + 设备图 + 设备名 / 规格 + 接受按钮），画不出来用设备图；
+///   · 底部「分享设备」（2026-11-12 改）：生成设备共享邀请 H5 链接（[WifiShareLink.h5Url]），可「发给微信好友」（网页卡片）
+///     或「复制链接」；对方打开链接拉起 BoltStar App，在 App 接受页（WifiShareAcceptPage）接受。不再需要小程序原始 ID。
+///     拿不到自己的 userId / 产品 ID / 设备号时按钮置灰、点了提示，原因写进联调日志；
+///     分享这一刻取服务器时间戳写进链接 t（分享链接有效期，接受页 chkTimeValid 校验），取不到不分享；
 ///   · 移除：二次确认后 delUserProduct 删成员那条记录（服务端口径：成员即失去设备），再刷新列表。
 /// 数据：老服务 getShareUserProductList（按后端设备号）；服务端暂无加入时间字段，显示「--」。
 class WifiSharePage extends StatefulWidget {
@@ -52,16 +52,12 @@ class _WifiSharePageState extends State<WifiSharePage> {
   UserProfile get _user => widget.state.currentUser;
 
   bool get _canShare =>
-      _isOwner &&
-      WifiWeChatShare.configured && _user.userId.isNotEmpty && _device.productId > 0 && _device.serialNumber.isNotEmpty;
+      _isOwner && _user.userId.isNotEmpty && _device.productId > 0 && _device.serialNumber.isNotEmpty;
 
   /// 「分享设备」置灰的原因（2026-11-12 排查「点了提示暂时无法分享」）：逐条对应 [_canShare] 的条件，
   /// 进页面加载完与点按钮时写进联调日志。
   List<String> _shareBlockers() => [
     if (!_isOwner) '不是所有者',
-    if (WifiWeChatShare.miniProgramUserName.trim().isEmpty)
-      '打包没配小程序原始ID（--dart-define=WECHAT_MINI_PROGRAM_USERNAME=gh_…）',
-    if (!WifiWeChatShare.configured && WifiWeChatShare.miniProgramUserName.trim().isNotEmpty) '当前平台不支持微信分享',
     if (_user.userId.isEmpty) '取不到当前用户 userId',
     if (_device.productId <= 0) '设备没有产品ID（productId=${_device.productId}）',
     if (_device.serialNumber.isEmpty) '设备没有设备号（serialNumber 为空）',
@@ -208,15 +204,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
     }
     _busy = true;
     try {
-      if (!await WifiWeChatShare.isWeChatInstalled()) {
-        debugPrint('[WiFi分享] 微信未安装或 SDK 注册失败');
-        if (mounted) {
-          AppToast.warn(context, l10n.wifiShareNoWeChat);
-        }
-        return;
-      }
-      // 分享这一刻取服务器时间戳写进卡片 t（2026-11-04 分享链接有效期，同小程序）；取不到不发卡片——
-      // 小程序接受页对不带 t 的卡片一律显示「分享链接无效」。
+      // 分享这一刻取服务器时间戳写进链接 t（分享链接有效期）；取不到不分享——接受页对不带 t 的链接一律按无效
       String? shareTime;
       try {
         shareTime = wifiShareTime(await BoltFoxApi.getCurrentTime());
@@ -224,7 +212,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
         debugPrint('[WiFi分享] 获取服务器时间戳失败 $error');
       }
       if (shareTime == null) {
-        debugPrint('[WiFi分享] 取不到服务器时间戳（getCurrentTime），不发卡片');
+        debugPrint('[WiFi分享] 取不到服务器时间戳（getCurrentTime），不分享');
         if (mounted) {
           AppToast.warn(context, l10n.wifiShareUnavailable);
         }
@@ -232,28 +220,40 @@ class _WifiSharePageState extends State<WifiSharePage> {
       }
       final device = _device;
       final user = _user;
-      // 卡片封面（2026-11-04 同小程序）：画一张 5:4 的邀请封面；画不出来 / 超出微信大小上限时用设备图，不用页面截图
-      final cover = await WifiShareCard.render(
-        name: device.name,
-        spec: device.sizeModel.trim().isNotEmpty ? '${l10n.wifiBadge} · ${device.sizeModel.trim()}' : l10n.wifiBadge,
-        tag: l10n.wifiShareCardTag,
-        button: l10n.wifiShareCardButton,
-        thumbAsset: device.thumbAsset,
+      final url = WifiShareLink.h5Url(
+        deviceId: device.serialNumber,
+        productId: device.productId,
+        ownerUserId: user.userId,
+        deviceName: device.name,
+        ownerName: user.nickname,
+        shareTime: shareTime,
       );
+      debugPrint('[WiFi分享] 分享链接 $url');
       if (!mounted) {
         return;
       }
-      final ok = await WifiWeChatShare.shareMiniProgram(
-        cover: cover,
-        path: WifiShareLink.acceptPath(
-          deviceId: device.serialNumber,
-          productId: device.productId,
-          ownerUserId: user.userId,
-          deviceName: device.name,
-          ownerName: user.nickname,
-          shareTime: shareTime,
-        ),
+      final choice = await _pickShareWay();
+      if (!mounted || choice == null) {
+        return;
+      }
+      if (choice == _ShareWay.copy) {
+        await Clipboard.setData(ClipboardData(text: url));
+        if (mounted) {
+          AppToast.show(context, l10n.wifiShareLinkCopied);
+        }
+        return;
+      }
+      if (!await WifiWeChatShare.isWeChatInstalled()) {
+        debugPrint('[WiFi分享] 微信未安装或 SDK 注册失败');
+        if (mounted) {
+          AppToast.warn(context, l10n.wifiShareNoWeChat);
+        }
+        return;
+      }
+      final ok = await WifiWeChatShare.shareWebPage(
+        url: url,
         title: l10n.wifiShareCardTitle(user.nickname, device.name),
+        description: l10n.wifiShareLinkDesc(device.name),
       );
       debugPrint('[WiFi分享] 拉起微信${ok ? '成功' : '失败'}');
       if (!ok && mounted) {
@@ -267,6 +267,39 @@ class _WifiSharePageState extends State<WifiSharePage> {
     } finally {
       _busy = false;
     }
+  }
+
+  /// 分享方式：发给微信好友（网页卡片）/ 复制链接（可粘贴到任意聊天工具）。
+  Future<_ShareWay?> _pickShareWay() {
+    final l10n = AppL10n.of(context);
+    Widget option(_ShareWay way, IconData icon, String label) => ListTile(
+      leading: Icon(icon, color: const Color(0xFFFF6A20)),
+      title: Text(label, style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 15)),
+      onTap: () => Navigator.of(context).pop(way),
+    );
+    return showModalBottomSheet<_ShareWay>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (context) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+              child: Text(
+                l10n.wifiShareSheetTitle,
+                style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            ),
+            option(_ShareWay.wechat, Icons.chat_bubble_outline, l10n.wifiShareToWeChat),
+            option(_ShareWay.copy, Icons.link, l10n.wifiShareCopyLink),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
   }
 
   Widget _avatar(String url) {
@@ -461,3 +494,5 @@ class _WifiSharePageState extends State<WifiSharePage> {
     return FigmaScreen(title: l10n.wifiSharedDevice, body: body);
   }
 }
+
+enum _ShareWay { wechat, copy }

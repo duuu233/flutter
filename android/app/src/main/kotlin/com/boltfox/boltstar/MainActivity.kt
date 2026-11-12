@@ -155,6 +155,8 @@ class MainActivity : FlutterActivity() {
                 PayPalRedirect.clear()
                 result.success(null)
             }
+            // 设备共享邀请链接（由 ShareLinkActivity 记下，见那边的类注释）：读走即清，没有返回 null
+            "consumeShareLink" -> result.success(ShareLink.consume())
             else -> result.notImplemented()
         }
     }

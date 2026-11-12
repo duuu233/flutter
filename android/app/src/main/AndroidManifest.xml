@@ -89,6 +89,22 @@
                 <data android:scheme="boltstar" android:host="pay" android:path="/paypal/cancel"/>
             </intent-filter>
         </activity>
+        <!-- 设备共享邀请链接的接收器（2026-11-12）：落地页 https://…/share.html 跳 boltstar://share/accept?… 拉起 App。
+             与 PayPalRedirectActivity 同理不挂在 MainActivity 上（taskAffinity="" 会新建任务），透明空壳记下 query 后提回原任务。 -->
+        <activity
+            android:name=".ShareLinkActivity"
+            android:exported="true"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="boltstar" android:host="share" android:path="/accept"/>
+            </intent-filter>
+        </activity>
         <!-- 投屏预览页的原生裁剪器（image_cropper 插件，Android 侧用 Yalantis uCrop）。
              必须在这里注册它的 Activity，否则点「裁剪」会直接崩（ActivityNotFoundException）。 -->
         <activity

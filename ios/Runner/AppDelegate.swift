@@ -110,6 +110,9 @@ final class DeviceApiHandler: NSObject {
       decodeImageRgba(call, result: result)
     case "openBluetoothSettings", "openAppSettings":
       openAppSettings(result)
+    case "consumeShareLink":
+      // 设备共享邀请链接（SceneDelegate 收下，见 ShareLinkStore）：读走即清，没有返回 nil
+      result(ShareLinkStore.consume())
     case "setKeepScreenOn":
       // 屏幕常亮（2026-10-29，WiFi 配网全程约 1 分钟，息屏会让蓝牙被挂起；同小程序 setKeepScreenOn）
       let on = ((call.arguments as? [String: Any])?["on"] as? Bool) ?? false

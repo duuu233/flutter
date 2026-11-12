@@ -837,9 +837,9 @@ extension WifiL10n on AppL10n {
   String get wifiShareRemoving => pick('移除中', 'Removing', '削除中');
   String get wifiShareUnavailable => pick('暂时无法分享，请稍后重试', 'Sharing is not available right now. Please try again later.', '現在共有できません。しばらくしてからお試しください');
   String get wifiShareTip => pick(
-    '通过微信发送给对方，对方在小程序中确认后即可共用这台设备',
-    'Send it via WeChat. Once they accept in the mini program, they can use this device too.',
-    'WeChatで送信し、相手がミニプログラムで承認するとこのデバイスを共用できます',
+    '把链接发给对方，对方用 BoltStar App 打开并接受后即可共用这台设备',
+    'Send the link. Once they open it with the BoltStar app and accept, they can use this device too.',
+    'リンクを送信し、相手が BoltStar アプリで開いて承認するとこのデバイスを共用できます',
   );
   String wifiShareCardTitle(String owner, String device) => pick(
     '${owner.isNotEmpty ? owner : '好友'}邀请你共用电子纸设备「$device」',
@@ -848,4 +848,34 @@ extension WifiL10n on AppL10n {
   );
   String get wifiShareNoWeChat => pick('请先安装微信', 'Please install WeChat first', '先にWeChatをインストールしてください');
   String get wifiShareFailed => pick('分享失败，请稍后重试', 'Sharing failed. Please try again later.', '共有に失敗しました。しばらくしてからお試しください');
+
+  // ── 分享链接（2026-11-12：分享改发 H5 链接，接受在 App 里完成） ──
+  String get wifiShareSheetTitle => pick('分享设备', 'Share device', 'デバイスを共有');
+  String get wifiShareToWeChat => pick('发给微信好友', 'Send to WeChat friend', 'WeChatの友だちに送る');
+  String get wifiShareCopyLink => pick('复制链接', 'Copy link', 'リンクをコピー');
+  String get wifiShareLinkCopied => pick('链接已复制，可粘贴发给对方', 'Link copied. Paste it to send.', 'リンクをコピーしました。貼り付けて送信できます');
+  String wifiShareLinkDesc(String device) => pick(
+    '点击打开 BoltStar App 接受邀请，共用「$device」',
+    'Open the BoltStar app to accept and share "$device"',
+    'BoltStar アプリを開いて招待を承認し、「$device」を共用',
+  );
+  String get wifiAcceptPageTitle => pick('设备分享', 'Device sharing', 'デバイス共有');
+  String get wifiAcceptInvalid => pick('分享链接无效', 'Invalid sharing link', '共有リンクが無効です');
+  String get wifiAcceptExpired => pick('分享链接已过期', 'Sharing link expired', '共有リンクの有効期限が切れています');
+  String get wifiAcceptReshare => pick('请让对方重新分享设备给你。', 'Please ask the owner to share the device again.', 'オーナーにもう一度共有してもらってください。');
+  String wifiAcceptDesc(String owner) => pick(
+    '${owner.isNotEmpty ? owner : '好友'} 邀请你共用这台电子纸设备，接受后可在设备列表中直接使用，无需配网。',
+    '${owner.isNotEmpty ? owner : 'A friend'} invited you to share this frame. After accepting, it appears in your device list. No setup needed.',
+    '${owner.isNotEmpty ? owner : '友だち'}からこのフォトフレームの共用に招待されました。承認するとデバイス一覧ですぐに使えます（ネットワーク設定不要）。',
+  );
+  String get wifiAcceptButton => pick('接受', 'Accept', '承認');
+  String get wifiAcceptChecking => pick('校验中…', 'Checking…', '確認中…');
+  String get wifiAcceptProcessing => pick('处理中…', 'Processing…', '処理中…');
+  String get wifiAcceptLater => pick('暂不接受', 'Not now', '今はしない');
+  String get wifiAcceptBackHome => pick('返回首页', 'Back to home', 'ホームに戻る');
+  String get wifiAcceptCheckFailed => pick('暂时无法校验分享链接，请稍后重试', 'Unable to verify the link right now. Please try again later.', '現在リンクを確認できません。しばらくしてからお試しください');
+  String get wifiAcceptOwn => pick('这是你分享出去的设备', 'This is a device you shared', 'これはあなたが共有したデバイスです');
+  String get wifiAcceptExists => pick('设备已在你的设备列表中', 'This device is already in your list', 'このデバイスはすでに一覧にあります');
+  String get wifiAcceptDone => pick('已加入，可以使用这台设备了', 'Joined. You can use this device now.', '参加しました。このデバイスを使えます');
+  String get wifiAcceptFailed => pick('加入失败，请稍后重试', 'Failed to join. Please try again later.', '参加に失敗しました。しばらくしてからお試しください');
 }

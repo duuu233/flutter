@@ -283,6 +283,16 @@ class NativeDeviceApi {
     }
   }
 
+  /// 读走并清掉最近一次设备共享邀请链接（2026-11-12，boltstar://share/accept?… 的 query，原生侧已解码）；没有返回 null。
+  /// Android 由 ShareLinkActivity、iOS 由 SceneDelegate 记下；读走即清，同一条链接只处理一次。
+  static Future<Map<String, String>?> consumeShareLink() async {
+    try {
+      return await _channel.invokeMapMethod<String, String>('consumeShareLink');
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// 清空可能残留的回跳标记。**每次发起新支付前调**：App 进程被系统回收时，
   /// 回跳会把标记置在一个没人来读的新进程里，不清掉的话下一单刚跳出去就会被旧标记误判。
   static Future<void> clearPayPalRedirect() async {

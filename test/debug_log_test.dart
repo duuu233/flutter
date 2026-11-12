@@ -103,9 +103,10 @@ void main() {
     expect(ws, contains("decoded['type'] != 'pong'"));
   });
 
-  test('分享页：置灰原因逐条写进日志（含没配小程序原始 ID）', () {
+  test('分享页：置灰原因逐条写进日志（2026-11-12 起分享 H5 链接，不再依赖小程序原始 ID）', () {
     final share = read('lib/src/features/wifi/presentation/wifi_share_page.dart');
-    expect(share, contains('WECHAT_MINI_PROGRAM_USERNAME'));
+    expect(share, isNot(contains('WECHAT_MINI_PROGRAM_USERNAME')));
+    expect(share, contains('WifiShareLink.h5Url('));
     expect(share, contains("'[WiFi分享] 分享按钮置灰：\${blockers.join('；')}'"));
     final blocked = share.substring(share.indexOf('if (!_canShare) {'));
     expect(blocked.indexOf('_logShareState();'), lessThan(blocked.indexOf('wifiShareUnavailable')));

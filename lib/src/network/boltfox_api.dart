@@ -733,7 +733,7 @@ class BoltFoxApi {
   ///
   /// 关闭超时重试：超时时后端可能已建绑定记录，重试是否重复绑定取决于后端去重，不赌。
   /// [isToHave] / [shareUserId]（2026-10-29 新增入参，同小程序）：自己绑定（蓝牙 / WiFi 配网）= 所有者 1 / 0；
-  /// 接受别人分享 = 非所有者 0 / 分享者 userId（App 暂无接受入口，接受在小程序完成）。
+  /// 接受别人分享 = 非所有者 0 / 分享者 userId（2026-11-12 起 App 接受页也走这里，见 WifiShareAcceptPage）。
   static Future<dynamic> addUserProduct({
     required int productId,
     required String productName,
@@ -761,6 +761,15 @@ class BoltFoxApi {
   /// 对方在小程序接受页拿它调 chkTimeValid 判断是否过期。解析见 [wifiShareTime]。
   static Future<dynamic> getCurrentTime() {
     return _http.getJson('/Client/UserProduct/getCurrentTime');
+  }
+
+  /// 分享链接是否仍有效（2026-11-12，App 接受页，同小程序 `checkShareTimeValid`）：[currentTime] 为链接里的 t（原样），
+  /// retData 为 boolean（true = 有效）。解析见 [wifiShareValidFlag]。
+  static Future<dynamic> chkTimeValid({required String currentTime}) {
+    return _http.getJson(
+      '/Client/UserProduct/chkTimeValid',
+      query: {'currentTime': currentTime},
+    );
   }
 
   static Future<dynamic> getShareUserProductList({required String deviceId, int pageIndex = 1, int pageSize = 50}) {

@@ -1,7 +1,7 @@
 # WiFi 版设备共享邀请 H5 落地页：部署与对接
 
 > 文档类型：Release / Integration Runbook
-> 状态：Draft（页面已写好，待部署；App 侧生成链接与接受页待线上地址确定后再做）
+> 状态：Active（2026-11-12 已部署到 https://iot.boltfox.cn/h5/share.html，App 侧分享与接受页同日接上，见 `../history/2026-11/2026-11-12-wifi-share-h5-app-side.md`）
 > 建立：2026-11-12
 > 页面源码：`deploy/share/share.html`（单文件，App 图标已内联；独立目录，**不参与 App 构建**）
 > 相关：现行分享（小程序卡片）见 `lib/src/features/wifi/presentation/wifi_share_page.dart`；同类中转页做法见 [`PAYPAL_REDIRECT.md`](PAYPAL_REDIRECT.md)
@@ -35,18 +35,18 @@ App 接受页（待做）：没登录先登录 → 是本人分享 / 已在列�
 
 ## 三、部署（待做）
 
+0. ✅ 2026-11-12 已部署：`https://iot.boltfox.cn/h5/share.html`。该域名把 `/Client/*` 代理到同一后端且跨域已放行，页面用相对路径即可，`API_BASE` 保持留空。
+   ⚠️ 但 `getLastVersion` / `getAndroidDownload` 未登录调用返回 `retCode 406「请重新登录」`，页面取不到下载地址、只能提示去应用商店搜——**需后端把这两个接口改成免登录**，页面不用改。
 1. 下载地址不用写进页面，取后台「版本管理」（2026-11-12 产品确认）：页面进来就在后台调 `GET /Client/Basic/getLastVersion?appVersionNo=0.0.0&terminal=<安卓 1 / iOS 2>&language=…`，取 `retData.downloadPath`（与 App「检查更新」同一字段）；安卓那条没给地址再试 `getAndroidDownload`。所以后台版本管理里，**iOS 那条的下载地址要填 App Store 链接**，安卓填安装包地址。都取不到时提示去应用商店搜「BoltStar」；调试日志里有接口原文。
 2. 部署位置建议与 PayPal 中转页相同：放在 API 域名下（如 `https://api.boltfox.cn/share.html`），接口走相对路径、不涉及跨域；也不要挂到跑 SPA 的域名下（nginx 的 `try_files … /index.html` 兜底会把本页换成 SPA 首页）。放到别的域名时，把页面顶部 `API_BASE` 填成 `https://api.boltfox.cn`，并让后端给上面两个接口放行 CORS。
 3. 部署后把实际网址告诉开发，App 侧据此生成分享链接。
 
-## 四、App 侧还要做（线上地址确定后）
+## 四、App 侧（2026-11-12 已接）
 
-- 分享：「分享设备」改为生成本页链接，走微信网页卡片（`fluwx` 网页分享，只需 App 自己的微信 AppID）、系统分享、复制链接；去掉对小程序原始 ID 的依赖。
-- 接收链接：
-  - 安卓：`AndroidManifest.xml` 加 `boltstar://share/accept` 的 intent-filter（现有只登记了 `pay/paypal/*`）；
-  - iOS：`Info.plist` 的 `CFBundleURLSchemes` 加 `boltstar`（现在只有微信的 `wx…`）。
-  - **上面两项做完、发版之前，已安装旧版 App 的手机点链接也拉不起 App，页面会显示「没有检测到 App」。**
-- 接受页：照搬小程序 `wifi-share-accept`（未登录先存待接受、登录后继续；本人分享 / 已在列表；`chkTimeValid`；`addUserProduct`）。
+- 分享：「分享设备」生成本页链接（`WifiShareLink.h5Url`，地址可用 `--dart-define=WIFI_SHARE_H5_URL` 改），可「发给微信好友」（网页卡片）或「复制链接」；不再依赖小程序原始 ID。
+- 接收：Android `ShareLinkActivity`（`boltstar://share/accept`）、iOS `boltstar` URL Scheme + `SceneDelegate`（含冷启动），记下 query 交给 Dart（`consumeShareLink`）；闪屏结束 / 登录后 / 回前台读走，已登录才打开接受页。
+- 接受页 `WifiShareAcceptPage`：同小程序 `wifi-share-accept`（有效期校验、本人分享 / 已在列表、`addUserProduct` 非所有者绑定、进设备详情）。
+- **含这些改动的 App 版本发布前，已装旧版的手机点链接仍拉不起 App**（旧版没登记 scheme），页面会显示「没有检测到 App」。
 
 ## 五、已知限制
 

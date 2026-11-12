@@ -56,6 +56,18 @@
 				<string>wx4cf0c5f38a70d0bc</string>
 			</array>
 		</dict>
+		<!-- 设备共享邀请（2026-11-12）：落地页 share.html 跳 boltstar://share/accept?… 拉起 App，
+		     由 SceneDelegate 收下交给 Dart（consumeShareLink），不走 Flutter 深链（FlutterDeepLinkingEnabled 仍为 false）。 -->
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLName</key>
+			<string>com.boltfox.boltstar.share</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>boltstar</string>
+			</array>
+		</dict>
 	</array>
 	<!-- 关掉 Flutter 的深链接管。本工程是 Navigator + `AppRoutes.onGenerateRoute`，只认命名路由，
 	     从没打算吃外部 URL；而引擎在这个键缺省时按 YES 处理（FlutterSharedApplication

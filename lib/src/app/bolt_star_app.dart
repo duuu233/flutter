@@ -7,6 +7,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import '../device/ble_connection_lease.dart';
 import '../device/ble_controller.dart';
 import '../features/account/presentation/auth_page.dart';
+import '../features/wifi/presentation/wifi_share_accept_page.dart';
+import '../features/wifi/wifi_share_inbox.dart';
 import '../native_device_api.dart';
 import '../features/star/apple_iap.dart';
 import '../features/shell/presentation/shell_page.dart';
@@ -170,6 +172,8 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
         unawaited(_maybeShowCrashReport());
         // 冷启动恢复登录态时，登录跳变发生在闪屏期间（那时不弹窗），到这里补做。
         unawaited(_maybeCheckForceUpdate());
+        // 冷启动是被设备共享邀请链接拉起的：闪屏结束后打开接受页（未登录则等登录后）
+        unawaited(_maybeOpenShareInvite());
       }
     });
     // 恢复上次选择的语言（持久化在本地）。异步读取，读到后 switchLanguage 会 notify 触发整树重译。
@@ -207,6 +211,8 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     if (!_wasLoggedIn && loggedIn) {
       // 登录成功（邮箱/微信，或冷启动恢复登录态）：查一次强制升级。
       unawaited(_maybeCheckForceUpdate());
+      // 未登录时点了设备共享邀请链接：登录后接着打开接受页（同小程序「登录并接受」）。推到帧末，等根路由换成主壳层
+      WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_maybeOpenShareInvite()));
     }
     if (_wasLoggedIn && !loggedIn) {
       _forceUpdateChecked = false; // 登出：下次登录重新检查
@@ -271,6 +277,38 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     );
   }
 
+  /// 设备共享邀请（2026-11-12）：读走原生侧记下的 boltstar://share/accept 链接，闪屏已结束且已登录时推接受页；
+  /// 未登录先留在 [WifiShareInbox]，登录成功后再来一次。
+  bool _openingShareInvite = false;
+  Future<void> _maybeOpenShareInvite() async {
+    if (_openingShareInvite) {
+      return;
+    }
+    _openingShareInvite = true;
+    try {
+      await WifiShareInbox.pull();
+      if (!mounted || _showSplash || !_state.isLoggedIn || !WifiShareInbox.hasPending) {
+        if (WifiShareInbox.hasPending) {
+          debugPrint('[设备分享] 邀请链接待处理（${_showSplash ? '闪屏中' : '未登录'}）');
+        }
+        return;
+      }
+      final navigator = _navigatorKey.currentState;
+      final query = WifiShareInbox.take();
+      if (navigator == null || query == null) {
+        return;
+      }
+      unawaited(navigator.push<void>(
+        MaterialPageRoute<void>(
+          settings: const RouteSettings(name: '/wifi/share-accept'),
+          builder: (_) => WifiShareAcceptPage(state: _state, query: query),
+        ),
+      ));
+    } finally {
+      _openingShareInvite = false;
+    }
+  }
+
   /// 系统语言变了（用户去系统设置改语言再切回来）：**没在「语种设置」里选过**的用户
   /// 跟着一起变，选过的以那份为准——判定直接读偏好，settings 页保存后无需另行通知这里。
   @override
@@ -304,6 +342,8 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
     switch (state) {
       case AppLifecycleState.resumed:
         unawaited(_resumeBleSession());
+        // App 在后台时点了设备共享邀请链接：回前台读走并打开接受页
+        unawaited(_maybeOpenShareInvite());
         unawaited(AppleIapController.instance.retry());
       case AppLifecycleState.hidden:
       case AppLifecycleState.paused:

@@ -72,14 +72,21 @@ String? wifiShareTime(dynamic data) {
   return text;
 }
 
-/// 小程序接受页路径（与小程序 `buildAcceptPath` 同格式）：d 设备号（带冒号）、p 产品 ID、u 所有者 userId、n 设备名、o 所有者昵称、
+/// 分享链接参数（与小程序 `buildAcceptPath` 同格式）：d 设备号（带冒号）、p 产品 ID、u 所有者 userId、n 设备名、o 所有者昵称、
 /// t 分享时的服务器时间戳（原样）。
 class WifiShareLink {
   WifiShareLink._();
 
   static const String acceptPage = '/subpackages/device/wifi-share-accept/wifi-share-accept';
 
-  static String acceptPath({
+  /// 设备共享邀请 H5 落地页（2026-11-12，源码 deploy/share/share.html）：微信内引导在浏览器打开，
+  /// 浏览器里拉起 App（boltstar://share/accept?<同一串参数>），没装引导下载。换地址用 --dart-define=WIFI_SHARE_H5_URL。
+  static const String h5Page = String.fromEnvironment(
+    'WIFI_SHARE_H5_URL',
+    defaultValue: 'https://iot.boltfox.cn/h5/share.html',
+  );
+
+  static String query({
     required String deviceId,
     required Object productId,
     required String ownerUserId,
@@ -95,6 +102,93 @@ class WifiShareLink {
       'o': ownerName,
       't': shareTime,
     }..removeWhere((_, value) => value.trim().isEmpty);
-    return '$acceptPage?${pairs.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&')}';
+    return pairs.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
   }
+
+  /// 小程序接受页路径（原小程序卡片用；2026-11-12 起 App 分享改发 [h5Url]）。
+  static String acceptPath({
+    required String deviceId,
+    required Object productId,
+    required String ownerUserId,
+    String deviceName = '',
+    String ownerName = '',
+    String shareTime = '',
+  }) =>
+      '$acceptPage?${query(deviceId: deviceId, productId: productId, ownerUserId: ownerUserId, deviceName: deviceName, ownerName: ownerName, shareTime: shareTime)}';
+
+  /// App 分享出去的链接（2026-11-12）：H5 落地页 + 同一串参数。
+  static String h5Url({
+    required String deviceId,
+    required Object productId,
+    required String ownerUserId,
+    String deviceName = '',
+    String ownerName = '',
+    String shareTime = '',
+  }) =>
+      '$h5Page?${query(deviceId: deviceId, productId: productId, ownerUserId: ownerUserId, deviceName: deviceName, ownerName: ownerName, shareTime: shareTime)}';
+}
+
+/// 接受页收到的邀请（2026-11-12，同小程序 `parseAcceptQuery`）：参数来自 boltstar://share/accept 的 query（原生侧已解码）。
+class WifiShareInvite {
+  const WifiShareInvite({
+    required this.deviceId,
+    required this.productId,
+    required this.ownerUserId,
+    required this.deviceName,
+    required this.ownerName,
+    required this.shareTime,
+  });
+
+  final String deviceId;
+  final int productId;
+  final int ownerUserId;
+  final String deviceName;
+  final String ownerName;
+  final String shareTime;
+
+  /// 缺设备号 / 产品 / 所有者 / 时间戳任一项返回 null（链接无效）；不带 t 的链接没法校验有效期，同小程序按无效。
+  static WifiShareInvite? parse(Map<String, String>? query) {
+    if (query == null) {
+      return null;
+    }
+    String read(String key) => (query[key] ?? '').trim();
+    final digits = RegExp(r'^\d+$');
+    final deviceId = read('d');
+    final productId = read('p');
+    final ownerUserId = read('u');
+    final shareTime = read('t');
+    if (deviceId.isEmpty ||
+        !digits.hasMatch(productId) ||
+        !digits.hasMatch(ownerUserId) ||
+        !digits.hasMatch(shareTime) ||
+        (int.tryParse(shareTime) ?? 0) <= 0) {
+      return null;
+    }
+    return WifiShareInvite(
+      deviceId: deviceId,
+      productId: int.parse(productId),
+      ownerUserId: int.parse(ownerUserId),
+      deviceName: read('n'),
+      ownerName: read('o'),
+      shareTime: shareTime,
+    );
+  }
+}
+
+/// 设备号去冒号 / 横线 / 空白、转大写后比较（同小程序 `plainDeviceNo`）。
+String wifiPlainDeviceNo(String value) => value.replaceAll(RegExp(r'[:\-\s]'), '').toUpperCase();
+
+/// chkTimeValid 的 retData → true 仍有效 / false 已过期；认不出返回 null（按校验失败处理）。
+bool? wifiShareValidFlag(dynamic data) {
+  if (data is bool) {
+    return data;
+  }
+  final text = '${data ?? ''}'.trim().toLowerCase();
+  if (text == 'true' || text == '1') {
+    return true;
+  }
+  if (text == 'false' || text == '0') {
+    return false;
+  }
+  return null;
 }

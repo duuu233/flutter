@@ -29,6 +29,18 @@ import UIKit
 /// 微信登录即可（有 `FlutterDeepLinkingEnabled=false` 兜着，至少不会跳出「Route not found」）。
 class SceneDelegate: FlutterSceneDelegate {
 
+  /// 冷启动：App 没在运行时点了设备共享邀请链接，URL 在 connectionOptions 里（2026-11-12）。
+  override func scene(
+    _ scene: UIScene,
+    willConnectTo session: UISceneSession,
+    options connectionOptions: UIScene.ConnectionOptions
+  ) {
+    for context in connectionOptions.urlContexts {
+      ShareLinkStore.record(context.url)
+    }
+    super.scene(scene, willConnectTo: session, options: connectionOptions)
+  }
+
   override func scene(
     _ scene: UIScene,
     openURLContexts URLContexts: Set<UIOpenURLContext>
@@ -38,6 +50,11 @@ class SceneDelegate: FlutterSceneDelegate {
 
     // 一批可能有多个 URL，逐条转发；任一条被插件消费就不再交给引擎（避免它按 deep link 处理）。
     for context in URLContexts {
+      // 设备共享邀请（boltstar://share/accept?…）：自己收下交给 Dart，不转发给插件 / 引擎
+      if ShareLinkStore.record(context.url) {
+        handled = true
+        continue
+      }
       // 按 `UIOpenURLContext.options` 还原 app 侧的 options 字典，与引擎自己的
       // `ConvertOptions()` 对齐；fluwx 本身不读这些字段，保真只是为了不给其他插件挖坑。
       var options: [UIApplication.OpenURLOptionsKey: Any] = [
@@ -62,5 +79,30 @@ class SceneDelegate: FlutterSceneDelegate {
     if !handled {
       super.scene(scene, openURLContexts: URLContexts)
     }
+  }
+}
+
+/// 最近一次设备共享邀请链接的 query（进程内、一次性），Dart 侧经 device_api 通道 `consumeShareLink` 读走。
+/// 只认 boltstar://share/accept（同 Android ShareLinkActivity）。
+enum ShareLinkStore {
+  private static var pending: [String: String]?
+
+  @discardableResult
+  static func record(_ url: URL) -> Bool {
+    guard url.scheme?.lowercased() == "boltstar", url.host == "share", url.path == "/accept" else {
+      return false
+    }
+    var query: [String: String] = [:]
+    for item in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] {
+      query[item.name] = item.value ?? ""
+    }
+    pending = query
+    return true
+  }
+
+  static func consume() -> [String: String]? {
+    let value = pending
+    pending = nil
+    return value
   }
 }
