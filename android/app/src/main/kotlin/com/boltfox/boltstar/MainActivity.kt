@@ -157,7 +157,29 @@ class MainActivity : FlutterActivity() {
             }
             // 设备共享邀请链接（由 ShareLinkActivity 记下，见那边的类注释）：读走即清，没有返回 null
             "consumeShareLink" -> result.success(ShareLink.consume())
+            // 系统分享面板发纯文本（设备共享邀请「更多应用」：WhatsApp / LINE / Messenger / 邮件等）
+            "shareText" -> shareText(call, result)
             else -> result.notImplemented()
+        }
+    }
+
+    /// ACTION_SEND 选择器；拉起返回 true（用户是否发出不回传），文本为空或拉不起返回 false。
+    private fun shareText(call: MethodCall, result: MethodChannel.Result) {
+        val text = call.argument<String>("text").orEmpty()
+        if (text.isEmpty()) {
+            result.success(false)
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+            call.argument<String>("subject")?.takeIf { it.isNotEmpty() }?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
+        }
+        try {
+            startActivity(Intent.createChooser(send, call.argument<String>("title")))
+            result.success(true)
+        } catch (error: Exception) {
+            result.success(false)
         }
     }
 

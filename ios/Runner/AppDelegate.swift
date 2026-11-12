@@ -113,6 +113,9 @@ final class DeviceApiHandler: NSObject {
     case "consumeShareLink":
       // 设备共享邀请链接（SceneDelegate 收下，见 ShareLinkStore）：读走即清，没有返回 nil
       result(ShareLinkStore.consume())
+    case "shareText":
+      // 系统分享面板发纯文本（设备共享邀请「更多应用」：WhatsApp / LINE / Messenger / 邮件等）
+      shareText(call, result: result)
     case "setKeepScreenOn":
       // 屏幕常亮（2026-10-29，WiFi 配网全程约 1 分钟，息屏会让蓝牙被挂起；同小程序 setKeepScreenOn）
       let on = ((call.arguments as? [String: Any])?["on"] as? Bool) ?? false
@@ -276,6 +279,29 @@ final class DeviceApiHandler: NSObject {
       UIApplication.shared.open(url, options: [:], completionHandler: nil)
     }
     result(nil)
+  }
+
+  // MARK: - 系统分享
+
+  /// UIActivityViewController；拉起返回 true（用户是否发出不回传），文本为空或没有可用的视图控制器返回 false。
+  /// iPad 上以 popover 弹出，必须给锚点，否则会崩。
+  private func shareText(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    let args = call.arguments as? [String: Any]
+    let text = (args?["text"] as? String) ?? ""
+    DispatchQueue.main.async {
+      guard !text.isEmpty, let presenter = self.topViewController() else {
+        result(false)
+        return
+      }
+      let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+      if let popover = controller.popoverPresentationController {
+        popover.sourceView = presenter.view
+        popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.maxY, width: 0, height: 0)
+        popover.permittedArrowDirections = []
+      }
+      presenter.present(controller, animated: true)
+      result(true)
+    }
   }
 
   // MARK: - 选择相册图片

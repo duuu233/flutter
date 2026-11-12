@@ -283,6 +283,22 @@ class NativeDeviceApi {
     }
   }
 
+  /// 系统分享面板发一段纯文本（2026-11-12，设备共享邀请「更多应用」：WhatsApp / LINE / Messenger / 邮件等）。
+  /// Android 走 ACTION_SEND 选择器，iOS 走 UIActivityViewController；面板拉起返回 true（用户是否发出不回传），
+  /// 拉不起 / 通道异常返回 false。
+  static Future<bool> shareText({required String text, String? subject, String? chooserTitle}) async {
+    try {
+      return await _channel.invokeMethod<bool>('shareText', {
+            'text': text,
+            if (subject != null) 'subject': subject,
+            if (chooserTitle != null) 'title': chooserTitle,
+          }) ??
+          false;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// 读走并清掉最近一次设备共享邀请链接（2026-11-12，boltstar://share/accept?… 的 query，原生侧已解码）；没有返回 null。
   /// Android 由 ShareLinkActivity、iOS 由 SceneDelegate 记下；读走即清，同一条链接只处理一次。
   static Future<Map<String, String>?> consumeShareLink() async {

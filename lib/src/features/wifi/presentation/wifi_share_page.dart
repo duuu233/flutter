@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../device/serial_match.dart';
+import '../../../native_device_api.dart';
 import '../../../network/api_exception.dart';
 import '../../../network/api_rows.dart';
 import '../../../network/boltfox_api.dart';
@@ -25,8 +26,8 @@ import '../wifi_wechat_share.dart';
 ///   · 「移除」（2026-11-05 起后端控制，同小程序）：成员接口每条带 isCanDel，== 1 才显示、才能移除（[WifiShareMember.canDel]），
 ///     不再按所有者 / 接收者判断。移除的是自己（接收者解绑自己）时走 [PhotoFrameState.deleteDevice] 清本机记录，提示后回首页。
 ///   · 第一栏固定所有者（头像 + 昵称 + 身份），橙色底与接收者区分；下面是接收者（头像 + 昵称 + 加入时间 + 移除）；
-///   · 底部「分享设备」（2026-11-12 改）：生成设备共享邀请 H5 链接（[WifiShareLink.h5Url]），可「发给微信好友」（网页卡片）
-///     或「复制链接」；对方打开链接拉起 BoltStar App，在 App 接受页（WifiShareAcceptPage）接受。不再需要小程序原始 ID。
+///   · 底部「分享设备」（2026-11-12 改）：生成设备共享邀请 H5 链接（[WifiShareLink.h5Url]），弹层是图标宫格：
+///     「微信好友」（网页卡片，装了微信才出现）/「更多应用」（系统分享面板，兼容海外 WhatsApp、LINE 等）/「复制链接」；对方打开链接拉起 BoltStar App，在 App 接受页（WifiShareAcceptPage）接受。不再需要小程序原始 ID。
 ///     拿不到自己的 userId / 产品 ID / 设备号时按钮置灰、点了提示，原因写进联调日志；
 ///     产品 ID / 设备号取进页面时查的 getUserProductDetail（同小程序 getDeviceDetail），本地设备缓存只兜底——
 ///     设备列表接口 getUserProductList 不下发 productId，缓存里恒为 0，单靠它分享永远置灰（2026-11-12）；
@@ -255,7 +256,12 @@ class _WifiSharePageState extends State<WifiSharePage> {
       if (!mounted) {
         return;
       }
-      final choice = await _pickShareWay();
+      // 没装微信（海外用户多半如此）就不出微信那格，只剩「更多应用」与「复制链接」
+      final hasWeChat = await WifiWeChatShare.isWeChatInstalled();
+      if (!mounted) {
+        return;
+      }
+      final choice = await _pickShareWay(hasWeChat: hasWeChat);
       if (!mounted || choice == null) {
         return;
       }
@@ -263,6 +269,17 @@ class _WifiSharePageState extends State<WifiSharePage> {
         await Clipboard.setData(ClipboardData(text: url));
         if (mounted) {
           AppToast.show(context, l10n.wifiShareLinkCopied);
+        }
+        return;
+      }
+      final title = l10n.wifiShareCardTitle(user.nickname, device.name);
+      if (choice == _ShareWay.system) {
+        // 系统分享面板（Android ACTION_SEND 选择器 / iOS UIActivityViewController）：文案 + 链接一段纯文本，
+        // WhatsApp / LINE / Messenger / Telegram / 邮件 / 短信等都能收
+        final ok = await NativeDeviceApi.shareText(text: '$title\n$url', subject: title, chooserTitle: l10n.wifiShareSheetTitle);
+        debugPrint('[WiFi分享] 拉起系统分享${ok ? '成功' : '失败'}');
+        if (!ok && mounted) {
+          AppToast.warn(context, l10n.wifiShareFailed);
         }
         return;
       }
@@ -275,7 +292,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
       }
       final ok = await WifiWeChatShare.shareWebPage(
         url: url,
-        title: l10n.wifiShareCardTitle(user.nickname, device.name),
+        title: title,
         description: l10n.wifiShareLinkDesc(device.name),
       );
       debugPrint('[WiFi分享] 拉起微信${ok ? '成功' : '失败'}');
@@ -292,13 +309,36 @@ class _WifiSharePageState extends State<WifiSharePage> {
     }
   }
 
-  /// 分享方式：发给微信好友（网页卡片）/ 复制链接（可粘贴到任意聊天工具）。
-  Future<_ShareWay?> _pickShareWay() {
+  /// 分享方式弹层（2026-11-12 改成图标宫格）：微信好友（网页卡片，只在装了微信时出现）/ 更多应用（系统分享面板，
+  /// 海外用户发 WhatsApp、LINE、Messenger、Telegram、邮件等都走这里）/ 复制链接（可粘贴到任意聊天工具）。
+  Future<_ShareWay?> _pickShareWay({required bool hasWeChat}) {
     final l10n = AppL10n.of(context);
-    Widget option(_ShareWay way, IconData icon, String label) => ListTile(
-      leading: Icon(icon, color: const Color(0xFFFF6A20)),
-      title: Text(label, style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 15)),
-      onTap: () => Navigator.of(context).pop(way),
+    Widget tile(_ShareWay way, Widget icon, String label) => Expanded(
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => Navigator.of(context).pop(way),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(width: 52, height: 52, child: icon),
+              const SizedBox(height: 8),
+              Text(
+                label,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 12, height: 1.3),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    Widget circle(Color background, IconData icon, Color color) => DecoratedBox(
+      decoration: BoxDecoration(color: background, shape: BoxShape.circle),
+      child: Icon(icon, color: color, size: 26),
     );
     return showModalBottomSheet<_ShareWay>(
       context: context,
@@ -310,20 +350,56 @@ class _WifiSharePageState extends State<WifiSharePage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 6),
+              padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
               child: Text(
                 l10n.wifiShareSheetTitle,
                 style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 16, fontWeight: FontWeight.w600),
               ),
             ),
-            option(_ShareWay.wechat, Icons.chat_bubble_outline, l10n.wifiShareToWeChat),
-            option(_ShareWay.copy, Icons.link, l10n.wifiShareCopyLink),
-            const SizedBox(height: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (hasWeChat)
+                    tile(
+                      _ShareWay.wechat,
+                      ClipOval(child: Image.asset('assets/images/pay-wechat.png', fit: BoxFit.cover)),
+                      l10n.wifiShareToWeChat,
+                    ),
+                  tile(
+                    _ShareWay.system,
+                    circle(const Color(0xFFFFF1E8), Icons.ios_share, const Color(0xFFFF6A20)),
+                    l10n.wifiShareMoreApps,
+                  ),
+                  tile(
+                    _ShareWay.copy,
+                    circle(const Color(0xFFF2F3F5), Icons.link, const Color(0xFF2A2D32)),
+                    l10n.wifiShareCopyLink,
+                  ),
+                  // 只有两项时补一个空位，图标不被拉到两边
+                  if (!hasWeChat) const Expanded(child: SizedBox.shrink()),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1, thickness: 8, color: Color(0xFFF5F6F8)),
+            InkWell(
+              onTap: () => Navigator.of(context).pop(),
+              child: SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: Center(
+                  child: Text(l10n.cancel, style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 16)),
+                ),
+              ),
+            ),
           ],
         ),
       ),
     );
   }
+
 
   Widget _avatar(String url) {
     Widget fallback() => Image.asset('assets/images/mine-header.jpg', fit: BoxFit.cover);
@@ -518,4 +594,4 @@ class _WifiSharePageState extends State<WifiSharePage> {
   }
 }
 
-enum _ShareWay { wechat, copy }
+enum _ShareWay { wechat, system, copy }

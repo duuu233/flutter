@@ -851,8 +851,10 @@ extension WifiL10n on AppL10n {
 
   // ── 分享链接（2026-11-12：分享改发 H5 链接，接受在 App 里完成） ──
   String get wifiShareSheetTitle => pick('分享设备', 'Share device', 'デバイスを共有');
-  String get wifiShareToWeChat => pick('发给微信好友', 'Send to WeChat friend', 'WeChatの友だちに送る');
+  String get wifiShareToWeChat => pick('微信好友', 'WeChat', 'WeChat');
   String get wifiShareCopyLink => pick('复制链接', 'Copy link', 'リンクをコピー');
+  /// 系统分享面板（WhatsApp、LINE、Messenger、邮件等）
+  String get wifiShareMoreApps => pick('更多应用', 'More apps', '他のアプリ');
   String get wifiShareLinkCopied => pick('链接已复制，可粘贴发给对方', 'Link copied. Paste it to send.', 'リンクをコピーしました。貼り付けて送信できます');
   String wifiShareLinkDesc(String device) => pick(
     '点击打开 BoltStar App 接受邀请，共用「$device」',

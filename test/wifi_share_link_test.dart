@@ -102,4 +102,22 @@ void main() {
     expect(link, contains('productId: _productId,'));
     expect(share, isNot(contains('_device.productId > 0')));
   });
+
+  test('分享弹层：图标宫格，微信装了才出现，「更多应用」走系统分享（海外社交）', () {
+    final share = read('lib/src/features/wifi/presentation/wifi_share_page.dart');
+    expect(share, contains('enum _ShareWay { wechat, system, copy }'));
+    expect(share, contains('final hasWeChat = await WifiWeChatShare.isWeChatInstalled();'));
+    expect(share, contains('if (hasWeChat)'));
+    expect(share, contains("Image.asset('assets/images/pay-wechat.png'"));
+    expect(share, contains("NativeDeviceApi.shareText(text: '\$title\\n\$url'"));
+    final api = read('lib/src/native_device_api.dart');
+    expect(api, contains("_channel.invokeMethod<bool>('shareText'"));
+    final android = read('android/app/src/main/kotlin/com/boltfox/boltstar/MainActivity.kt');
+    expect(android, contains('"shareText" -> shareText(call, result)'));
+    expect(android, contains('Intent.createChooser(send'));
+    final ios = read('ios/Runner/AppDelegate.swift');
+    expect(ios, contains('case "shareText":'));
+    expect(ios, contains('UIActivityViewController(activityItems: [text]'));
+    expect(ios, contains('popover.sourceView = presenter.view'));
+  });
 }
