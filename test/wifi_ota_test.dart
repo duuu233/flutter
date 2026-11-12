@@ -54,6 +54,44 @@ void main() {
     });
   });
 
+  group('进度条（2026-11-12）', () {
+    test('progress：数字 / 数字串取整夹到 0~100，null / 缺省 / 非数字为不上报', () {
+      expect(parseOtaProgress(40), 40);
+      expect(parseOtaProgress('60'), 60);
+      expect(parseOtaProgress(130), 100);
+      expect(parseOtaProgress(null), isNull);
+      expect(parseOtaProgress('abc'), isNull);
+    });
+
+    test('上限：没收到停 19；收到 20/40/60/80 走到下一档减 1（80 之后 98）；不上报或写入阶段 98；VERIFYING 100', () {
+      expect(otaProgressCap('SENT', null), 19);
+      expect(otaProgressCap('DOWNLOADING', 20), 39);
+      expect(otaProgressCap('DOWNLOADING', 40), 59);
+      expect(otaProgressCap('DOWNLOADING', 60), 79);
+      expect(otaProgressCap('DOWNLOADING', 80), 98);
+      expect(otaProgressCap('DOWNLOADING', null), 98, reason: '进入下载却不上报进度');
+      expect(otaProgressCap('FLASHING', 40), 98, reason: '写入阶段下载已完成');
+      expect(otaProgressCap('VERIFYING', 80), 100);
+      expect(otaProgressCap('SUCCESS', null), 100);
+    });
+
+    test('进度文案取当前那一步：转圈 / 打叉的那一步，全勾为最后一步', () {
+      expect(otaActiveStep(otaStepsFor('DOWNLOADING')), 1);
+      expect(otaActiveStep(otaStepsFor('VERIFYING')), 3);
+      expect(otaActiveStep(otaStepsFor('TIMEOUT', 2)), 2);
+    });
+
+    test('本地记录保存收到过的最大进度，偶发的 null 不覆盖', () async {
+      SharedPreferences.setMockInitialValues({});
+      await WifiOtaStore.save('AABBCCDDEEFF', 'm1');
+      var result = await WifiOtaStore.refresh('AABBCCDDEEFF', getStatus: (_) async => {'status': 'DOWNLOADING', 'progress': 40});
+      expect(result.record?.progress, 40);
+      result = await WifiOtaStore.refresh('AABBCCDDEEFF', getStatus: (_) async => {'status': 'DOWNLOADING', 'progress': null});
+      expect(result.record?.progress, 40);
+      expect((await WifiOtaStore.read('AABBCCDDEEFF'))?.progress, 40);
+    });
+  });
+
   group('版本比较', () {
     test('x.y.z 目标更高才算有新版本，包地址须 http(s)', () {
       expect(evaluateWifiOta('1.0.2', '1.0.10', 'https://oss/a.bin').state, WifiOtaCheckState.available);

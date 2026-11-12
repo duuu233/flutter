@@ -30,6 +30,9 @@ import 'wifi_provision_page.dart';
 ///     （WS 只是加速，断线丢事件由轮询兜底；重连后补查一次）。VERIFYING 第 4 步打勾即可离开；
 ///     FAILED / TIMEOUT 在当前步打叉、给「重新升级」。4000 / 4045（已有进行中的升级）切到「设备正在升级」。
 ///   · 最终结果由服务端通过消息中心通知（OTA_SUCCESS / OTA_FAILED）。
+///   · 进度条（2026-11-12 同小程序）：步骤上方一条，左边当前那一步的文案、右边百分比。服务端 progress（轮询与 WS 都带）
+///     只抬「上限」，显示值由本页计时器匀速往上限走（规则见 [wifi_ota.dart]「升级进度条」）；失败停住，VERIFYING 走到 100。
+///     收到过的最大进度存进本地记录，重进页面从那里接着走。
 class WifiOtaPage extends StatefulWidget {
   const WifiOtaPage({super.key, required this.state, required this.deviceId});
 
@@ -69,20 +72,28 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   StreamSubscription<Map<String, dynamic>>? _otaSub;
   StreamSubscription<IotWsState>? _stateSub;
 
+  // 进度条（见类注释）
+  int? _reported; // 本次升级收到过的最大 progress
+  int _shown = 0; // 显示值，只增不减
+  int _cap = 0; // 显示值能走到的上限
+  String _status = ''; // 最近一次的状态（WS 只带 progress 时沿用）
+  String _progressText = '';
+  Timer? _progressTimer;
+
   String get _deviceNo => IotApi.plainDeviceNo(_device?.serialNumber);
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    // WS 只推状态信号：带了 status 就先按它画，再补查一次
+    // WS 只推状态信号：带了 status 就先按它画，再补查一次；progress（2026-11-12）每条进度回执推一次，同样交给 _applyStatus
     _otaSub = IotWs.instance.on('ota.result').listen((event) {
       if (_msgid.isEmpty || '${event['msgid']}' != _msgid) {
         return;
       }
       final status = '${event['status'] ?? ''}';
-      if (status.isNotEmpty) {
-        _applyStatus(status, null);
+      if (status.isNotEmpty || parseOtaProgress(event['progress']) != null) {
+        _applyStatus(status.isNotEmpty ? status : _status, event);
       }
       _pollOnce();
     });
@@ -117,6 +128,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _stopPolling();
+    _stopProgress();
     unawaited(_otaSub?.cancel());
     unawaited(_stateSub?.cancel());
     if (_subscribed.isNotEmpty) {
@@ -134,6 +146,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     bool showVersions = false,
     String currentVersion = '',
     String latestVersion = '',
+    String progressText = '',
   }) {
     if (!mounted) {
       return;
@@ -147,6 +160,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       _showVersions = showVersions;
       _currentVersion = currentVersion;
       _latestVersion = latestVersion;
+      _progressText = progressText;
     });
   }
 
@@ -155,6 +169,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     _stopPolling();
     _msgid = '';
     _lastStep = -1;
+    _resetProgress();
     _setScreen(phase: _Phase.checking, title: l10n.wifiOtaChecking, hint: l10n.wifiOtaCheckingHint, art: _Art.progress);
     final device = await widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
     if (!mounted) {
@@ -258,6 +273,17 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     final record = inflight.record!;
     _msgid = record.msgid;
     _lastStep = record.lastStep;
+    // 进度条从收到过的最大进度接着走（本地记录与这次查询取大的）
+    _resetProgress();
+    final saved = record.progress;
+    final fresh = parseOtaProgress(inflight.data?['progress']);
+    if (saved != null || fresh != null) {
+      final a = saved ?? 0;
+      final b = fresh ?? 0;
+      final value = a > b ? a : b;
+      _reported = value;
+      _shown = value > 99 ? 99 : value;
+    }
     final status = normalizeOtaStatus(
       inflight.status.isNotEmpty ? inflight.status : (record.status.isNotEmpty ? record.status : 'SENT'),
     );
@@ -296,26 +322,41 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     if (index > _lastStep) {
       _lastStep = index;
     }
+    if (status.isNotEmpty) {
+      _status = status;
+    }
+    final reported = parseOtaProgress(data?['progress']);
+    if (reported != null && reported > (_reported ?? 0)) {
+      _reported = reported;
+    }
     final deviceNo = _deviceNo;
     if (isOtaFinal(status)) {
       unawaited(WifiOtaStore.clear(deviceNo));
     } else if (index > -1) {
-      unawaited(WifiOtaStore.update(deviceNo, status: status, lastStep: _lastStep));
+      unawaited(WifiOtaStore.update(deviceNo, status: status, lastStep: _lastStep, progress: _reported));
     }
 
     // SUCCESS 不在步骤口径内；万一跳过 VERIFYING 直接到了，也按完成收尾，不让第 4 步一直转圈
     final view = otaStepsFor(status == 'SUCCESS' ? 'VERIFYING' : status, _lastStep);
+    final progressText = l10n.wifiOtaSteps[otaActiveStep(view)];
     if (view.phase == WifiOtaViewPhase.failed) {
       _stopPolling();
+      _stopProgress(); // 失败停在当时的位置
       _setScreen(
         phase: _Phase.failed,
         title: isOtaTimeout(status) ? l10n.wifiOtaTimeout : l10n.wifiOtaFailed,
         hint: l10n.wifiOtaFailHint,
         art: _Art.fail,
         steps: view.steps,
+        progressText: progressText,
       );
       return;
     }
+    // 不认识的状态值不动上限；其余按状态与收到过的最大进度定上限，计时器匀速往上走
+    if (index > -1 || status == 'SUCCESS') {
+      _cap = otaProgressCap(status, _reported);
+    }
+    _runProgress();
     if (view.phase == WifiOtaViewPhase.verifying) {
       _stopPolling();
       _setScreen(
@@ -324,6 +365,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
         hint: status == 'SUCCESS' ? l10n.wifiOtaSuccessHint : l10n.wifiOtaVerifyingHint,
         art: _Art.success,
         steps: view.steps,
+        progressText: progressText,
       );
       return;
     }
@@ -335,7 +377,36 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       hint: elapsed.isNotEmpty ? '$elapsed，${l10n.wifiOtaRunningHint}' : l10n.wifiOtaRunningHint,
       art: _Art.progress,
       steps: view.steps,
+      progressText: progressText,
     );
+  }
+
+  // ── 进度条（2026-11-12，规则见 wifi_ota.dart「升级进度条」）──
+  void _resetProgress() {
+    _stopProgress();
+    _reported = null;
+    _shown = 0;
+    _cap = 0;
+    _status = '';
+  }
+
+  /// 显示值没到上限就每 [kWifiOtaProgressTick] 走 1%，到了就停表，上限抬高后再开。
+  void _runProgress() {
+    if (_progressTimer != null || !mounted || _shown >= _cap) {
+      return;
+    }
+    _progressTimer = Timer.periodic(kWifiOtaProgressTick, (_) {
+      if (!mounted || _shown >= _cap) {
+        _stopProgress();
+        return;
+      }
+      setState(() => _shown += 1);
+    });
+  }
+
+  void _stopProgress() {
+    _progressTimer?.cancel();
+    _progressTimer = null;
   }
 
   void _startPolling() {
@@ -450,6 +521,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     }
     _msgid = msgid;
     _lastStep = -1;
+    _resetProgress();
     _applyStatus('SENT', null);
     _startPolling();
   }
@@ -464,6 +536,14 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   }
 
   void _finish() => Navigator.of(context).maybePop();
+
+  /// 升级进度条（2026-11-12）：左边当前那一步的文案、右边百分比。
+  Widget _buildProgress() => _OtaProgressBar(
+    key: const ValueKey('wifi-ota-progress'),
+    text: _progressText,
+    value: _shown,
+    failed: _phase == _Phase.failed,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -527,6 +607,8 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
           ],
           if (steps != null) ...[
             const SizedBox(height: 20),
+            _buildProgress(),
+            const SizedBox(height: 12),
             FigmaGlassCard(
               borderRadius: 16,
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -603,6 +685,57 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
         ),
         _ => null,
       },
+    );
+  }
+}
+
+class _OtaProgressBar extends StatelessWidget {
+  const _OtaProgressBar({super.key, required this.text, required this.value, required this.failed});
+
+  final String text;
+  final int value;
+  final bool failed;
+
+  @override
+  Widget build(BuildContext context) {
+    // 与 WiFi 投屏结果页进度条同一套颜色；失败转红、停在当时的位置
+    final color = failed ? const Color(0xFFE5533D) : const Color(0xFFFF621F);
+    return FigmaGlassCard(
+      borderRadius: 16,
+      padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: failed ? color : const Color(0xFF2A2D32),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text('$value%', style: TextStyle(color: color, fontSize: 14, fontWeight: FontWeight.w700)),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: value / 100,
+              minHeight: 8,
+              backgroundColor: const Color(0x1FFF621F),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

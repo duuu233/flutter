@@ -21,6 +21,8 @@ import '../../network/iot/iot_client.dart';
 /// 本地记录：msgid 在投屏 / 轮播 / OTA 之间共用生成器，所以用独立 key `ota_inflight:{deviceNo}` 存
 /// `{ deviceNo, type: 'ota', msgid, version, baseVersion, status, lastStep, savedAt }`，一台设备只留一条；
 /// 终态或查询 4044（任务只保留 2 小时）时清掉。「有新版本」之前先看本地有没有进行中的记录。
+///
+/// 进度条（2026-11-12 同小程序）：ota/status 与 WS ota.result 新增 progress（0~100），规则见下方「升级进度条」一节。
 
 const String kWifiOtaTypeMain = 'main'; // 主控升级；FPGA（type=fpga）当前没有入口
 
@@ -97,6 +99,58 @@ WifiOtaSteps otaStepsFor(Object? status, [int lastStep = -1]) {
     ],
     -1,
   );
+}
+
+// ── 升级进度条（2026-11-12，同小程序 utils/wifi-ota.js）──────────
+// 服务端 progress（GET /api/device/ota/status 与 WS ota.result 新增，可选）：设备私有进度回执 182 / 184 / 186 / 188
+// 换算为 20 / 40 / 60 / 80，每收到一条回执 WS 推一次；进入 VERIFYING 后为 100；固件不上报进度时为 null。
+// 页面显示值只增不减、匀速前进（每 [kWifiOtaProgressTick] 走 1%），走到「上限」就停住等下一次上报：
+//   · 还没收到任何进度（SENT 等设备响应）→ 停在 19；
+//   · 收到 20 / 40 / 60 / 80 → 可走到 39 / 59 / 79 / 98（下一档减 1；80 之后与「不上报」同为 98）；
+//     例：走到 39 没收到 40 就停住，收到 40 后继续前进；
+//   · 已进入下载（DOWNLOADING）却一直没有进度值（固件不上报，为 null）或已进入写入（FLASHING）→ 匀速走到 98 停住；
+//   · VERIFYING（SUCCESS 同）→ 100。FAILED / TIMEOUT 停在当时的位置。
+// 进度条左边的文案用当前那一步的步骤文案（[otaActiveStep]）。
+
+const Duration kWifiOtaProgressTick = Duration(milliseconds: 200); // 1% / 200ms：一档 20% 约 4 秒
+const int _progressFirstCap = 19;
+const int _progressStepGap = 19;
+const int _progressSilentCap = 98;
+
+/// progress 字段 → 0~100 整数；null / 缺省 / 非数字 → null（不上报）。
+int? parseOtaProgress(Object? value) {
+  if (value == null) {
+    return null;
+  }
+  final n = value is num ? value : num.tryParse('$value'.trim());
+  if (n == null || n.isNaN || n.isInfinite) {
+    return null;
+  }
+  final value = n.round();
+  return value < 0 ? 0 : (value > 100 ? 100 : value);
+}
+
+/// 显示值能走到的上限。[reported]：本次升级收到过的最大进度（null = 一次都没收到）。
+int otaProgressCap(Object? status, int? reported) {
+  final s = normalizeOtaStatus(status);
+  final value = reported ?? 0;
+  if (s == 'VERIFYING' || s == 'SUCCESS' || value >= 100) {
+    return 100;
+  }
+  if (s == 'FLASHING') {
+    return _progressSilentCap;
+  }
+  if (value > 0) {
+    final cap = value + _progressStepGap;
+    return cap > _progressSilentCap ? _progressSilentCap : cap;
+  }
+  return s == 'DOWNLOADING' ? _progressSilentCap : _progressFirstCap;
+}
+
+/// [otaStepsFor] 结果里「当前那一步」：转圈或打叉的那一步；全勾（VERIFYING）为最后一步。
+int otaActiveStep(WifiOtaSteps view) {
+  final index = view.steps.indexWhere((step) => step == WifiOtaStepState.loading || step == WifiOtaStepState.fail);
+  return index > -1 ? index : view.steps.length - 1;
 }
 
 // ── 版本号 ─────────────────────────────────────────────
@@ -195,6 +249,7 @@ class WifiOtaRecord {
     this.status = '',
     this.lastStep = -1,
     this.savedAt = 0,
+    this.progress,
   });
 
   final String deviceNo;
@@ -205,7 +260,10 @@ class WifiOtaRecord {
   final int lastStep;
   final int savedAt;
 
-  WifiOtaRecord copyWith({String? status, int? lastStep}) => WifiOtaRecord(
+  /// 收到过的最大进度（2026-11-12 进度条）；null = 还没收到过。
+  final int? progress;
+
+  WifiOtaRecord copyWith({String? status, int? lastStep, int? progress}) => WifiOtaRecord(
     deviceNo: deviceNo,
     msgid: msgid,
     version: version,
@@ -213,6 +271,7 @@ class WifiOtaRecord {
     status: status ?? this.status,
     lastStep: lastStep ?? this.lastStep,
     savedAt: savedAt,
+    progress: progress ?? this.progress,
   );
 
   Map<String, Object> toJson() => {
@@ -224,6 +283,7 @@ class WifiOtaRecord {
     'status': status,
     'lastStep': lastStep,
     'savedAt': savedAt,
+    if (progress != null) 'progress': progress!,
   };
 
   /// 类型不对或缺 msgid 的记录不认（防止拿投屏 msgid 去查 OTA 接口）。
@@ -239,6 +299,7 @@ class WifiOtaRecord {
       status: '${raw['status'] ?? ''}',
       lastStep: int.tryParse('${raw['lastStep']}') ?? -1,
       savedAt: int.tryParse('${raw['savedAt']}') ?? 0,
+      progress: parseOtaProgress(raw['progress']),
     );
   }
 }
@@ -296,13 +357,18 @@ abstract final class WifiOtaStore {
     return record;
   }
 
-  /// 记下最近一次查到的状态（重进页面先按它画，再等接口结果）。
-  static Future<WifiOtaRecord?> update(String deviceNo, {required String status, required int lastStep}) async {
+  /// 记下最近一次查到的状态（重进页面先按它画，再等接口结果）；[progress] 为收到过的最大进度，null 不改。
+  static Future<WifiOtaRecord?> update(
+    String deviceNo, {
+    required String status,
+    required int lastStep,
+    int? progress,
+  }) async {
     final record = await read(deviceNo);
     if (record == null) {
       return null;
     }
-    final next = record.copyWith(status: status, lastStep: lastStep);
+    final next = record.copyWith(status: status, lastStep: lastStep, progress: progress);
     await _write(record.deviceNo, next);
     return next;
   }
@@ -356,7 +422,11 @@ abstract final class WifiOtaStore {
     }
     final index = otaStepIndex(status);
     final lastStep = index > record.lastStep ? index : record.lastStep;
-    final next = await update(deviceNo, status: status, lastStep: lastStep) ?? record;
+    // 进度条：记下收到过的最大进度，重进页面从这里接着走
+    final fresh = parseOtaProgress(data['progress']);
+    final saved = record.progress ?? 0;
+    final progress = fresh == null ? null : (fresh > saved ? fresh : saved);
+    final next = await update(deviceNo, status: status, lastStep: lastStep, progress: progress) ?? record;
     return WifiOtaRefresh(record: next, status: status, data: data);
   }
 }

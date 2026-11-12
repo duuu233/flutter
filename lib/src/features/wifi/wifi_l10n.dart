@@ -279,7 +279,7 @@ extension WifiL10n on AppL10n {
     _ => '',
   };
 
-  // ── WiFi 投屏结果页（V1.4：写我的相册、同时加入轮播、投屏日志） ──
+  // ── WiFi 投屏结果页（V1.4：写我的相册、同时加入轮播；投屏日志面板 2026-11-12 已去掉） ──
   String wifiCastAllSent(int total) => pick(
     '已发送 $total 张，屏幕即将刷新',
     '$total photos sent. The screen will refresh soon.',
@@ -294,10 +294,6 @@ extension WifiL10n on AppL10n {
     'スライドショーに追加できませんでした。スライドショー設定で追加してください',
   );
   String get wifiAddToCarousel => pick('同时加入轮播', 'Also add to slideshow', 'スライドショーにも追加');
-  String get wifiCastLogTitle => pick('投屏日志', 'Cast log', 'キャストログ');
-  String get wifiCopyLog => pick('复制日志', 'Copy log', 'ログをコピー');
-  String get wifiLogEmpty => pick('（暂无）', '(empty)', '（なし）');
-  String get wifiLogCopied => pick('已复制', 'Copied', 'コピーしました');
 
   // ── 我的相册：WiFi 版照片删除（V1.4 更新说明九、反馈追加内容第三节） ──
   String get wifiDeleteMayNeedSwitch => pick(
