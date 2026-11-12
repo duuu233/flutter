@@ -21,7 +21,7 @@
   └ 浏览器内：进页自动试拉起 App，同时有「打开 App 接受邀请」按钮
         ├ 页面被切到后台 → App 已拉起 → App 接受页完成绑定
         └ 约 2.5 秒仍在本页（安卓 Chrome：intent 回落到 #no-app）→ 判定没装
-              → 「下载 BoltStar App」+ 1-2-3 步骤；装好后回本页点「已安装，打开 App」
+              → 「立即下载」（跳官网下载页）+ 1-2-3 步骤；装好后回本页点「已安装，打开 App」
 
 App 接受页（待做）：没登录先登录 → 是本人分享 / 已在列表 → 提示 / 进详情
   → chkTimeValid(t) → addUserProduct（isToHave=0、shareUserId=u）→ 刷新列表 → 进设备详情
@@ -33,13 +33,11 @@ App 接受页（待做）：没登录先登录 → 是本人分享 / 已在列�
 - 文案跟随浏览器语言：简中 / 繁中 / 英 / 日。昵称、设备名一律按纯文本显示。
 - 底部「调试日志」默认折叠，`?debug=1` 展开，可复制。
 
-## 三、部署（待做）
+## 三、部署
 
-0. ✅ 2026-11-12 已部署：`https://iot.boltfox.cn/h5/share.html`。该域名把 `/Client/*` 代理到同一后端且跨域已放行，页面用相对路径即可，`API_BASE` 保持留空。
-   ⚠️ 但 `getLastVersion` / `getAndroidDownload` 未登录调用返回 `retCode 406「请重新登录」`，页面取不到下载地址、只能提示去应用商店搜——**需后端把这两个接口改成免登录**，页面不用改。
-1. 下载地址不用写进页面，取后台「版本管理」（2026-11-12 产品确认）：页面进来就在后台调 `GET /Client/Basic/getLastVersion?appVersionNo=0.0.0&terminal=<安卓 1 / iOS 2>&language=…`，取 `retData.downloadPath`（与 App「检查更新」同一字段）；安卓那条没给地址再试 `getAndroidDownload`。所以后台版本管理里，**iOS 那条的下载地址要填 App Store 链接**，安卓填安装包地址。都取不到时提示去应用商店搜「BoltStar」；调试日志里有接口原文。
-2. 部署位置建议与 PayPal 中转页相同：放在 API 域名下（如 `https://api.boltfox.cn/share.html`），接口走相对路径、不涉及跨域；也不要挂到跑 SPA 的域名下（nginx 的 `try_files … /index.html` 兜底会把本页换成 SPA 首页）。放到别的域名时，把页面顶部 `API_BASE` 填成 `https://api.boltfox.cn`，并让后端给上面两个接口放行 CORS。
-3. 部署后把实际网址告诉开发，App 侧据此生成分享链接。
+1. 当前地址：`https://iot.boltfox.cn/h5/share.html`（2026-11-12 部署）。页面不调任何接口，换地址时 App 打包用 `--dart-define=WIFI_SHARE_H5_URL` 同步。
+2. 下载（2026-11-12 产品指定）：没装 App 时点「立即下载」统一跳官网下载页 `https://www.boltstar-ai.com/en/download`（页面顶部 `DOWNLOAD_URL`，安卓 / iOS 同一个）。原先取后台版本管理接口的做法已去掉——`getLastVersion` / `getAndroidDownload` 未登录调用返回 `retCode 406「请重新登录」`，落地页拿不到。
+3. 不要挂到跑 SPA 的域名下（nginx 的 `try_files … /index.html` 兜底会把本页换成 SPA 首页）。页面改动后需重新上传覆盖。
 
 ## 四、App 侧（2026-11-12 已接）
 

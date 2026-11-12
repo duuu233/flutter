@@ -119,11 +119,9 @@
   var SCHEME = 'boltstar';                 // 与 App 的自定义 scheme 一致（PayPal 回跳已在用）
   var APP_PATH = 'share/accept';           // App 接受页深链：boltstar://share/accept?<原 query>
   var ANDROID_PACKAGE = 'com.boltfox.boltstar';
-  // 下载地址：从后台「版本管理」接口取（与 App「检查更新」同一个接口 getLastVersion，按 terminal 区分端：
-  // 安卓 1、iOS 2，取 retData.downloadPath；iOS 那条在后台填 App Store 地址）。安卓取不到再试 getAndroidDownload。
-  // API_BASE 留空 = 用相对路径，本页须与接口同域名（建议部署到 https://api.boltfox.cn/share.html，同 PayPal 中转页）；
-  // 部署到别的域名时填 'https://api.boltfox.cn'，且后端要给这两个接口放行跨域（CORS）。
-  var API_BASE = '';
+  // 下载页（2026-11-12 产品指定）：没装 App 时点「立即下载」统一跳官网下载页，安卓 / iOS 同一个地址。
+  // （原先取后台版本管理接口，但 getLastVersion / getAndroidDownload 要登录，落地页拿不到，已去掉）
+  var DOWNLOAD_URL = 'https://www.boltstar-ai.com/en/download';
   var DETECT_MS = 2500;                     // 跳转后等多久还在本页就判「没装」
 
   // ── 文案（简中 / 繁中 / 英 / 日，跟随浏览器语言） ──────────────────────
@@ -131,10 +129,9 @@
     zh: {
       tag: '设备共享邀请', inviteBy: '{o} 邀请你共享设备', invite: '你收到一个设备共享邀请',
       device: '设备：{n}', opening: '正在打开 BoltStar App…', open: '打开 App 接受邀请',
-      openAgain: '已安装，打开 App', download: '下载 BoltStar App',
+      openAgain: '已安装，打开 App', download: '立即下载',
       notFound: '没有检测到 BoltStar App，请先下载安装', opened: '已打开 App，请在 App 中确认接受',
-      invalid: '邀请链接无效，请让分享者重新分享', noDownload: '暂未配置下载地址，请在应用商店搜索「BoltStar」',
-      fetching: '正在获取下载地址…',
+      invalid: '邀请链接无效，请让分享者重新分享',
       step1: '下载并安装 BoltStar App', step2: '安装完成后回到本页，点「已安装，打开 App」',
       step3: '在 App 中登录并接受邀请',
       hint: '没有自动打开？点上面的按钮再试一次',
@@ -146,10 +143,9 @@
     zhHant: {
       tag: '裝置共享邀請', inviteBy: '{o} 邀請你共享裝置', invite: '你收到一個裝置共享邀請',
       device: '裝置：{n}', opening: '正在開啟 BoltStar App…', open: '開啟 App 接受邀請',
-      openAgain: '已安裝，開啟 App', download: '下載 BoltStar App',
+      openAgain: '已安裝，開啟 App', download: '立即下載',
       notFound: '沒有偵測到 BoltStar App，請先下載安裝', opened: '已開啟 App，請在 App 中確認接受',
-      invalid: '邀請連結無效，請讓分享者重新分享', noDownload: '暫未設定下載網址，請在應用程式商店搜尋「BoltStar」',
-      fetching: '正在取得下載網址…',
+      invalid: '邀請連結無效，請讓分享者重新分享',
       step1: '下載並安裝 BoltStar App', step2: '安裝完成後回到本頁，點「已安裝，開啟 App」',
       step3: '在 App 中登入並接受邀請',
       hint: '沒有自動開啟？點上面的按鈕再試一次',
@@ -161,11 +157,9 @@
     en: {
       tag: 'Device sharing invitation', inviteBy: '{o} invited you to share a device', invite: 'You have a device sharing invitation',
       device: 'Device: {n}', opening: 'Opening the BoltStar app…', open: 'Open the app to accept',
-      openAgain: 'Installed — open the app', download: 'Download the BoltStar app',
+      openAgain: 'Installed — open the app', download: 'Download now',
       notFound: 'BoltStar app not detected. Please install it first.', opened: 'App opened. Please accept the invitation in the app.',
       invalid: 'This invitation link is invalid. Please ask the sender to share again.',
-      noDownload: 'Download link not set yet. Please search for "BoltStar" in your app store.',
-      fetching: 'Getting the download link…',
       step1: 'Download and install the BoltStar app', step2: 'Come back to this page and tap "Installed — open the app"',
       step3: 'Sign in and accept the invitation in the app',
       hint: 'Didn’t open automatically? Tap the button above to try again.',
@@ -177,11 +171,9 @@
     ja: {
       tag: 'デバイス共有の招待', inviteBy: '{o} さんからデバイス共有の招待が届いています', invite: 'デバイス共有の招待が届いています',
       device: 'デバイス：{n}', opening: 'BoltStar アプリを開いています…', open: 'アプリを開いて招待を受ける',
-      openAgain: 'インストール済み・アプリを開く', download: 'BoltStar アプリをダウンロード',
+      openAgain: 'インストール済み・アプリを開く', download: '今すぐダウンロード',
       notFound: 'BoltStar アプリが見つかりません。先にインストールしてください', opened: 'アプリを開きました。アプリで招待を承認してください',
       invalid: '招待リンクが無効です。共有者にもう一度共有してもらってください',
-      noDownload: 'ダウンロード先が未設定です。アプリストアで「BoltStar」を検索してください',
-      fetching: 'ダウンロード先を取得しています…',
       step1: 'BoltStar アプリをダウンロードしてインストール', step2: 'インストール後このページに戻り「インストール済み・アプリを開く」をタップ',
       step3: 'アプリでログインして招待を承認',
       hint: '自動で開かない場合は、上のボタンをもう一度タップしてください',
@@ -410,89 +402,9 @@
   });
 
   // ── 下载 ────────────────────────────────────────────────────────────
-  //
-  // 地址来自后台版本管理（见上方配置说明）。进页就在后台预取一次，点「下载」时直接跳；
-  // 没预取完就等它回来再跳。拿不到提示去应用商店搜「BoltStar」。
-  var TERMINAL = isIOS ? 2 : 1;
-  var LANGUAGE = { en: 1, zh: 2, zhHant: 3, ja: 4 }[lang];
-  var downloadLink = '';
-  var downloadTask = null;
-  var wantDownload = false;
-
-  function apiGet(path) {
-    var url = API_BASE + path + (path.indexOf('?') < 0 ? '?' : '&') + 'terminal=' + TERMINAL + '&language=' + LANGUAGE;
-    log('GET ' + url);
-    return fetch(url, { method: 'GET', credentials: 'omit' }).then(function (res) {
-      // 先取原文再 JSON.parse：网关回 HTML（404 / SPA 首页）时日志里能直接看出来
-      return res.text().then(function (text) {
-        log('← HTTP ' + res.status + ' ' + String(text).replace(/\s+/g, ' ').slice(0, 300));
-        var body = JSON.parse(text);
-        if (!body || body.retCode !== 200) { throw new Error('retCode=' + (body && body.retCode)); }
-        return body.retData;
-      });
-    });
-  }
-
-  // 只认 http(s)，iOS 另认 itms-apps://（App Store 链接的两种写法）；其他 scheme 不跳
-  function pickLink(value) {
-    var link = String(value == null ? '' : value).trim();
-    return /^https?:\/\//i.test(link) || (isIOS && /^itms-apps:\/\//i.test(link)) ? link : '';
-  }
-
-  // getAndroidDownload 的 retData：地址字符串，或 { url / fileUrl / filePath / path / fileParam / src }，或它们的数组
-  function linkOf(data) {
-    if (data && typeof data === 'object' && data.length) { data = data[0]; }
-    if (typeof data === 'string') { return pickLink(data); }
-    return data ? pickLink(data.url || data.fileUrl || data.filePath || data.path || data.fileParam || data.src) : '';
-  }
-
-  function loadDownloadLink() {
-    if (downloadTask) { return downloadTask; }
-    if (!window.fetch) {
-      downloadTask = Promise.resolve('');
-      return downloadTask;
-    }
-    // appVersionNo 传 0.0.0：让接口按「有新版本」回最新一条（含 downloadPath），与 App 检查更新同一字段
-    downloadTask = apiGet('/Client/Basic/getLastVersion?appVersionNo=0.0.0').then(function (data) {
-      return data && typeof data === 'object' ? pickLink(data.downloadPath) : '';
-    }, function (error) {
-      log('⚠️ 版本接口失败：' + (error && error.message || error));
-      return '';
-    }).then(function (link) {
-      if (link || isIOS) { return link; }
-      log('版本接口没给安卓地址，改试 getAndroidDownload');
-      return apiGet('/Client/Basic/getAndroidDownload').then(linkOf, function (error) {
-        log('⚠️ getAndroidDownload 失败：' + (error && error.message || error));
-        return '';
-      });
-    }).then(function (link) {
-      downloadLink = link;
-      log(link ? '下载地址：' + link : '⚠️ 没有取到下载地址');
-      if (!link) { downloadTask = null; }   // 下次点「下载」再取一次
-      return link;
-    });
-    return downloadTask;
-  }
-
   function goDownload() {
-    if (downloadLink) {
-      log('跳下载：' + downloadLink);
-      window.location.href = downloadLink;
-      return;
-    }
-    if (wantDownload) { return; }
-    wantDownload = true;
-    setStatus(T.fetching, { spin: true });
-    loadDownloadLink().then(function (link) {
-      wantDownload = false;
-      if (!link) {
-        setStatus(T.noDownload, { warn: true });
-        return;
-      }
-      showNoApp();
-      log('跳下载：' + link);
-      window.location.href = link;
-    });
+    log('跳下载页：' + DOWNLOAD_URL);
+    window.location.href = DOWNLOAD_URL;
   }
 
   el('openBtn').onclick = function (e) { e.preventDefault(); tryOpen('点击按钮'); };
@@ -514,10 +426,8 @@
   } else if (cameBackNoApp) {
     log('intent 回落到本页 → 没装 App');
     showNoApp();
-    loadDownloadLink();
   } else {
     tryOpen('进页自动');
-    loadDownloadLink();   // 后台预取下载地址，判定没装时点「下载」即跳
   }
 })();
 </script>

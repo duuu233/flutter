@@ -17,7 +17,7 @@
 
 ## 已知限制
 
-- 落地页的下载地址取不到：`getLastVersion` / `getAndroidDownload` 未登录调用返回 `retCode 406「请重新登录」`（2026-11-12 实测，iot.boltfox.cn 与 api.boltfox.cn 相同；跨域已放行）。页面会退回「请在应用商店搜索 BoltStar」。需后端把这两个接口改成免登录，页面不用改。
+- 落地页的下载地址取不到：`getLastVersion` / `getAndroidDownload` 未登录调用返回 `retCode 406「请重新登录」`（2026-11-12 实测，iot.boltfox.cn 与 api.boltfox.cn 相同；跨域已放行）。同日产品改为「立即下载」统一跳官网下载页 `https://www.boltstar-ai.com/en/download`，页面不再调这两个接口（`deploy/share/share.html` 的 `DOWNLOAD_URL`，需重新部署）。
 - iOS 冷启动那条 `scene(_:willConnectTo:options:)` 覆写依赖 FlutterSceneDelegate 暴露该方法（与已有 `openURLContexts` 覆写同理），未在 Xcode 编译验证。
 - 链接参数仍是明文（同小程序卡片），有效期内被转发拿到的人都能加入。
 
