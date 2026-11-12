@@ -119,9 +119,11 @@
   var SCHEME = 'boltstar';                 // 与 App 的自定义 scheme 一致（PayPal 回跳已在用）
   var APP_PATH = 'share/accept';           // App 接受页深链：boltstar://share/accept?<原 query>
   var ANDROID_PACKAGE = 'com.boltfox.boltstar';
-  // 下载地址：上线前填。安卓留空时，本页会试同域名的 /Client/Basic/getAndroidDownload（页面与 API 同域名才拿得到）
-  var ANDROID_DOWNLOAD_URL = '';
-  var IOS_APP_STORE_URL = '';               // 如 https://apps.apple.com/app/id<数字ID>
+  // 下载地址：从后台「版本管理」接口取（与 App「检查更新」同一个接口 getLastVersion，按 terminal 区分端：
+  // 安卓 1、iOS 2，取 retData.downloadPath；iOS 那条在后台填 App Store 地址）。安卓取不到再试 getAndroidDownload。
+  // API_BASE 留空 = 用相对路径，本页须与接口同域名（建议部署到 https://api.boltfox.cn/share.html，同 PayPal 中转页）；
+  // 部署到别的域名时填 'https://api.boltfox.cn'，且后端要给这两个接口放行跨域（CORS）。
+  var API_BASE = '';
   var DETECT_MS = 2500;                     // 跳转后等多久还在本页就判「没装」
 
   // ── 文案（简中 / 繁中 / 英 / 日，跟随浏览器语言） ──────────────────────
@@ -408,58 +410,88 @@
   });
 
   // ── 下载 ────────────────────────────────────────────────────────────
-  function goDownload() {
-    if (isIOS) {
-      if (IOS_APP_STORE_URL) {
-        log('跳 App Store：' + IOS_APP_STORE_URL);
-        window.location.href = IOS_APP_STORE_URL;
-      } else {
-        log('⚠️ 未配置 IOS_APP_STORE_URL');
-        setStatus(T.noDownload, { warn: true });
-      }
-      return;
-    }
-    if (ANDROID_DOWNLOAD_URL) {
-      log('跳安卓下载：' + ANDROID_DOWNLOAD_URL);
-      window.location.href = ANDROID_DOWNLOAD_URL;
-      return;
-    }
-    fetchAndroidDownload();
+  //
+  // 地址来自后台版本管理（见上方配置说明）。进页就在后台预取一次，点「下载」时直接跳；
+  // 没预取完就等它回来再跳。拿不到提示去应用商店搜「BoltStar」。
+  var TERMINAL = isIOS ? 2 : 1;
+  var LANGUAGE = { en: 1, zh: 2, zhHant: 3, ja: 4 }[lang];
+  var downloadLink = '';
+  var downloadTask = null;
+  var wantDownload = false;
+
+  function apiGet(path) {
+    var url = API_BASE + path + (path.indexOf('?') < 0 ? '?' : '&') + 'terminal=' + TERMINAL + '&language=' + LANGUAGE;
+    log('GET ' + url);
+    return fetch(url, { method: 'GET', credentials: 'omit' }).then(function (res) {
+      // 先取原文再 JSON.parse：网关回 HTML（404 / SPA 首页）时日志里能直接看出来
+      return res.text().then(function (text) {
+        log('← HTTP ' + res.status + ' ' + String(text).replace(/\s+/g, ' ').slice(0, 300));
+        var body = JSON.parse(text);
+        if (!body || body.retCode !== 200) { throw new Error('retCode=' + (body && body.retCode)); }
+        return body.retData;
+      });
+    });
   }
 
-  // 安卓下载地址兜底：与 App「检查更新」同一个接口（retData 为地址或 { url / fileUrl / filePath / path }）。
-  // 用相对路径 = 只有本页与 API 同域名时才拿得到；跨域被拦就提示去应用商店搜。
-  var fetching = false;
-  function fetchAndroidDownload() {
-    if (fetching || !window.fetch) {
-      if (!window.fetch) { setStatus(T.noDownload, { warn: true }); }
-      return;
+  // 只认 http(s)，iOS 另认 itms-apps://（App Store 链接的两种写法）；其他 scheme 不跳
+  function pickLink(value) {
+    var link = String(value == null ? '' : value).trim();
+    return /^https?:\/\//i.test(link) || (isIOS && /^itms-apps:\/\//i.test(link)) ? link : '';
+  }
+
+  // getAndroidDownload 的 retData：地址字符串，或 { url / fileUrl / filePath / path / fileParam / src }，或它们的数组
+  function linkOf(data) {
+    if (data && typeof data === 'object' && data.length) { data = data[0]; }
+    if (typeof data === 'string') { return pickLink(data); }
+    return data ? pickLink(data.url || data.fileUrl || data.filePath || data.path || data.fileParam || data.src) : '';
+  }
+
+  function loadDownloadLink() {
+    if (downloadTask) { return downloadTask; }
+    if (!window.fetch) {
+      downloadTask = Promise.resolve('');
+      return downloadTask;
     }
-    fetching = true;
-    setStatus(T.fetching, { spin: true });
-    var url = '/Client/Basic/getAndroidDownload?terminal=1&language=' + ({ en: 1, zh: 2, zhHant: 3, ja: 4 }[lang]);
-    log('请求安卓下载地址 GET ' + url);
-    fetch(url, { credentials: 'omit' }).then(function (res) {
-      return res.text().then(function (text) {
-        log('← HTTP ' + res.status + ' ' + String(text).slice(0, 300));
-        var body = JSON.parse(text);
-        var data = body && body.retCode === 200 ? body.retData : null;
-        if (data && typeof data === 'object' && data.length) { data = data[0]; }
-        var link = typeof data === 'string' ? data
-          : data && (data.url || data.fileUrl || data.filePath || data.path || data.fileParam || data.src);
-        link = String(link || '').trim();
-        if (!/^https?:\/\//i.test(link)) { throw new Error('没有可用的下载地址'); }
-        return link;
+    // appVersionNo 传 0.0.0：让接口按「有新版本」回最新一条（含 downloadPath），与 App 检查更新同一字段
+    downloadTask = apiGet('/Client/Basic/getLastVersion?appVersionNo=0.0.0').then(function (data) {
+      return data && typeof data === 'object' ? pickLink(data.downloadPath) : '';
+    }, function (error) {
+      log('⚠️ 版本接口失败：' + (error && error.message || error));
+      return '';
+    }).then(function (link) {
+      if (link || isIOS) { return link; }
+      log('版本接口没给安卓地址，改试 getAndroidDownload');
+      return apiGet('/Client/Basic/getAndroidDownload').then(linkOf, function (error) {
+        log('⚠️ getAndroidDownload 失败：' + (error && error.message || error));
+        return '';
       });
     }).then(function (link) {
-      fetching = false;
-      log('跳安卓下载：' + link);
+      downloadLink = link;
+      log(link ? '下载地址：' + link : '⚠️ 没有取到下载地址');
+      if (!link) { downloadTask = null; }   // 下次点「下载」再取一次
+      return link;
+    });
+    return downloadTask;
+  }
+
+  function goDownload() {
+    if (downloadLink) {
+      log('跳下载：' + downloadLink);
+      window.location.href = downloadLink;
+      return;
+    }
+    if (wantDownload) { return; }
+    wantDownload = true;
+    setStatus(T.fetching, { spin: true });
+    loadDownloadLink().then(function (link) {
+      wantDownload = false;
+      if (!link) {
+        setStatus(T.noDownload, { warn: true });
+        return;
+      }
       showNoApp();
+      log('跳下载：' + link);
       window.location.href = link;
-    }, function (error) {
-      fetching = false;
-      log('⚠️ 取安卓下载地址失败：' + (error && error.message || error));
-      setStatus(T.noDownload, { warn: true });
     });
   }
 
@@ -482,8 +514,10 @@
   } else if (cameBackNoApp) {
     log('intent 回落到本页 → 没装 App');
     showNoApp();
+    loadDownloadLink();
   } else {
     tryOpen('进页自动');
+    loadDownloadLink();   // 后台预取下载地址，判定没装时点「下载」即跳
   }
 })();
 </script>

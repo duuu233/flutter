@@ -35,10 +35,8 @@ App 接受页（待做）：没登录先登录 → 是本人分享 / 已在列�
 
 ## 三、部署（待做）
 
-1. 上线前在页面顶部配置区填：
-   - `IOS_APP_STORE_URL`：App Store 地址（`https://apps.apple.com/app/id<数字ID>`）；
-   - `ANDROID_DOWNLOAD_URL`：安卓下载地址。留空时页面会用相对路径调 `/Client/Basic/getAndroidDownload?terminal=1`，**只有页面与 API 同域名时才拿得到**，拿不到就提示去应用商店搜「BoltStar」。
-2. 部署位置建议与 PayPal 中转页相同：放在 API 域名下（如 `https://api.boltfox.cn/share.html`），不要挂到跑 SPA 的域名下（nginx 的 `try_files … /index.html` 兜底会把本页换成 SPA 首页）。
+1. 下载地址不用写进页面，取后台「版本管理」（2026-11-12 产品确认）：页面进来就在后台调 `GET /Client/Basic/getLastVersion?appVersionNo=0.0.0&terminal=<安卓 1 / iOS 2>&language=…`，取 `retData.downloadPath`（与 App「检查更新」同一字段）；安卓那条没给地址再试 `getAndroidDownload`。所以后台版本管理里，**iOS 那条的下载地址要填 App Store 链接**，安卓填安装包地址。都取不到时提示去应用商店搜「BoltStar」；调试日志里有接口原文。
+2. 部署位置建议与 PayPal 中转页相同：放在 API 域名下（如 `https://api.boltfox.cn/share.html`），接口走相对路径、不涉及跨域；也不要挂到跑 SPA 的域名下（nginx 的 `try_files … /index.html` 兜底会把本页换成 SPA 首页）。放到别的域名时，把页面顶部 `API_BASE` 填成 `https://api.boltfox.cn`，并让后端给上面两个接口放行 CORS。
 3. 部署后把实际网址告诉开发，App 侧据此生成分享链接。
 
 ## 四、App 侧还要做（线上地址确定后）

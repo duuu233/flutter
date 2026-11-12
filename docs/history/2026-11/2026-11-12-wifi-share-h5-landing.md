@@ -9,7 +9,7 @@
 - 新增 `deploy/share/share.html`（单文件，App 图标 base64 内联，四语种）：
   - 微信 / 企业微信内：遮罩 + 右上角箭头，引导「在浏览器打开」，不尝试跳转；
   - 浏览器内：进页自动拉起 `boltstar://share/accept?<原 query>`（安卓先 intent://，没装回落 `#no-app`；900ms 后补试朴素 scheme），并保留「打开 App」按钮；2.5 秒仍在本页判定没装 → 「下载 App」+ 三步说明 +「已安装，打开 App」；
-  - 下载：iOS 用 `IOS_APP_STORE_URL`，安卓用 `ANDROID_DOWNLOAD_URL`，留空时试同域名 `getAndroidDownload`；两个地址都待填；
+  - 下载（同日按产品确认改）：地址取后台版本管理 `getLastVersion`（`appVersionNo=0.0.0`，terminal 安卓 1 / iOS 2，`retData.downloadPath`），安卓没给再试 `getAndroidDownload`；进页后台预取，点「下载」即跳；接口默认相对路径（页面与 API 同域名），`API_BASE` 可改绝对地址（需后端放行 CORS）；
   - 链接缺 `d` / `k` 显示「邀请链接无效」；底部可折叠调试日志（`?debug=1` 展开）。
 - 新增 `docs/runbooks/WIFI_SHARE_H5.md`：流程、部署、App 侧待办、已知限制。
 
