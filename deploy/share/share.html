@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="referrer" content="no-referrer">
+<meta name="format-detection" content="telephone=no">
+<title>BoltStar 设备共享邀请</title>
+<style>
+  html,body{margin:0;min-height:100%}
+  body{
+    padding:0 20px calc(64px + env(safe-area-inset-bottom));box-sizing:border-box;
+    font:16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    color:#2a2d32;background:#f2f5fc;-webkit-text-size-adjust:100%;
+  }
+  .page{max-width:420px;margin:0 auto;padding-top:calc(56px + env(safe-area-inset-top));text-align:center}
+  .logo{width:76px;height:76px;border-radius:18px;box-shadow:0 8px 20px rgba(60,53,16,.12)}
+  .brand{margin-top:10px;font-size:15px;font-weight:700;color:#5b6472;letter-spacing:.5px}
+  .card{margin-top:26px;padding:24px 20px;border-radius:18px;background:#fff;
+    box-shadow:0 4px 16px rgba(60,53,16,.08)}
+  .tag{display:inline-block;padding:2px 12px;border-radius:999px;font-size:12px;font-weight:600;
+    color:#ff621f;background:rgba(255,98,33,.1)}
+  .invite{margin-top:14px;font-size:19px;font-weight:700;word-break:break-word}
+  .device{margin-top:6px;color:#828a95;font-size:14px;word-break:break-word}
+  .status{margin-top:18px;color:#828a95;font-size:14px;min-height:22px}
+  .status.warn{color:#e5533d}
+  .spin{display:inline-block;width:14px;height:14px;margin-right:6px;vertical-align:-2px;border-radius:50%;
+    border:2px solid #e6ebf2;border-top-color:#ff6421;animation:r 1s linear infinite}
+  @keyframes r{to{transform:rotate(360deg)}}
+  .btn{display:block;width:100%;margin-top:14px;padding:13px 0;border:0;border-radius:999px;box-sizing:border-box;
+    font-size:16px;font-weight:700;text-decoration:none;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .btn-primary{color:#fff;background:linear-gradient(90deg,#ff8338,#ff621f);box-shadow:0 9px 18px rgba(255,98,31,.22)}
+  .btn-ghost{color:#ff621f;background:#fff;border:1px solid rgba(255,98,33,.45)}
+  .btn[hidden]{display:none}
+  .steps{margin:22px 0 0;padding:0;list-style:none;text-align:left;color:#5b6472;font-size:13px}
+  .steps li{position:relative;padding:3px 0 3px 26px}
+  .steps li b{position:absolute;left:0;top:5px;width:18px;height:18px;border-radius:50%;
+    font-size:11px;line-height:18px;text-align:center;color:#fff;background:#ffb27d}
+  .hint{margin-top:12px;color:#a8b0bb;font-size:12px}
+
+  /* 微信内：遮罩 + 指向右上角的箭头（微信拦截拉起 App，只能让用户换浏览器打开） */
+  .wx-mask{position:fixed;inset:0;z-index:20;background:rgba(15,17,20,.82);color:#fff;text-align:right}
+  .wx-mask[hidden]{display:none}
+  .wx-arrow{position:absolute;top:calc(6px + env(safe-area-inset-top));right:18px;width:84px;height:96px}
+  .wx-text{position:absolute;top:calc(110px + env(safe-area-inset-top));left:24px;right:24px;text-align:left}
+  .wx-title{font-size:20px;font-weight:700}
+  .wx-line{margin-top:10px;font-size:15px;line-height:1.7;color:rgba(255,255,255,.88)}
+  .wx-dots{display:inline-block;padding:0 7px;margin:0 2px;border-radius:6px;background:rgba(255,255,255,.18);font-weight:700}
+
+  /* 调试日志：默认折叠；?debug=1 展开。手机上没有 devtools，拉起失败时靠它看走到了哪一步 */
+  .log{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #e6ebf2;text-align:left}
+  .log-bar{padding:8px 14px calc(8px + env(safe-area-inset-bottom));color:#a8b0bb;font-size:12px;cursor:pointer;
+    -webkit-user-select:none;user-select:none}
+  .log-body{display:none;margin:0;padding:0 14px 10px;max-height:42vh;overflow:auto;
+    white-space:pre-wrap;word-break:break-all;color:#5b6472;
+    font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  .log-copy{display:none;margin:0 14px 14px;padding:6px 16px;border:1px solid #d8e0ea;
+    border-radius:8px;background:#f7f9fd;color:#5b6472;font-size:12px}
+  .log.open .log-body,.log.open .log-copy{display:block}
+</style>
+</head>
+<body>
+  <div class="page">
+    <img class="logo" alt="BoltStar" src="data:image/png;base64,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">
+    <div class="brand">BoltStar</div>
+
+    <div class="card">
+      <span class="tag" id="tag"></span>
+      <div class="invite" id="invite"></div>
+      <div class="device" id="device"></div>
+      <div class="status" id="status"></div>
+      <a class="btn btn-primary" id="openBtn" href="#" role="button"></a>
+      <a class="btn btn-ghost" id="downloadBtn" href="#" role="button"></a>
+      <ol class="steps" id="steps"></ol>
+      <div class="hint" id="hint"></div>
+    </div>
+  </div>
+
+  <div class="wx-mask" id="wxMask" hidden>
+    <svg class="wx-arrow" viewBox="0 0 84 96" fill="none" stroke="#fff" stroke-width="3.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M14 92 C 22 52, 44 26, 70 12"/>
+      <path d="M52 8 L 72 11 L 66 30"/>
+    </svg>
+    <div class="wx-text">
+      <div class="wx-title" id="wxTitle"></div>
+      <div class="wx-line" id="wxLine1"></div>
+      <div class="wx-line" id="wxLine2"></div>
+    </div>
+  </div>
+
+  <div class="log" id="log">
+    <div class="log-bar" id="logbar"></div>
+    <pre class="log-body" id="logbody"></pre>
+    <button class="log-copy" id="logcopy" type="button"></button>
+  </div>
+
+<script>
+(function () {
+  // ════════════════════════════════════════════════════════════════════
+  // BoltStar 设备共享邀请落地页（2026-11-12）
+  //
+  // 房主在 App「共享设备」里分享出来的就是本页链接：
+  //   https://<部署域名>/<路径>/share.html?d=设备号&p=产品ID&u=房主userId&n=设备名&o=房主昵称&t=分享时间戳
+  // （参数与小程序接受页卡片同一套；将来后端改成分享凭证，只带 ?k=凭证 也行——本页对参数整串透传，不解析重组。）
+  //
+  // 本页只做「落地 + 拉起 App」，不登录、不调绑定接口；真正建立共享关系在 App 的接受页里完成
+  //（App 已登录，复用现有 addUserProduct：isToHave=0、shareUserId=房主）。
+  //
+  //   · 微信内（含企业微信）：微信拦截拉起 App，直接盖一层引导「点右上角 ··· → 在浏览器打开」，不尝试跳转；
+  //   · 浏览器里：进页自动试一次拉起 App，同时摆出「打开 App」按钮（部分浏览器只放行用户点击触发的跳转）；
+  //     页面被切到后台 = App 已被拉起；约 2.5 秒还停在本页 = 多半没装 → 切到「先下载 App」：
+  //     下载、装好后回到本页点「已安装，打开 App」继续接受邀请。
+  //
+  // 网页没有可靠的「是否安装 App」接口，只能靠「跳一次 + 看页面有没有被切走」判断；
+  // 安卓 Chrome 用 intent://，没装时浏览器自己回落到本页 #no-app（最准）。
+  // ════════════════════════════════════════════════════════════════════
+
+  // ── 部署时要核对 / 填写的配置 ────────────────────────────────────────
+  var SCHEME = 'boltstar';                 // 与 App 的自定义 scheme 一致（PayPal 回跳已在用）
+  var APP_PATH = 'share/accept';           // App 接受页深链：boltstar://share/accept?<原 query>
+  var ANDROID_PACKAGE = 'com.boltfox.boltstar';
+  // 下载地址：上线前填。安卓留空时，本页会试同域名的 /Client/Basic/getAndroidDownload（页面与 API 同域名才拿得到）
+  var ANDROID_DOWNLOAD_URL = '';
+  var IOS_APP_STORE_URL = '';               // 如 https://apps.apple.com/app/id<数字ID>
+  var DETECT_MS = 2500;                     // 跳转后等多久还在本页就判「没装」
+
+  // ── 文案（简中 / 繁中 / 英 / 日，跟随浏览器语言） ──────────────────────
+  var TEXT = {
+    zh: {
+      tag: '设备共享邀请', inviteBy: '{o} 邀请你共享设备', invite: '你收到一个设备共享邀请',
+      device: '设备：{n}', opening: '正在打开 BoltStar App…', open: '打开 App 接受邀请',
+      openAgain: '已安装，打开 App', download: '下载 BoltStar App',
+      notFound: '没有检测到 BoltStar App，请先下载安装', opened: '已打开 App，请在 App 中确认接受',
+      invalid: '邀请链接无效，请让分享者重新分享', noDownload: '暂未配置下载地址，请在应用商店搜索「BoltStar」',
+      fetching: '正在获取下载地址…',
+      step1: '下载并安装 BoltStar App', step2: '安装完成后回到本页，点「已安装，打开 App」',
+      step3: '在 App 中登录并接受邀请',
+      hint: '没有自动打开？点上面的按钮再试一次',
+      wxTitle: '请在浏览器中打开', wxLine1: '点击右上角 <span class="wx-dots">···</span> ，选择「{browser}」',
+      wxLine2: '微信内无法直接打开 App，换到浏览器后即可打开 App 接受邀请',
+      wxBrowserIOS: '在 Safari 中打开', wxBrowserAndroid: '在浏览器打开',
+      log: '调试日志', copy: '复制日志', copied: '已复制', selected: '已选中，长按复制'
+    },
+    zhHant: {
+      tag: '裝置共享邀請', inviteBy: '{o} 邀請你共享裝置', invite: '你收到一個裝置共享邀請',
+      device: '裝置：{n}', opening: '正在開啟 BoltStar App…', open: '開啟 App 接受邀請',
+      openAgain: '已安裝，開啟 App', download: '下載 BoltStar App',
+      notFound: '沒有偵測到 BoltStar App，請先下載安裝', opened: '已開啟 App，請在 App 中確認接受',
+      invalid: '邀請連結無效，請讓分享者重新分享', noDownload: '暫未設定下載網址，請在應用程式商店搜尋「BoltStar」',
+      fetching: '正在取得下載網址…',
+      step1: '下載並安裝 BoltStar App', step2: '安裝完成後回到本頁，點「已安裝，開啟 App」',
+      step3: '在 App 中登入並接受邀請',
+      hint: '沒有自動開啟？點上面的按鈕再試一次',
+      wxTitle: '請在瀏覽器中開啟', wxLine1: '點擊右上角 <span class="wx-dots">···</span> ，選擇「{browser}」',
+      wxLine2: '微信內無法直接開啟 App，換到瀏覽器後即可開啟 App 接受邀請',
+      wxBrowserIOS: '在 Safari 中開啟', wxBrowserAndroid: '在瀏覽器開啟',
+      log: '偵錯日誌', copy: '複製日誌', copied: '已複製', selected: '已選取，長按複製'
+    },
+    en: {
+      tag: 'Device sharing invitation', inviteBy: '{o} invited you to share a device', invite: 'You have a device sharing invitation',
+      device: 'Device: {n}', opening: 'Opening the BoltStar app…', open: 'Open the app to accept',
+      openAgain: 'Installed — open the app', download: 'Download the BoltStar app',
+      notFound: 'BoltStar app not detected. Please install it first.', opened: 'App opened. Please accept the invitation in the app.',
+      invalid: 'This invitation link is invalid. Please ask the sender to share again.',
+      noDownload: 'Download link not set yet. Please search for "BoltStar" in your app store.',
+      fetching: 'Getting the download link…',
+      step1: 'Download and install the BoltStar app', step2: 'Come back to this page and tap "Installed — open the app"',
+      step3: 'Sign in and accept the invitation in the app',
+      hint: 'Didn’t open automatically? Tap the button above to try again.',
+      wxTitle: 'Open in your browser', wxLine1: 'Tap <span class="wx-dots">···</span> at the top right and choose "{browser}"',
+      wxLine2: 'Apps can’t be opened from inside WeChat. Switch to your browser to open the app and accept.',
+      wxBrowserIOS: 'Open in Safari', wxBrowserAndroid: 'Open in Browser',
+      log: 'Debug log', copy: 'Copy log', copied: 'Copied', selected: 'Selected — long-press to copy'
+    },
+    ja: {
+      tag: 'デバイス共有の招待', inviteBy: '{o} さんからデバイス共有の招待が届いています', invite: 'デバイス共有の招待が届いています',
+      device: 'デバイス：{n}', opening: 'BoltStar アプリを開いています…', open: 'アプリを開いて招待を受ける',
+      openAgain: 'インストール済み・アプリを開く', download: 'BoltStar アプリをダウンロード',
+      notFound: 'BoltStar アプリが見つかりません。先にインストールしてください', opened: 'アプリを開きました。アプリで招待を承認してください',
+      invalid: '招待リンクが無効です。共有者にもう一度共有してもらってください',
+      noDownload: 'ダウンロード先が未設定です。アプリストアで「BoltStar」を検索してください',
+      fetching: 'ダウンロード先を取得しています…',
+      step1: 'BoltStar アプリをダウンロードしてインストール', step2: 'インストール後このページに戻り「インストール済み・アプリを開く」をタップ',
+      step3: 'アプリでログインして招待を承認',
+      hint: '自動で開かない場合は、上のボタンをもう一度タップしてください',
+      wxTitle: 'ブラウザで開いてください', wxLine1: '右上の <span class="wx-dots">···</span> をタップし「{browser}」を選択',
+      wxLine2: 'WeChat 内ではアプリを開けません。ブラウザに切り替えるとアプリを開いて招待を受けられます',
+      wxBrowserIOS: 'Safari で開く', wxBrowserAndroid: 'ブラウザで開く',
+      log: 'デバッグログ', copy: 'ログをコピー', copied: 'コピーしました', selected: '選択済み・長押しでコピー'
+    }
+  };
+
+  function el(id) { return document.getElementById(id); }
+
+  var ua = navigator.userAgent || '';
+  var isAndroid = /android/i.test(ua);
+  var isIOS = /iphone|ipad|ipod/i.test(ua) || (/macintosh/i.test(ua) && 'ontouchend' in document);
+  var isWeChat = /micromessenger/i.test(ua);   // 企业微信 UA 里同样带 MicroMessenger
+
+  var lang = (function () {
+    var l = String(navigator.language || navigator.userLanguage || 'zh').toLowerCase();
+    if (l.indexOf('zh') === 0) {
+      return /hant|tw|hk|mo/.test(l) ? 'zhHant' : 'zh';
+    }
+    if (l.indexOf('ja') === 0) { return 'ja'; }
+    if (l.indexOf('en') === 0) { return 'en'; }
+    return 'zh';
+  })();
+  var T = TEXT[lang];
+  document.documentElement.lang = { zh: 'zh-CN', zhHant: 'zh-TW', en: 'en', ja: 'ja' }[lang];
+
+  function fill(text, values) {
+    return text.replace(/\{(\w+)\}/g, function (_, key) { return values[key] == null ? '' : values[key]; });
+  }
+
+  // ── 屏幕内调试日志 ───────────────────────────────────────────────────
+  var t0 = Date.now();
+  var lines = [];
+  var logBox = el('log');
+  el('logcopy').textContent = T.copy;
+
+  function log(text) {
+    var ms = Date.now() - t0;
+    lines.push('[+' + (ms < 1000 ? ms + 'ms' : (ms / 1000).toFixed(1) + 's') + '] ' + text);
+    el('logbody').textContent = lines.join('\n');
+    el('logbar').textContent = T.log + ' (' + lines.length + ') ▾';
+    el('logbody').scrollTop = el('logbody').scrollHeight;
+  }
+  el('logbar').onclick = function () {
+    logBox.className = logBox.className.indexOf('open') < 0 ? 'log open' : 'log';
+  };
+  el('logcopy').onclick = function () {
+    var text = lines.join('\n');
+    var done = function () { el('logcopy').textContent = T.copied; };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, select);
+    } else { select(); }
+    function select() {
+      var range = document.createRange();
+      range.selectNodeContents(el('logbody'));
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      el('logcopy').textContent = T.selected;
+    }
+  };
+  window.onerror = function (msg, src, line) { log('‼️ JS 错误：' + msg + ' @' + line); };
+
+  // ── 参数 ────────────────────────────────────────────────────────────
+  var query = window.location.search || '';
+  var hash = window.location.hash || '';
+  var params = {};
+  query.replace(/^\?/, '').split('&').forEach(function (pair) {
+    if (!pair) { return; }
+    var at = pair.indexOf('=');
+    var key = at < 0 ? pair : pair.slice(0, at);
+    var value = at < 0 ? '' : pair.slice(at + 1);
+    try { params[decodeURIComponent(key)] = decodeURIComponent(value.replace(/\+/g, ' ')); } catch (e) { params[key] = value; }
+  });
+  // 设备号（现行参数）或分享凭证 k（后端将来改凭证时）有其一即视为有效链接；真正校验（有效期、是否本人分享等）在 App 里做
+  var valid = !!(params.d || params.k);
+  // 安卓 Chrome 没装 App 时由 intent 的 browser_fallback_url 回落到本页，带 #no-app
+  var cameBackNoApp = hash.indexOf('no-app') > -1;
+
+  log('页面加载 ' + window.location.pathname + query + hash);
+  log('UA=' + ua);
+  log('平台=' + (isAndroid ? 'Android' : isIOS ? 'iOS' : '其他') + ' 微信=' + isWeChat + ' 语言=' + lang);
+  if (/[?&]debug=1/.test(query)) { logBox.className = 'log open'; }
+
+  // ── 文案落位（昵称 / 设备名来自链接，一律 textContent，不拼 HTML） ─────
+  el('tag').textContent = T.tag;
+  el('invite').textContent = params.o ? fill(T.inviteBy, { o: params.o }) : T.invite;
+  el('device').textContent = params.n ? fill(T.device, { n: params.n }) : '';
+  el('openBtn').textContent = T.open;
+  el('downloadBtn').textContent = T.download;
+  el('steps').innerHTML = '<li><b>1</b></li><li><b>2</b></li><li><b>3</b></li>';
+  var stepItems = el('steps').getElementsByTagName('li');
+  [T.step1, T.step2, T.step3].forEach(function (text, i) {
+    stepItems[i].appendChild(document.createTextNode(text));
+  });
+
+  function setStatus(text, opts) {
+    var status = el('status');
+    status.className = 'status' + (opts && opts.warn ? ' warn' : '');
+    status.innerHTML = '';
+    if (opts && opts.spin) {
+      var spin = document.createElement('span');
+      spin.className = 'spin';
+      status.appendChild(spin);
+    }
+    status.appendChild(document.createTextNode(text));
+  }
+
+  // 三种界面状态：
+  //   opening  — 正在拉起：主按钮「打开 App」，下载按钮作次要，步骤隐藏；
+  //   noApp    — 判定没装：主按钮换成「下载」，次要按钮「已安装，打开 App」，显示 1-2-3 步骤；
+  //   invalid  — 链接缺参数：只提示，不给按钮。
+  function showOpening() {
+    setStatus(T.opening, { spin: true });
+    el('openBtn').textContent = T.open;
+    el('openBtn').className = 'btn btn-primary';
+    el('downloadBtn').className = 'btn btn-ghost';
+    el('openBtn').hidden = false;
+    el('downloadBtn').hidden = false;
+    el('steps').hidden = true;
+    el('hint').textContent = T.hint;
+    order(['openBtn', 'downloadBtn']);
+  }
+
+  function showNoApp() {
+    setStatus(T.notFound, { warn: true });
+    el('openBtn').textContent = T.openAgain;
+    el('openBtn').className = 'btn btn-ghost';
+    el('downloadBtn').className = 'btn btn-primary';
+    el('openBtn').hidden = false;
+    el('downloadBtn').hidden = false;
+    el('steps').hidden = false;
+    el('hint').textContent = '';
+    order(['downloadBtn', 'openBtn']);
+  }
+
+  function showOpened() {
+    setStatus(T.opened);
+    el('openBtn').textContent = T.open;
+    el('openBtn').className = 'btn btn-primary';
+    el('downloadBtn').className = 'btn btn-ghost';
+    el('steps').hidden = true;
+    el('hint').textContent = '';
+    order(['openBtn', 'downloadBtn']);
+  }
+
+  function showInvalid() {
+    setStatus(T.invalid, { warn: true });
+    el('openBtn').hidden = true;
+    el('downloadBtn').hidden = true;
+    el('steps').hidden = true;
+    el('hint').textContent = '';
+  }
+
+  // 按钮顺序：主按钮在上
+  function order(ids) {
+    var anchor = el('steps');
+    ids.forEach(function (id) { anchor.parentNode.insertBefore(el(id), anchor); });
+  }
+
+  // ── 拉起 App ────────────────────────────────────────────────────────
+  //
+  // 页面被切到后台 = App 被拉起。只认 visibilitychange / pagehide，**不认 blur**：
+  // iOS「在 BoltStar 中打开？」确认框也会让页面 blur，用户点取消的话什么都没发生。
+  var wentHidden = false;
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) {
+      if (!wentHidden) { log('✅ 页面被切到后台 → App 已被拉起'); }
+      wentHidden = true;
+    } else {
+      log('页面回到前台');
+    }
+  });
+  window.addEventListener('pagehide', function () {
+    if (!wentHidden) { log('✅ pagehide → 已跳走'); }
+    wentHidden = true;
+  });
+
+  // 参数整串透传给 App：boltstar://share/accept?d=..&p=..（不解析重组，避免编码 / 大小写走样）
+  var deepLink = SCHEME + '://' + APP_PATH + query;
+  function intentLink() {
+    var fallback = window.location.origin + window.location.pathname + query + '#no-app';
+    return 'intent://' + APP_PATH + query +
+      '#Intent;scheme=' + SCHEME + ';package=' + ANDROID_PACKAGE +
+      ';S.browser_fallback_url=' + encodeURIComponent(fallback) + ';end';
+  }
+
+  var detectTimer = null;
+  var retryTimer = null;
+  function tryOpen(reason) {
+    wentHidden = false;
+    clearTimeout(detectTimer);
+    clearTimeout(retryTimer);
+    showOpening();
+    log('拉起 App（' + reason + '）：' + deepLink);
+    // 安卓先试 intent://（Chrome 最稳，没装会按 browser_fallback_url 回落到本页 #no-app）；
+    // 不少国产内核不认 intent://，900ms 还在本页再试一次朴素 scheme
+    window.location.href = isAndroid ? intentLink() : deepLink;
+    if (isAndroid) {
+      retryTimer = setTimeout(function () {
+        if (!wentHidden && !document.hidden) {
+          log('900ms 仍在本页，改试朴素 scheme');
+          window.location.href = deepLink;
+        }
+      }, 900);
+    }
+    detectTimer = setTimeout(function () {
+      if (wentHidden || document.hidden) {
+        showOpened();
+        return;
+      }
+      log(DETECT_MS + 'ms 仍停在本页 → 判定没装 App（或浏览器拦截了跳转）');
+      showNoApp();
+    }, DETECT_MS);
+  }
+
+  // 已经拉起过、用户切回本页：给「已打开」的提示，不再自动跳（免得来回弹）
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && wentHidden) {
+      clearTimeout(detectTimer);
+      showOpened();
+    }
+  });
+
+  // ── 下载 ────────────────────────────────────────────────────────────
+  function goDownload() {
+    if (isIOS) {
+      if (IOS_APP_STORE_URL) {
+        log('跳 App Store：' + IOS_APP_STORE_URL);
+        window.location.href = IOS_APP_STORE_URL;
+      } else {
+        log('⚠️ 未配置 IOS_APP_STORE_URL');
+        setStatus(T.noDownload, { warn: true });
+      }
+      return;
+    }
+    if (ANDROID_DOWNLOAD_URL) {
+      log('跳安卓下载：' + ANDROID_DOWNLOAD_URL);
+      window.location.href = ANDROID_DOWNLOAD_URL;
+      return;
+    }
+    fetchAndroidDownload();
+  }
+
+  // 安卓下载地址兜底：与 App「检查更新」同一个接口（retData 为地址或 { url / fileUrl / filePath / path }）。
+  // 用相对路径 = 只有本页与 API 同域名时才拿得到；跨域被拦就提示去应用商店搜。
+  var fetching = false;
+  function fetchAndroidDownload() {
+    if (fetching || !window.fetch) {
+      if (!window.fetch) { setStatus(T.noDownload, { warn: true }); }
+      return;
+    }
+    fetching = true;
+    setStatus(T.fetching, { spin: true });
+    var url = '/Client/Basic/getAndroidDownload?terminal=1&language=' + ({ en: 1, zh: 2, zhHant: 3, ja: 4 }[lang]);
+    log('请求安卓下载地址 GET ' + url);
+    fetch(url, { credentials: 'omit' }).then(function (res) {
+      return res.text().then(function (text) {
+        log('← HTTP ' + res.status + ' ' + String(text).slice(0, 300));
+        var body = JSON.parse(text);
+        var data = body && body.retCode === 200 ? body.retData : null;
+        if (data && typeof data === 'object' && data.length) { data = data[0]; }
+        var link = typeof data === 'string' ? data
+          : data && (data.url || data.fileUrl || data.filePath || data.path || data.fileParam || data.src);
+        link = String(link || '').trim();
+        if (!/^https?:\/\//i.test(link)) { throw new Error('没有可用的下载地址'); }
+        return link;
+      });
+    }).then(function (link) {
+      fetching = false;
+      log('跳安卓下载：' + link);
+      showNoApp();
+      window.location.href = link;
+    }, function (error) {
+      fetching = false;
+      log('⚠️ 取安卓下载地址失败：' + (error && error.message || error));
+      setStatus(T.noDownload, { warn: true });
+    });
+  }
+
+  el('openBtn').onclick = function (e) { e.preventDefault(); tryOpen('点击按钮'); };
+  el('downloadBtn').onclick = function (e) { e.preventDefault(); goDownload(); };
+
+  // ── 入口 ────────────────────────────────────────────────────────────
+  if (!valid) {
+    log('⚠️ 链接缺少设备参数（d）或分享凭证（k）');
+    showInvalid();
+  } else if (isWeChat) {
+    // 微信拦截 scheme / Universal Link：不尝试跳转，直接引导去浏览器
+    log('微信内打开 → 引导右上角在浏览器打开');
+    el('wxTitle').textContent = T.wxTitle;
+    el('wxLine1').innerHTML = fill(T.wxLine1, { browser: isIOS ? T.wxBrowserIOS : T.wxBrowserAndroid });
+    el('wxLine2').textContent = T.wxLine2;
+    el('wxMask').hidden = false;
+    showOpening();
+    setStatus('');
+  } else if (cameBackNoApp) {
+    log('intent 回落到本页 → 没装 App');
+    showNoApp();
+  } else {
+    tryOpen('进页自动');
+  }
+})();
+</script>
+</body>
+</html>
