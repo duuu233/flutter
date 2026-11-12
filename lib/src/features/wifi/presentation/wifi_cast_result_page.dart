@@ -53,7 +53,8 @@ class WifiCastResultPage extends StatefulWidget {
     this.originalPaths = const [],
   });
 
-  final PhotoFrameState state;
+  /// 预览页的 state 可空（CastPreviewPage.state）；为空时屏幕方向、渲染模式都按「产品未配置」处理。
+  final PhotoFrameState? state;
   final DeviceItem device;
 
   /// 预览页导出的本地图（设备物理分辨率）。
@@ -228,12 +229,12 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
       _carouselTip = '';
     });
     if (_typeValue == null) {
-      final screenType = await widget.state.resolveScreenType(widget.device);
+      final screenType = await widget.state?.resolveScreenType(widget.device) ?? '';
       _typeValue = screenType.isNotEmpty ? screenType : widget.type;
       _appendLog('type=$_typeValue（${screenType.isNotEmpty ? '产品屏幕方向 screenType' : '产品未配置 screenType，按分辨率回退'}）');
     }
     if (_renderMode == null) {
-      _renderMode = await widget.state.resolveRenderMode(widget.device);
+      _renderMode = await widget.state?.resolveRenderMode(widget.device) ?? '';
       _appendLog('渲染模式 renderMode=${_renderMode!.isNotEmpty ? _renderMode : '（产品未配置，不传）'}');
     }
     if (_disposed) return;

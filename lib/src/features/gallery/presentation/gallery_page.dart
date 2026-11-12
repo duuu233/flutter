@@ -586,7 +586,7 @@ class _GalleryPageState extends State<GalleryPage> with RouteAware {
     // 卸载时也要收掉 root 栈上 canPop:false 的蒙层，否则整个 App 假死。
     // 与 _recastSelected 同一套写法：非空 final 在 try 里赋值，异常时后面的代码本就到不了。
     final DevicePhotoDeleteOutcome deviceOutcome;
-    ({int total, int failed})? recordResult;
+    ({int total, int failed, List<String> failedIds})? recordResult;
     try {
       deviceOutcome = await state.deleteDevicePhotoSlots(
         deviceId: targetDeviceId,

@@ -132,19 +132,21 @@ class _WifiSharePageState extends State<WifiSharePage> {
       });
       return;
     }
+    // 判空后转成非空 final：setState 闭包里读可空局部变量不保留类型提升
+    final isOwner = owner;
     final user = _user;
     final split = wifiSplitMembers(
       rows,
-      owner ? WifiShareMember(id: widget.deviceId, name: user.nickname, avatar: user.avatarUrl, joinedAt: '') : null,
+      isOwner ? WifiShareMember(id: widget.deviceId, name: user.nickname, avatar: user.avatarUrl, joinedAt: '') : null,
     );
     setState(() {
       _loading = false;
-      _isOwner = owner;
+      _isOwner = isOwner;
       _owner = split.owner;
       _members = split.members;
     });
-    debugPrint('[WiFi分享] 身份 ${owner ? '所有者' : '接收者'}，成员 ${split.members.length} 人');
-    if (owner) {
+    debugPrint('[WiFi分享] 身份 ${isOwner ? '所有者' : '接收者'}，成员 ${split.members.length} 人');
+    if (isOwner) {
       _logShareState();
     }
   }
