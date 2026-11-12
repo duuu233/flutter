@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../../../network/api_exception.dart';
 import '../../../network/api_rows.dart';
 import '../../../network/boltfox_api.dart';
+import '../../../shared/debug_log.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_dialog.dart';
 import '../../../shared/widgets/app_toast.dart';
@@ -196,7 +197,12 @@ class _WifiSharePageState extends State<WifiSharePage> {
     }
     if (!_canShare) {
       _logShareState();
-      AppToast.warn(context, l10n.wifiShareUnavailable);
+      // 开了联调日志的包（测试包）把具体原因直接带在提示里，不用翻日志也能看出卡在哪（2026-11-12）
+      final reasons = _shareBlockers();
+      AppToast.warn(
+        context,
+        DebugLog.enabled && reasons.isNotEmpty ? '${l10n.wifiShareUnavailable}（${reasons.join('；')}）' : l10n.wifiShareUnavailable,
+      );
       return;
     }
     if (_busy) {
@@ -214,7 +220,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
       if (shareTime == null) {
         debugPrint('[WiFi分享] 取不到服务器时间戳（getCurrentTime），不分享');
         if (mounted) {
-          AppToast.warn(context, l10n.wifiShareUnavailable);
+          AppToast.warn(context, DebugLog.enabled ? '${l10n.wifiShareUnavailable}（取不到服务器时间戳）' : l10n.wifiShareUnavailable);
         }
         return;
       }

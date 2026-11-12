@@ -29,7 +29,7 @@
 | `WECHAT_UNIVERSAL_LINK`（Dart 默认值 / `--dart-define`） | `https://badmin.boltfox.cn/app/` | 与 entitlements、微信后台、AASA 四处逐字符一致 |
 | 构建命令 `--dart-define` | `WECHAT_APP_ID=wx4cf0c5f38a70d0bc` / `WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/` | 与上述配置一致 |
 | `--dart-define=WIFI_SHARE_H5_URL` | 不传（默认 `https://iot.boltfox.cn/h5/share.html`） | WiFi 版「分享设备」生成的设备共享邀请链接落地页；2026-11-12 起分享改发此链接，原小程序卡片所需的 `WECHAT_MINI_PROGRAM_USERNAME` 已不再使用 |
-| `--dart-define=APP_DEBUG_TOOLS` | 不传 | 左下角联调日志浮窗：debug / profile 默认开，release 默认关；release 联调包传 `true`，**上架包不要传** |
+| `--dart-define=APP_DEBUG_TOOLS` | 测试包不传；**正式上架包传 `false`** | 左下角联调日志浮窗（2026-11-12 起默认开，含 release / TestFlight 包）；正式上架前必须传 `false` 关掉 |
 | `ios/Runner/Info.plist` → `FlutterDeepLinkingEnabled` | `false` | 微信回跳由 fluwx 原生回调消费；开着会把回跳 URL 当路由名推给 Flutter（`Route not found`），见 `WECHAT_LOGIN_SETUP.md` 9.5 |
 | `ios/Runner/SceneDelegate.swift` → `scene:openURLContexts:` | 已覆写并转发到 app delegate 链 | fluwx 没实现该 scene 方法且被引擎的 app 兜底跳过；删掉它 = URL Scheme 回跳再次丢失 |
 
@@ -168,6 +168,7 @@ flutter build appbundle --release ^
   --obfuscate --split-debug-info=build/symbols ^
   --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc ^
   --dart-define=WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/
+# 正式上架（不是测试包）再加一行：--dart-define=APP_DEBUG_TOOLS=false（关掉联调日志浮窗）
 # 产物: build/app/outputs/bundle/release/app-release.aab
 
 # 直接分发 APK（可选）：
@@ -235,6 +236,7 @@ flutter build ipa --release --export-method app-store \
   --obfuscate --split-debug-info=build/symbols \
   --dart-define=WECHAT_APP_ID=wx4cf0c5f38a70d0bc \
   --dart-define=WECHAT_UNIVERSAL_LINK=https://badmin.boltfox.cn/app/
+# 正式提交审核 / 上架（不是 TestFlight 测试）再加一行：--dart-define=APP_DEBUG_TOOLS=false（关掉联调日志浮窗）
 # 产物: build/ios/ipa/BoltStar.ipa → Transporter / Xcode Organizer 上传
 ```
 

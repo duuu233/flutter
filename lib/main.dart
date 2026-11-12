@@ -17,7 +17,7 @@ import 'package:BoltStar/src/shared/temp_cache_sweeper.dart';
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
   // 联调日志（2026-11-12，同小程序 app.js 最先 install）：接管 debugPrint，左下角「日志」浮窗可看可复制。
-  // release 包默认不装（DebugLog.enabled），联调包加 --dart-define=APP_DEBUG_TOOLS=true。
+  // 默认开；正式上架包加 --dart-define=APP_DEBUG_TOOLS=false 关掉（DebugLog.enabled）。
   DebugLog.instance.install();
   _configureAndroidPhotoPicker();
   _installCrashHandlers();

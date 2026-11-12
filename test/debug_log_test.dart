@@ -13,8 +13,10 @@ void main() {
 
   setUp(log.resetForTest);
 
-  test('测试环境（非 release）默认打开', () {
+  test('默认打开（2026-11-12 起 release / TestFlight 包也开，正式上架传 APP_DEBUG_TOOLS=false 关）', () {
     expect(DebugLog.enabled, isTrue);
+    final source = File('lib/src/shared/debug_log.dart').readAsStringSync();
+    expect(source, contains("'APP_DEBUG_TOOLS',\n    defaultValue: true,"));
   });
 
   test('打码：JSON 字符串 / 非字符串、query、Bearer 与小程序同口径', () {
@@ -110,5 +112,7 @@ void main() {
     expect(share, contains("'[WiFi分享] 分享按钮置灰：\${blockers.join('；')}'"));
     final blocked = share.substring(share.indexOf('if (!_canShare) {'));
     expect(blocked.indexOf('_logShareState();'), lessThan(blocked.indexOf('wifiShareUnavailable')));
+    expect(blocked, contains("DebugLog.enabled && reasons.isNotEmpty ? '\${l10n.wifiShareUnavailable}（\${reasons.join('；')}）'"),
+        reason: '测试包提示里直接带置灰原因');
   });
 }

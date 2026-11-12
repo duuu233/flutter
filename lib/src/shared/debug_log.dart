@@ -12,8 +12,8 @@ import 'package:flutter/foundation.dart';
 ///   · 路由观察者记一行「页面 → 路由」（[DebugLogRouteObserver]）。
 /// 只在内存里留最近 [limit] 行，不落盘；token、密码类字段在入库前统一打码（[redact]）。
 ///
-/// 开关 [enabled]：debug / profile 包默认开，release 包默认关；
-/// release 包联调时打包加 `--dart-define=APP_DEBUG_TOOLS=true` 打开，正式上架包不要传。
+/// 开关 [enabled]：默认开（2026-11-12 改，同花盆APP；iOS 测试走 Archive / TestFlight 是 release 包，原先默认关时看不到浮窗）。
+/// 正式上架包打包加 `--dart-define=APP_DEBUG_TOOLS=false` 关掉（整套不收集、不显示）。
 class DebugLog extends ChangeNotifier {
   DebugLog._();
 
@@ -21,7 +21,7 @@ class DebugLog extends ChangeNotifier {
 
   static const bool enabled = bool.fromEnvironment(
     'APP_DEBUG_TOOLS',
-    defaultValue: !kReleaseMode,
+    defaultValue: true,
   );
 
   static const int limit = 500;
