@@ -41,7 +41,7 @@ App 接受页（待做）：没登录先登录 → 是本人分享 / 已在列�
 
 ## 四、App 侧（2026-11-12 已接）
 
-- 分享：「分享设备」生成本页链接（`WifiShareLink.h5Url`，地址可用 `--dart-define=WIFI_SHARE_H5_URL` 改），不再依赖小程序原始 ID。弹层是图标宫格（2026-11-12）：「微信好友」发网页卡片，装了微信才出现；「更多应用」走原生系统分享面板（`NativeDeviceApi.shareText`），WhatsApp、LINE 等海外社交都从这里发；「复制链接」。
+- 分享：「分享设备」生成本页链接（`WifiShareLink.h5Url`，地址可用 `--dart-define=WIFI_SHARE_H5_URL` 改），不再依赖小程序原始 ID。点「分享设备」直接调起原生系统分享面板（2026-11-12，`NativeDeviceApi.shareText`），发「邀请文案 + 链接」纯文本；微信、WhatsApp、LINE 等社交应用以及复制都在系统面板里。微信里收到的是文字链接，不再是网页卡片。
 - 接收：Android `ShareLinkActivity`（`boltstar://share/accept`）、iOS `boltstar` URL Scheme + `SceneDelegate`（含冷启动），记下 query 交给 Dart（`consumeShareLink`）；闪屏结束 / 登录后 / 回前台读走，已登录才打开接受页。
 - 接受页 `WifiShareAcceptPage`：同小程序 `wifi-share-accept`（有效期校验、本人分享 / 已在列表、`addUserProduct` 非所有者绑定、进设备详情）。
 - **含这些改动的 App 版本发布前，已装旧版的手机点链接仍拉不起 App**（旧版没登记 scheme），页面会显示「没有检测到 App」。

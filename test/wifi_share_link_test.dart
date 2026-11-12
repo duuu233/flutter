@@ -85,8 +85,6 @@ void main() {
     expect(accept, contains('shareUserId: invite.ownerUserId,'));
     final share = read('lib/src/features/wifi/presentation/wifi_share_page.dart');
     expect(share, contains('WifiShareLink.h5Url('));
-    expect(share, contains('WifiWeChatShare.shareWebPage('));
-    expect(share, contains('Clipboard.setData(ClipboardData(text: url))'));
     expect(share, isNot(contains('shareMiniProgram')));
   });
 
@@ -103,13 +101,13 @@ void main() {
     expect(share, isNot(contains('_device.productId > 0')));
   });
 
-  test('分享弹层：图标宫格，微信装了才出现，「更多应用」走系统分享（海外社交）', () {
+  test('点「分享设备」直接调系统分享面板（微信、WhatsApp、LINE 等都在面板里），不再有自定义弹层', () {
     final share = read('lib/src/features/wifi/presentation/wifi_share_page.dart');
-    expect(share, contains('enum _ShareWay { wechat, system, copy }'));
-    expect(share, contains('final hasWeChat = await WifiWeChatShare.isWeChatInstalled();'));
-    expect(share, contains('if (hasWeChat)'));
-    expect(share, contains("Image.asset('assets/images/pay-wechat.png'"));
     expect(share, contains("NativeDeviceApi.shareText(text: '\$title\\n\$url'"));
+    expect(share, isNot(contains('_pickShareWay')));
+    expect(share, isNot(contains('showModalBottomSheet')));
+    expect(share, isNot(contains('WifiWeChatShare')));
+    expect(File('lib/src/features/wifi/wifi_wechat_share.dart').existsSync(), isFalse);
     final api = read('lib/src/native_device_api.dart');
     expect(api, contains("_channel.invokeMethod<bool>('shareText'"));
     final android = read('android/app/src/main/kotlin/com/boltfox/boltstar/MainActivity.kt');

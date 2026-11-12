@@ -846,21 +846,11 @@ extension WifiL10n on AppL10n {
     '${owner.isNotEmpty ? owner : 'A friend'} invited you to share the frame "$device"',
     '${owner.isNotEmpty ? owner : '友だち'}がフォトフレーム「$device」の共用に招待しています',
   );
-  String get wifiShareNoWeChat => pick('请先安装微信', 'Please install WeChat first', '先にWeChatをインストールしてください');
   String get wifiShareFailed => pick('分享失败，请稍后重试', 'Sharing failed. Please try again later.', '共有に失敗しました。しばらくしてからお試しください');
 
   // ── 分享链接（2026-11-12：分享改发 H5 链接，接受在 App 里完成） ──
+  /// Android 系统分享选择器标题（2026-11-12 起点「分享设备」直接调系统分享面板）
   String get wifiShareSheetTitle => pick('分享设备', 'Share device', 'デバイスを共有');
-  String get wifiShareToWeChat => pick('微信好友', 'WeChat', 'WeChat');
-  String get wifiShareCopyLink => pick('复制链接', 'Copy link', 'リンクをコピー');
-  /// 系统分享面板（WhatsApp、LINE、Messenger、邮件等）
-  String get wifiShareMoreApps => pick('更多应用', 'More apps', '他のアプリ');
-  String get wifiShareLinkCopied => pick('链接已复制，可粘贴发给对方', 'Link copied. Paste it to send.', 'リンクをコピーしました。貼り付けて送信できます');
-  String wifiShareLinkDesc(String device) => pick(
-    '点击打开 BoltStar App 接受邀请，共用「$device」',
-    'Open the BoltStar app to accept and share "$device"',
-    'BoltStar アプリを開いて招待を承認し、「$device」を共用',
-  );
   String get wifiAcceptPageTitle => pick('设备分享', 'Device sharing', 'デバイス共有');
   String get wifiAcceptInvalid => pick('分享链接无效', 'Invalid sharing link', '共有リンクが無効です');
   String get wifiAcceptExpired => pick('分享链接已过期', 'Sharing link expired', '共有リンクの有効期限が切れています');

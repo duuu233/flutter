@@ -67,7 +67,7 @@
 | AI 对话 | `ai/chat` | `ai_chat_page.dart` | ✅⚠️ | 2026-10-29 两端接上：选 WiFi 版不连蓝牙、确认在线后进预览；选设备列表过滤离线 / 本地模式 / 未知 |
 | 本地模式 / TF 卡 | `wifi-status.js`、`wifi-tf.js`、`wifi-tf` | `wifi_status.dart`、`wifi_tf.dart`、`wifi_tf_page.dart` | ✅⚠️ | `LOCAL_TF`「本地模式」与操作限制；play-tf + `command.result`；开关只看状态 |
 | 设备信息 / 解绑 / 删除 | `wifi-info`、`wifi-detail` | `wifi_device_info_page.dart`、`wifi_remove_flow.dart` | ✅⚠️ | 删除仅所有者：清记录 → 删云端 bin → 删设备；弹窗同蓝牙版 |
-| 设备分享（简化版） | `wifi-share`、`wifi-share-accept` | `wifi_share_page.dart`、`wifi_wechat_share.dart` | ✅⚠️🔶 | 两端同一张小程序卡片、同一接受页；🔶 App 用 fluwx 发小程序卡片，需配置小程序原始 ID；App 无接受入口 |
+| 设备分享（简化版） | `wifi-share`、`wifi-share-accept` | `wifi_share_page.dart`、`wifi_share_accept_page.dart` | ✅⚠️🔶 | 🔶 2026-11-12 起 App 不发小程序卡片：点「分享设备」直接调系统分享面板，发 H5 邀请链接（`runbooks/WIFI_SHARE_H5.md`）；App 有自己的接受页 |
 
 ⚠️ App 侧未编译、未真机、未与 IoT 联调。
 
