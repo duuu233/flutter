@@ -23,9 +23,12 @@ import '../../../shared/tap_guard.dart';
 /// 打开时拉取后端设备列表（`getUserProductList`）；重命名走 `editUserProduct`。
 /// 通过 [AnimatedBuilder] 监听 [PhotoFrameState]，设备增删改后自动刷新列表。
 class DevicesPage extends StatefulWidget {
-  const DevicesPage({super.key, required this.state});
+  const DevicesPage({super.key, required this.state, this.initialTab});
 
   final PhotoFrameState state;
+
+  /// 进页默认 Tab（首页设备卡带进来，见 [MyDevicesPage.initialTab]）；为空按默认规则。
+  final MyDevicesTab? initialTab;
 
   @override
   State<DevicesPage> createState() => _DevicesPageState();
@@ -192,6 +195,7 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
             : '';
         _notePromotion(connectedId);
         return MyDevicesPage(
+          initialTab: widget.initialTab,
           // 首屏未出结果前显示 loading，不先闪空列表。
           loading: !state.devicesLoaded,
           loadError: state.devicesLoadError,

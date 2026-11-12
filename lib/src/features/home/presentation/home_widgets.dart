@@ -560,14 +560,16 @@ class _DeviceCarousel extends StatefulWidget {
     required this.devices,
     required this.activeDeviceId,
     required this.onChanged,
-    required this.onOpenDevices,
+    required this.onOpenDevice,
     required this.onConnectDevice,
   });
 
   final List<DeviceItem> devices;
   final String activeDeviceId;
   final ValueChanged<DeviceItem> onChanged;
-  final VoidCallback onOpenDevices;
+
+  /// 点卡片进设备列表：带上点的是哪台（2026-11-12 同小程序：列表默认停在这台所属的 WiFi版 / 蓝牙版 Tab）。
+  final ValueChanged<DeviceItem> onOpenDevice;
   final ValueChanged<DeviceItem> onConnectDevice;
 
   @override
@@ -686,7 +688,9 @@ class _DeviceCarouselState extends State<_DeviceCarousel> {
                   aspectRatio: _kCardW / _kCardH,
                   child: _ConnectedDeviceCard(
                     device: widget.devices[page % widget.devices.length],
-                    onOpenDevices: widget.onOpenDevices,
+                    onOpenDevices: () => widget.onOpenDevice(
+                      widget.devices[page % widget.devices.length],
+                    ),
                     onConnect: () => widget.onConnectDevice(
                       widget.devices[page % widget.devices.length],
                     ),

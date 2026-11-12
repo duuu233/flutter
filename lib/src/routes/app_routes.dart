@@ -23,6 +23,7 @@ import '../features/devices/presentation/delete_device_flow.dart';
 import '../features/devices/presentation/device_clear_flow.dart';
 import '../features/devices/presentation/device_details_page.dart';
 import '../features/devices/presentation/devices_page.dart';
+import '../features/devices/presentation/my_devices_page.dart' show MyDevicesTab;
 import '../features/gallery/official/official_gallery_page.dart';
 import '../features/gallery/presentation/gallery_page.dart';
 import '../features/star/presentation/star_coin_page.dart';
@@ -255,7 +256,9 @@ class AppRoutes {
         builder = (_) => ModifyEmailPage(state: state);
         break;
       case AppRoutes.figmaMyDevices:
-        builder = (_) => DevicesPage(state: state);
+        // 首页设备卡带 MyDevicesTab 进来（2026-11-12）：列表默认停在那台所属的 Tab；其他入口不带参数
+        final devicesTab = settings.arguments is MyDevicesTab ? settings.arguments as MyDevicesTab : null;
+        builder = (_) => DevicesPage(state: state, initialTab: devicesTab);
         break;
       case AppRoutes.figmaDeviceDetails:
         final detailDeviceId = settings.arguments is String

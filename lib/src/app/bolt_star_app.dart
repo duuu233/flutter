@@ -12,11 +12,13 @@ import '../features/star/apple_iap.dart';
 import '../features/shell/presentation/shell_page.dart';
 import '../features/shell/presentation/splash_page.dart';
 import '../routes/app_routes.dart';
+import '../shared/debug_log.dart';
 import '../shared/l10n/app_l10n.dart';
 import '../shared/l10n/system_language.dart';
 import '../shared/widgets/app_dialog.dart';
 import '../shared/widgets/app_toast.dart';
 import '../shared/widgets/app_widgets.dart' show AppLoadingDialog;
+import '../shared/widgets/debug_log_overlay.dart';
 import '../shared/widgets/force_update_dialog.dart';
 import '../state.dart';
 import 'app_theme.dart';
@@ -105,6 +107,9 @@ class _RootTransitionBackdrop extends StatelessWidget {
     );
   }
 }
+
+/// 联调日志的路由观察者（「页面 → 路由」）：单例，避免 MaterialApp 重建时换实例。
+final DebugLogRouteObserver _debugLogRouteObserver = DebugLogRouteObserver();
 
 /// 应用根组件。
 ///
@@ -481,7 +486,7 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
         ),
       ),
       // 全局路由观察者：让图库/投屏记录等页在被覆盖页 pop 回来时重入刷新。
-      navigatorObservers: [appRouteObserver],
+      navigatorObservers: [appRouteObserver, if (DebugLog.enabled) _debugLogRouteObserver],
       // 命名路由仍复用同一个 `_state`，避免页面之间出现两份业务数据。
       onGenerateRoute: (settings) =>
           AppRoutes.onGenerateRoute(settings: settings, state: _state),
@@ -509,14 +514,17 @@ class _BoltStarAppState extends State<BoltStarApp> with WidgetsBindingObserver {
           // 全局「点空白处收起键盘」：置于 Navigator 之上，覆盖所有页面（含对话框/弹层）。
           // 手势竞技场里可交互组件（按钮/输入框/列表项）总是赢家，只有无人认领的
           // 空白点击才会落到这层 onTap —— 不会拦截或延迟任何现有交互。
-          child: GestureDetector(
-            behavior: HitTestBehavior.translucent,
-            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-            child: AnimatedBuilder(
-              animation: _state,
-              builder: (context, _) => AppLocalizationsScope(
-                language: _state.language,
-                child: child ?? const SizedBox.shrink(),
+          // 联调日志浮窗（2026-11-12，同小程序 components/debug-log）：左下角「日志 N」，开关见 DebugLog.enabled
+          child: DebugLogOverlay(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+              child: AnimatedBuilder(
+                animation: _state,
+                builder: (context, _) => AppLocalizationsScope(
+                  language: _state.language,
+                  child: child ?? const SizedBox.shrink(),
+                ),
               ),
             ),
           ),

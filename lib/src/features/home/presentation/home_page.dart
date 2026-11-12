@@ -19,6 +19,7 @@ import '../../../state.dart';
 import '../../ai/ai_entry.dart';
 import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
+import '../../devices/presentation/my_devices_page.dart' show MyDevicesTab;
 import '../../gallery/official/official_gallery_entry.dart';
 import '../../wifi/wifi_l10n.dart';
 import '../../wifi/wifi_status.dart';
@@ -280,6 +281,9 @@ class _HomePageState extends State<HomePage> with RouteAware {
                           widget.state.selectDevice(device.id);
                         },
                         onOpenDevices: _openDeviceList,
+                        onOpenDeviceCard: (device) => _openDeviceList(
+                          tab: device.isWifi ? MyDevicesTab.wifi : MyDevicesTab.ble,
+                        ),
                         onConnectDevice: (device) {
                           _ensureConnected(device.id);
                         },
@@ -393,12 +397,14 @@ class _HomePageState extends State<HomePage> with RouteAware {
   }
 
   /// 设备卡面积较大，锁住重复点击，避免同一列表页被连续压栈。
-  Future<void> _openDeviceList() async {
+  /// [tab]：从设备卡进来时带上那台的类型（2026-11-12 同小程序 `list?tab=`），列表默认停在该 Tab；
+  /// 六宫格「我的设备」不带，按列表页默认规则选。
+  Future<void> _openDeviceList({MyDevicesTab? tab}) async {
     if (_openingDeviceList) {
       return;
     }
     _openingDeviceList = true;
-    await Navigator.of(context).pushNamed<void>(AppRoutes.figmaMyDevices);
+    await Navigator.of(context).pushNamed<void>(AppRoutes.figmaMyDevices, arguments: tab);
     _openingDeviceList = false;
   }
 

@@ -5,6 +5,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/widgets.dart';
 
+import '../../shared/debug_log.dart';
 import '../api_session.dart';
 import 'iot_client.dart';
 
@@ -72,6 +73,8 @@ class IotWs {
   List<String> get subscriptions => List.unmodifiable(_subscriptions);
 
   void _setState(String next, {bool reconnect = false, String reason = ''}) {
+    // 联调日志（2026-11-12，同小程序 iot-ws trace）
+    DebugLog.log('[WS] 状态 → $next${reason.isNotEmpty ? ' $reason' : ''}${reconnect ? ' （重连）' : ''}');
     _state = next;
     _states.add(IotWsState(next, reconnect: reconnect, reason: reason));
   }
@@ -83,6 +86,10 @@ class IotWs {
     }
     try {
       socket.add(jsonEncode(message));
+      if (message['type'] != 'ping') {
+        // 心跳 30 秒一次，不记，免得刷屏
+        DebugLog.log('[WS] 发 → ${jsonEncode(message)}');
+      }
       return true;
     } catch (_) {
       return false;
@@ -194,6 +201,9 @@ class IotWs {
           return;
         }
         if (decoded is Map && decoded['type'] != null) {
+          if (decoded['type'] != 'pong') {
+            DebugLog.log('[WS] 收 ← $data');
+          }
           _messages.add(decoded.map((k, v) => MapEntry(k.toString(), v)));
         }
       },

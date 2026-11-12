@@ -5,6 +5,7 @@ import 'dart:io' show FileSystemException, IOException;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../shared/debug_log.dart';
 import '../shared/l10n/app_l10n.dart';
 import 'api_config.dart';
 import 'api_exception.dart';
@@ -478,7 +479,7 @@ class ApiClient {
       // 2xx 且 retCode=200 却没给文件：同样算失败
       throw ApiException('EMPTY_FILE', _l10n.netServerError);
     }
-    if (kDebugMode) {
+    if (_httpLogOn) {
       debugPrint(
         '[HTTP] <-- ${response.statusCode} POST multipart ${_redactUri(uri)} '
         '(binary ${bytes.length} bytes)',
@@ -556,8 +557,12 @@ class ApiClient {
     return body;
   }
 
+  /// [HTTP] 请求 / 返回日志：debug 包照旧；开了联调日志的包（[DebugLog.enabled]，含 profile 与带
+  /// APP_DEBUG_TOOLS=true 的 release 联调包）也打，进左下角日志浮窗（2026-11-12）。凭证照旧打码。
+  static bool get _httpLogOn => kDebugMode || DebugLog.enabled;
+
   void _logRequest(String method, Uri uri, {Object? data}) {
-    if (!kDebugMode) return;
+    if (!_httpLogOn) return;
     debugPrint('[HTTP] --> $method ${_redactUri(uri)}');
     if (uri.path == '/Client/Pay/setApplePayVerifyReceipt' && data is Map) {
       final receipt = data['receiptData'];
@@ -574,7 +579,7 @@ class ApiClient {
   }
 
   void _logResponse(String method, Uri uri, http.Response response) {
-    if (!kDebugMode) return;
+    if (!_httpLogOn) return;
     final text = response.bodyBytes.isEmpty
         ? ''
         : utf8.decode(response.bodyBytes, allowMalformed: true);

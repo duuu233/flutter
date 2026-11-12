@@ -10,6 +10,9 @@ import '../../wifi/wifi_l10n.dart';
 import '../../wifi/wifi_status.dart';
 import '../../wifi/wifi_widgets.dart';
 
+/// 「我的设备」的 WiFi版 / 蓝牙版 Tab。路由参数用它指定进页默认停在哪个 Tab（2026-11-12 同小程序 `list?tab=`）。
+enum MyDevicesTab { wifi, ble }
+
 /// 我的设备列表页面，对应 UI 稿「我的设备」。
 ///
 /// 设备的连接/断开、重命名均为本地伪逻辑（演示用），接入真实蓝牙能力时把
@@ -30,9 +33,15 @@ class MyDevicesPage extends StatefulWidget {
     this.promotedDeviceId = '',
     this.onWifiCast,
     this.onWifiSlideshow,
+    this.initialTab,
   });
 
   final List<MyDeviceOverview>? devices;
+
+  /// 进页默认 Tab（2026-11-12 同小程序）：首页点 WiFi 版设备卡传 [MyDevicesTab.wifi]、蓝牙版传 [MyDevicesTab.ble]，
+  /// 按「用户选过」处理——之后列表刷新不被默认规则改掉，该类没有设备就显示该 Tab 的空态。
+  /// 为空（六宫格「我的设备」、我的页入口）按 [_MyDevicesPageState._defaultWifiTab]。
+  final MyDevicesTab? initialTab;
 
   /// WiFi 版卡片的「投屏」「轮播设置」（同步小程序 main-wifi；V1.4 更新说明 1.5：原「刷新状态」改为「轮播设置」，
   /// 状态随进页、状态推送与长连接重连自动重查）。
@@ -127,6 +136,16 @@ class _MyDevicesPageState extends State<MyDevicesPage> {
 
   /// 默认 Tab：WiFi 版在前（同原分组顺序）；WiFi 版没有设备而蓝牙版有，就落到蓝牙版；两类都没有落在 WiFi 版（显示空态 + 添加）。
   bool _defaultWifiTab(int wifiCount, int bleCount) => wifiCount > 0 || bleCount == 0;
+
+  @override
+  void initState() {
+    super.initState();
+    final tab = widget.initialTab;
+    if (tab != null) {
+      _wifiTab = tab == MyDevicesTab.wifi;
+      _tabChosen = true;
+    }
+  }
 
   void _switchTab(bool wifi) {
     _tabChosen = true;

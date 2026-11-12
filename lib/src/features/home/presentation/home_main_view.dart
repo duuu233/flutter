@@ -37,6 +37,7 @@ class _HomeMainView extends StatelessWidget {
     required this.onChangeAvatar,
     required this.onDeviceChanged,
     required this.onOpenDevices,
+    required this.onOpenDeviceCard,
     required this.onConnectDevice,
     required this.onShowCastSheet,
     required this.onCamera,
@@ -65,7 +66,12 @@ class _HomeMainView extends StatelessWidget {
 
   /// 首页设备轮播切换、点卡片进设备列表、未连接时点卡内按钮连接。
   final ValueChanged<DeviceItem> onDeviceChanged;
+
+  /// 六宫格「我的设备」：按列表页默认规则选 Tab。
   final VoidCallback onOpenDevices;
+
+  /// 点设备卡（2026-11-12 同小程序）：列表默认停在这台所属的 WiFi版 / 蓝牙版 Tab。
+  final ValueChanged<DeviceItem> onOpenDeviceCard;
   final ValueChanged<DeviceItem> onConnectDevice;
 
   /// 点击「选择投屏方式」标题，弹出投屏方式选择层。
@@ -156,7 +162,7 @@ class _HomeMainView extends StatelessWidget {
             devices: devices,
             activeDeviceId: activeDevice!.id,
             onChanged: onDeviceChanged,
-            onOpenDevices: onOpenDevices,
+            onOpenDevice: onOpenDeviceCard,
             onConnectDevice: onConnectDevice,
           ),
         ),

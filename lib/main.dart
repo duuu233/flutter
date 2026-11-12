@@ -11,10 +11,14 @@ import 'package:BoltStar/src/device/ble/ble_tuning.dart';
 import 'package:BoltStar/src/device/ble/device_ble.dart';
 import 'package:BoltStar/src/native_device_api.dart';
 import 'package:BoltStar/src/network/network_permission_primer.dart';
+import 'package:BoltStar/src/shared/debug_log.dart';
 import 'package:BoltStar/src/shared/temp_cache_sweeper.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // 联调日志（2026-11-12，同小程序 app.js 最先 install）：接管 debugPrint，左下角「日志」浮窗可看可复制。
+  // release 包默认不装（DebugLog.enabled），联调包加 --dart-define=APP_DEBUG_TOOLS=true。
+  DebugLog.instance.install();
   _configureAndroidPhotoPicker();
   _installCrashHandlers();
   // iOS 首次联网授权预热：国内 iOS 会在**进程内第一次网络请求**时弹「允许使用无线数据」，

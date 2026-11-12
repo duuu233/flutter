@@ -5,6 +5,7 @@ import 'dart:io' show IOException;
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import '../../shared/debug_log.dart';
 import '../../shared/l10n/app_l10n.dart';
 import '../api_client.dart';
 import '../api_session.dart';
@@ -250,6 +251,31 @@ class IotClient {
     throw _networkFailure(error);
   }
 
+  /// 联调日志（2026-11-12，同小程序 iot-request trace）：每次请求一行「[IoT] 方法 路径 参数 → 成功 / 失败 耗时」。
+  /// 开关关着时不拼字符串；凭证不在 URL / body 里（userToken 走 Header，不记）。
+  static void _trace(String method, Uri uri, Stopwatch watch, {Object? params, Object? result, Object? error}) {
+    if (!DebugLog.enabled) {
+      return;
+    }
+    String json(Object? value) {
+      try {
+        return jsonEncode(value);
+      } catch (_) {
+        return '$value';
+      }
+    }
+
+    final target = uri.hasQuery ? '${uri.path}?${uri.query}' : uri.path;
+    final args = params == null ? '' : ' 参数 ${json(params)}';
+    final ms = watch.elapsedMilliseconds;
+    final tail = error == null
+        ? '→ 成功 ${ms}ms 返回 ${json(result)}'
+        : error is IotException
+        ? '→ 失败 ${ms}ms ${error.code} ${error.serverMessage.isNotEmpty ? error.serverMessage : error.message}'
+        : '→ 失败 ${ms}ms $error';
+    DebugLog.log('[IoT] $method $target$args $tail');
+  }
+
   static bool _isNetworkError(Object error) =>
       error is TimeoutException || error is http.ClientException || error is IOException;
 
@@ -262,18 +288,22 @@ class IotClient {
   }) async {
     final uri = _uri(path, query);
     var retriesLeft = retry ? IotConfig.getRetryMax : 0;
+    final watch = Stopwatch()..start();
     while (true) {
       try {
         final response = await _http
             .get(uri, headers: _headers(headers))
             .timeout(IotConfig.timeout);
-        return _parse(response);
+        final result = _parse(response);
+        _trace('GET', uri, watch, result: result);
+        return result;
       } catch (error) {
         if (_isNetworkError(error) && retriesLeft > 0) {
           retriesLeft--;
           await Future<void>.delayed(IotConfig.retryDelay);
           continue;
         }
+        _trace('GET', uri, watch, error: error);
         _fail(error);
       }
     }
@@ -286,6 +316,7 @@ class IotClient {
     Map<String, String>? headers,
   }) async {
     final uri = _uri(path);
+    final watch = Stopwatch()..start();
     try {
       final response = await _http
           .post(
@@ -294,8 +325,11 @@ class IotClient {
             body: jsonEncode(body),
           )
           .timeout(IotConfig.timeout);
-      return _parse(response);
+      final result = _parse(response);
+      _trace('POST', uri, watch, params: body, result: result);
+      return result;
     } catch (error) {
+      _trace('POST', uri, watch, params: body, error: error);
       _fail(error);
     }
   }
@@ -311,6 +345,7 @@ class IotClient {
     void Function(double percent)? onProgress,
   }) async {
     final uri = _uri(path);
+    final watch = Stopwatch()..start();
     try {
       final multipart = http.MultipartRequest('POST', uri)
         ..headers.addAll(_headers())
@@ -344,8 +379,11 @@ class IotClient {
       );
       final streamed = await _http.send(request).timeout(timeout);
       final response = await http.Response.fromStream(streamed).timeout(timeout);
-      return _parse(response);
+      final result = _parse(response);
+      _trace('上传', uri, watch, params: {...fields, field: filePath}, result: result);
+      return result;
     } catch (error) {
+      _trace('上传', uri, watch, params: {...fields, field: filePath}, error: error);
       _fail(error);
     }
   }

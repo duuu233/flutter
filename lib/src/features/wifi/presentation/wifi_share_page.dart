@@ -55,6 +55,27 @@ class _WifiSharePageState extends State<WifiSharePage> {
       _isOwner &&
       WifiWeChatShare.configured && _user.userId.isNotEmpty && _device.productId > 0 && _device.serialNumber.isNotEmpty;
 
+  /// 「分享设备」置灰的原因（2026-11-12 排查「点了提示暂时无法分享」）：逐条对应 [_canShare] 的条件，
+  /// 进页面加载完与点按钮时写进联调日志。
+  List<String> _shareBlockers() => [
+    if (!_isOwner) '不是所有者',
+    if (WifiWeChatShare.miniProgramUserName.trim().isEmpty)
+      '打包没配小程序原始ID（--dart-define=WECHAT_MINI_PROGRAM_USERNAME=gh_…）',
+    if (!WifiWeChatShare.configured && WifiWeChatShare.miniProgramUserName.trim().isNotEmpty) '当前平台不支持微信分享',
+    if (_user.userId.isEmpty) '取不到当前用户 userId',
+    if (_device.productId <= 0) '设备没有产品ID（productId=${_device.productId}）',
+    if (_device.serialNumber.isEmpty) '设备没有设备号（serialNumber 为空）',
+  ];
+
+  void _logShareState() {
+    final blockers = _shareBlockers();
+    debugPrint(
+      blockers.isEmpty
+          ? '[WiFi分享] 可以分享 设备 ${_device.serialNumber} 产品 ${_device.productId} 用户 ${_user.userId}'
+          : '[WiFi分享] 分享按钮置灰：${blockers.join('；')}',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -109,6 +130,10 @@ class _WifiSharePageState extends State<WifiSharePage> {
       _owner = split.owner;
       _members = split.members;
     });
+    debugPrint('[WiFi分享] 身份 ${owner ? '所有者' : '接收者'}，成员 ${split.members.length} 人');
+    if (owner) {
+      _logShareState();
+    }
   }
 
   /// 接收者自己那行：成员 userProductId = 本人这条记录（所有者那栏不标「我」）。
@@ -174,6 +199,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
       return;
     }
     if (!_canShare) {
+      _logShareState();
       AppToast.warn(context, l10n.wifiShareUnavailable);
       return;
     }
@@ -183,6 +209,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
     _busy = true;
     try {
       if (!await WifiWeChatShare.isWeChatInstalled()) {
+        debugPrint('[WiFi分享] 微信未安装或 SDK 注册失败');
         if (mounted) {
           AppToast.warn(context, l10n.wifiShareNoWeChat);
         }
@@ -197,6 +224,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
         debugPrint('[WiFi分享] 获取服务器时间戳失败 $error');
       }
       if (shareTime == null) {
+        debugPrint('[WiFi分享] 取不到服务器时间戳（getCurrentTime），不发卡片');
         if (mounted) {
           AppToast.warn(context, l10n.wifiShareUnavailable);
         }
@@ -227,6 +255,7 @@ class _WifiSharePageState extends State<WifiSharePage> {
         ),
         title: l10n.wifiShareCardTitle(user.nickname, device.name),
       );
+      debugPrint('[WiFi分享] 拉起微信${ok ? '成功' : '失败'}');
       if (!ok && mounted) {
         AppToast.warn(context, l10n.wifiShareFailed);
       }
