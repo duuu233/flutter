@@ -5,6 +5,7 @@ import '../../device/wifi/broadcast_match.dart';
 import '../../network/iot/iot_api.dart';
 import '../../shared/l10n/app_l10n.dart';
 import '../../shared/widgets/app_toast.dart';
+import '../../shared/widgets/app_widgets.dart' show AppLoadingDialog;
 import '../../state.dart';
 import 'wifi_l10n.dart';
 
@@ -189,6 +190,43 @@ Future<bool> ensureWifiDeviceOnline(BuildContext context, DeviceItem device) asy
     return false;
   }
   return true;
+}
+
+/// 点击入口前确认在线（2026-11-14 产品要求，同小程序 `utils/wifi-status.requireOnline`）：WiFi 版投屏、轮播设置、
+/// 固件升级、优雅刷新升级点击时必须在线，不在线不能进（TF卡切换在 [WifiTfPage] 开关里本就现查在线；
+/// 一键清空、删除设备、解绑设备不判断）。
+///   · 先看 [WifiStatusStore] 里已有的状态（进页查询 + WS 推送保持最新）：明确离线 / 休眠 / 关机 / 本地模式直接提示，不发请求；
+///   · 已知在线直接放行（[fresh] 时仍现查一次）；查询中 / 状态未知 / [fresh] 时现查一次（loading「检查设备」），
+///     只有在线放行，否则提示（查不到给「设备不在线」）。[useKnown]=false 时不看已有状态、一律现查。
+Future<bool> requireWifiOnline(BuildContext context, DeviceItem device, {bool fresh = false, bool useKnown = true}) async {
+  final l10n = AppL10n.of(context);
+  final known = useKnown ? WifiStatusStore.instance.of(device.id).status : WifiOnlineStatus.unknown;
+  final knownTip = wifiBlockedTip(l10n, known);
+  if (knownTip.isNotEmpty) {
+    AppToast.warn(context, knownTip);
+    return false;
+  }
+  if (known == WifiOnlineStatus.online && !fresh) {
+    return true;
+  }
+  WifiOnlineStatus state;
+  AppLoadingDialog.show(context, l10n.wifiTfChecking);
+  try {
+    state = wifiDeviceState(await IotApi.getDeviceOnline(device.serialNumber));
+  } catch (_) {
+    state = WifiOnlineStatus.unknown;
+  } finally {
+    AppLoadingDialog.hideIfAny();
+  }
+  if (!context.mounted) {
+    return false;
+  }
+  if (state == WifiOnlineStatus.online) {
+    return true;
+  }
+  final tip = wifiBlockedTip(l10n, state);
+  AppToast.warn(context, tip.isNotEmpty ? tip : l10n.wifiNotOnlineTip);
+  return false;
 }
 
 /// 接口回 4041 时补查一次在线状态：休眠中 / 已关机的设备也回 4041，此时改成对应提示；查不到返回离线提示。

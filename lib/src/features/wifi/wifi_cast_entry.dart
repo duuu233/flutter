@@ -7,20 +7,17 @@ import '../../state.dart';
 import '../cast/cast_photo_picker.dart';
 import '../cast/presentation/cast_preview_page.dart';
 import 'presentation/wifi_slideshow_page.dart';
-import 'wifi_l10n.dart';
 import 'wifi_status.dart';
 
 /// WiFi 版「投屏」入口（我的设备卡片 / WiFi 设备详情共用，同小程序 list.startWifiProjection /
-/// wifi-detail.startProjection）：不连蓝牙，离线 / 休眠 / 关机先拦；在线 / 状态未知照常弹「拍照 / 相册」
-/// （未知时让接口裁决，离线会返回 4041）；选图后进同一个预览页构图，预览页认出 WiFi 版、导出后去
+/// wifi-detail.startProjection）：不连蓝牙；2026-11-14 起点击要在线（[requireWifiOnline]：离线 / 休眠 / 关机 / 本地模式
+/// 直接提示，状态未知现查一次，在线才弹「拍照 / 相册」）；选图后进同一个预览页构图，预览页认出 WiFi 版、导出后去
 /// WiFi 投屏结果页。不改当前选中设备：首页等蓝牙链路仍按原选中设备走。
 Future<void> startWifiCast(BuildContext context, PhotoFrameState state, DeviceItem device) async {
-  final l10n = AppL10n.of(context);
-  final blocked = wifiBlockedTip(l10n, WifiStatusStore.instance.of(device.id).status);
-  if (blocked.isNotEmpty) {
-    AppToast.warn(context, blocked);
+  if (!await requireWifiOnline(context, device) || !context.mounted) {
     return;
   }
+  final l10n = AppL10n.of(context);
   final source = await CastPhotoPicker.chooseSource(context);
   if (source == null || !context.mounted) {
     return;
@@ -46,12 +43,11 @@ Future<void> startWifiCast(BuildContext context, PhotoFrameState state, DeviceIt
   );
 }
 
-/// WiFi 版「轮播设置」入口（我的设备卡片 / WiFi 设备详情共用）：查询只要权限、离线也能看，不拦离线；
-/// 本地模式（2026-10-29）按钮可点，只提示「当前设备状态：本地模式，请恢复设备网络再试」。保存时轮播页再判断状态。
+/// WiFi 版「轮播设置」入口（我的设备卡片 / WiFi 设备详情共用）：2026-11-14 起点击要在线（原「离线也能看」撤掉），
+/// 离线 / 休眠 / 关机 / 本地模式提示不进，状态未知现查一次（[requireWifiOnline]）。保存时轮播页仍会再判断状态。
 /// 返回的 Future 在轮播页关闭后完成（调用方据此重查轮播中标记）。
 Future<void> openWifiSlideshow(BuildContext context, PhotoFrameState state, DeviceItem device) async {
-  if (WifiStatusStore.instance.of(device.id).status == WifiOnlineStatus.local) {
-    AppToast.warn(context, AppL10n.of(context).wifiLocalTip);
+  if (!await requireWifiOnline(context, device) || !context.mounted) {
     return;
   }
   await Navigator.of(context).push<void>(

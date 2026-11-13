@@ -425,6 +425,12 @@ must not raise an alarm. Tapping the row still checks the backend and falls back
 the mini-program), so this row must gate on the live session — reading the field directly would show
 the version left over from the previous connection as "the current version".
 
+WiFi click entries require online (2026-11-14, mirrors the mini-program `requireOnline`): `requireWifiOnline` in
+`wifi_status.dart` blocks known offline / sleeping / shutdown / local states, passes known online, and otherwise (loading /
+unknown / `fresh`) queries `IotApi.getDeviceOnline` once and only passes online. Used by cast and slideshow (`wifi_cast_entry.dart`),
+the WiFi detail OTA row and the device-info smooth-refresh entry (fresh), the home camera / album entry and the WiFi cast result
+"continue" (fresh, no cached status). The TF switch already checks; clear / unbind / delete do not. BLE flows are untouched.
+
 Firmware upgrade reminder (2026-11-13, product revision; mirrors the mini-program `utils/firmware-gate.js`)
 lives in `lib/src/features/devices/firmware_gate.dart`. **Force upgrade was removed entirely**: no
 feature button, My Devices entry or home entry is gated, and there is no loading re-query or local cache.

@@ -445,8 +445,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
       return;
     }
     if (activeDevice.isWifi) {
-      // WiFi 版不走蓝牙（2026-10-27 同步小程序）：确认云端在线即可（明确离线才拦，查不到放行由投屏接口裁决）
-      if (!await ensureWifiDeviceOnline(context, activeDevice) || !mounted) {
+      // WiFi 版不走蓝牙（2026-10-27 同步小程序）：确认云端在线即可。2026-11-14 起点击要在线：现查一次，只有在线放行
+      if (!await requireWifiOnline(context, activeDevice, fresh: true, useKnown: false) || !mounted) {
         return;
       }
     } else if (!widget.state.isDeviceActuallyConnected(activeDevice.id)) {

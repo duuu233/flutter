@@ -15,6 +15,7 @@ import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../wifi_l10n.dart';
 import '../wifi_projection.dart';
+import '../wifi_status.dart';
 import '../wifi_widgets.dart';
 import 'wifi_provision_page.dart';
 
@@ -370,6 +371,10 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
     }
     _picking = true;
     try {
+      // 2026-11-14：点击要在线（现查一次），不在线提示不弹
+      if (!await requireWifiOnline(context, widget.device, fresh: true, useKnown: false) || !mounted) {
+        return;
+      }
       final source = await CastPhotoPicker.chooseSource(context);
       if (source == null || !mounted) {
         return;

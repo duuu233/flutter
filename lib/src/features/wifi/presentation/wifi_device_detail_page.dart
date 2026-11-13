@@ -203,8 +203,12 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         ready: true, hasUpdate: !_otaInflight && wifiFirmwareHasUpdate(device, wifiFirmwareVersion(status.info)));
   }
 
-  /// 「固件升级」：进步骤页（版本检查、下发与进度都在那页；离线等由那页下发前判断），回来刷新这一行。
+  /// 「固件升级」：进步骤页（版本检查、下发与进度都在那页；那页下发前还会再判断一次），回来刷新这一行。
+  /// 2026-11-14：点击即判断在线（现查一次），不在线不能进。
   Future<void> _openOta() async {
+    if (!await requireWifiOnline(context, _device, fresh: true) || !mounted) {
+      return;
+    }
     await Navigator.of(context).push<void>(
       AppPageRoute(builder: (_) => WifiOtaPage(state: widget.state, deviceId: widget.deviceId)),
     );

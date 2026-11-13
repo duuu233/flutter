@@ -62,7 +62,11 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
   }
 
   /// 「优雅刷新升级」：直接进安装步骤页（最新版本与版本说明在那页取设备详情）。
+  /// 2026-11-14：点击即判断在线（现查一次），不在线不能进。
   Future<void> _openFpga() async {
+    if (!await requireWifiOnline(context, widget.state.deviceById(widget.deviceId), fresh: true) || !mounted) {
+      return;
+    }
     await Navigator.of(context).push<void>(
       AppPageRoute(builder: (_) => WifiOtaPage(state: widget.state, deviceId: widget.deviceId, fpga: true)),
     );
