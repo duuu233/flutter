@@ -88,8 +88,24 @@ abstract final class WifiProjection {
 
   static String _text(Object? value) => value == null ? '' : '$value';
 
+  /// 幂等键 Idempotency-Key（2026-11-13，同小程序 utils/wifi-projection.js；服务端按 deviceNo + 键去重 10 分钟，失败不缓存）。
+  /// play 没有自动网络重试，键只为结果页「重试未成功的」：弱网超时而服务端其实已处理时，用原键重试拿回旧结果，不会重复投屏。
+  ///   · 一张图一个键（一次请求一张）：**批量投屏每张图各生成一个新键，绝不整批共用一个**；新操作（新进入结果页、继续投屏）一律新键；
+  ///   · 「重试未成功的」复用原键——但同一张图的 refresh 变了（原本只上传、重试时成了本轮最后一张要刷屏）换新键，
+  ///     否则会拿回「只上传未刷屏」的旧结果；
+  ///   · 4090 = 同一键的首次请求还在处理中：提示「处理中，请稍后重试」，再点重试复用原键。
+  /// 键由调用方（结果页）管理；这里生成 UUID v4 形状（36 字符）。
+  static String newPlayKey() {
+    final random = math.Random.secure();
+    final bytes = List<int>.generate(16, (_) => random.nextInt(256));
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    final hex = bytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+    return '${hex.substring(0, 8)}-${hex.substring(8, 12)}-${hex.substring(12, 16)}-${hex.substring(16, 20)}-${hex.substring(20)}';
+  }
+
   /// 投一张图。[onStage](stage, progress)：stage 为 UPLOADING / PROCESSING / SENT / UPLOADED，progress 为进度条显示值
-  /// （上传折算 + 处理阶段估算，见 [uploadShare]），不是上传百分比。[renderMode] 空 = 不传。不抛错。
+  /// （上传折算 + 处理阶段估算，见 [uploadShare]），不是上传百分比。[renderMode] 空 = 不传。[idempotencyKey] 空 = 不带头。不抛错。
   static Future<WifiCastResult> projectOne({
     required AppL10n l10n,
     required String deviceNo,
@@ -98,6 +114,7 @@ abstract final class WifiProjection {
     bool refresh = true,
     bool addToCarousel = false,
     String renderMode = '',
+    String idempotencyKey = '',
     required void Function(String stage, int progress) onStage,
     required bool Function() isCancelled,
     void Function(String text)? onLog,
@@ -171,6 +188,9 @@ abstract final class WifiProjection {
     log(
       '参数 ${_json({'deviceNo': plain, 'type': type, if (renderMode.isNotEmpty) 'renderMode': renderMode, 'refresh': refresh, if (addToCarousel) 'addToCarousel': true, 'file': filePath})}',
     );
+    if (idempotencyKey.isNotEmpty) {
+      log('Idempotency-Key $idempotencyKey');
+    }
     final startedAt = DateTime.now();
     var loggedPercent = -1;
     Map<String, dynamic> response;
@@ -179,6 +199,7 @@ abstract final class WifiProjection {
         plain,
         filePath,
         type,
+        idempotencyKey: idempotencyKey,
         refresh: refresh,
         addToCarousel: addToCarousel,
         renderMode: renderMode,

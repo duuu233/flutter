@@ -53,12 +53,15 @@ abstract final class IotApi {
     bool refresh = true,
     bool addToCarousel = false,
     String renderMode = '',
+    String idempotencyKey = '',
     void Function(double percent)? onProgress,
   }) async {
     return _asMap(
       await _iot.upload(
         '/api/device/play',
         filePath: filePath,
+        // 幂等键（2026-11-13，服务端按 deviceNo + 键去重 10 分钟）：一张图一个，「重试未成功的」复用、新操作换新；见 WifiProjection
+        headers: {if (idempotencyKey.isNotEmpty) 'Idempotency-Key': idempotencyKey},
         fields: {
           'deviceNo': plainDeviceNo(deviceNo),
           'type': type,

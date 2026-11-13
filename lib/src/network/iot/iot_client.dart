@@ -88,6 +88,8 @@ const Map<int, (String, String, String, IotErrorAction)> _codeTable = {
   4041: ('设备已离线，请检查设备网络', 'The device is offline. Please check its network.', 'デバイスがオフラインです。デバイスのネットワークをご確認ください', IotErrorAction.none),
   4044: ('任务不存在或已过期', 'The task does not exist or has expired', 'タスクが存在しないか期限切れです', IotErrorAction.none),
   4045: ('设备升级中，请稍后', 'The device is updating. Please try later.', 'デバイスを更新中です。しばらくしてからお試しください', IotErrorAction.retry),
+  // 2026-11-13：POST /api/device/play 同一幂等键的首次请求还在处理中；再点「重试」会复用同一个键
+  4090: ('处理中，请稍后重试', 'Still processing. Please try again shortly.', '処理中です。しばらくしてから再度お試しください', IotErrorAction.retry),
   4130: ('图片过大，请压缩后重试', 'The image is too large. Please compress it and try again.', '画像が大きすぎます。圧縮してから再度お試しください', IotErrorAction.none),
   429: ('操作太频繁，请稍后重试', 'Too many requests. Please try again later.', '操作が頻繁すぎます。しばらくしてからお試しください', IotErrorAction.retry),
   503: ('服务暂时不可用，请稍后重试', 'Service temporarily unavailable. Please try again later.', 'サービスが一時的に利用できません。しばらくしてからお試しください', IotErrorAction.retry),
@@ -335,12 +337,13 @@ class IotClient {
   }
 
   /// multipart 上传（WiFi 投屏 POST /api/device/play）：不做网络重试（重传会重复投屏）。
-  /// [onProgress] 回调已送出的字节占比 0~100（流式写入时按块统计）。
+  /// [onProgress] 回调已送出的字节占比 0~100（流式写入时按块统计）。[headers] 额外请求头（如 Idempotency-Key）。
   Future<Object?> upload(
     String path, {
     required String filePath,
     String field = 'file',
     Map<String, String> fields = const {},
+    Map<String, String> headers = const {},
     Duration timeout = IotConfig.timeout,
     void Function(double percent)? onProgress,
   }) async {
@@ -348,7 +351,7 @@ class IotClient {
     final watch = Stopwatch()..start();
     try {
       final multipart = http.MultipartRequest('POST', uri)
-        ..headers.addAll(_headers())
+        ..headers.addAll(_headers(headers))
         ..fields.addAll(fields)
         ..files.add(await http.MultipartFile.fromPath(field, filePath));
       final total = multipart.contentLength;

@@ -104,6 +104,10 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
       _Item(widget.imagePaths[i], i < widget.originalPaths.length ? widget.originalPaths[i] : ''),
   ];
 
+  /// 幂等键（2026-11-13，规则见 [WifiProjection.newPlayKey]）：本页每张图按「序号 + 是否刷屏」各记一个键（批量投屏每张一个新键，不共用），
+  /// 「重试未成功的」复用；新进入本页（含继续投屏 pushReplacement 回来）是新操作，键全部重新生成。
+  final Map<String, String> _playKeys = {};
+
   /// 逐张列表（最多露 4 行）：投到第几张就滚到那一行。
   final ScrollController _listScroll = ScrollController();
   static const double _rowHeight = 52;
@@ -261,12 +265,15 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
         }
         _appendLog('—— 第 ${index + 1} / ${_items.length} 张${refresh ? '（本轮最后一张，刷屏）' : '（只上传，不刷屏）'} —— 图片：$path，$size');
       }
+      // 同一张图、同样的刷屏方式复用原键；本轮刷屏方式变了（原只上传、重试成最后一张）换新键
+      final idempotencyKey = _playKeys.putIfAbsent('$index:$refresh', WifiProjection.newPlayKey);
       final result = await WifiProjection.projectOne(
         l10n: l10n,
         deviceNo: widget.device.serialNumber,
         filePath: path,
         type: type,
         renderMode: renderMode,
+        idempotencyKey: idempotencyKey,
         refresh: refresh,
         addToCarousel: widget.addToCarousel,
         isCancelled: () => _disposed,
