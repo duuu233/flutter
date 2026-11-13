@@ -1680,6 +1680,19 @@ class AppL10n {
   );
   String get otaUpgradeNowAction => _pick('立即升级', 'Upgrade Now', '今すぐアップグレード');
 
+  // ── 固件强制升级 / 强提醒升级弹框（2026-11-13，同小程序 utils/firmware-gate.js）──
+  String otaGateForceMessage(String version) => _pick(
+    '检测到新版本：$version，请升级固件后继续使用该设备',
+    'New firmware $version is available. Please update it to keep using this device.',
+    '新しいファームウェア $version があります。このデバイスを引き続き使用するには更新してください。',
+  );
+  String otaGateRemindMessage(String version) => _pick(
+    '检测到新版本：$version，建议立即升级',
+    'New firmware $version is available. We recommend updating now.',
+    '新しいファームウェア $version があります。今すぐ更新することをおすすめします。',
+  );
+  String get otaGateNewVersion => _pick('新版本', 'a new version', '新しいバージョン');
+
   // ── OTA 升级中退出确认（PopScope 拦截）──────────────────────────────
   String get otaExitConfirmTitle =>
       _pick('固件升级中', 'Upgrade in Progress', 'アップグレード中');

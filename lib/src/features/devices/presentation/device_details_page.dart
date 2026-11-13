@@ -15,6 +15,7 @@ import '../../cast/cast_photo_picker.dart';
 import '../../cast/presentation/cast_preview_page.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/tap_guard.dart';
+import '../firmware_gate.dart';
 
 /// 当前会话 BLE 实读的固件版本（`0x03 GET_SW_VER`）。
 ///
@@ -146,6 +147,50 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       return;
     }
     await state.fetchDeviceFirmwareInfo(widget.deviceId);
+    if (mounted) {
+      _checkFirmwareOnEnter();
+    }
+  }
+
+  // ── 固件升级判断（2026-11-13，规则见 features/devices/firmware_gate.dart）──
+  // 已连接才判断；强制升级与强提醒升级都弹。判定直接用「固件升级」行红点的结果，红点亮 = 会弹。
+
+  /// 已连接状态下判断过一次，就不再补「进入后」那一次（回到本页也不再弹）。
+  bool _fwEntered = false;
+
+  /// 返回这次操作是否继续：不用弹 / 强提醒取消 → true；强制升级取消 / 去升级了 → false。
+  Future<bool> _firmwareGate() async {
+    final device = this.device;
+    final connected = state.isDeviceActuallyConnected(device.id);
+    if (!connected) {
+      return true;
+    }
+    _fwEntered = true;
+    final mode = decideFirmwareGate(device, ready: true, hasUpdate: _hasFirmwareUpdate(device, connected));
+    if (mode == FirmwareGateMode.none || !mounted) {
+      return true;
+    }
+    return showFirmwareGateDialog(context, state, device, mode);
+  }
+
+  /// 进入后判断一次：本页第一次拿到「已连接」的设备信息时（进页已连着，或在本页连上后）。
+  void _checkFirmwareOnEnter() {
+    if (_fwEntered || !mounted || !state.isDeviceActuallyConnected(widget.deviceId)) {
+      return;
+    }
+    unawaited(_firmwareGate());
+  }
+
+  /// 功能按钮先判断再执行；连接 / 断开、固件升级行、解除绑定、删除设备不经过这里。
+  VoidCallback? _gated(VoidCallback? action) {
+    if (action == null) {
+      return null;
+    }
+    return () async {
+      if (await _firmwareGate()) {
+        action();
+      }
+    };
   }
 
   @override
@@ -179,12 +224,13 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
         builder: (context, _) => DeviceDetailsBody(
           state: state,
           deviceId: widget.deviceId,
-          onEditName: () => _renameDevice(context),
+          onEditName: _gated(() => _renameDevice(context)),
           onConnectToggle: () => _toggleConnection(context),
           // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
           onCast: () => TapGuard.run(this, 'projection', () => _startCast(context)),
-          onCarouselSettings: widget.onCarouselSettings,
-          onClearDevice: widget.onClearDevice,
+          // 固件升级判断（2026-11-13）：轮播设置、一键清空先判断；投屏在 _startCast 连上之后判断
+          onCarouselSettings: _gated(widget.onCarouselSettings),
+          onClearDevice: _gated(widget.onClearDevice),
           onUnbindDevice: widget.onUnbindDevice,
           onDeleteDevice: widget.onDeleteDevice,
           onOtaUpgrade: widget.onOtaUpgrade,
@@ -279,6 +325,8 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     // 只在**连接**方向弹：断开不需要电量做判断，弹了也没有可操作的下一步。
     if (!wasConnected) {
       await showLowBatteryTipIfNeeded(context, state, device.id);
+      // 在本页连上后补「进入后」那次固件升级判断（进页时未连接无从判断）
+      _checkFirmwareOnEnter();
     }
   }
 
@@ -328,6 +376,10 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       if (!context.mounted) {
         return;
       }
+    }
+    // 固件升级判断放在连上之后（未连接时无从判断）：强制升级取消或去升级了就不弹拍照 / 相册
+    if (!await _firmwareGate() || !context.mounted) {
+      return;
     }
     final source = await _pickCastSource(context);
     if (source == null || !context.mounted) {

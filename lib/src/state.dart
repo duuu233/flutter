@@ -178,6 +178,7 @@ class DeviceItem {
     this.newVersionNo = '',
     this.downloadPath = '',
     this.firmwareSize = 0,
+    this.updateType = 0,
     this.isPlaceholder = false,
     this.batteryUpdatedAt,
   });
@@ -307,6 +308,11 @@ class DeviceItem {
 
   /// 后端固件包字节数（0=未知，下载后确认）。
   int firmwareSize;
+
+  /// 固件升级方式（2026-11-13，同小程序 `api.normalizeDevice` 的 updateType）：1=强制升级，其它=强提醒升级。
+  /// 取详情出参 `compulsory`（swagger 字段，与 App 版本接口同名：1 强制 2 强提示），缺省再看 `updateType` 等。
+  /// 判断与弹框见 `features/devices/firmware_gate.dart`。
+  int updateType;
 
   /// 是否存在有效可升级包（有更新标记 + 版本号 + .bin 下载地址）。
   bool get hasFirmwareUpdate => isUpdate == 1 && hasValidFirmwarePackage;
@@ -2562,6 +2568,7 @@ class PhotoFrameState extends ChangeNotifier {
         device.newVersionNo = detail.newVersionNo;
         device.downloadPath = detail.downloadPath;
         device.firmwareSize = detail.firmwareSize;
+        device.updateType = detail.updateType;
         if (detail.firmwareVersion.isNotEmpty) {
           device.firmwareVersion = detail.firmwareVersion;
         }
@@ -3655,6 +3662,11 @@ class PhotoFrameState extends ChangeNotifier {
     final isUpdate = _asInt(data['isUpdate']);
     final newVersionNo = (data['newVersionNo'] ?? '').toString();
     final downloadPath = (data['downloadPath'] ?? '').toString();
+    // 升级方式（2026-11-13）：compulsory 优先，旧猜测字段兜底；空串按没下发（同小程序 firstValue）
+    final updateType = _asInt(
+      <Object?>[data['compulsory'], data['updateType'], data['upgradeType'], data['forceType']]
+          .firstWhere((v) => v != null && '$v'.trim().isNotEmpty, orElse: () => null),
+    );
     // 轮播间隔：后端单位是小时，本地统一存秒。未下发（列表接口）时用默认值。
     final carouselHours = _asInt(data['carouselInterval']);
     return DeviceItem(
@@ -3701,6 +3713,7 @@ class PhotoFrameState extends ChangeNotifier {
       downloadPath: downloadPath,
       // 后端不下发固件包大小，下载后按实际字节数确认。
       firmwareSize: 0,
+      updateType: updateType,
     );
   }
 

@@ -26,6 +26,7 @@ import '../../wifi/wifi_status.dart';
 import '../../wifi/wifi_watch.dart';
 import '../../wifi/wifi_widgets.dart';
 import '../../../shared/tap_guard.dart';
+import '../../devices/firmware_gate.dart';
 
 // 首页拆分为同一个库（library）下的多个 part 文件，便于按职责浏览：
 part 'home_main_view.dart'; // 首页主视图（已绑定 / 未绑定）
@@ -463,6 +464,11 @@ class _HomePageState extends State<HomePage> with RouteAware {
       if (!mounted) {
         return;
       }
+    }
+    // 固件升级判断（2026-11-13，只判强制升级，见 features/devices/firmware_gate.dart）：
+    // WiFi 版确认在线之后、蓝牙版连上之后才判；强制升级取消或去升级了就不进选图
+    if (!await guardFirmwareAction(context, widget.state, activeDevice) || !mounted) {
+      return;
     }
 
     List<String> imagePaths;

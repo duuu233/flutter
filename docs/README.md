@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次更新：[2026-11-13 WiFi 固件升级进度条 19 / 39 / 59 / 79 必须等到下一档数值](history/2026-11/2026-11-13-ota-progress-wait-points.md)——`otaProgressCap` 去掉按状态放开到 98 的两条分支（进入 FLASHING、DOWNLOADING 无数值），19 等 20、39 等 40、59 等 60、79 等 80；一个数值都没收到就进入 FLASHING 才按固件不上报走到 98；未跑 analyze / test / 编译，未联调。
+本次更新：[2026-11-13 固件强制升级 / 强提醒升级判断](history/2026-11/2026-11-13-firmware-force-remind-upgrade.md)——新增 `firmware_gate.dart`：WiFi 在线、蓝牙已连接时判断；设备详情页进入后与点功能按钮判断（强制 + 强提醒），我的设备投屏 / WiFi 轮播设置、首页拍照 / 相册投屏只判强制；强制升级取消后这次操作不继续，强提醒取消照常继续，立即升级进升级页；`DeviceItem.updateType` 取详情 `compulsory`；未跑 analyze / test / 编译，未联调。
 
 ## 1. 阅读入口
 
