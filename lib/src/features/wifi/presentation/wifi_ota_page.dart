@@ -12,7 +12,6 @@ import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../shared/widgets/home_figma_common.dart';
 import '../../../state.dart';
-import '../../devices/firmware_gate.dart';
 import '../wifi_l10n.dart';
 import '../wifi_ota.dart';
 import '../wifi_status.dart';
@@ -429,10 +428,6 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     }
     _runProgress();
     if (view.phase == WifiOtaViewPhase.verifying) {
-      // 主固件升级完成（设备重启确认）：固件升级判断的本地缓存改成无需升级；优雅刷新（FPGA）不涉及
-      if (!_fpga) {
-        unawaited(FirmwareGateCache.markUpgraded(widget.deviceId));
-      }
       _stopPolling();
       _setScreen(
         phase: _Phase.verifying,

@@ -425,15 +425,15 @@ must not raise an alarm. Tapping the row still checks the backend and falls back
 the mini-program), so this row must gate on the live session — reading the field directly would show
 the version left over from the previous connection as "the current version".
 
-Firmware force / remind upgrade prompts (2026-11-13, mirrors the mini-program `utils/firmware-gate.js`)
-live in `lib/src/features/devices/firmware_gate.dart`. They only run when a WiFi frame is online or a
-BLE frame is connected, and "has an update" is the same verdict as the red dot. The mode is
-`DeviceItem.updateType` (detail field `compulsory` first; 1 = force, anything else = remind). Device
-details pages (BLE and WiFi) check once on entry and before each feature button (force + remind;
-connect/disconnect, the OTA row, unbind and delete are not gated). My Devices cast / WiFi slideshow
-and the home camera / album entries re-query and check force only (`guardFirmwareAction`). Force:
-cancel stops this action; remind: cancel continues; "upgrade now" opens the OTA page. Lookup
-failures let the action through.
+Firmware upgrade reminder (2026-11-13, product revision; mirrors the mini-program `utils/firmware-gate.js`)
+lives in `lib/src/features/devices/firmware_gate.dart`. **Force upgrade was removed entirely**: no
+feature button, My Devices entry or home entry is gated, and there is no loading re-query or local cache.
+Only the remind type pops: `DeviceItem.updateType` (detail field `compulsory` first) 2 = remind
+(legacy 1 = force is treated as remind; the admin hides that option), 3 = weak / 4 = none only light
+the red dot. Device details pages (BLE and WiFi) check once on entry, only when a WiFi frame is online
+or a BLE frame is connected and the OTA row's red dot is lit. Cancel → no more prompt for that device
+until the App restarts (`FirmwareRemindSession`, in memory); "upgrade now" opens the OTA page. See
+`docs/history/2026-11/2026-11-13-firmware-remind-only.md`.
 
 WiFi smooth refresh update (优雅刷新升级, FPGA, 2026-11-13, formerly 渲染固件管理; mirrors the mini-program):
 only devices whose product `renderMode` is `fpga16` show the entry on the device info page, which opens

@@ -112,7 +112,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         final ota = _refreshOta(query: true);
         _refreshUnread();
         _loadOwner();
-        // 固件升级判断（2026-11-13）：状态、版本、进行中记录三样都回来后判断一次（进入后）
+        // 固件升级强提醒（2026-11-13）：状态、版本、进行中记录三样都回来后判断一次（进入后）
         unawaited(_checkFirmwareOnEnter(Future.wait<Object?>([status, firmware, ota])));
       }
     });
@@ -180,8 +180,8 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     }
   }
 
-  // ── 固件升级判断（2026-11-13，规则见 features/devices/firmware_gate.dart）──
-  // 在线才判断；强制升级与强提醒升级都弹。判定与「固件升级」行红点同一套（进行中的升级不弹）。
+  // ── 固件升级强提醒（2026-11-13 产品改口，规则见 features/devices/firmware_gate.dart）──
+  // 强制升级已去掉，功能按钮不再判断。在线才判断，进入后判断一次；判定与「固件升级」行红点同一套（进行中的升级不弹）。
 
   /// 「设备信息」红点：fpga16 设备、设备详情的最新优雅刷新版本比本机看过的新。
   Future<void> _refreshInfoDot() async {
@@ -200,22 +200,6 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   /// 进入后那一次判断过就不再补（回到本页、状态推送重查都不再弹）。
   bool _fwEntered = false;
 
-  /// 功能按钮只判强制升级（取消后每次点都再弹、操作不继续）；强提醒只在进入时弹（[_checkFirmwareOnEnter]）。
-  /// 返回这次操作是否继续：不用弹 → true；强制升级取消 / 去升级了 → false。
-  Future<bool> _firmwareGate() async {
-    final status = WifiStatusStore.instance.of(widget.deviceId);
-    if (!status.online) {
-      return true;
-    }
-    final device = _device;
-    final hasUpdate = !_otaInflight && wifiFirmwareHasUpdate(device, wifiFirmwareVersion(status.info));
-    final mode = decideFirmwareGate(device, ready: true, hasUpdate: hasUpdate, forceOnly: true);
-    if (mode == FirmwareGateMode.none || !mounted) {
-      return true;
-    }
-    return showFirmwareGateDialog(context, widget.state, device, mode);
-  }
-
   Future<void> _checkFirmwareOnEnter(Future<void> loaded) async {
     try {
       await loaded;
@@ -230,19 +214,10 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     if (!status.online) {
       return;
     }
-    // 强制 / 强提醒都判（强提醒每次启动 App 只弹一次），结果写进本地缓存供列表页 / 首页用
+    // 只判强提醒（每台设备每次启动 App 只弹一次）
     final device = _device;
     await checkFirmwareGateOnEnter(context, widget.state, device,
         ready: true, hasUpdate: !_otaInflight && wifiFirmwareHasUpdate(device, wifiFirmwareVersion(status.info)));
-  }
-
-  /// 功能按钮先判断再执行；固件升级行、解除绑定、删除设备不经过这里。
-  VoidCallback _gated(VoidCallback action) {
-    return () async {
-      if (await _firmwareGate()) {
-        action();
-      }
-    };
   }
 
   /// 「固件升级」：进步骤页（版本检查、下发与进度都在那页；离线等由那页下发前判断），回来刷新这一行。
@@ -327,13 +302,13 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         children: [
           entry(
             l10n.wifiDeviceInfo,
-            _gated(() async {
+            () async {
               await Navigator.of(context).push<void>(
                 AppPageRoute(builder: (_) => WifiDeviceInfoPage(state: widget.state, deviceId: widget.deviceId)),
               );
               // 在设备信息里看过优雅刷新：回来按缓存重算红点
               _refreshInfoDot();
-            }),
+            },
             trailing: _infoHasNew
                 ? Container(
                     key: const ValueKey('wifi-info-dot'),
@@ -355,7 +330,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
           divider,
           entry(
             l10n.wifiMessageCenter,
-            _gated(_openMessages),
+            _openMessages,
             // 有未读只亮红点、不显示具体数字（2026-11-06，同小程序），样式同固件升级行；消息列表页不变
             trailing: _unreadCount > 0
                 ? Container(
@@ -392,13 +367,13 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
           // TF卡：未插卡不可点；有卡显示已用/总量 + 箭头
           entry(
             l10n.wifiRowTf,
-            _gated(() => _openTf(status.status, tf.state)),
+            () => _openTf(status.status, tf.state),
             value: tf.text,
             chevron: tf.state == WifiTfState.present,
           ),
           // 共享设备（2026-11-05，同小程序）：接收者也显示；身份由 [WifiSharePage] 自己查，接收者没有移除 / 分享按钮
           divider,
-          entry(l10n.wifiSharedDevice, _gated(() => _push(WifiSharePage(state: widget.state, deviceId: widget.deviceId)))),
+          entry(l10n.wifiSharedDevice, () => _push(WifiSharePage(state: widget.state, deviceId: widget.deviceId))),
         ],
       ),
     );
@@ -418,7 +393,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
               label: l10n.devClearAll,
               labelColor: const Color(0xFFFF6A20),
               value: l10n.devClearAllValue,
-              onTap: _gated(() => startWifiClearFlow(
+              onTap: () => startWifiClearFlow(
                 context,
                 widget.state,
                 _device,
@@ -428,7 +403,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                     WifiSlideshowStore.instance.refresh(_device);
                   }
                 },
-              )),
+              ),
             ),
             Container(height: 1, color: const Color(0xFF2A2B2B).withValues(alpha: 0.08)),
           ],
@@ -545,20 +520,15 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                 castLabel: l10n.devCast,
                 slideshowLabel: l10n.wifiSlideshowSettings,
                 // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
-                // 固件升级判断（2026-11-13）放在锁里：弹框期间连点不重复弹
-                onCast: () => TapGuard.run(this, 'projection', () async {
-                  if (await _firmwareGate() && context.mounted) {
-                    await startWifiCast(context, widget.state, device);
-                  }
-                }),
+                onCast: () => TapGuard.run(this, 'projection', () => startWifiCast(context, widget.state, device)),
                 // 轮播中标记只在 running 且设备在线时显示（2026-11-05，同小程序）
                 slideshowOn: WifiSlideshowStore.instance.of(device.id) && status.status == WifiOnlineStatus.online,
                 // 从轮播设置页保存 / 暂停回来重查轮播中标记
-                onSlideshow: _gated(() => openWifiSlideshow(context, widget.state, device).then((_) {
+                onSlideshow: () => openWifiSlideshow(context, widget.state, device).then((_) {
                   if (mounted) {
                     WifiSlideshowStore.instance.refresh(_device);
                   }
-                })),
+                }),
               ),
               const SizedBox(height: 14),
               _buildEntries(l10n, status),

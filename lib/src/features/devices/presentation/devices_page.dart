@@ -17,7 +17,6 @@ import '../../wifi/wifi_watch.dart';
 import 'my_devices_page.dart';
 import '../../../state.dart';
 import '../../../shared/tap_guard.dart';
-import '../firmware_gate.dart';
 
 /// 设备页：展示已绑定的相框设备，并提供进入设备相关页面的入口。
 ///
@@ -220,15 +219,11 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
               .toList(),
           // WiFi 版「投屏」：不连蓝牙，离线先拦，选图后进同一个预览页（预览页导出后去 WiFi 投屏结果页）
           // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
-          // 固件升级判断（2026-11-13，只判强制升级、在线才判）：投屏、轮播设置都在离线等拦截之后判断
-          onWifiCast: (deviceId) => TapGuard.run(
-            this,
-            'projection',
-            () => startWifiCast(context, state, state.deviceById(deviceId), forceUpgradeCheck: true),
-          ),
+          onWifiCast: (deviceId) =>
+              TapGuard.run(this, 'projection', () => startWifiCast(context, state, state.deviceById(deviceId))),
           // WiFi 版「轮播设置」（V1.4 更新说明 1.5，取代原「刷新状态」）：离线也能看，本地模式只提示
           onWifiSlideshow: (deviceId) =>
-              openWifiSlideshow(context, state, state.deviceById(deviceId), forceUpgradeCheck: true),
+              openWifiSlideshow(context, state, state.deviceById(deviceId)),
           onAddDevice: () {
             Navigator.of(
               context,
@@ -308,10 +303,6 @@ class _DevicesPageState extends State<DevicesPage> with RouteAware {
       if (!connected || !context.mounted) {
         return;
       }
-    }
-    // 固件升级判断（2026-11-13，只判强制升级）：放在连上之后（未连接时无从判断，自动连上后照样判）
-    if (!await guardFirmwareAction(context, state, state.deviceById(deviceId)) || !context.mounted) {
-      return;
     }
     final source = await _pickCastSource(context);
     if (source == null || !context.mounted) {

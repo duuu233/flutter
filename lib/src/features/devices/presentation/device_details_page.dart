@@ -152,30 +152,13 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     }
   }
 
-  // ── 固件升级判断（2026-11-13，规则见 features/devices/firmware_gate.dart）──
-  // 已连接才判断。判定直接用「固件升级」行红点的结果，红点亮 = 有新版本。
-  // 功能按钮只判强制升级（取消后每次点都再弹、操作不继续）；强提醒只在进入时弹，每次启动 App 一次。
+  // ── 固件升级强提醒（2026-11-13 产品改口，规则见 features/devices/firmware_gate.dart）──
+  // 强制升级已去掉，功能按钮不再判断。已连接才判断，进入后判断一次；判定直接用「固件升级」行红点的结果。
 
-  /// 进入后那一次判断过（或按钮已弹过强制升级）就不再补（回到本页也不再弹）。
+  /// 进入后那一次判断过就不再补（回到本页也不再弹）。
   bool _fwEntered = false;
 
-  /// 功能按钮：返回这次操作是否继续：不用弹 → true；强制升级取消 / 去升级了 → false。
-  Future<bool> _firmwareGate() async {
-    final device = this.device;
-    final connected = state.isDeviceActuallyConnected(device.id);
-    if (!connected) {
-      return true;
-    }
-    final mode = decideFirmwareGate(device, ready: true, hasUpdate: _hasFirmwareUpdate(device, connected), forceOnly: true);
-    if (mode == FirmwareGateMode.none || !mounted) {
-      return true;
-    }
-    _fwEntered = true; // 按钮已弹过强制升级，不再补「进入后」那一次，免得连弹两次
-    return showFirmwareGateDialog(context, state, device, mode);
-  }
-
-  /// 进入后判断一次：本页第一次拿到「已连接」的设备信息时（进页已连着，或在本页连上后）；
-  /// 强制 + 强提醒都判，结果写进本地缓存供列表页 / 首页用。
+  /// 进入后判断一次：本页第一次拿到「已连接」的设备信息时（进页已连着，或在本页连上后）；只判强提醒。
   void _checkFirmwareOnEnter() {
     if (_fwEntered || !mounted || !state.isDeviceActuallyConnected(widget.deviceId)) {
       return;
@@ -183,18 +166,6 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
     _fwEntered = true;
     final device = this.device;
     unawaited(checkFirmwareGateOnEnter(context, state, device, ready: true, hasUpdate: _hasFirmwareUpdate(device, true)));
-  }
-
-  /// 功能按钮先判断再执行；连接 / 断开、固件升级行、解除绑定、删除设备不经过这里。
-  VoidCallback? _gated(VoidCallback? action) {
-    if (action == null) {
-      return null;
-    }
-    return () async {
-      if (await _firmwareGate()) {
-        action();
-      }
-    };
   }
 
   @override
@@ -228,13 +199,12 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
         builder: (context, _) => DeviceDetailsBody(
           state: state,
           deviceId: widget.deviceId,
-          onEditName: _gated(() => _renameDevice(context)),
+          onEditName: () => _renameDevice(context),
           onConnectToggle: () => _toggleConnection(context),
           // 防重复点击（2026-11-04 同小程序 tapGuard，key projection）
           onCast: () => TapGuard.run(this, 'projection', () => _startCast(context)),
-          // 固件升级判断（2026-11-13）：轮播设置、一键清空先判断；投屏在 _startCast 连上之后判断
-          onCarouselSettings: _gated(widget.onCarouselSettings),
-          onClearDevice: _gated(widget.onClearDevice),
+          onCarouselSettings: widget.onCarouselSettings,
+          onClearDevice: widget.onClearDevice,
           onUnbindDevice: widget.onUnbindDevice,
           onDeleteDevice: widget.onDeleteDevice,
           onOtaUpgrade: widget.onOtaUpgrade,
@@ -380,10 +350,6 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       if (!context.mounted) {
         return;
       }
-    }
-    // 固件升级判断放在连上之后（未连接时无从判断）：强制升级取消或去升级了就不弹拍照 / 相册
-    if (!await _firmwareGate() || !context.mounted) {
-      return;
     }
     final source = await _pickCastSource(context);
     if (source == null || !context.mounted) {

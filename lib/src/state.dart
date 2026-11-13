@@ -312,9 +312,9 @@ class DeviceItem {
   /// 后端固件包字节数（0=未知，下载后确认）。
   int firmwareSize;
 
-  /// 固件升级方式（2026-11-13，同小程序 `api.normalizeDevice` 的 updateType）：1=强制升级，其它=强提醒升级。
-  /// 取详情出参 `compulsory`（swagger 字段，与 App 版本接口同名：1 强制 2 强提示），缺省再看 `updateType` 等。
-  /// 判断与弹框见 `features/devices/firmware_gate.dart`。
+  /// 固件升级类型（2026-11-13，同小程序 `api.normalizeDevice` 的 updateType）：
+  /// 取详情出参 `compulsory`（1 强制 2 强提示 3 弱提示 4 不提示），缺省再看 `updateType` 等。
+  /// 强制升级已去掉（1 按强提醒），只在设备详情页进入时弹强提醒，见 `features/devices/firmware_gate.dart`。
   int updateType;
 
   /// 优雅刷新（FPGA）最新版本（2026-11-13，详情出参 newVersionNoFpga / downloadPathFpga / upgradeTipsFpga 版本说明）；
