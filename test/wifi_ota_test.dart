@@ -269,9 +269,11 @@ void main() {
       expect(ota.contains("ValueKey('wifi-fpga-intro')"), isTrue, reason: '显示版本说明');
       expect(RegExp(r"if \(!_fpga\) \.\.\.\[\s*Image\.asset\(\s*art,\s*key: const ValueKey\('wifi-ota-art'\)").hasMatch(ota), isTrue,
           reason: '优雅刷新升级不显示顶部图标（2026-11-14），固件升级照旧');
-      expect(ota.contains('final emptyFpga = _fpga && _phase == _Phase.latest && !_showVersions;') && ota.contains('fillViewport: emptyFpga,'), isTrue,
-          reason: '优雅刷新暂无可用版本：内容上下居中（2026-11-14）');
+      expect(ota.contains('final emptyFpga = _fpga && (_phase == _Phase.checking || _phase == _Phase.latest) && !_showVersions;') && ota.contains('fillViewport: emptyFpga,'), isTrue,
+          reason: '优雅刷新检测中、暂无可用版本：内容上下居中（2026-11-14）');
       expect('if (emptyFpga) const Spacer(),'.allMatches(ota).length, 2, reason: '标题上下各一个 Spacer');
+      expect(RegExp(r'super\.initState\(\);\s*//[^\n]*\n\s*_otaType = widget\.fpga \? kWifiOtaTypeFpga : kWifiOtaTypeMain;').hasMatch(ota), isTrue,
+          reason: '首帧就按入口模式排版，检测中不先在顶部闪一下');
     });
   });
 }

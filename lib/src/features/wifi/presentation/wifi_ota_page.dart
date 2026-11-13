@@ -108,6 +108,8 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    // 首帧就按入口模式排版（优雅刷新检测中居中、不画顶部图标），不等 _load 再跳一下
+    _otaType = widget.fpga ? kWifiOtaTypeFpga : kWifiOtaTypeMain;
     WidgetsBinding.instance.addObserver(this);
     // WS 只推状态信号：带了 status 就先按它画，再补查一次；progress（2026-11-12）每条进度回执推一次，同样交给 _applyStatus
     _otaSub = IotWs.instance.on('ota.result').listen((event) {
@@ -628,8 +630,8 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     };
     final texts = _stepTexts(l10n);
     final steps = _steps;
-    // 优雅刷新「暂无可用版本」（2026-11-14 产品要求）：标题与提示在页面里上下居中（同小程序 is-empty）
-    final emptyFpga = _fpga && _phase == _Phase.latest && !_showVersions;
+    // 优雅刷新「检测中」「暂无可用版本」（2026-11-14 产品要求）：标题与提示在页面里上下居中（同小程序 is-empty）
+    final emptyFpga = _fpga && (_phase == _Phase.checking || _phase == _Phase.latest) && !_showVersions;
     return FigmaScreen(
       title: _fpga ? l10n.wifiFpgaTitle : l10n.wifiOtaTitle,
       fillViewport: emptyFpga,
