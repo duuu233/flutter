@@ -500,12 +500,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
         ),
       ),
     );
-    if (!mounted) {
-      return;
-    }
-    // 投屏返回后刷新投屏记录（真实数据同步）。
-    // 2026-08-17：图库列表接口已下线，「我的相册」铺的就是这份记录。
-    widget.state.refreshCastRecords();
+    // 2026-11-14：投屏返回后不再全局重拉投屏记录（原默认每页 100 条、不带筛选，会覆盖「我的上传」的列表）；
+    // 「我的上传」「投屏记录」进页与返回时各自按自己的分页（我的上传每页 21）重新加载，同小程序。
   }
 
   /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），

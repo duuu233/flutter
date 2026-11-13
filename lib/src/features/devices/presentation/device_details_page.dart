@@ -382,8 +382,8 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
         ),
       ),
     );
-    // 2026-08-17：图库列表接口已下线，投屏后只需重拉投屏记录。
-    state.refreshCastRecords();
+    // 2026-11-14：投屏后不再全局重拉投屏记录（原默认每页 100 条、不带筛选，会覆盖「我的上传」的列表）；
+    // 「我的上传」「投屏记录」进页与返回时各自按自己的分页重新加载，同小程序。
   }
 }
 
