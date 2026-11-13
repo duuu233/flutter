@@ -1,9 +1,12 @@
 import '../../network/boltfox_api.dart';
+import '../../network/iot/iot_client.dart';
 import '../../network/api_rows.dart';
 
-// WiFi 版「渲染固件管理」（2026-11-13，同小程序 utils/fpga-firmware.js）：只有产品渲染模式 = fpga16 的设备才有（目前只有 10.1 寸）。
+// WiFi 版「优雅刷新升级」（2026-11-13，原名渲染固件管理；同小程序 utils/fpga-firmware.js）：只有产品渲染模式 = fpga16 的设备才有（目前只有 10.1 寸）。
 //
-//   · 设备详情 → 设备信息 → 「渲染固件管理」：列出后台「FPGA版本」里启用的版本（版本号、简介、安装），未启用的不显示；
+//   · 设备详情 → 设备信息 → 「优雅刷新升级」：列出后台「优雅刷新管理」（FPGA 版本）里启用的版本（版本号、简介、安装），未启用的不显示；
+//   · 设备不上报 FPGA 版本（ota/status 的 baseVersion 为 null），列表与安装页都不显示设备当前版本；
+//   · 下发返回 4047 = 今日升级次数已达上限（[isWifiFpgaLimitError]），提示 wifiFpgaLimit；
 //   · 点「安装」进安装步骤页 = WifiOtaPage(fpgaTarget: 该版本)：版式、进度条、四步状态全部复用，只改文字、带出简介；
 //   · 下发复用 POST /api/device/ota，type=fpga、version = FPGA 目标版本、url = 该版本固件地址；
 //     返回值、进度字段、四步交互、本地进行中记录（ota_inflight:{deviceNo}）都与固件升级一致，不单独判断状态。
@@ -19,6 +22,11 @@ const String kWifiOtaTypeFpga = 'fpga';
 bool isFpgaRenderMode(Object? renderMode) => '${renderMode ?? ''}'.trim().toLowerCase() == 'fpga16';
 
 bool wifiFpgaListApiReady() => kWifiFpgaListApi.isNotEmpty;
+
+/// 4047：POST /api/device/ota（type=fpga）当日升级次数已达上限（2026-11-13 服务端新增）。
+const int kWifiFpgaLimitCode = 4047;
+
+bool isWifiFpgaLimitError(Object error) => error is IotException && int.tryParse('${error.code}') == kWifiFpgaLimitCode;
 
 class WifiFpgaVersion {
   const WifiFpgaVersion({required this.id, required this.version, this.intro = '', this.url = '', this.grade = 0});

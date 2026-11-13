@@ -34,17 +34,18 @@ import 'wifi_provision_page.dart';
 ///   · 进度条（2026-11-12 同小程序）：步骤上方一条，左边当前那一步的文案、右边百分比。服务端 progress（轮询与 WS 都带）
 ///     只抬「上限」，显示值由本页计时器匀速往上限走（规则见 [wifi_ota.dart]「升级进度条」）；失败停住，VERIFYING 走到 100。
 ///     收到过的最大进度存进本地记录，重进页面从那里接着走。
-///   · 渲染固件安装（2026-11-13，同小程序 `wifi-ota?mode=fpga`，见 [wifi_fpga.dart]）：传了 [fpgaTarget] 即为安装模式，
+///   · 优雅刷新升级（2026-11-13，同小程序 `wifi-ota?mode=fpga`，见 [wifi_fpga.dart]）：传了 [fpgaTarget] 即为安装模式，
 ///     不比对版本，直接展示目标版本与简介；下发同一个 `POST /api/device/ota`，type=fpga、version=目标版本；
 ///     进度条、四步、轮询 / WS、本地进行中记录与固件升级完全一致，只换文字并显示简介。本地记录带 otaType，
-///     重进时（无论从哪个入口）按记录里的类型选文字。
+///     重进时（无论从哪个入口）按记录里的类型选文字。设备不上报 FPGA 版本（baseVersion 为 null），版本卡只显示安装版本；
+///     下发返回 4047（今日升级次数已达上限）按语种提示。
 class WifiOtaPage extends StatefulWidget {
   const WifiOtaPage({super.key, required this.state, required this.deviceId, this.fpgaTarget});
 
   final PhotoFrameState state;
   final String deviceId;
 
-  /// 渲染固件安装的目标版本（从「渲染固件管理」进来时传）；null 为普通固件升级。
+  /// 优雅刷新的目标版本（从「优雅刷新升级」列表进来时传）；null 为普通固件升级。
   final WifiFpgaVersion? fpgaTarget;
 
   @override
@@ -88,9 +89,9 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   String _progressText = '';
   Timer? _progressTimer;
 
-  /// 本次展示的升级类型：main 固件升级 / fpga 渲染固件安装（重进时按本地记录切换）。
+  /// 本次展示的升级类型：main 固件升级 / fpga 优雅刷新升级（重进时按本地记录切换）。
   String _otaType = kWifiOtaTypeMain;
-  String _intro = ''; // 渲染固件简介
+  String _intro = ''; // 优雅刷新版本简介
   bool get _fpga => _otaType == kWifiOtaTypeFpga;
 
   /// 四步文字：两种模式只有最后一步不同（升级完成 / 安装完成）。
@@ -237,20 +238,18 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     _deviceState = info == null ? WifiOnlineStatus.unknown : wifiDeviceState(info);
     final target = widget.fpgaTarget;
     if (target != null) {
-      _showFpgaTarget(target, info);
+      _showFpgaTarget(target);
       return;
     }
     _check = evaluateWifiOta(wifiFirmwareVersion(info), device.newVersionNo, device.downloadPath);
     _showEvaluation(_check!);
   }
 
-  /// 渲染固件安装：不比对版本，直接展示「渲染固件管理」选中的目标（版本号 + 简介）。
-  void _showFpgaTarget(WifiFpgaVersion target, Map<String, dynamic>? info) {
+  /// 优雅刷新升级：不比对版本，直接展示列表页选中的目标（版本号 + 简介）；设备不上报 FPGA 版本，不显示当前版本。
+  void _showFpgaTarget(WifiFpgaVersion target) {
     final l10n = AppL10n.of(context);
-    final shadow = info?['shadow'];
-    final current = '${(shadow is Map ? shadow['fpgaVersion'] : null) ?? ''}'.trim();
     final ok = target.hasValidUrl;
-    _check = WifiOtaCheck(ok ? WifiOtaCheckState.available : WifiOtaCheckState.invalid, current, target.version, target.url);
+    _check = WifiOtaCheck(ok ? WifiOtaCheckState.available : WifiOtaCheckState.invalid, '', target.version, target.url);
     _intro = target.intro;
     _setScreen(
       phase: ok ? _Phase.available : _Phase.invalid,
@@ -258,7 +257,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       hint: ok ? l10n.wifiFpgaAvailableHint : l10n.wifiFpgaInvalidUrl,
       art: ok ? _Art.progress : _Art.fail,
       showVersions: true,
-      currentVersion: current.isNotEmpty ? current : '--',
+      currentVersion: '--',
       latestVersion: target.version,
     );
   }
@@ -547,12 +546,17 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     AppLoadingDialog.show(context, l10n.wifiOtaSending);
     Map<String, dynamic> res;
     try {
-      // type：main 固件升级 / fpga 渲染固件（version 为 FPGA 目标版本），其余与固件升级一致
+      // type：main 固件升级 / fpga 优雅刷新（version 为 FPGA 目标版本），其余与固件升级一致
       res = await IotApi.startOta(deviceNo: deviceNo, url: result.url, type: _otaType, version: result.latest);
     } catch (error) {
       _starting = false;
       AppLoadingDialog.hideIfAny();
       if (!mounted) {
+        return;
+      }
+      if (isWifiFpgaLimitError(error)) {
+        // 4047：今日升级次数已达上限，停在当前页，不算失败
+        AppToast.warn(context, l10n.wifiFpgaLimit);
         return;
       }
       if (isWifiOtaBusyError(error)) {
@@ -658,13 +662,13 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
               padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
               child: Column(
                 children: [
-                  _VersionRow(label: l10n.wifiOtaCurrentVersion, value: _currentVersion),
+                  if (!_fpga) _VersionRow(label: l10n.wifiOtaCurrentVersion, value: _currentVersion),
                   _VersionRow(label: _fpga ? l10n.wifiFpgaTargetVersion : l10n.wifiOtaLatestVersion, value: _latestVersion),
                 ],
               ),
             ),
           ],
-          // 渲染固件简介（2026-11-13）：安装确认与进度页都带出
+          // 优雅刷新版本简介（2026-11-13）：安装确认与进度页都带出
           if (_intro.isNotEmpty) ...[
             const SizedBox(height: 12),
             FigmaGlassCard(

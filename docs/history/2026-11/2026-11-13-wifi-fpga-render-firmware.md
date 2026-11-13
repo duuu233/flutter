@@ -17,3 +17,10 @@
 
 - `test/wifi_ota_test.dart` 新增「渲染固件管理」一组：渲染模式判断、版本列表规整、本地记录类型与简介（含旧记录兼容）、接入位置（源码断言用 Python 对实际文件核对过）。
 - 本机无 Flutter / Dart，analyze / test / 编译 / 真机都没跑；列表接口待后端，FPGA 安装未联调。
+
+## 补充（同日）：改名「优雅刷新升级」、4047、不显示设备 FPGA 版本
+
+- 「渲染固件管理」改名「优雅刷新升级」（简 / 英 / 日：优雅刷新升级 / Smooth refresh update / スムーズリフレッシュ更新），安装页文案同步。
+- 设备不上报 FPGA 版本（`baseVersion` 为 null）：去掉设备信息页「FPGA版本」行、列表页当前版本与「当前版本 / 重新安装」标记、安装页版本卡的「当前版本」行；删掉对应文案。
+- `POST /api/device/ota`（`type=fpga`）返回 4047：`isWifiFpgaLimitError` 捕捉，提示 `wifiFpgaLimit`（简 / 繁 / 英 / 日「今日升级次数已达上限」），停在当前页、不存记录。
+- `test/wifi_ota_test.dart` 补 4047 判断与「不显示版本号」源码断言；本机无 Flutter，未运行。

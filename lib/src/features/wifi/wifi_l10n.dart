@@ -867,38 +867,34 @@ extension WifiL10n on AppL10n {
   String get wifiAcceptDone => pick('已加入，可以使用这台设备了', 'Joined. You can use this device now.', '参加しました。このデバイスを使えます');
   String get wifiAcceptFailed => pick('加入失败，请稍后重试', 'Failed to join. Please try again later.', '参加に失敗しました。しばらくしてからお試しください');
 
-  // ── 渲染固件管理（2026-11-13，同小程序 wifi-fpga / wifi-ota?mode=fpga）──
-  String get wifiFpgaManage => pick('渲染固件管理', 'Render firmware', 'レンダリングファームウェア管理');
-  String get wifiFpgaVersionRow => pick('FPGA版本', 'FPGA version', 'FPGAバージョン');
-  String get wifiFpgaCurrent => pick('当前 FPGA 版本', 'Current FPGA version', '現在の FPGA バージョン');
+  // ── 优雅刷新升级（2026-11-13，原名渲染固件管理；同小程序 wifi-fpga / wifi-ota?mode=fpga）──
+  String get wifiFpgaManage => pick('优雅刷新升级', 'Smooth refresh update', 'スムーズリフレッシュ更新');
   String get wifiFpgaInstall => pick('安装', 'Install', 'インストール');
-  String get wifiFpgaReinstall => pick('重新安装', 'Reinstall', '再インストール');
-  String get wifiFpgaCurrentTag => pick('当前版本', 'Current', '現在のバージョン');
   String get wifiFpgaNoIntro => pick('暂无简介', 'No description', '説明はありません');
   String get wifiFpgaPendingTitle => pick('版本列表暂未开放', 'Version list not available yet', 'バージョン一覧はまだ公開されていません');
   String get wifiFpgaPendingHint => pick(
-    '渲染固件版本列表接口尚未上线，开放后即可在这里安装。',
-    'The render firmware list is not online yet. You can install versions here once it is available.',
-    'レンダリングファームウェア一覧はまだ公開されていません。公開後にここからインストールできます。',
+    '优雅刷新版本列表接口尚未上线，开放后即可在这里安装。',
+    'The smooth refresh version list is not online yet. You can install versions here once it is available.',
+    'スムーズリフレッシュのバージョン一覧はまだ公開されていません。公開後にここからインストールできます。',
   );
-  String get wifiFpgaEmptyTitle => pick('暂无可安装的渲染固件', 'No render firmware to install', 'インストールできるファームウェアはありません');
+  String get wifiFpgaEmptyTitle => pick('暂无可安装的优雅刷新固件', 'No smooth refresh firmware to install', 'インストールできるファームウェアはありません');
   String get wifiFpgaEmptyHint => pick('后台还没有启用的版本。', 'No version is enabled yet.', '有効なバージョンはまだありません。');
-  String get wifiFpgaNotSupported => pick('该设备不支持渲染固件管理', 'This device does not support render firmware', 'このデバイスは対応していません');
+  String get wifiFpgaNotSupported => pick('该设备不支持优雅刷新升级', 'This device does not support smooth refresh update', 'このデバイスはスムーズリフレッシュ更新に対応していません');
   String get wifiFpgaNotSupportedHint => pick(
-    '只有渲染模式为 FPGA16 的设备可以安装渲染固件。',
-    'Only devices with the FPGA16 render mode can install render firmware.',
+    '只有渲染模式为 FPGA16 的设备可以安装优雅刷新固件。',
+    'Only devices with the FPGA16 render mode can install smooth refresh firmware.',
     'レンダリングモードが FPGA16 のデバイスのみインストールできます。',
   );
   String get wifiFpgaLoadFailed => pick('加载失败，请稍后重试', 'Failed to load. Please try again later.', '読み込みに失敗しました。しばらくしてからお試しください');
   String get wifiFpgaInvalidUrl => pick('该版本固件地址无效，暂时无法安装', 'This version has an invalid firmware address', 'このバージョンのファームウェアアドレスが無効です');
-  String get wifiFpgaTitle => pick('渲染固件安装', 'Install render firmware', 'レンダリングファームウェアのインストール');
-  String wifiFpgaInstallTitle(String version) => pick('安装渲染固件 $version', 'Install render firmware $version', 'レンダリングファームウェア $version をインストール');
+  String get wifiFpgaTitle => pick('优雅刷新升级', 'Smooth refresh update', 'スムーズリフレッシュ更新');
+  String wifiFpgaInstallTitle(String version) => pick('安装优雅刷新固件 $version', 'Install smooth refresh firmware $version', 'スムーズリフレッシュファームウェア $version をインストール');
   String get wifiFpgaAvailableHint => pick(
     '安装期间设备会自动重启，请保持设备通电和网络连接',
     'The device restarts during installation. Keep it powered on and connected.',
     'インストール中にデバイスが再起動します。電源とネットワークを維持してください。',
   );
-  String get wifiFpgaRunningTitle => pick('设备正在安装渲染固件', 'Installing render firmware', 'レンダリングファームウェアをインストール中');
+  String get wifiFpgaRunningTitle => pick('设备正在安装优雅刷新固件', 'Installing smooth refresh firmware', 'スムーズリフレッシュファームウェアをインストール中');
   String get wifiFpgaRunningHint => pick(
     '安装期间请保持设备通电和网络连接，可离开本页，进度不受影响',
     'Keep the device powered on and connected. You can leave this page; installation continues.',
@@ -912,15 +908,17 @@ extension WifiL10n on AppL10n {
   String get wifiFpgaTargetVersion => pick('安装版本', 'Install version', 'インストールするバージョン');
   String get wifiFpgaIntro => pick('版本简介', 'Description', 'バージョン説明');
   String wifiFpgaConfirm(String version) => pick(
-    '将安装渲染固件 $version，安装期间设备会自动重启，请保持设备通电和网络连接',
-    'Install render firmware $version? The device restarts during installation. Keep it powered on and connected.',
-    'レンダリングファームウェア $version をインストールします。インストール中にデバイスが再起動します。',
+    '将安装优雅刷新固件 $version，安装期间设备会自动重启，请保持设备通电和网络连接',
+    'Install smooth refresh firmware $version? The device restarts during installation. Keep it powered on and connected.',
+    'スムーズリフレッシュファームウェア $version をインストールします。インストール中にデバイスが再起動します。',
   );
-  String get wifiFpgaSuccessHint => pick('设备已重启，渲染固件安装成功', 'The device restarted. Render firmware installed.', 'デバイスが再起動し、インストールに成功しました');
+  String get wifiFpgaSuccessHint => pick('设备已重启，优雅刷新固件安装成功', 'The device restarted. Smooth refresh firmware installed.', 'デバイスが再起動し、インストールに成功しました');
   String get wifiFpgaWaitRebootTitle => pick('安装完成 · 等待设备重启', 'Installed · Waiting for restart', 'インストール完了・再起動待ち');
   String get wifiFpgaWaitRebootHint => pick(
     '设备重启后会确认安装结果，并通过消息中心通知您',
     'The result will be confirmed after the device restarts and sent to the message center.',
     'デバイスの再起動後に結果を確認し、メッセージセンターでお知らせします。',
   );
+  /// 4047：POST /api/device/ota（type=fpga）当日升级次数用完。
+  String get wifiFpgaLimit => pick('今日升级次数已达上限', "You've reached today's upgrade limit", '本日のアップデート回数の上限に達しました', '今日升級次數已達上限');
 }

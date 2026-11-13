@@ -175,7 +175,7 @@ void main() {
     expect(WifiShareMember.fromRow({'userProductId': 1, 'createTime': '2026-10-01'}).joinedAt, '');
   });
 
-  group('渲染固件管理（2026-11-13）', () {
+  group('优雅刷新升级（2026-11-13，原名渲染固件管理）', () {
     test('只有 fpga16 才算；列表去掉未启用、按权重排、简介字段兜底；接口未开放', () {
       expect(isFpgaRenderMode(' FPGA16 '), isTrue);
       expect(isFpgaRenderMode('esp32'), isFalse);
@@ -220,6 +220,19 @@ void main() {
       expect(ota.contains('_otaType = record.otaType;'), isTrue, reason: '重进按记录选文字');
       final list = read('lib/src/features/wifi/presentation/wifi_fpga_page.dart');
       expect(list.contains('WifiOtaPage(state: widget.state, deviceId: widget.deviceId, fpgaTarget: target)'), isTrue);
+      // 设备不上报 FPGA 版本（baseVersion 为 null）：三处都不显示设备版本号
+      expect(info.contains('fpgaVersion'), isFalse);
+      expect(list.contains('fpgaVersion'), isFalse);
+      expect(ota.contains('if (!_fpga) _VersionRow(label: l10n.wifiOtaCurrentVersion'), isTrue);
+      expect(ota.contains('if (isWifiFpgaLimitError(error))'), isTrue, reason: '下发 4047 单独提示');
+    });
+
+    test('4047 = 今日升级次数已达上限', () {
+      IotException err(Object code) => IotException(code: code, message: 'x', action: IotErrorAction.none);
+      expect(isWifiFpgaLimitError(err(4047)), isTrue);
+      expect(isWifiFpgaLimitError(err('4047')), isTrue);
+      expect(isWifiFpgaLimitError(err(4045)), isFalse);
+      expect(isWifiFpgaLimitError(Exception('x')), isFalse);
     });
   });
 }

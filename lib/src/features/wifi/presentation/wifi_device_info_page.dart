@@ -14,7 +14,7 @@ import 'wifi_fpga_page.dart';
 /// WiFi 版「设备信息」二级页（2026-10-29，同小程序 `subpackages/device/wifi-info`，原详情页的信息行挪到这里）：
 /// WiFi信号、WiFi名称、最后上线、最后心跳、固件版本；不再显示国家码。
 /// 数据沿用 [WifiStatusStore]（IoT GET /api/device/info），进页重查一次；非在线时信号不显示（本地模式影子冻结）。
-/// 2026-11-13：产品渲染模式 = fpga16 的设备多一行「FPGA版本」（影子 fpgaVersion）和「渲染固件管理」入口（[WifiFpgaPage]）。
+/// 2026-11-13：产品渲染模式 = fpga16 的设备多一个「优雅刷新升级」入口（[WifiFpgaPage]，原名渲染固件管理）；设备不上报 FPGA 版本，不显示版本号。
 class WifiDeviceInfoPage extends StatefulWidget {
   const WifiDeviceInfoPage({super.key, required this.state, required this.deviceId});
 
@@ -26,7 +26,7 @@ class WifiDeviceInfoPage extends StatefulWidget {
 }
 
 class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
-  /// 渲染模式 = fpga16 才显示「渲染固件管理」。
+  /// 渲染模式 = fpga16 才显示「优雅刷新升级」。
   bool _fpga = false;
 
   @override
@@ -84,7 +84,6 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
             value: '${info['firmwareVersion'] ?? shadow['espVersion'] ?? shadow['version'] ?? ''}',
             leading: null,
           ),
-          if (_fpga) (label: l10n.wifiFpgaVersionRow, value: '${shadow['fpgaVersion'] ?? ''}', leading: null),
         ];
         return FigmaScreen(
           title: l10n.wifiDeviceInfo,
@@ -123,7 +122,7 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
                     ],
                   ),
                 ),
-              // 渲染固件管理（2026-11-13）：只有渲染模式 = fpga16 的设备才有
+              // 优雅刷新升级（2026-11-13）：只有渲染模式 = fpga16 的设备才有
               if (_fpga && status.status != WifiOnlineStatus.loading) ...[
                 const SizedBox(height: 12),
                 GestureDetector(
