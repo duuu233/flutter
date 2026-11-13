@@ -467,7 +467,8 @@ class _HomePageState extends State<HomePage> with RouteAware {
     }
     // 固件升级判断（2026-11-13，只判强制升级，见 features/devices/firmware_gate.dart）：
     // WiFi 版确认在线之后、蓝牙版连上之后才判；强制升级取消或去升级了就不进选图
-    if (!await guardFirmwareAction(context, widget.state, activeDevice) || !mounted) {
+    // WiFi 版上面已确认在线（online: true），不看本地可能过时的状态
+    if (!await guardFirmwareAction(context, widget.state, activeDevice, online: activeDevice.isWifi) || !mounted) {
       return;
     }
 

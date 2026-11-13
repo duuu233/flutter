@@ -200,7 +200,8 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   /// 进入后那一次判断过就不再补（回到本页、状态推送重查都不再弹）。
   bool _fwEntered = false;
 
-  /// 返回这次操作是否继续：不用弹 / 强提醒取消 → true；强制升级取消 / 去升级了 → false。
+  /// 功能按钮只判强制升级（取消后每次点都再弹、操作不继续）；强提醒只在进入时弹（[_checkFirmwareOnEnter]）。
+  /// 返回这次操作是否继续：不用弹 → true；强制升级取消 / 去升级了 → false。
   Future<bool> _firmwareGate() async {
     final status = WifiStatusStore.instance.of(widget.deviceId);
     if (!status.online) {
@@ -208,7 +209,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
     }
     final device = _device;
     final hasUpdate = !_otaInflight && wifiFirmwareHasUpdate(device, wifiFirmwareVersion(status.info));
-    final mode = decideFirmwareGate(device, ready: true, hasUpdate: hasUpdate);
+    final mode = decideFirmwareGate(device, ready: true, hasUpdate: hasUpdate, forceOnly: true);
     if (mode == FirmwareGateMode.none || !mounted) {
       return true;
     }
@@ -225,7 +226,14 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
       return;
     }
     _fwEntered = true;
-    await _firmwareGate();
+    final status = WifiStatusStore.instance.of(widget.deviceId);
+    if (!status.online) {
+      return;
+    }
+    // 强制 / 强提醒都判（强提醒每次启动 App 只弹一次），结果写进本地缓存供列表页 / 首页用
+    final device = _device;
+    await checkFirmwareGateOnEnter(context, widget.state, device,
+        ready: true, hasUpdate: !_otaInflight && wifiFirmwareHasUpdate(device, wifiFirmwareVersion(status.info)));
   }
 
   /// 功能按钮先判断再执行；固件升级行、解除绑定、删除设备不经过这里。

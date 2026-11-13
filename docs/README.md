@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次更新：[2026-11-13 系统分享面板预览卡显示 APP 图标](history/2026-11/2026-11-13-share-preview-icon.md)——iOS 用 LPLinkMetadata 显示邀请标题和 APP 图标；Android 10+ 用 EXTRA_TITLE 加 ClipData 缩略图（只读 ShareIconProvider 提供图标）；发出去的内容仍是纯文本。
+本次更新：[2026-11-13 固件升级判断按后台升级类型、强提醒每次启动一次、列表页 / 首页本地缓存](history/2026-11/2026-11-13-firmware-gate-type-cache.md)——1 强制、2 强提醒弹框，3 弱提示 / 4 不提示只亮红点；强提醒只在进入详情页时弹一次；列表页 / 首页第一次点时 loading 现查并缓存，升级完成后更新缓存。
 
 ## 1. 阅读入口
 

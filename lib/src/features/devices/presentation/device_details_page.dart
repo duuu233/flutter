@@ -153,32 +153,36 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
   }
 
   // ── 固件升级判断（2026-11-13，规则见 features/devices/firmware_gate.dart）──
-  // 已连接才判断；强制升级与强提醒升级都弹。判定直接用「固件升级」行红点的结果，红点亮 = 会弹。
+  // 已连接才判断。判定直接用「固件升级」行红点的结果，红点亮 = 有新版本。
+  // 功能按钮只判强制升级（取消后每次点都再弹、操作不继续）；强提醒只在进入时弹，每次启动 App 一次。
 
-  /// 已连接状态下判断过一次，就不再补「进入后」那一次（回到本页也不再弹）。
+  /// 进入后那一次判断过（或按钮已弹过强制升级）就不再补（回到本页也不再弹）。
   bool _fwEntered = false;
 
-  /// 返回这次操作是否继续：不用弹 / 强提醒取消 → true；强制升级取消 / 去升级了 → false。
+  /// 功能按钮：返回这次操作是否继续：不用弹 → true；强制升级取消 / 去升级了 → false。
   Future<bool> _firmwareGate() async {
     final device = this.device;
     final connected = state.isDeviceActuallyConnected(device.id);
     if (!connected) {
       return true;
     }
-    _fwEntered = true;
-    final mode = decideFirmwareGate(device, ready: true, hasUpdate: _hasFirmwareUpdate(device, connected));
+    final mode = decideFirmwareGate(device, ready: true, hasUpdate: _hasFirmwareUpdate(device, connected), forceOnly: true);
     if (mode == FirmwareGateMode.none || !mounted) {
       return true;
     }
+    _fwEntered = true; // 按钮已弹过强制升级，不再补「进入后」那一次，免得连弹两次
     return showFirmwareGateDialog(context, state, device, mode);
   }
 
-  /// 进入后判断一次：本页第一次拿到「已连接」的设备信息时（进页已连着，或在本页连上后）。
+  /// 进入后判断一次：本页第一次拿到「已连接」的设备信息时（进页已连着，或在本页连上后）；
+  /// 强制 + 强提醒都判，结果写进本地缓存供列表页 / 首页用。
   void _checkFirmwareOnEnter() {
     if (_fwEntered || !mounted || !state.isDeviceActuallyConnected(widget.deviceId)) {
       return;
     }
-    unawaited(_firmwareGate());
+    _fwEntered = true;
+    final device = this.device;
+    unawaited(checkFirmwareGateOnEnter(context, state, device, ready: true, hasUpdate: _hasFirmwareUpdate(device, true)));
   }
 
   /// 功能按钮先判断再执行；连接 / 断开、固件升级行、解除绑定、删除设备不经过这里。

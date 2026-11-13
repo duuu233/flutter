@@ -15,6 +15,7 @@ import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/permission_gate.dart';
 import '../../../shared/widgets/low_battery_tip.dart';
 import '../../../state.dart';
+import '../firmware_gate.dart';
 
 /// 设备固件 OTA 升级页 —— 由微信小程序版 `subpackages/device/ota/ota`（ota.js + ota.wxml）移植。
 ///
@@ -597,8 +598,9 @@ class _OtaUpgradePageState extends State<OtaUpgradePage> {
           _statusTitle = l10n.otaUpgradeFailed;
           _statusDesc = l10n.otaUnconfirmedDesc;
         } else {
-          // 已确认升级成功：隐藏可升级包。
+          // 已确认升级成功：隐藏可升级包；固件升级判断的本地缓存改成无需升级（列表页 / 首页不再弹强制升级）。
           _stage = _OtaStage.success;
+          unawaited(FirmwareGateCache.markUpgraded(widget.deviceId));
           _hasPackage = false;
           // 设备在 END 校验通过约 2s 后就复位运行新固件，这条 GATT 链路立刻作废。
           // 如实告诉用户「正在重启、稍等几秒再连」——否则他立刻回去点投屏，
