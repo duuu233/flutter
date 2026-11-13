@@ -132,6 +132,12 @@
             android:value="opengles" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
+        <!-- 系统分享面板预览卡缩略图（APP 图标），只读、不导出 -->
+        <provider
+            android:name=".ShareIconProvider"
+            android:authorities="${applicationId}.shareicon"
+            android:exported="false"
+            android:grantUriPermissions="true" />
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

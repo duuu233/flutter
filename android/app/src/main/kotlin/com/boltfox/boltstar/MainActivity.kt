@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -164,16 +165,26 @@ class MainActivity : FlutterActivity() {
     }
 
     /// ACTION_SEND 选择器；拉起返回 true（用户是否发出不回传），文本为空或拉不起返回 false。
+    /// 面板顶部预览卡（Android 10+ 系统分享面板）：标题 = subject（EXTRA_TITLE），缩略图 = APP 图标（ClipData + 临时读授权）；
+    /// 部分厂商自带的分享面板不显示预览卡，不影响分享本身。
     private fun shareText(call: MethodCall, result: MethodChannel.Result) {
         val text = call.argument<String>("text").orEmpty()
         if (text.isEmpty()) {
             result.success(false)
             return
         }
+        val subject = call.argument<String>("subject")?.takeIf { it.isNotEmpty() }
         val send = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_TEXT, text)
-            call.argument<String>("subject")?.takeIf { it.isNotEmpty() }?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
+            subject?.let {
+                putExtra(Intent.EXTRA_SUBJECT, it)
+                putExtra(Intent.EXTRA_TITLE, it)
+            }
+            ShareIconProvider.appIconUri(this@MainActivity)?.let { uri ->
+                clipData = ClipData.newRawUri(null, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
         }
         try {
             startActivity(Intent.createChooser(send, call.argument<String>("title")))

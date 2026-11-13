@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次更新：[2026-11-13 WiFi 投屏幂等键 Idempotency-Key](history/2026-11/2026-11-13-wifi-play-idempotency.md)——play 无自动重试，键用于「重试未成功的」；批量投屏每张图各一个新键（不整批共用），重试同一张同样刷屏方式复用、刷屏方式变了换新键，新进入结果页全部新键；4090 提示「处理中，请稍后重试」；未跑 analyze / test / 编译，未联调。
+本次更新：[2026-11-13 系统分享面板预览卡显示 APP 图标](history/2026-11/2026-11-13-share-preview-icon.md)——iOS 用 LPLinkMetadata 显示邀请标题和 APP 图标；Android 10+ 用 EXTRA_TITLE 加 ClipData 缩略图（只读 ShareIconProvider 提供图标）；发出去的内容仍是纯文本。
 
 ## 1. 阅读入口
 

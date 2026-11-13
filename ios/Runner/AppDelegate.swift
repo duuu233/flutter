@@ -5,6 +5,7 @@ import CoreLocation
 // PHPhotoLibrary / PHAssetChangeRequest 在 Photos 里（PhotosUI 只给 PHPicker 那套）。
 // 靠 PhotosUI 的伞头间接带出来能不能编过依赖模块的 re-export 规则，显式写一行不留悬念。
 import Photos
+import LinkPresentation
 import PhotosUI
 import AVFoundation
 import StoreKit
@@ -285,15 +286,19 @@ final class DeviceApiHandler: NSObject {
 
   /// UIActivityViewController；拉起返回 true（用户是否发出不回传），文本为空或没有可用的视图控制器返回 false。
   /// iPad 上以 popover 弹出，必须给锚点，否则会崩。
+  /// 面板顶部预览卡（2026-11-13）：用 [ShareTextItemSource] 给 LPLinkMetadata——标题取 subject（邀请标题），
+  /// 图标用 APP 自己的图标；发出去的内容仍是同一段纯文本。
   private func shareText(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     let args = call.arguments as? [String: Any]
     let text = (args?["text"] as? String) ?? ""
+    let subject = (args?["subject"] as? String) ?? ""
     DispatchQueue.main.async {
       guard !text.isEmpty, let presenter = self.topViewController() else {
         result(false)
         return
       }
-      let controller = UIActivityViewController(activityItems: [text], applicationActivities: nil)
+      let item = ShareTextItemSource(text: text, title: subject, icon: Self.appIconImage())
+      let controller = UIActivityViewController(activityItems: [item], applicationActivities: nil)
       if let popover = controller.popoverPresentationController {
         popover.sourceView = presenter.view
         popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.maxY, width: 0, height: 0)
@@ -302,6 +307,18 @@ final class DeviceApiHandler: NSObject {
       presenter.present(controller, animated: true)
       result(true)
     }
+  }
+
+  /// APP 图标：资源目录编译后写进 Info.plist 的 CFBundleIcons，取最大的那一张；取不到退回 AppIcon。
+  static func appIconImage() -> UIImage? {
+    if let icons = Bundle.main.infoDictionary?["CFBundleIcons"] as? [String: Any],
+       let primary = icons["CFBundlePrimaryIcon"] as? [String: Any],
+       let files = primary["CFBundleIconFiles"] as? [String],
+       let name = files.last,
+       let image = UIImage(named: name) {
+      return image
+    }
+    return UIImage(named: "AppIcon")
   }
 
   // MARK: - 选择相册图片
@@ -885,5 +902,40 @@ private final class AppleIapHandler: NSObject, SKPaymentTransactionObserver,
         self.channel.invokeMethod("transactionUpdated", arguments: row)
       }
     }
+  }
+}
+
+/// 系统分享面板的分享内容（2026-11-13）：发出去的仍是纯文本；
+/// iOS 13+ 面板顶部预览卡用 LPLinkMetadata 显示标题与 APP 图标，邮件等用 subject 作主题。
+final class ShareTextItemSource: NSObject, UIActivityItemSource {
+  private let text: String
+  private let title: String
+  private let icon: UIImage?
+
+  init(text: String, title: String, icon: UIImage?) {
+    self.text = text
+    self.title = title
+    self.icon = icon
+  }
+
+  func activityViewControllerPlaceholderItem(_ activityViewController: UIActivityViewController) -> Any {
+    text
+  }
+
+  func activityViewController(_ activityViewController: UIActivityViewController, itemForActivityType activityType: UIActivity.ActivityType?) -> Any? {
+    text
+  }
+
+  func activityViewController(_ activityViewController: UIActivityViewController, subjectForActivityType activityType: UIActivity.ActivityType?) -> String {
+    title
+  }
+
+  func activityViewControllerLinkMetadata(_ activityViewController: UIActivityViewController) -> LPLinkMetadata? {
+    let metadata = LPLinkMetadata()
+    metadata.title = title.isEmpty ? (Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "") : title
+    if let icon = icon {
+      metadata.iconProvider = NSItemProvider(object: icon)
+    }
+    return metadata
   }
 }
