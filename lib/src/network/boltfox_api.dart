@@ -43,6 +43,12 @@ class BoltFoxApi {
     return _http.getJson('/Client/Basic/getBasicData', query: params);
   }
 
+  /// 渲染固件（FPGA）版本列表（2026-11-13，同小程序 `utils/fpga-firmware.js`）：用户端接口后端尚未提供，
+  /// 路径由 `kWifiFpgaListApi`（features/wifi/wifi_fpga.dart）决定，为空时不调用。
+  static Future<dynamic> getFpgaVersionList(String path, {required Object productId}) {
+    return _http.getJson(path, query: {'productId': productId, 'pageIndex': 1, 'pageSize': 100});
+  }
+
   /// 获取 App 版本更新状态。App 端「检查更新」使用。
   static Future<dynamic> getLastVersion({String? appVersionNo}) {
     return _http.getJson(

@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:BoltStar/src/features/wifi/wifi_fpga.dart';
 import 'package:BoltStar/src/features/wifi/wifi_ota.dart';
 import 'package:BoltStar/src/features/wifi/wifi_share.dart';
 import 'package:BoltStar/src/network/iot/iot_client.dart';
@@ -170,5 +173,53 @@ void main() {
   test('分享成员加入时间只取 joinTime（同小程序 2026-10-29）', () {
     expect(WifiShareMember.fromRow({'userProductId': 1, 'joinTime': '2026-10-29 10:00', 'createTime': 'x'}).joinedAt, '2026-10-29 10:00');
     expect(WifiShareMember.fromRow({'userProductId': 1, 'createTime': '2026-10-01'}).joinedAt, '');
+  });
+
+  group('渲染固件管理（2026-11-13）', () {
+    test('只有 fpga16 才算；列表去掉未启用、按权重排、简介字段兜底；接口未开放', () {
+      expect(isFpgaRenderMode(' FPGA16 '), isTrue);
+      expect(isFpgaRenderMode('esp32'), isFalse);
+      expect(isFpgaRenderMode(null), isFalse);
+      final list = normalizeWifiFpgaVersions([
+        {'id': 1, 'versionNumber': 'v1.01', 'verify': 1, 'grade': 1, 'downloadPath': 'https://a/f.bin', 'versionDesc': '一'},
+        {'id': 2, 'versionNumber': 'v1.02', 'verify': 0, 'grade': 9},
+        {'id': 3, 'versionNumber': 'v1.03', 'grade': 5, 'remark': '三'},
+        {'id': 4, 'versionNumber': ''},
+      ]);
+      expect(list.map((e) => [e.version, e.intro]).toList(), [
+        ['v1.03', '三'],
+        ['v1.01', '一'],
+      ]);
+      expect(list.last.hasValidUrl, isTrue);
+      expect(list.first.hasValidUrl, isFalse);
+      expect(wifiFpgaListApiReady(), isFalse, reason: '用户端列表接口待后端提供');
+    });
+
+    test('本地记录带 otaType 与简介；旧记录缺省为 main', () async {
+      SharedPreferences.setMockInitialValues({});
+      await WifiOtaStore.save('AABBCCDDEEFF', 'f1', version: 'v1.02', otaType: kWifiOtaTypeFpga, intro: '修复闪烁');
+      var record = await WifiOtaStore.read('AABBCCDDEEFF');
+      expect(record?.otaType, kWifiOtaTypeFpga);
+      expect(record?.intro, '修复闪烁');
+      final result = await WifiOtaStore.refresh('AABBCCDDEEFF', getStatus: (_) async => {'status': 'DOWNLOADING', 'progress': 20});
+      expect(result.record?.otaType, kWifiOtaTypeFpga, reason: '刷新状态后类型保留');
+      SharedPreferences.setMockInitialValues({'ota_inflight:AABBCCDDEEFF': '{"type":"ota","msgid":"m"}'});
+      record = await WifiOtaStore.read('AABBCCDDEEFF');
+      expect(record?.otaType, kWifiOtaTypeMain);
+      expect(record!.toJson().containsKey('otaType'), isFalse);
+    });
+
+    test('接入位置：设备信息页按渲染模式显示入口，安装复用升级页并传 type=fpga', () {
+      String read(String path) => File(path).readAsStringSync();
+      final info = read('lib/src/features/wifi/presentation/wifi_device_info_page.dart');
+      expect(info.contains('isFpgaRenderMode(renderMode)'), isTrue);
+      expect(info.contains("ValueKey('wifi-fpga-entry')"), isTrue);
+      final ota = read('lib/src/features/wifi/presentation/wifi_ota_page.dart');
+      expect(ota.contains('type: _otaType'), isTrue, reason: '复用 /api/device/ota，type 跟着模式');
+      expect(ota.contains('otaType: _otaType, intro: _intro'), isTrue, reason: '本地记录带类型');
+      expect(ota.contains('_otaType = record.otaType;'), isTrue, reason: '重进按记录选文字');
+      final list = read('lib/src/features/wifi/presentation/wifi_fpga_page.dart');
+      expect(list.contains('WifiOtaPage(state: widget.state, deviceId: widget.deviceId, fpgaTarget: target)'), isTrue);
+    });
   });
 }

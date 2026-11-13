@@ -24,7 +24,7 @@ import '../../network/iot/iot_client.dart';
 ///
 /// 进度条（2026-11-12 同小程序）：ota/status 与 WS ota.result 新增 progress（0~100），规则见下方「升级进度条」一节。
 
-const String kWifiOtaTypeMain = 'main'; // 主控升级；FPGA（type=fpga）当前没有入口
+const String kWifiOtaTypeMain = 'main'; // 主控升级；FPGA（type=fpga）为渲染固件安装，见 wifi_fpga.dart
 
 const Map<String, int> _stepOf = {'SENT': 0, 'DOWNLOADING': 1, 'FLASHING': 2, 'VERIFYING': 3};
 const List<String> _finalStatuses = ['SUCCESS', 'FAILED', 'TIMEOUT'];
@@ -250,6 +250,8 @@ class WifiOtaRecord {
     this.lastStep = -1,
     this.savedAt = 0,
     this.progress,
+    this.otaType = kWifiOtaTypeMain,
+    this.intro = '',
   });
 
   final String deviceNo;
@@ -263,6 +265,12 @@ class WifiOtaRecord {
   /// 收到过的最大进度（2026-11-12 进度条）；null = 还没收到过。
   final int? progress;
 
+  /// 升级类型（2026-11-13）：main 固件升级 / fpga 渲染固件安装；重进页面按它选文字。
+  final String otaType;
+
+  /// 渲染固件简介（fpga 才有），进度页带出。
+  final String intro;
+
   WifiOtaRecord copyWith({String? status, int? lastStep, int? progress}) => WifiOtaRecord(
     deviceNo: deviceNo,
     msgid: msgid,
@@ -272,6 +280,8 @@ class WifiOtaRecord {
     lastStep: lastStep ?? this.lastStep,
     savedAt: savedAt,
     progress: progress ?? this.progress,
+    otaType: otaType,
+    intro: intro,
   );
 
   Map<String, Object> toJson() => {
@@ -284,6 +294,8 @@ class WifiOtaRecord {
     'lastStep': lastStep,
     'savedAt': savedAt,
     if (progress != null) 'progress': progress!,
+    if (otaType != kWifiOtaTypeMain) 'otaType': otaType,
+    if (intro.isNotEmpty) 'intro': intro,
   };
 
   /// 类型不对或缺 msgid 的记录不认（防止拿投屏 msgid 去查 OTA 接口）。
@@ -300,6 +312,8 @@ class WifiOtaRecord {
       lastStep: int.tryParse('${raw['lastStep']}') ?? -1,
       savedAt: int.tryParse('${raw['savedAt']}') ?? 0,
       progress: parseOtaProgress(raw['progress']),
+      otaType: '${raw['otaType'] ?? ''}'.trim().isNotEmpty ? '${raw['otaType']}'.trim() : kWifiOtaTypeMain,
+      intro: '${raw['intro'] ?? ''}',
     );
   }
 }
@@ -339,6 +353,8 @@ abstract final class WifiOtaStore {
     String baseVersion = '',
     String status = 'SENT',
     int lastStep = 0,
+    String otaType = kWifiOtaTypeMain,
+    String intro = '',
   }) async {
     final no = IotApi.plainDeviceNo(deviceNo);
     if (no.isEmpty || msgid.isEmpty) {
@@ -352,6 +368,8 @@ abstract final class WifiOtaStore {
       status: status,
       lastStep: lastStep,
       savedAt: DateTime.now().millisecondsSinceEpoch,
+      otaType: otaType,
+      intro: intro,
     );
     await _write(no, record);
     return record;

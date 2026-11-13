@@ -435,6 +435,14 @@ and the home camera / album entries re-query and check force only (`guardFirmwar
 cancel stops this action; remind: cancel continues; "upgrade now" opens the OTA page. Lookup
 failures let the action through.
 
+WiFi render firmware (FPGA, 2026-11-13, mirrors the mini-program `wifi-fpga`): only devices whose product
+`renderMode` is `fpga16` show an "FPGA版本" row and a "渲染固件管理" entry on the device info page
+(`wifi_fpga_page.dart`). Installing reuses `WifiOtaPage(fpgaTarget:)`: no version comparison, `POST
+/api/device/ota` with `type=fpga` and the target version; progress, steps and the local in-flight record
+are shared with firmware OTA, only the wording changes and the description is shown (`WifiOtaRecord.otaType`
+keeps the wording right on resume). The user-side version list API is not available yet: its path lives
+in `kWifiFpgaListApi` (`wifi_fpga.dart`), empty means "not available".
+
 ### 6. Image selection, editing, and projection
 
 ```text

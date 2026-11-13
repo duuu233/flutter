@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次更新：[2026-11-13 固件强制升级 / 强提醒升级判断](history/2026-11/2026-11-13-firmware-force-remind-upgrade.md)——新增 `firmware_gate.dart`：WiFi 在线、蓝牙已连接时判断；设备详情页进入后与点功能按钮判断（强制 + 强提醒），我的设备投屏 / WiFi 轮播设置、首页拍照 / 相册投屏只判强制；强制升级取消后这次操作不继续，强提醒取消照常继续，立即升级进升级页；`DeviceItem.updateType` 取详情 `compulsory`；未跑 analyze / test / 编译，未联调。
+本次更新：[2026-11-13 WiFi 版渲染固件管理（FPGA 版本安装）](history/2026-11/2026-11-13-wifi-fpga-render-firmware.md)——渲染模式 fpga16 的设备在设备信息页多「FPGA版本」与「渲染固件管理」：列出启用的 FPGA 版本（版本号、简介、安装），安装复用 `WifiOtaPage(fpgaTarget:)`，`POST /api/device/ota` 传 `type=fpga`，只换文字并带出简介；用户端列表接口待后端（`kWifiFpgaListApi`）；未跑 analyze / test / 编译，未联调。
 
 ## 1. 阅读入口
 

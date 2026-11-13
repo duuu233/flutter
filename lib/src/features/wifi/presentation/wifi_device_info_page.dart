@@ -1,16 +1,20 @@
 import 'package:flutter/material.dart';
 
+import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_widgets.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
+import '../wifi_fpga.dart';
 import '../wifi_l10n.dart';
 import '../wifi_status.dart';
 import '../wifi_widgets.dart';
+import 'wifi_fpga_page.dart';
 
 /// WiFi 版「设备信息」二级页（2026-10-29，同小程序 `subpackages/device/wifi-info`，原详情页的信息行挪到这里）：
 /// WiFi信号、WiFi名称、最后上线、最后心跳、固件版本；不再显示国家码。
 /// 数据沿用 [WifiStatusStore]（IoT GET /api/device/info），进页重查一次；非在线时信号不显示（本地模式影子冻结）。
+/// 2026-11-13：产品渲染模式 = fpga16 的设备多一行「FPGA版本」（影子 fpgaVersion）和「渲染固件管理」入口（[WifiFpgaPage]）。
 class WifiDeviceInfoPage extends StatefulWidget {
   const WifiDeviceInfoPage({super.key, required this.state, required this.deviceId});
 
@@ -22,14 +26,37 @@ class WifiDeviceInfoPage extends StatefulWidget {
 }
 
 class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
+  /// 渲染模式 = fpga16 才显示「渲染固件管理」。
+  bool _fpga = false;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        WifiStatusStore.instance.refresh(widget.state.deviceById(widget.deviceId));
+        final device = widget.state.deviceById(widget.deviceId);
+        WifiStatusStore.instance.refresh(device);
+        _loadRenderMode(device);
       }
     });
+  }
+
+  Future<void> _loadRenderMode(DeviceItem device) async {
+    String renderMode;
+    try {
+      renderMode = await widget.state.resolveRenderMode(device);
+    } catch (_) {
+      return;
+    }
+    if (mounted && isFpgaRenderMode(renderMode)) {
+      setState(() => _fpga = true);
+    }
+  }
+
+  void _openFpga() {
+    Navigator.of(context).push<void>(
+      AppPageRoute(builder: (_) => WifiFpgaPage(state: widget.state, deviceId: widget.deviceId)),
+    );
   }
 
   @override
@@ -57,6 +84,7 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
             value: '${info['firmwareVersion'] ?? shadow['espVersion'] ?? shadow['version'] ?? ''}',
             leading: null,
           ),
+          if (_fpga) (label: l10n.wifiFpgaVersionRow, value: '${shadow['fpgaVersion'] ?? ''}', leading: null),
         ];
         return FigmaScreen(
           title: l10n.wifiDeviceInfo,
@@ -95,6 +123,29 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
                     ],
                   ),
                 ),
+              // 渲染固件管理（2026-11-13）：只有渲染模式 = fpga16 的设备才有
+              if (_fpga && status.status != WifiOnlineStatus.loading) ...[
+                const SizedBox(height: 12),
+                GestureDetector(
+                  key: const ValueKey('wifi-fpga-entry'),
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _openFpga,
+                  child: FigmaGlassCard(
+                    borderRadius: 18,
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    child: Row(
+                      children: [
+                        Text(
+                          l10n.wifiFpgaManage,
+                          style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600),
+                        ),
+                        const Spacer(),
+                        const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF777E88)),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
             ],
           ),

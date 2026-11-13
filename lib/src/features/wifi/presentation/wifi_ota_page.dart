@@ -16,6 +16,7 @@ import '../wifi_l10n.dart';
 import '../wifi_ota.dart';
 import '../wifi_status.dart';
 import '../wifi_widgets.dart';
+import '../wifi_fpga.dart';
 import 'wifi_provision_page.dart';
 
 /// WiFi 版设备固件升级（2026-11-02，同小程序 `subpackages/device/wifi-ota`；纯逻辑见 [wifi_ota.dart]）。
@@ -33,11 +34,18 @@ import 'wifi_provision_page.dart';
 ///   · 进度条（2026-11-12 同小程序）：步骤上方一条，左边当前那一步的文案、右边百分比。服务端 progress（轮询与 WS 都带）
 ///     只抬「上限」，显示值由本页计时器匀速往上限走（规则见 [wifi_ota.dart]「升级进度条」）；失败停住，VERIFYING 走到 100。
 ///     收到过的最大进度存进本地记录，重进页面从那里接着走。
+///   · 渲染固件安装（2026-11-13，同小程序 `wifi-ota?mode=fpga`，见 [wifi_fpga.dart]）：传了 [fpgaTarget] 即为安装模式，
+///     不比对版本，直接展示目标版本与简介；下发同一个 `POST /api/device/ota`，type=fpga、version=目标版本；
+///     进度条、四步、轮询 / WS、本地进行中记录与固件升级完全一致，只换文字并显示简介。本地记录带 otaType，
+///     重进时（无论从哪个入口）按记录里的类型选文字。
 class WifiOtaPage extends StatefulWidget {
-  const WifiOtaPage({super.key, required this.state, required this.deviceId});
+  const WifiOtaPage({super.key, required this.state, required this.deviceId, this.fpgaTarget});
 
   final PhotoFrameState state;
   final String deviceId;
+
+  /// 渲染固件安装的目标版本（从「渲染固件管理」进来时传）；null 为普通固件升级。
+  final WifiFpgaVersion? fpgaTarget;
 
   @override
   State<WifiOtaPage> createState() => _WifiOtaPageState();
@@ -79,6 +87,20 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   String _status = ''; // 最近一次的状态（WS 只带 progress 时沿用）
   String _progressText = '';
   Timer? _progressTimer;
+
+  /// 本次展示的升级类型：main 固件升级 / fpga 渲染固件安装（重进时按本地记录切换）。
+  String _otaType = kWifiOtaTypeMain;
+  String _intro = ''; // 渲染固件简介
+  bool get _fpga => _otaType == kWifiOtaTypeFpga;
+
+  /// 四步文字：两种模式只有最后一步不同（升级完成 / 安装完成）。
+  List<String> _stepTexts(AppL10n l10n) {
+    final texts = [...l10n.wifiOtaSteps];
+    if (_fpga) {
+      texts[texts.length - 1] = l10n.wifiFpgaDone;
+    }
+    return texts;
+  }
 
   String get _deviceNo => IotApi.plainDeviceNo(_device?.serialNumber);
 
@@ -170,6 +192,8 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     _msgid = '';
     _lastStep = -1;
     _resetProgress();
+    _otaType = widget.fpgaTarget != null ? kWifiOtaTypeFpga : kWifiOtaTypeMain;
+    _intro = '';
     _setScreen(phase: _Phase.checking, title: l10n.wifiOtaChecking, hint: l10n.wifiOtaCheckingHint, art: _Art.progress);
     final device = await widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
     if (!mounted) {
@@ -211,8 +235,32 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       return;
     }
     _deviceState = info == null ? WifiOnlineStatus.unknown : wifiDeviceState(info);
+    final target = widget.fpgaTarget;
+    if (target != null) {
+      _showFpgaTarget(target, info);
+      return;
+    }
     _check = evaluateWifiOta(wifiFirmwareVersion(info), device.newVersionNo, device.downloadPath);
     _showEvaluation(_check!);
+  }
+
+  /// 渲染固件安装：不比对版本，直接展示「渲染固件管理」选中的目标（版本号 + 简介）。
+  void _showFpgaTarget(WifiFpgaVersion target, Map<String, dynamic>? info) {
+    final l10n = AppL10n.of(context);
+    final shadow = info?['shadow'];
+    final current = '${(shadow is Map ? shadow['fpgaVersion'] : null) ?? ''}'.trim();
+    final ok = target.hasValidUrl;
+    _check = WifiOtaCheck(ok ? WifiOtaCheckState.available : WifiOtaCheckState.invalid, current, target.version, target.url);
+    _intro = target.intro;
+    _setScreen(
+      phase: ok ? _Phase.available : _Phase.invalid,
+      title: l10n.wifiFpgaInstallTitle(target.version),
+      hint: ok ? l10n.wifiFpgaAvailableHint : l10n.wifiFpgaInvalidUrl,
+      art: ok ? _Art.progress : _Art.fail,
+      showVersions: true,
+      currentVersion: current.isNotEmpty ? current : '--',
+      latestVersion: target.version,
+    );
   }
 
   void _showError(String message) {
@@ -271,6 +319,8 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   /// 重进页面时接着展示本地记录的任务。
   void _resumeInflight(WifiOtaRefresh inflight) {
     final record = inflight.record!;
+    _otaType = record.otaType;
+    _intro = record.intro;
     _msgid = record.msgid;
     _lastStep = record.lastStep;
     // 进度条从收到过的最大进度接着走（本地记录与这次查询取大的）
@@ -301,7 +351,12 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
   void _showWaitingReboot() {
     final l10n = AppL10n.of(context);
     _stopPolling();
-    _setScreen(phase: _Phase.busy, title: l10n.wifiOtaWaitRebootTitle, hint: l10n.wifiOtaWaitRebootHint, art: _Art.success);
+    _setScreen(
+      phase: _Phase.busy,
+      title: _fpga ? l10n.wifiFpgaWaitRebootTitle : l10n.wifiOtaWaitRebootTitle,
+      hint: _fpga ? l10n.wifiFpgaWaitRebootHint : l10n.wifiOtaWaitRebootHint,
+      art: _Art.success,
+    );
   }
 
   /// 已有进行中的升级（4000 / 4045，本地没有 msgid 可查）。
@@ -338,13 +393,13 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
 
     // SUCCESS 不在步骤口径内；万一跳过 VERIFYING 直接到了，也按完成收尾，不让第 4 步一直转圈
     final view = otaStepsFor(status == 'SUCCESS' ? 'VERIFYING' : status, _lastStep);
-    final progressText = l10n.wifiOtaSteps[otaActiveStep(view)];
+    final progressText = _stepTexts(l10n)[otaActiveStep(view)];
     if (view.phase == WifiOtaViewPhase.failed) {
       _stopPolling();
       _stopProgress(); // 失败停在当时的位置
       _setScreen(
         phase: _Phase.failed,
-        title: isOtaTimeout(status) ? l10n.wifiOtaTimeout : l10n.wifiOtaFailed,
+        title: isOtaTimeout(status) ? (_fpga ? l10n.wifiFpgaTimeout : l10n.wifiOtaTimeout) : (_fpga ? l10n.wifiFpgaFailed : l10n.wifiOtaFailed),
         hint: l10n.wifiOtaFailHint,
         art: _Art.fail,
         steps: view.steps,
@@ -361,8 +416,8 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       _stopPolling();
       _setScreen(
         phase: _Phase.verifying,
-        title: l10n.wifiOtaDone,
-        hint: status == 'SUCCESS' ? l10n.wifiOtaSuccessHint : l10n.wifiOtaVerifyingHint,
+        title: _fpga ? l10n.wifiFpgaDone : l10n.wifiOtaDone,
+        hint: status == 'SUCCESS' ? (_fpga ? l10n.wifiFpgaSuccessHint : l10n.wifiOtaSuccessHint) : l10n.wifiOtaVerifyingHint,
         art: _Art.success,
         steps: view.steps,
         progressText: progressText,
@@ -373,8 +428,11 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     final elapsed = seconds > 0 ? l10n.wifiOtaElapsed(seconds ~/ 60, seconds % 60) : '';
     _setScreen(
       phase: _Phase.running,
-      title: l10n.wifiOtaRunningTitle,
-      hint: elapsed.isNotEmpty ? '$elapsed，${l10n.wifiOtaRunningHint}' : l10n.wifiOtaRunningHint,
+      title: _fpga ? l10n.wifiFpgaRunningTitle : l10n.wifiOtaRunningTitle,
+      hint: () {
+        final base = _fpga ? l10n.wifiFpgaRunningHint : l10n.wifiOtaRunningHint;
+        return elapsed.isNotEmpty ? '$elapsed，$base' : base;
+      }(),
       art: _Art.progress,
       steps: view.steps,
       progressText: progressText,
@@ -469,9 +527,9 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     final confirmed = await showAppConfirmDialog(
       context,
       icon: Icons.system_update_alt_rounded,
-      title: l10n.wifiOtaTitle,
-      message: l10n.wifiOtaConfirm(result.latest),
-      confirmLabel: l10n.wifiOtaUpgradeNow,
+      title: _fpga ? l10n.wifiFpgaTitle : l10n.wifiOtaTitle,
+      message: _fpga ? l10n.wifiFpgaConfirm(result.latest) : l10n.wifiOtaConfirm(result.latest),
+      confirmLabel: _fpga ? l10n.wifiFpgaInstallNow : l10n.wifiOtaUpgradeNow,
     );
     if (confirmed == true && mounted) {
       await _sendUpgrade();
@@ -489,7 +547,8 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     AppLoadingDialog.show(context, l10n.wifiOtaSending);
     Map<String, dynamic> res;
     try {
-      res = await IotApi.startOta(deviceNo: deviceNo, url: result.url, type: kWifiOtaTypeMain, version: result.latest);
+      // type：main 固件升级 / fpga 渲染固件（version 为 FPGA 目标版本），其余与固件升级一致
+      res = await IotApi.startOta(deviceNo: deviceNo, url: result.url, type: _otaType, version: result.latest);
     } catch (error) {
       _starting = false;
       AppLoadingDialog.hideIfAny();
@@ -515,7 +574,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       return;
     }
     // 下发成功立即保存（带类型），一台设备只留一条
-    await WifiOtaStore.save(deviceNo, msgid, version: result.latest, baseVersion: result.current);
+    await WifiOtaStore.save(deviceNo, msgid, version: result.latest, baseVersion: result.current, otaType: _otaType, intro: _intro);
     if (!mounted) {
       return;
     }
@@ -558,10 +617,10 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       _Art.fail => 'assets/images/upload-icon02.png',
       _Art.success => 'assets/images/upload-icon03.png',
     };
-    final texts = l10n.wifiOtaSteps;
+    final texts = _stepTexts(l10n);
     final steps = _steps;
     return FigmaScreen(
-      title: l10n.wifiOtaTitle,
+      title: _fpga ? l10n.wifiFpgaTitle : l10n.wifiOtaTitle,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -600,7 +659,24 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
               child: Column(
                 children: [
                   _VersionRow(label: l10n.wifiOtaCurrentVersion, value: _currentVersion),
-                  _VersionRow(label: l10n.wifiOtaLatestVersion, value: _latestVersion),
+                  _VersionRow(label: _fpga ? l10n.wifiFpgaTargetVersion : l10n.wifiOtaLatestVersion, value: _latestVersion),
+                ],
+              ),
+            ),
+          ],
+          // 渲染固件简介（2026-11-13）：安装确认与进度页都带出
+          if (_intro.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            FigmaGlassCard(
+              key: const ValueKey('wifi-fpga-intro'),
+              borderRadius: 16,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(l10n.wifiFpgaIntro, style: const TextStyle(color: Color(0xFF8B9098), fontSize: 12)),
+                  const SizedBox(height: 4),
+                  Text(_intro, style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 13, height: 1.6)),
                 ],
               ),
             ),
@@ -647,7 +723,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       bottom: switch (_phase) {
         _Phase.available => FigmaHomePrimaryButton(
           key: const ValueKey('wifi-ota-start'),
-          label: l10n.wifiOtaUpgradeNow,
+          label: _fpga ? l10n.wifiFpgaInstallNow : l10n.wifiOtaUpgradeNow,
           fontWeight: FontWeight.w700,
           onPressed: _startUpgrade,
         ),
@@ -662,7 +738,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
           children: [
             FigmaHomePrimaryButton(
               key: const ValueKey('wifi-ota-retry'),
-              label: l10n.wifiOtaRetry,
+              label: _fpga ? l10n.wifiFpgaRetry : l10n.wifiOtaRetry,
               fontWeight: FontWeight.w700,
               onPressed: _retryUpgrade,
             ),
