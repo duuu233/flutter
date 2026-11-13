@@ -60,4 +60,10 @@ void main() {
       expect(client.contains('..headers.addAll(_headers(headers))'), isTrue);
     });
   });
+
+  test('步骤卡只在单张投屏显示，批量照原样不显示（2026-11-13）', () {
+    final page = File('lib/src/features/wifi/presentation/wifi_cast_result_page.dart').readAsStringSync();
+    expect(RegExp(r'if \(total <= 1\) \.\.\.\[\s*const SizedBox\(height: 14\),\s*_buildSteps\(l10n\),\s*\],').hasMatch(page), isTrue);
+    expect('_buildSteps(l10n)'.allMatches(page).length, 1, reason: '只有一处渲染步骤卡');
+  });
 }

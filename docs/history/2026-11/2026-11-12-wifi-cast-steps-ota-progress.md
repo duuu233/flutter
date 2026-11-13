@@ -10,6 +10,7 @@
 
 - 进度条卡片下方新增步骤卡，四步对应进度文案：准备投屏（取产品屏幕方向 / 渲染模式）→ 图片上传中（`UPLOADING`）→ 图片处理中（`PROCESSING`）→ 已发送，屏幕即将刷新（接口返回 `SENT` / `UPLOADED` 即打勾，写相册记录不另占一步）。文案复用 `wifiCastPrepare` / `wifiCastStage`。
 - 样式与交互同配网状态页：复用 `WifiStepIcon`，每行 48 高、行间细分隔线；失败在当时那一步打叉（上传失败第 2 步、处理 / 下发失败第 3 步、投屏信息失效第 1 步），逐张记 `failStep`。多张时步骤跟着正在投的那一张走；结束后全部成功四步全勾，有失败按最后一张失败的那一步打叉。
+- 2026-11-13 调整：步骤卡只在单张投屏时显示（`if (total <= 1)`）；批量投屏按原来的内容展示（进度卡 + 逐张列表），不显示步骤卡。
 - 去掉页面下方的黑底投屏日志面板（`_buildLogPanel`、复制、`_logs` / `_logScroll`），`wifi_l10n.dart` 删掉只给它用的 4 条文案（`wifiCastLogTitle` / `wifiCopyLog` / `wifiLogEmpty` / `wifiLogCopied`）。页面日志改 `debugPrint('[WiFi投屏] …')`，`projectOne` 不再传 `onLog`（它本身就 debugPrint），联调日志浮窗照样能看到；每张图文件大小仍只在非正式包读取。
 
 ### WiFi 固件升级页（`wifi_ota_page.dart` / `wifi_ota.dart`）

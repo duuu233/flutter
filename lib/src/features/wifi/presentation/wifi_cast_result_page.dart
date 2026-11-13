@@ -533,8 +533,11 @@ class _WifiCastResultPageState extends State<WifiCastResultPage> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
-          _buildSteps(l10n),
+          // 步骤卡只在单张投屏显示（2026-11-13）；批量投屏照原样只显示进度卡与逐张列表
+          if (total <= 1) ...[
+            const SizedBox(height: 14),
+            _buildSteps(l10n),
+          ],
           if (total > 1) ...[
             const SizedBox(height: 14),
             FigmaGlassCard(
