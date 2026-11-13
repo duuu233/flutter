@@ -35,7 +35,7 @@ import 'wifi_provision_page.dart';
 ///     只抬「上限」，显示值由本页计时器匀速往上限走（规则见 [wifi_ota.dart]「升级进度条」）；失败停住，VERIFYING 走到 100。
 ///     收到过的最大进度存进本地记录，重进页面从那里接着走。
 ///   · 优雅刷新升级（2026-11-13，同小程序 `wifi-ota?mode=fpga`，见 [wifi_fpga.dart]）：[fpga] 为 true 即为安装模式，
-///     不比对版本，直接展示设备详情下发的最新版本（newVersionNoFpga）与版本说明（upgradeTipsFpga），进页即记下看过的版本号（红点消失）；下发同一个 `POST /api/device/ota`，type=fpga、version=目标版本；
+///     不比对版本，直接展示设备详情下发的最新版本（newVersionNoFpga）与版本说明（upgradeTipsFpga）；下发同一个 `POST /api/device/ota`，type=fpga、version=目标版本；
 ///     进度条、四步、轮询 / WS、本地进行中记录与固件升级完全一致，只换文字并显示简介。本地记录带 otaType，
 ///     重进时（无论从哪个入口）按记录里的类型选文字。设备不上报 FPGA 版本（baseVersion 为 null），版本卡只显示安装版本；
 ///     下发返回 4047（今日升级次数已达上限）按语种提示。
@@ -213,17 +213,6 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     if (_subscribed != deviceNo && !IotWs.instance.subscriptions.contains(deviceNo)) {
       IotWs.instance.subscribe(deviceNo);
       _subscribed = deviceNo;
-    }
-
-    // 从「优雅刷新升级」进来即算看过最新版本（含正有安装在进行、直接接着展示的情况），红点消失
-    if (widget.fpga) {
-      final latest = wifiFpgaLatestOf(device);
-      if (latest != null) {
-        await WifiFpgaSeenStore.mark(deviceNo, latest.version);
-      }
-      if (!mounted) {
-        return;
-      }
     }
 
     // ① 先看本地进行中的升级（展示「有新版本」之前必须先查）

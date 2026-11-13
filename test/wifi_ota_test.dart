@@ -178,19 +178,15 @@ void main() {
   });
 
   group('优雅刷新升级（2026-11-13，原名渲染固件管理）', () {
-    test('只有 fpga16 才算；版本比较按数字段，非 x.y.z 不同即新；没看过算新', () {
+    test('只有 fpga16 才算', () {
       expect(isFpgaRenderMode(' FPGA16 '), isTrue);
       expect(isFpgaRenderMode('esp32'), isFalse);
       expect(isFpgaRenderMode(null), isFalse);
-      expect(isWifiFpgaNewer('1.0.3', ''), isTrue);
-      expect(isWifiFpgaNewer('1.0.3', '1.0.3'), isFalse);
-      expect(isWifiFpgaNewer('1.0.10', '1.0.3'), isTrue);
-      expect(isWifiFpgaNewer('1.0.2', '1.0.3'), isFalse);
-      expect(isWifiFpgaNewer('beta', 'alpha'), isTrue);
     });
 
-    test('红点：最新版本来自设备详情，本机看过就不亮；非 fpga16 / 没版本 / 地址无效不亮', () async {
-      SharedPreferences.setMockInitialValues({});
+    // 2026-11-14 有意改口径：优雅刷新不做红点——原「本机看过就不亮 / 版本比较 / 看过的版本缓存」各条撤掉，
+    // 只留最新版本取自设备详情；「不再显示红点、不再记看过的版本」由下面「接入位置」守
+    test('最新版本来自设备详情', () {
       DeviceItem device({String version = '1.0.3', String url = 'https://oss/f.bin'}) => DeviceItem(
         id: 'd1',
         name: '',
@@ -214,14 +210,8 @@ void main() {
       );
       expect(wifiFpgaLatestOf(device())?.intro, '修复闪烁', reason: '版本说明取 upgradeTipsFpga');
       expect(wifiFpgaLatestOf(device(version: '')), isNull);
-      expect(await wifiFpgaHasNew(device(), 'fpga16'), isTrue, reason: '本机没看过');
-      expect(await wifiFpgaHasNew(device(), 'esp32'), isFalse);
-      expect(await wifiFpgaHasNew(device(version: ''), 'fpga16'), isFalse);
-      expect(await wifiFpgaHasNew(device(url: 'ftp://x'), 'fpga16'), isFalse);
-      await WifiFpgaSeenStore.mark('AA:BB:CC:DD:EE:FF', '1.0.3');
-      expect(await WifiFpgaSeenStore.read('AABBCCDDEEFF'), '1.0.3', reason: '按去冒号设备号存');
-      expect(await wifiFpgaHasNew(device(), 'fpga16'), isFalse, reason: '看过后红点消失');
-      expect(await wifiFpgaHasNew(device(version: '1.0.4'), 'fpga16'), isTrue, reason: '后台发了更高版本再亮');
+      expect(wifiFpgaLatestOf(device())!.hasValidUrl, isTrue);
+      expect(wifiFpgaLatestOf(device(url: 'ftp://x'))!.hasValidUrl, isFalse);
     });
 
     test('本地记录带 otaType 与版本说明；旧记录缺省为 main', () async {
@@ -246,7 +236,7 @@ void main() {
       expect(isWifiFpgaLimitError(Exception('x')), isFalse);
     });
 
-    test('接入位置：没有版本列表；入口直接进安装页；两处红点；不显示设备版本号；4047 单独提示', () {
+    test('接入位置：没有版本列表；入口直接进安装页；不做红点；不显示设备版本号；4047 单独提示', () {
       String read(String path) => File(path).readAsStringSync();
       expect(File('lib/src/features/wifi/presentation/wifi_fpga_page.dart').existsSync(), isFalse, reason: '版本列表页已去掉');
       final state = read('lib/src/state.dart');
@@ -254,7 +244,8 @@ void main() {
       expect(state.contains('device.fpgaVersionNo = detail.fpgaVersionNo;'), isTrue, reason: '刷新详情时带回最新版本');
       final info = read('lib/src/features/wifi/presentation/wifi_device_info_page.dart');
       expect(info.contains('isFpgaRenderMode(renderMode)'), isTrue);
-      expect(info.contains("ValueKey('wifi-fpga-entry')") && info.contains("ValueKey('wifi-fpga-dot')"), isTrue);
+      expect(info.contains("ValueKey('wifi-fpga-entry')"), isTrue);
+      expect(info.contains("ValueKey('wifi-fpga-dot')") || info.contains('wifiFpgaHasNew'), isFalse, reason: '入口不做红点');
       expect(info.contains('WifiOtaPage(state: widget.state, deviceId: widget.deviceId, fpga: true)'), isTrue);
       expect(info.contains('fpgaVersion\''), isFalse, reason: '不显示设备 FPGA 版本号');
       // 2026-11-14：入口不等网络——用详情页解析过的渲染模式进页即显示，不随信息行加载态隐藏；文字与上面标签同样式
@@ -263,12 +254,13 @@ void main() {
       expect(info.contains('_fpga && status.status != WifiOnlineStatus.loading'), isFalse);
       expect(state.contains('_renderModes[device.id] = mode;'), isTrue, reason: '解析过的渲染模式按设备记一份');
       final detail = read('lib/src/features/wifi/presentation/wifi_device_detail_page.dart');
-      expect(detail.contains("ValueKey('wifi-info-dot')") && detail.contains('wifiFpgaHasNew(_device, renderMode)'), isTrue);
+      expect(detail.contains("ValueKey('wifi-info-dot')") || detail.contains('wifiFpgaHasNew'), isFalse, reason: '「设备信息」不做红点');
+      expect(detail.contains('widget.state.resolveRenderMode(_device)'), isTrue, reason: '详情页先解析渲染模式，设备信息页入口进页即显示');
       final ota = read('lib/src/features/wifi/presentation/wifi_ota_page.dart');
       expect(ota.contains('type: _otaType'), isTrue, reason: '复用 /api/device/ota，type 跟着模式');
       expect(ota.contains('otaType: _otaType, intro: _intro'), isTrue, reason: '本地记录带类型');
       expect(ota.contains('_otaType = record.otaType;'), isTrue, reason: '重进按记录选文字');
-      expect(ota.contains('await WifiFpgaSeenStore.mark(deviceNo, latest.version);'), isTrue, reason: '进页记下看过的版本');
+      expect(ota.contains('WifiFpgaSeenStore'), isFalse, reason: '不再记看过的版本');
       expect(ota.contains('if (!_fpga) _VersionRow(label: l10n.wifiOtaCurrentVersion'), isTrue);
       expect(ota.contains('if (isWifiFpgaLimitError(error))'), isTrue, reason: '下发 4047 单独提示');
       expect(ota.contains("ValueKey('wifi-fpga-intro')"), isTrue, reason: '显示版本说明');

@@ -12,7 +12,6 @@ import '../../../shared/widgets/app_toast.dart';
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../wifi_cast_entry.dart';
-import '../wifi_fpga.dart';
 import '../wifi_l10n.dart';
 import '../wifi_ota.dart';
 import '../wifi_share.dart';
@@ -61,9 +60,6 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
 
   /// 本机有这台设备进行中的固件升级（ota_inflight 记录）：「固件升级」行显示「升级中」、不亮红点。
   bool _otaInflight = false;
-
-  /// 「设备信息」红点（2026-11-13）：有没看过的优雅刷新版本（见 wifi_fpga.dart）。
-  bool _infoHasNew = false;
   String _subscribed = '';
   int _unreadCount = 0;
 
@@ -108,7 +104,8 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         WifiSlideshowStore.instance.refresh(_device);
         // 固件升级行：目标版本 / 升级包来自设备详情接口，先核对本地进行中的升级
         final firmware = widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
-        unawaited(firmware.then((_) => _refreshInfoDot()));
+        // 先解析一次渲染模式（会话内按设备记下）：设备信息页据此进页即显示「优雅刷新升级」入口，不用等网络
+        unawaited(widget.state.resolveRenderMode(_device).catchError((Object _) => ''));
         final ota = _refreshOta(query: true);
         _refreshUnread();
         _loadOwner();
@@ -182,20 +179,6 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
 
   // ── 固件升级强提醒（2026-11-13 产品改口，规则见 features/devices/firmware_gate.dart）──
   // 强制升级已去掉，功能按钮不再判断。在线才判断，进入后判断一次；判定与「固件升级」行红点同一套（进行中的升级不弹）。
-
-  /// 「设备信息」红点：fpga16 设备、设备详情的最新优雅刷新版本比本机看过的新。
-  Future<void> _refreshInfoDot() async {
-    String renderMode;
-    try {
-      renderMode = await widget.state.resolveRenderMode(_device);
-    } catch (_) {
-      return;
-    }
-    final hasNew = await wifiFpgaHasNew(_device, renderMode);
-    if (mounted && hasNew != _infoHasNew) {
-      setState(() => _infoHasNew = hasNew);
-    }
-  }
 
   /// 进入后那一次判断过就不再补（回到本页、状态推送重查都不再弹）。
   bool _fwEntered = false;
@@ -302,21 +285,7 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
         children: [
           entry(
             l10n.wifiDeviceInfo,
-            () async {
-              await Navigator.of(context).push<void>(
-                AppPageRoute(builder: (_) => WifiDeviceInfoPage(state: widget.state, deviceId: widget.deviceId)),
-              );
-              // 在设备信息里看过优雅刷新：回来按缓存重算红点
-              _refreshInfoDot();
-            },
-            trailing: _infoHasNew
-                ? Container(
-                    key: const ValueKey('wifi-info-dot'),
-                    width: 8,
-                    height: 8,
-                    decoration: const BoxDecoration(color: Color(0xFFE5533D), shape: BoxShape.circle),
-                  )
-                : null,
+            () => _push(WifiDeviceInfoPage(state: widget.state, deviceId: widget.deviceId)),
           ),
           // 设备信息下：设备ID、屏幕尺寸两行，只展示不可点（2026-11-02 同小程序 / 蓝牙版详情样式）；
           // 设备ID 没有显示「--」，屏幕尺寸没配整行不展示；顶部卡片不再重复显示这两项
