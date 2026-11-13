@@ -16,7 +16,6 @@ import 'device/frame_device_protocol.dart';
 import 'device/product_broadcast_id.dart';
 import 'device/recently_bound_device.dart';
 import 'device/serial_match.dart';
-import 'device/wifi/broadcast_match.dart';
 import 'features/ai/ai_last_session.dart';
 import 'features/ai/ai_token.dart';
 import 'features/cast/cast_upload_limit.dart';
@@ -173,6 +172,7 @@ class DeviceItem {
     this.screenHeight = 0,
     this.productId = 0,
     this.broadcastId = '',
+    this.versionType = 0,
     this.shapeType,
     this.sizeModel = '',
     this.verticalRotation = DeviceRotation.verticalFallbackDeg,
@@ -248,9 +248,17 @@ class DeviceItem {
   String get thumbAsset =>
       DeviceThumb.ofRecord(broadcastId: broadcastId, shapeType: shapeType);
 
-  /// 是否 WiFi 版（按所属产品的广播 ID 认：`IJ_*` 模板或 `IJ_` 前缀，见 [BroadcastMatch.isWifiBroadcastId]）。
+  /// 版本类型（设备列表 / 详情接口下发 `versionType`，2026-11-14）：1 = 蓝牙版，2 = wifi版；未下发为 0。
+  int versionType;
+
+  /// 是否 WiFi 版：只认接口下发的 [versionType]（2 = wifi版），同小程序 `broadcast-match.isWifiDevice`。
+  /// 不再按产品广播 ID（`IJ_*`）猜——设备列表不带 productId / broadcastId，要等产品列表和详情补，
+  /// 冷启动没等到就会先把 WiFi 版显示成蓝牙版。
   /// WiFi 版不走蓝牙：状态来自 IoT 云端、投屏经 IoT 上传，蓝牙版的连接 / 读 0x01 / 轮播 / 清空 / OTA 都不适用。
-  bool get isWifi => BroadcastMatch.isWifiBroadcastId(broadcastId);
+  bool get isWifi => versionType == versionTypeWifi;
+
+  static const int versionTypeBle = 1;
+  static const int versionTypeWifi = 2;
 
   /// 型号防串台用的屏幕类型码（[FrameScreenType.code]），交给 `sameScreenCode` 做一票否决。
   ///
@@ -2611,6 +2619,10 @@ class PhotoFrameState extends ChangeNotifier {
         if (row.containsKey('sizeModel')) {
           device.sizeModel = detail.sizeModel;
         }
+        // 版本类型：详情下发了就以详情为准（列表已带，正常两者一致）。
+        if (row.containsKey('versionType')) {
+          device.versionType = detail.versionType;
+        }
         notifyListeners();
         return device;
       }
@@ -3723,6 +3735,8 @@ class PhotoFrameState extends ChangeNotifier {
       // 产品信息：设备列表接口下发（2026-10-22 用户确认），设备图与圆屏判断用。
       productId: _asInt(data['productId']),
       broadcastId: (data['broadcastId'] ?? '').toString().trim(),
+      // WiFi版 / 蓝牙版只按它判断（1 = 蓝牙版，2 = wifi版），见 [DeviceItem.isWifi]。
+      versionType: _asInt(data['versionType']),
       // 只认数字（与小程序 `shapeType === 1` 同口径），字符串 "1" 不算圆形。
       shapeType: data['shapeType'] is num
           ? (data['shapeType'] as num).toInt()

@@ -12,7 +12,7 @@ import 'package:BoltStar/src/state.dart';
 /// ② 弹的前提：WiFi 在线 / 蓝牙已连接（ready）、红点亮（hasUpdate），有进行中的升级不弹；
 /// ③ 强提醒每台设备每次启动只弹一次，取消后不再弹，重新打开 App 再弹；
 /// ④ 接入位置：只在两个详情页进入后判断；功能按钮、我的设备、首页都不判，loading 现查、本地缓存、升级完成更新缓存一并去掉。
-DeviceItem _device({int updateType = 0, int isUpdate = 0, String url = 'https://oss/fw.bin', String broadcastId = 'EF6-370'}) =>
+DeviceItem _device({int updateType = 0, int isUpdate = 0, String url = 'https://oss/fw.bin', String broadcastId = 'EF6-370', int versionType = 1}) =>
     DeviceItem(
       id: 'd1',
       name: '',
@@ -31,6 +31,7 @@ DeviceItem _device({int updateType = 0, int isUpdate = 0, String url = 'https://
       carouselIntervalSeconds: 0,
       carouselEnabled: false,
       broadcastId: broadcastId,
+      versionType: versionType,
       isUpdate: isUpdate,
       newVersionNo: '0.6.2',
       downloadPath: url,
@@ -56,7 +57,7 @@ void main() {
     expect(decideFirmwareGate(remind, ready: true, hasUpdate: false), FirmwareGateMode.none, reason: '红点不亮不弹');
     expect(decideFirmwareGate(remind, ready: true, hasUpdate: true, inflight: true), FirmwareGateMode.none, reason: '进行中的升级不弹');
     expect(decideFirmwareGate(_device(updateType: 3), ready: true, hasUpdate: true), FirmwareGateMode.none, reason: '弱提示红点亮也不弹');
-    final wifi = _device(broadcastId: 'IJ_*');
+    final wifi = _device(broadcastId: 'IJ_*', versionType: 2);
     expect(wifiFirmwareHasUpdate(wifi, '0.6.1'), isTrue);
     expect(wifiFirmwareHasUpdate(wifi, '0.6.2'), isFalse);
     expect(wifiFirmwareHasUpdate(wifi, ''), isFalse, reason: 'WiFi 读不到当前版本 = 无法判断');
