@@ -16,6 +16,8 @@ import 'wifi_ota_page.dart';
 /// 数据沿用 [WifiStatusStore]（IoT GET /api/device/info），进页重查一次；非在线时信号不显示（本地模式影子冻结）。
 /// 2026-11-13：产品渲染模式 = fpga16 的设备多一个「优雅刷新升级」入口（原名渲染固件管理），直接进 [WifiOtaPage] 安装模式；
 /// 设备详情的最新版本比本机看过的新时入口亮红点（见 wifi_fpga.dart），进去看过即消失。设备不上报 FPGA 版本，不显示版本号。
+/// 2026-11-14：入口不再等网络——设备详情页解析过的渲染模式（[PhotoFrameState.cachedRenderMode]）是 fpga16 就进页即显示，
+/// 也不随信息行的加载态隐藏；进页仍重新解析一次校正。文字样式与上面信息行的标签一致（灰色、常规字重）。
 class WifiDeviceInfoPage extends StatefulWidget {
   const WifiDeviceInfoPage({super.key, required this.state, required this.deviceId});
 
@@ -37,7 +39,16 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
   @override
   void initState() {
     super.initState();
+    final cached = widget.state.cachedRenderMode(widget.deviceId);
+    if (cached != null && isFpgaRenderMode(cached)) {
+      _fpga = true;
+      _renderMode = cached;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _fpga) {
+        // 详情页已拉过设备详情（含优雅刷新最新版本），红点先按现有数据算
+        _refreshDot();
+      }
       if (mounted) {
         final device = widget.state.deviceById(widget.deviceId);
         WifiStatusStore.instance.refresh(device);
@@ -53,11 +64,17 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
     } catch (_) {
       return;
     }
-    if (!mounted || !isFpgaRenderMode(renderMode)) {
+    if (!mounted) {
+      return;
+    }
+    final fpga = isFpgaRenderMode(renderMode);
+    if (fpga != _fpga) {
+      setState(() => _fpga = fpga);
+    }
+    if (!fpga) {
       return;
     }
     _renderMode = renderMode;
-    setState(() => _fpga = true);
     // 最新版本取设备详情（newVersionNoFpga 等），再按本机缓存算红点
     await widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
     await _refreshDot();
@@ -142,7 +159,7 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
                   ),
                 ),
               // 优雅刷新升级（2026-11-13）：只有渲染模式 = fpga16 的设备才有
-              if (_fpga && status.status != WifiOnlineStatus.loading) ...[
+              if (_fpga) ...[
                 const SizedBox(height: 12),
                 GestureDetector(
                   key: const ValueKey('wifi-fpga-entry'),
@@ -155,7 +172,8 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
                       children: [
                         Text(
                           l10n.wifiFpgaManage,
-                          style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600),
+                          // 与上面信息行的标签同样式（2026-11-14）
+                          style: const TextStyle(color: Color(0xFF5E6470), fontSize: 14),
                         ),
                         const Spacer(),
                         if (_fpgaHasNew)

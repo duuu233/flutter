@@ -257,6 +257,11 @@ void main() {
       expect(info.contains("ValueKey('wifi-fpga-entry')") && info.contains("ValueKey('wifi-fpga-dot')"), isTrue);
       expect(info.contains('WifiOtaPage(state: widget.state, deviceId: widget.deviceId, fpga: true)'), isTrue);
       expect(info.contains('fpgaVersion\''), isFalse, reason: '不显示设备 FPGA 版本号');
+      // 2026-11-14：入口不等网络——用详情页解析过的渲染模式进页即显示，不随信息行加载态隐藏；文字与上面标签同样式
+      expect(info.contains('widget.state.cachedRenderMode(widget.deviceId)'), isTrue);
+      expect(info.contains('if (_fpga) ...['), isTrue);
+      expect(info.contains('_fpga && status.status != WifiOnlineStatus.loading'), isFalse);
+      expect(state.contains('_renderModes[device.id] = mode;'), isTrue, reason: '解析过的渲染模式按设备记一份');
       final detail = read('lib/src/features/wifi/presentation/wifi_device_detail_page.dart');
       expect(detail.contains("ValueKey('wifi-info-dot')") && detail.contains('wifiFpgaHasNew(_device, renderMode)'), isTrue);
       final ota = read('lib/src/features/wifi/presentation/wifi_ota_page.dart');

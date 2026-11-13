@@ -2816,7 +2816,21 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   /// WiFi 投屏的渲染模式（2026-10-28 同小程序）：后台产品配置的 renderMode（esp32 / fpga16），原样传给 play；取不到为空串（不传）。
-  Future<String> resolveRenderMode(DeviceItem device) => _productField(device, 'renderMode');
+  ///
+  /// 解析到的值按设备记一份（会话内，[cachedRenderMode]）：设备列表不下发 productId 时要按设备号查产品（约 1 秒），
+  /// 设备详情页进页时已解析过一次，设备信息页据此同步决定是否显示「优雅刷新升级」，不用等网络（2026-11-14）。
+  Future<String> resolveRenderMode(DeviceItem device) async {
+    final mode = await _productField(device, 'renderMode');
+    if (mode.isNotEmpty) {
+      _renderModes[device.id] = mode;
+    }
+    return mode;
+  }
+
+  final Map<String, String> _renderModes = {};
+
+  /// 本次会话解析过的渲染模式；没解析过返回 null（见 [resolveRenderMode]）。
+  String? cachedRenderMode(String deviceId) => _renderModes[deviceId];
 
   /// 投屏 type（2026-10-28 同小程序）：后台产品配置的屏幕方向 screenType（0=竖屏、1=横屏），蓝牙版抖动出帧、WiFi play、
   /// 轮播投第一张三处同口径原样传；取不到为空串，由调用方按分辨率回退旧口径（[DitheringApi.typeForDevice]）。
