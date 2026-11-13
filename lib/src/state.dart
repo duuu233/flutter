@@ -2295,9 +2295,10 @@ class PhotoFrameState extends ChangeNotifier {
   ///   判停优先看 `pageCount`/`recordCount`，不拿「回包条数 < pageSize」当依据
   ///   （后端可能无视 pageSize 按默认值分页，见 [refreshFaq] 的同款坑）。
   Future<ActionFeedback> refreshMineCastSuccessCount() async {
-    const pageSize = 100;
-    // 安全上限：后端分页字段异常时不至于把请求打成死循环（同 refreshFaq）。
-    const maxPages = 20;
+    // 2026-11-14：单页由 100 改为 21（与「我的上传」同口径，一次少传更快）；后端过滤成立时仍是一次请求取 recordCount。
+    const pageSize = 21;
+    // 安全上限：后端分页字段异常时不至于把请求打成死循环（同 refreshFaq）；100 × 21 与原 20 × 100 覆盖量相当。
+    const maxPages = 100;
     final epoch = _sessionEpoch;
     try {
       var pageIndex = 1;

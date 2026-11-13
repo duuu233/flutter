@@ -383,7 +383,7 @@ class _DeviceDetailsPageState extends State<DeviceDetailsPage> with RouteAware {
       ),
     );
     // 2026-08-17：图库列表接口已下线，投屏后只需重拉投屏记录。
-    state.refreshCastRecords();
+    state.refreshCastRecords(pageSize: 21); // 2026-11-14：只取首屏 21 条（原默认 100），「我的上传」进页 / 返回时按自己的分页加载
   }
 }
 

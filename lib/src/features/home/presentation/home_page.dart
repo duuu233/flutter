@@ -505,7 +505,7 @@ class _HomePageState extends State<HomePage> with RouteAware {
     }
     // 投屏返回后刷新投屏记录（真实数据同步）。
     // 2026-08-17：图库列表接口已下线，「我的相册」铺的就是这份记录。
-    widget.state.refreshCastRecords();
+    widget.state.refreshCastRecords(pageSize: 21); // 2026-11-14：只取首屏 21 条（原默认 100），「我的上传」进页 / 返回时按自己的分页加载
   }
 
   /// 确保设备已连接：蒙层 loading 自动扫连（对齐小程序 ensureActiveDeviceConnection），
