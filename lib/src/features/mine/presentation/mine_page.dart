@@ -282,15 +282,20 @@ class _MinePageState extends State<MinePage> with RouteAware {
                             const SizedBox(height: 13),
                             Padding(
                               padding: _inset,
-                              child: _ServiceRow(
-                                iconAsset: 'assets/images/mine-icon04.png',
-                                fallbackIcon: Icons.settings_outlined,
-                                title: AppL10n.of(context).mineSettings,
-                                onTap: () {
-                                  Navigator.of(
-                                    context,
-                                  ).pushNamed<void>(AppRoutes.settings);
-                                },
+                              // App 有新版本时亮红点（2026-11-14）：随版本检查结果刷新
+                              child: ListenableBuilder(
+                                listenable: widget.state,
+                                builder: (context, _) => _ServiceRow(
+                                  iconAsset: 'assets/images/mine-icon04.png',
+                                  fallbackIcon: Icons.settings_outlined,
+                                  title: AppL10n.of(context).mineSettings,
+                                  dot: widget.state.appUpdateDot,
+                                  onTap: () {
+                                    Navigator.of(
+                                      context,
+                                    ).pushNamed<void>(AppRoutes.settings);
+                                  },
+                                ),
                               ),
                             ),
                             // 滚动区末尾留一段：内容顶到底时不会贴着下面的固定底栏。
@@ -605,11 +610,15 @@ class _ServiceRow extends StatelessWidget {
     required this.title,
     required this.onTap,
     this.value,
+    this.dot = false,
   });
 
   final String iconAsset;
   final IconData fallbackIcon;
   final String title;
+
+  /// 箭头前的红点（目前只有「设置」在 App 有新版本时用）。
+  final bool dot;
 
   /// 右侧数值（小程序 `.service-value`，目前只有「星币管理」用）。null＝不画。
   final String? value;
@@ -681,6 +690,15 @@ class _ServiceRow extends StatelessWidget {
                 ],
               ),
             ),
+            if (dot) ...[
+              Container(
+                key: const ValueKey('mine-settings-update-dot'),
+                width: 8,
+                height: 8,
+                decoration: const BoxDecoration(color: Color(0xFFE5533D), shape: BoxShape.circle),
+              ),
+              const SizedBox(width: 8),
+            ],
             const Text(
               '›',
               style: TextStyle(

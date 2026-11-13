@@ -111,6 +111,9 @@ class AppVersionInfo {
   /// 只看 compulsory 是不够的——后端即使把版本配成强制类型，`isUpdate=0`（当前
   /// 已是最新）时也不该把用户锁在升级弹窗里。
   bool get isCompulsory => hasUpdate && compulsory == 1;
+
+  /// 「我的 → 设置」「设置 → 检查更新」的红点（2026-11-14）：有新版本就亮，4=不提示升级除外。
+  bool get showsDot => hasUpdate && compulsory != 4;
 }
 
 class UserProfile {
@@ -1719,7 +1722,7 @@ class PhotoFrameState extends ChangeNotifier {
       }
     }
 
-    return AppVersionInfo(
+    final info = AppVersionInfo(
       hasUpdate: hasUpdate,
       currentVersion: current,
       latestVersion: latest.isEmpty ? current : latest,
@@ -1727,7 +1730,17 @@ class PhotoFrameState extends ChangeNotifier {
       description: desc,
       compulsory: compulsory,
     );
+    // 记下最近一次结果供红点用（登录后强制升级检查、设置页检查更新都会刷新它）
+    _appVersion = info;
+    notifyListeners();
+    return info;
   }
+
+  /// 最近一次 [checkAppVersion] 的结果；本次启动还没查过为 null（红点不亮）。
+  AppVersionInfo? _appVersion;
+
+  /// App 有新版本：「我的 → 设置」「设置 → 检查更新」亮红点（2026-11-14）。
+  bool get appUpdateDot => _appVersion?.showsDot ?? false;
 
   /// 点分版本号比较：[a] 是否严格大于 [b]（如 1.2.0 > 1.1.9）。非数字段按 0 处理。
   bool _versionGreater(String a, String b) {

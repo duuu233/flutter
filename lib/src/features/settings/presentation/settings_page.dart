@@ -161,15 +161,19 @@ class SettingsPage extends StatelessWidget {
                   ).pushNamed<void>(AppRoutes.figmaUserAgreement),
                 ),
                 const _SettingsDivider(),
-                _SettingsRow(
-                  iconAsset: 'assets/images/set-icon05.png',
-                  iconBg: const Color(0x1A287DFF),
-                  title: l10n.checkUpdate,
-                  // 检测更新：跳转「更新 BoltStar」页，进入即真实检查版本（三态 UI），
-                  // 不再走原来的弹窗式检查。
-                  onTap: () => Navigator.of(
-                    context,
-                  ).pushNamed<void>(AppRoutes.figmaUpdateBoltStar),
+                // 检测更新：跳转「更新 BoltStar」页，进入即真实检查版本（三态 UI），
+                // 不再走原来的弹窗式检查。App 有新版本时亮红点（2026-11-14）。
+                ListenableBuilder(
+                  listenable: state,
+                  builder: (context, _) => _SettingsRow(
+                    iconAsset: 'assets/images/set-icon05.png',
+                    iconBg: const Color(0x1A287DFF),
+                    title: l10n.checkUpdate,
+                    dot: state.appUpdateDot,
+                    onTap: () => Navigator.of(
+                      context,
+                    ).pushNamed<void>(AppRoutes.figmaUpdateBoltStar),
+                  ),
                 ),
               ],
             ),
@@ -316,8 +320,12 @@ class _SettingsRow extends StatelessWidget {
     required this.title,
     this.value,
     this.trailing = _RowTrailing.chevron,
+    this.dot = false,
     required this.onTap,
   });
+
+  /// 箭头前的红点（目前只有「检查更新」在 App 有新版本时用）。
+  final bool dot;
 
   final String iconAsset;
   final Color iconBg;
@@ -388,6 +396,15 @@ class _SettingsRow extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 9),
+              ],
+              if (dot) ...[
+                Container(
+                  key: const ValueKey('settings-update-dot'),
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(color: Color(0xFFE5533D), shape: BoxShape.circle),
+                ),
+                const SizedBox(width: 8),
               ],
               if (trailing == _RowTrailing.chevron)
                 const Text(
