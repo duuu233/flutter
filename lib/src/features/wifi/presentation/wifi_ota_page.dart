@@ -628,8 +628,11 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     };
     final texts = _stepTexts(l10n);
     final steps = _steps;
+    // 优雅刷新「暂无可用版本」（2026-11-14 产品要求）：标题与提示在页面里上下居中（同小程序 is-empty）
+    final emptyFpga = _fpga && _phase == _Phase.latest && !_showVersions;
     return FigmaScreen(
       title: _fpga ? l10n.wifiFpgaTitle : l10n.wifiOtaTitle,
+      fillViewport: emptyFpga,
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -645,6 +648,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
             ),
             const SizedBox(height: 20),
           ],
+          if (emptyFpga) const Spacer(),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -730,6 +734,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
               ),
             ),
           ],
+          if (emptyFpga) const Spacer(),
           const SizedBox(height: 24),
         ],
       ),
