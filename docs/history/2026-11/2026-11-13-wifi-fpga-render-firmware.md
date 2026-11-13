@@ -47,3 +47,7 @@
 - 产品要求优雅刷新不做红点：去掉 WiFi 详情「设备信息」行与设备信息页「优雅刷新升级」入口的红点，以及进安装页记下看过版本号的本地缓存（`WifiFpgaSeenStore`、`wifiFpgaHasNew`、`isWifiFpgaNewer` 删除）。
 - WiFi 详情页进页仍先解析一次渲染模式（原来顺带在算红点时做），设备信息页入口照样进页即显示。
 - `test/wifi_ota_test.dart` 原红点用例撤掉，改为断言不再显示、不再记录。本机无 Flutter，未运行测试。
+
+## 补充（2026-11-14）：安装页不显示顶部图标
+
+`WifiOtaPage` 优雅刷新模式（`_fpga`）不显示标题上方的图标，普通固件升级照旧；`test/wifi_ota_test.dart` 补断言。本机无 Flutter，未运行。

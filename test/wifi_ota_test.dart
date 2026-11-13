@@ -264,6 +264,8 @@ void main() {
       expect(ota.contains('if (!_fpga) _VersionRow(label: l10n.wifiOtaCurrentVersion'), isTrue);
       expect(ota.contains('if (isWifiFpgaLimitError(error))'), isTrue, reason: '下发 4047 单独提示');
       expect(ota.contains("ValueKey('wifi-fpga-intro')"), isTrue, reason: '显示版本说明');
+      expect(RegExp(r"if \(!_fpga\) \.\.\.\[\s*Image\.asset\(\s*art,\s*key: const ValueKey\('wifi-ota-art'\)").hasMatch(ota), isTrue,
+          reason: '优雅刷新升级不显示顶部图标（2026-11-14），固件升级照旧');
     });
   });
 }

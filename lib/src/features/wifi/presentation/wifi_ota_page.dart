@@ -634,13 +634,17 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           const SizedBox(height: 24),
-          Image.asset(
-            art,
-            height: 110,
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const SizedBox(height: 110),
-          ),
-          const SizedBox(height: 20),
+          // 顶部图标：优雅刷新升级不显示（2026-11-14 产品要求，同小程序 showArt），固件升级照旧
+          if (!_fpga) ...[
+            Image.asset(
+              art,
+              key: const ValueKey('wifi-ota-art'),
+              height: 110,
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) => const SizedBox(height: 110),
+            ),
+            const SizedBox(height: 20),
+          ],
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
