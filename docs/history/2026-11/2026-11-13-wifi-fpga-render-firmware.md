@@ -24,3 +24,13 @@
 - 设备不上报 FPGA 版本（`baseVersion` 为 null）：去掉设备信息页「FPGA版本」行、列表页当前版本与「当前版本 / 重新安装」标记、安装页版本卡的「当前版本」行；删掉对应文案。
 - `POST /api/device/ota`（`type=fpga`）返回 4047：`isWifiFpgaLimitError` 捕捉，提示 `wifiFpgaLimit`（简 / 繁 / 英 / 日「今日升级次数已达上限」），停在当前页、不存记录。
 - `test/wifi_ota_test.dart` 补 4047 判断与「不显示版本号」源码断言；本机无 Flutter，未运行。
+
+## 再补充（同日）：去掉版本列表，改为读最新版本 + 红点提醒
+
+> 产品改口：消息推送要闭环的内容太多，去掉后台推送；APP 去掉优雅刷新版本列表，仅读接口的最新版本，用红点提醒。
+
+- 最新版本只读设备详情新增出参：`DeviceItem.fpgaVersionNo / fpgaDownloadPath / fpgaUpgradeTips`（`newVersionNoFpga / downloadPathFpga / upgradeTipsFpga`），`fetchDeviceFirmwareInfo` 刷新时带回。删除 `wifi_fpga_page.dart`、`kWifiFpgaListApi` 与 `BoltFoxApi.getFpgaVersionList`。
+- 设备信息页「优雅刷新升级」直接进 `WifiOtaPage(fpga: true)`（参数由 `fpgaTarget` 改为 `fpga`），显示最新版本与版本说明；后台没有版本时显示「暂无可用的优雅刷新版本」。
+- 红点（`wifi_fpga.dart`：`wifiFpgaHasNew` / `WifiFpgaSeenStore`）：本地缓存看过的版本号 `fpga_seen:{deviceNo}`，fpga16、有版本且地址有效、缓存为空或最新更高 → WiFi 详情「设备信息」与设备信息页入口亮红点；进优雅刷新升级页即记下，返回后重算消失。重装 / 换手机会再提醒。
+- 4047 多语种提示与不显示设备 FPGA 版本保持；版本行标签统一「最新版本」；删掉不再使用的列表文案，新增「暂无可用」两条。
+- `test/wifi_ota_test.dart` 该组重写（版本比较、红点与缓存、记录类型、4047、接入位置），`test/firmware_gate_test.dart` 设备信息入口断言挪到新写法；本机无 Flutter，未运行。

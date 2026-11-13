@@ -34,19 +34,19 @@ import 'wifi_provision_page.dart';
 ///   · 进度条（2026-11-12 同小程序）：步骤上方一条，左边当前那一步的文案、右边百分比。服务端 progress（轮询与 WS 都带）
 ///     只抬「上限」，显示值由本页计时器匀速往上限走（规则见 [wifi_ota.dart]「升级进度条」）；失败停住，VERIFYING 走到 100。
 ///     收到过的最大进度存进本地记录，重进页面从那里接着走。
-///   · 优雅刷新升级（2026-11-13，同小程序 `wifi-ota?mode=fpga`，见 [wifi_fpga.dart]）：传了 [fpgaTarget] 即为安装模式，
-///     不比对版本，直接展示目标版本与简介；下发同一个 `POST /api/device/ota`，type=fpga、version=目标版本；
+///   · 优雅刷新升级（2026-11-13，同小程序 `wifi-ota?mode=fpga`，见 [wifi_fpga.dart]）：[fpga] 为 true 即为安装模式，
+///     不比对版本，直接展示设备详情下发的最新版本（newVersionNoFpga）与版本说明（upgradeTipsFpga），进页即记下看过的版本号（红点消失）；下发同一个 `POST /api/device/ota`，type=fpga、version=目标版本；
 ///     进度条、四步、轮询 / WS、本地进行中记录与固件升级完全一致，只换文字并显示简介。本地记录带 otaType，
 ///     重进时（无论从哪个入口）按记录里的类型选文字。设备不上报 FPGA 版本（baseVersion 为 null），版本卡只显示安装版本；
 ///     下发返回 4047（今日升级次数已达上限）按语种提示。
 class WifiOtaPage extends StatefulWidget {
-  const WifiOtaPage({super.key, required this.state, required this.deviceId, this.fpgaTarget});
+  const WifiOtaPage({super.key, required this.state, required this.deviceId, this.fpga = false});
 
   final PhotoFrameState state;
   final String deviceId;
 
-  /// 优雅刷新的目标版本（从「优雅刷新升级」列表进来时传）；null 为普通固件升级。
-  final WifiFpgaVersion? fpgaTarget;
+  /// 优雅刷新升级（从设备信息页「优雅刷新升级」进来时为 true）；false 为普通固件升级。
+  final bool fpga;
 
   @override
   State<WifiOtaPage> createState() => _WifiOtaPageState();
@@ -193,7 +193,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     _msgid = '';
     _lastStep = -1;
     _resetProgress();
-    _otaType = widget.fpgaTarget != null ? kWifiOtaTypeFpga : kWifiOtaTypeMain;
+    _otaType = widget.fpga ? kWifiOtaTypeFpga : kWifiOtaTypeMain;
     _intro = '';
     _setScreen(phase: _Phase.checking, title: l10n.wifiOtaChecking, hint: l10n.wifiOtaCheckingHint, art: _Art.progress);
     final device = await widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
@@ -213,6 +213,17 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
     if (_subscribed != deviceNo && !IotWs.instance.subscriptions.contains(deviceNo)) {
       IotWs.instance.subscribe(deviceNo);
       _subscribed = deviceNo;
+    }
+
+    // 从「优雅刷新升级」进来即算看过最新版本（含正有安装在进行、直接接着展示的情况），红点消失
+    if (widget.fpga) {
+      final latest = wifiFpgaLatestOf(device);
+      if (latest != null) {
+        await WifiFpgaSeenStore.mark(deviceNo, latest.version);
+      }
+      if (!mounted) {
+        return;
+      }
     }
 
     // ① 先看本地进行中的升级（展示「有新版本」之前必须先查）
@@ -236,18 +247,23 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
       return;
     }
     _deviceState = info == null ? WifiOnlineStatus.unknown : wifiDeviceState(info);
-    final target = widget.fpgaTarget;
-    if (target != null) {
-      _showFpgaTarget(target);
+    if (widget.fpga) {
+      _showFpgaTarget(wifiFpgaLatestOf(device));
       return;
     }
     _check = evaluateWifiOta(wifiFirmwareVersion(info), device.newVersionNo, device.downloadPath);
     _showEvaluation(_check!);
   }
 
-  /// 优雅刷新升级：不比对版本，直接展示列表页选中的目标（版本号 + 简介）；设备不上报 FPGA 版本，不显示当前版本。
-  void _showFpgaTarget(WifiFpgaVersion target) {
+  /// 优雅刷新升级：不比对版本，直接展示设备详情的最新版本与版本说明；设备不上报 FPGA 版本，不显示当前版本。
+  void _showFpgaTarget(WifiFpgaVersion? target) {
     final l10n = AppL10n.of(context);
+    if (target == null) {
+      _check = null;
+      _intro = '';
+      _setScreen(phase: _Phase.latest, title: l10n.wifiFpgaNone, hint: l10n.wifiFpgaNoneHint, art: _Art.success);
+      return;
+    }
     final ok = target.hasValidUrl;
     _check = WifiOtaCheck(ok ? WifiOtaCheckState.available : WifiOtaCheckState.invalid, '', target.version, target.url);
     _intro = target.intro;
@@ -663,7 +679,7 @@ class _WifiOtaPageState extends State<WifiOtaPage> with WidgetsBindingObserver {
               child: Column(
                 children: [
                   if (!_fpga) _VersionRow(label: l10n.wifiOtaCurrentVersion, value: _currentVersion),
-                  _VersionRow(label: _fpga ? l10n.wifiFpgaTargetVersion : l10n.wifiOtaLatestVersion, value: _latestVersion),
+                  _VersionRow(label: l10n.wifiOtaLatestVersion, value: _latestVersion),
                 ],
               ),
             ),

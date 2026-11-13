@@ -435,15 +435,15 @@ and the home camera / album entries re-query and check force only (`guardFirmwar
 cancel stops this action; remind: cancel continues; "upgrade now" opens the OTA page. Lookup
 failures let the action through.
 
-WiFi smooth refresh update (优雅刷新升级, FPGA, 2026-11-13, formerly 渲染固件管理; mirrors the mini-program
-`wifi-fpga`): only devices whose product `renderMode` is `fpga16` show the entry on the device info page
-(`wifi_fpga_page.dart`). Devices don't report their FPGA version (`baseVersion` is null), so no version
-number is shown anywhere; `POST /api/device/ota` code 4047 means today's upgrade limit is reached
-(`isWifiFpgaLimitError`, localized toast). Installing reuses `WifiOtaPage(fpgaTarget:)`: no version comparison, `POST
-/api/device/ota` with `type=fpga` and the target version; progress, steps and the local in-flight record
-are shared with firmware OTA, only the wording changes and the description is shown (`WifiOtaRecord.otaType`
-keeps the wording right on resume). The user-side version list API is not available yet: its path lives
-in `kWifiFpgaListApi` (`wifi_fpga.dart`), empty means "not available".
+WiFi smooth refresh update (优雅刷新升级, FPGA, 2026-11-13, formerly 渲染固件管理; mirrors the mini-program):
+only devices whose product `renderMode` is `fpga16` show the entry on the device info page, which opens
+`WifiOtaPage(fpga: true)` directly. The latest version and its description come from the device detail
+(`DeviceItem.fpgaVersionNo / fpgaDownloadPath / fpgaUpgradeTips` = `newVersionNoFpga / downloadPathFpga /
+upgradeTipsFpga`); there is no version list. Red dots on the WiFi detail "设备信息" row and the entry compare
+the latest version with the locally cached seen version (`WifiFpgaSeenStore`, `fpga_seen:{deviceNo}`);
+opening the page records it. Installing posts `/api/device/ota` with `type=fpga`; progress, steps and the
+in-flight record are shared with firmware OTA (`WifiOtaRecord.otaType`). Devices don't report their FPGA
+version, so none is shown; code 4047 means today's upgrade limit is reached (`isWifiFpgaLimitError`).
 
 ### 6. Image selection, editing, and projection
 

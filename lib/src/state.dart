@@ -179,6 +179,9 @@ class DeviceItem {
     this.downloadPath = '',
     this.firmwareSize = 0,
     this.updateType = 0,
+    this.fpgaVersionNo = '',
+    this.fpgaDownloadPath = '',
+    this.fpgaUpgradeTips = '',
     this.isPlaceholder = false,
     this.batteryUpdatedAt,
   });
@@ -313,6 +316,12 @@ class DeviceItem {
   /// 取详情出参 `compulsory`（swagger 字段，与 App 版本接口同名：1 强制 2 强提示），缺省再看 `updateType` 等。
   /// 判断与弹框见 `features/devices/firmware_gate.dart`。
   int updateType;
+
+  /// 优雅刷新（FPGA）最新版本（2026-11-13，详情出参 newVersionNoFpga / downloadPathFpga / upgradeTipsFpga 版本说明）；
+  /// 只有渲染模式 fpga16 的产品有。红点与安装见 `features/wifi/wifi_fpga.dart`。
+  String fpgaVersionNo;
+  String fpgaDownloadPath;
+  String fpgaUpgradeTips;
 
   /// 是否存在有效可升级包（有更新标记 + 版本号 + .bin 下载地址）。
   bool get hasFirmwareUpdate => isUpdate == 1 && hasValidFirmwarePackage;
@@ -2569,6 +2578,9 @@ class PhotoFrameState extends ChangeNotifier {
         device.downloadPath = detail.downloadPath;
         device.firmwareSize = detail.firmwareSize;
         device.updateType = detail.updateType;
+        device.fpgaVersionNo = detail.fpgaVersionNo;
+        device.fpgaDownloadPath = detail.fpgaDownloadPath;
+        device.fpgaUpgradeTips = detail.fpgaUpgradeTips;
         if (detail.firmwareVersion.isNotEmpty) {
           device.firmwareVersion = detail.firmwareVersion;
         }
@@ -3714,6 +3726,9 @@ class PhotoFrameState extends ChangeNotifier {
       // 后端不下发固件包大小，下载后按实际字节数确认。
       firmwareSize: 0,
       updateType: updateType,
+      fpgaVersionNo: '${data['newVersionNoFpga'] ?? ''}'.trim(),
+      fpgaDownloadPath: '${data['downloadPathFpga'] ?? ''}'.trim(),
+      fpgaUpgradeTips: '${data['upgradeTipsFpga'] ?? ''}'.trim(),
     );
   }
 

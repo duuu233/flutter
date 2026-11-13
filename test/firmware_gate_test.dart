@@ -89,7 +89,8 @@ void main() {
 
     final wifi = read('lib/src/features/wifi/presentation/wifi_device_detail_page.dart');
     for (final gated in [
-      '_gated(() => _push(WifiDeviceInfoPage(',
+      // 2026-11-13：设备信息改为 await 返回后重算优雅刷新红点，固件升级判断照旧包在 _gated 里
+      '_gated(() async {\n              await Navigator.of(context).push<void>(\n                AppPageRoute(builder: (_) => WifiDeviceInfoPage(',
       '_gated(_openMessages)',
       '_gated(() => _openTf(',
       '_gated(() => _push(WifiSharePage(',

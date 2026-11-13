@@ -869,23 +869,8 @@ extension WifiL10n on AppL10n {
 
   // ── 优雅刷新升级（2026-11-13，原名渲染固件管理；同小程序 wifi-fpga / wifi-ota?mode=fpga）──
   String get wifiFpgaManage => pick('优雅刷新升级', 'Smooth refresh update', 'スムーズリフレッシュ更新');
-  String get wifiFpgaInstall => pick('安装', 'Install', 'インストール');
-  String get wifiFpgaNoIntro => pick('暂无简介', 'No description', '説明はありません');
-  String get wifiFpgaPendingTitle => pick('版本列表暂未开放', 'Version list not available yet', 'バージョン一覧はまだ公開されていません');
-  String get wifiFpgaPendingHint => pick(
-    '优雅刷新版本列表接口尚未上线，开放后即可在这里安装。',
-    'The smooth refresh version list is not online yet. You can install versions here once it is available.',
-    'スムーズリフレッシュのバージョン一覧はまだ公開されていません。公開後にここからインストールできます。',
-  );
-  String get wifiFpgaEmptyTitle => pick('暂无可安装的优雅刷新固件', 'No smooth refresh firmware to install', 'インストールできるファームウェアはありません');
-  String get wifiFpgaEmptyHint => pick('后台还没有启用的版本。', 'No version is enabled yet.', '有効なバージョンはまだありません。');
-  String get wifiFpgaNotSupported => pick('该设备不支持优雅刷新升级', 'This device does not support smooth refresh update', 'このデバイスはスムーズリフレッシュ更新に対応していません');
-  String get wifiFpgaNotSupportedHint => pick(
-    '只有渲染模式为 FPGA16 的设备可以安装优雅刷新固件。',
-    'Only devices with the FPGA16 render mode can install smooth refresh firmware.',
-    'レンダリングモードが FPGA16 のデバイスのみインストールできます。',
-  );
-  String get wifiFpgaLoadFailed => pick('加载失败，请稍后重试', 'Failed to load. Please try again later.', '読み込みに失敗しました。しばらくしてからお試しください');
+  String get wifiFpgaNone => pick('暂无可用的优雅刷新版本', 'No smooth refresh update available', '利用できるスムーズリフレッシュ更新はありません');
+  String get wifiFpgaNoneHint => pick('后台发布新版本后会在这里提醒您', "You'll be notified here when a new version is released.", '新しいバージョンが公開されるとここでお知らせします。');
   String get wifiFpgaInvalidUrl => pick('该版本固件地址无效，暂时无法安装', 'This version has an invalid firmware address', 'このバージョンのファームウェアアドレスが無効です');
   String get wifiFpgaTitle => pick('优雅刷新升级', 'Smooth refresh update', 'スムーズリフレッシュ更新');
   String wifiFpgaInstallTitle(String version) => pick('安装优雅刷新固件 $version', 'Install smooth refresh firmware $version', 'スムーズリフレッシュファームウェア $version をインストール');
@@ -905,7 +890,6 @@ extension WifiL10n on AppL10n {
   String get wifiFpgaTimeout => pick('安装超时', 'Installation timed out', 'インストールがタイムアウトしました');
   String get wifiFpgaInstallNow => pick('立即安装', 'Install now', '今すぐインストール');
   String get wifiFpgaRetry => pick('重新安装', 'Install again', '再インストール');
-  String get wifiFpgaTargetVersion => pick('安装版本', 'Install version', 'インストールするバージョン');
   String get wifiFpgaIntro => pick('版本简介', 'Description', 'バージョン説明');
   String wifiFpgaConfirm(String version) => pick(
     '将安装优雅刷新固件 $version，安装期间设备会自动重启，请保持设备通电和网络连接',

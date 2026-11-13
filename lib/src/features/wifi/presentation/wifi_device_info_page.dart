@@ -9,12 +9,13 @@ import '../wifi_fpga.dart';
 import '../wifi_l10n.dart';
 import '../wifi_status.dart';
 import '../wifi_widgets.dart';
-import 'wifi_fpga_page.dart';
+import 'wifi_ota_page.dart';
 
 /// WiFi 版「设备信息」二级页（2026-10-29，同小程序 `subpackages/device/wifi-info`，原详情页的信息行挪到这里）：
 /// WiFi信号、WiFi名称、最后上线、最后心跳、固件版本；不再显示国家码。
 /// 数据沿用 [WifiStatusStore]（IoT GET /api/device/info），进页重查一次；非在线时信号不显示（本地模式影子冻结）。
-/// 2026-11-13：产品渲染模式 = fpga16 的设备多一个「优雅刷新升级」入口（[WifiFpgaPage]，原名渲染固件管理）；设备不上报 FPGA 版本，不显示版本号。
+/// 2026-11-13：产品渲染模式 = fpga16 的设备多一个「优雅刷新升级」入口（原名渲染固件管理），直接进 [WifiOtaPage] 安装模式；
+/// 设备详情的最新版本比本机看过的新时入口亮红点（见 wifi_fpga.dart），进去看过即消失。设备不上报 FPGA 版本，不显示版本号。
 class WifiDeviceInfoPage extends StatefulWidget {
   const WifiDeviceInfoPage({super.key, required this.state, required this.deviceId});
 
@@ -28,6 +29,10 @@ class WifiDeviceInfoPage extends StatefulWidget {
 class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
   /// 渲染模式 = fpga16 才显示「优雅刷新升级」。
   bool _fpga = false;
+  String _renderMode = '';
+
+  /// 有没看过的新版本：入口亮红点。
+  bool _fpgaHasNew = false;
 
   @override
   void initState() {
@@ -48,15 +53,29 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
     } catch (_) {
       return;
     }
-    if (mounted && isFpgaRenderMode(renderMode)) {
-      setState(() => _fpga = true);
+    if (!mounted || !isFpgaRenderMode(renderMode)) {
+      return;
+    }
+    _renderMode = renderMode;
+    setState(() => _fpga = true);
+    // 最新版本取设备详情（newVersionNoFpga 等），再按本机缓存算红点
+    await widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
+    await _refreshDot();
+  }
+
+  Future<void> _refreshDot() async {
+    final hasNew = await wifiFpgaHasNew(widget.state.deviceById(widget.deviceId), _renderMode);
+    if (mounted && hasNew != _fpgaHasNew) {
+      setState(() => _fpgaHasNew = hasNew);
     }
   }
 
-  void _openFpga() {
-    Navigator.of(context).push<void>(
-      AppPageRoute(builder: (_) => WifiFpgaPage(state: widget.state, deviceId: widget.deviceId)),
+  /// 「优雅刷新升级」：直接进安装步骤页；看过的版本号在那页记下，回来红点按缓存重算。
+  Future<void> _openFpga() async {
+    await Navigator.of(context).push<void>(
+      AppPageRoute(builder: (_) => WifiOtaPage(state: widget.state, deviceId: widget.deviceId, fpga: true)),
     );
+    await _refreshDot();
   }
 
   @override
@@ -139,6 +158,14 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
                           style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
+                        if (_fpgaHasNew)
+                          Container(
+                            key: const ValueKey('wifi-fpga-dot'),
+                            width: 8,
+                            height: 8,
+                            decoration: const BoxDecoration(color: Color(0xFFE5533D), shape: BoxShape.circle),
+                          ),
+                        const SizedBox(width: 6),
                         const Icon(Icons.chevron_right_rounded, size: 20, color: Color(0xFF777E88)),
                       ],
                     ),

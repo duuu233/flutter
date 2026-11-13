@@ -8,7 +8,7 @@
 根目录 `AGENTS.md` 是代理执行规则，`AI_CONTEXT.md` 是明确要求的 AI 项目上下文；二者不属于
 普通项目文档，必须留在仓库根目录，是本目录约束的两个 Markdown 例外。
 
-本次更新：[2026-11-13 WiFi 版优雅刷新升级（原渲染固件管理，FPGA 版本安装）](history/2026-11/2026-11-13-wifi-fpga-render-firmware.md)——渲染模式 fpga16 的设备在设备信息页多「优雅刷新升级」：列出启用的版本（版本号、简介、安装），安装复用 `WifiOtaPage(fpgaTarget:)`，`POST /api/device/ota` 传 `type=fpga`，只换文字并带出简介；设备不上报 FPGA 版本不显示版本号；4047 提示今日升级次数已达上限（多语种）；用户端列表接口待后端（`kWifiFpgaListApi`）；未跑 analyze / test / 编译，未联调。
+本次更新：[2026-11-13 WiFi 版优雅刷新升级（原渲染固件管理）](history/2026-11/2026-11-13-wifi-fpga-render-firmware.md)——fpga16 设备在设备信息页有「优雅刷新升级」，直接进 `WifiOtaPage(fpga: true)`；最新版本与版本说明读设备详情 `newVersionNoFpga` / `upgradeTipsFpga`，没有版本列表；本地缓存看过的版本号判断红点（详情「设备信息」、设备信息页入口），进去看过即消失；`POST /api/device/ota` 传 `type=fpga`，4047 多语种提示今日升级次数已达上限；不显示设备 FPGA 版本；未跑 analyze / test / 编译，未联调。
 
 ## 1. 阅读入口
 
