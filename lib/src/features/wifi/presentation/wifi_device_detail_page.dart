@@ -9,6 +9,7 @@ import '../../../network/iot/iot_ws.dart';
 import '../../../routes/app_routes.dart';
 import '../../../shared/l10n/app_l10n.dart';
 import '../../../shared/widgets/app_toast.dart';
+import '../../../shared/widgets/app_widgets.dart' show PageLoading;
 import '../../../shared/widgets/figma_common.dart';
 import '../../../state.dart';
 import '../wifi_cast_entry.dart';
@@ -66,6 +67,11 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   /// 是否所有者：查到详情前按否（分享 / 删除入口先不出），避免成员误删所有者的云端照片。
   bool _isOwner = false;
 
+  /// 首次进页（2026-11-14 产品要求）：所有者身份一定等查完（loading 长一点没关系），状态、固件信息、进行中升级、未读、
+  /// 轮播标记最多等 [_initialWait]，都回来再关 loading、整页一起渲染，「删除设备」不再在页面显示后才冒出来。
+  bool _initialLoading = true;
+  static const Duration _initialWait = Duration(seconds: 20); // 兜底上限：何时出来由接口实际返回决定，只在网络卡住时防止一直转圈
+
   DeviceItem get _device => widget.state.deviceById(widget.deviceId);
 
   String get _deviceNo => IotApi.plainDeviceNo(_device.serialNumber);
@@ -101,16 +107,27 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
       if (mounted) {
         final status = WifiStatusStore.instance.refresh(_device);
         // 轮播中标记：每次进页查一次（2026-11-02 同小程序）
-        WifiSlideshowStore.instance.refresh(_device);
+        final slideshow = WifiSlideshowStore.instance.refresh(_device);
         // 固件升级行：目标版本 / 升级包来自设备详情接口，先核对本地进行中的升级
         final firmware = widget.state.fetchDeviceFirmwareInfo(widget.deviceId);
         // 先解析一次渲染模式（会话内按设备记下）：设备信息页据此进页即显示「优雅刷新升级」入口，不用等网络
         unawaited(widget.state.resolveRenderMode(_device).catchError((Object _) => ''));
         final ota = _refreshOta(query: true);
-        _refreshUnread();
-        _loadOwner();
-        // 固件升级强提醒（2026-11-13）：状态、版本、进行中记录三样都回来后判断一次（进入后）
-        unawaited(_checkFirmwareOnEnter(Future.wait<Object?>([status, firmware, ota])));
+        final unread = _refreshUnread();
+        final owner = _loadOwner();
+        // 首次进页：身份（是否显示删除设备）一定等查完；其余接口最多等 _initialWait。都回来再关 loading、整页一起渲染
+        final others = Future.wait<Object?>([status, slideshow, firmware, ota, unread])
+            .timeout(_initialWait, onTimeout: () => const <Object?>[])
+            .then<void>((_) {}, onError: (Object _) {});
+        final shown = Future.wait<void>([owner, others])
+            .then<void>((_) {}, onError: (Object _) {})
+            .whenComplete(() {
+              if (mounted && _initialLoading) {
+                setState(() => _initialLoading = false);
+              }
+            });
+        // 固件升级强提醒（2026-11-13）：状态、版本、进行中记录都回来、页面已渲染后判断一次（进入后）
+        unawaited(_checkFirmwareOnEnter(Future.wait<Object?>([status, firmware, ota, shown])));
       }
     });
   }
@@ -414,6 +431,12 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
           WifiOnlineStatus.offline || WifiOnlineStatus.shutdown => const Color(0xFF9BA2AD),
           _ => const Color(0xFF8B9098),
         };
+        if (_initialLoading) {
+          return FigmaScreen(
+            title: l10n.wifiDetailTitle,
+            body: const Padding(padding: EdgeInsets.only(top: 120), child: PageLoading()),
+          );
+        }
         return FigmaScreen(
           title: l10n.wifiDetailTitle,
           body: Column(

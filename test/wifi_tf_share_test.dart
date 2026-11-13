@@ -159,4 +159,13 @@ void main() {
     expect(RegExp(r'label: l10n\.devClearAll,[\s\S]*?if \(!_isOwner\) \{\s*return;').hasMatch(actions), isTrue,
         reason: '非所有者点击直接返回');
   });
+
+  // 2026-11-14 产品要求：首次进页身份一定等查完、其余接口都回来再关 loading，删除设备不在页面显示后才冒出来
+  test('WiFi 详情：首次进页接口都回来再渲染', () {
+    final page = File('lib/src/features/wifi/presentation/wifi_device_detail_page.dart').readAsStringSync();
+    expect(page.contains('bool _initialLoading = true;'), isTrue);
+    expect(page.contains('final shown = Future.wait<void>([owner, others])'), isTrue, reason: '身份不设上限，必等');
+    expect(page.contains('Future.wait<Object?>([status, slideshow, firmware, ota, unread])'), isTrue);
+    expect(RegExp(r'if \(_initialLoading\) \{\s*return FigmaScreen\(').hasMatch(page), isTrue, reason: 'loading 期间不渲染内容');
+  });
 }
