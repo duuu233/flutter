@@ -380,20 +380,24 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
   }
 
   /// 一键清空 + 解除绑定（2026-11-09，同小程序）：布局样式同蓝牙版详情的操作卡片（图标 + 橙 / 红字，中间细分隔线）。
-  /// 一键清空仅所有者（会删掉这台设备全部云端照片），接收者这张卡片只有解除绑定。
+  /// 2026-11-14 产品要求：两行随页面一起显示，不等所有者查询（[_loadOwner] 约 1 秒）回来再冒出来；
+  /// 一键清空仅所有者能用（会删掉这台设备全部云端照片），身份没查到或是接收者时点了无反应。
   Widget _buildActions(AppL10n l10n) {
     return FigmaGlassCard(
       padding: const EdgeInsets.symmetric(horizontal: 19),
       child: Column(
         children: [
-          if (_isOwner) ...[
-            _WifiActionRow(
-              iconAsset: 'assets/images/device-detail-icon05.png',
-              fallbackIcon: Icons.cleaning_services_outlined,
-              label: l10n.devClearAll,
-              labelColor: const Color(0xFFFF6A20),
-              value: l10n.devClearAllValue,
-              onTap: () => startWifiClearFlow(
+          _WifiActionRow(
+            iconAsset: 'assets/images/device-detail-icon05.png',
+            fallbackIcon: Icons.cleaning_services_outlined,
+            label: l10n.devClearAll,
+            labelColor: const Color(0xFFFF6A20),
+            value: l10n.devClearAllValue,
+            onTap: () {
+              if (!_isOwner) {
+                return; // 接收者 / 身份还没查到：点了无反应
+              }
+              unawaited(startWifiClearFlow(
                 context,
                 widget.state,
                 _device,
@@ -403,10 +407,10 @@ class _WifiDeviceDetailPageState extends State<WifiDeviceDetailPage> {
                     WifiSlideshowStore.instance.refresh(_device);
                   }
                 },
-              ),
-            ),
-            Container(height: 1, color: const Color(0xFF2A2B2B).withValues(alpha: 0.08)),
-          ],
+              ));
+            },
+          ),
+          Container(height: 1, color: const Color(0xFF2A2B2B).withValues(alpha: 0.08)),
           // 解除绑定：只删设备记录，照片保留
           _WifiActionRow(
             iconAsset: 'assets/images/device-detail-icon06.png',

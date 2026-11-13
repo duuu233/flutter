@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
@@ -147,5 +148,15 @@ void main() {
       expect(wifiShareTime('abc'), isNull);
       expect(wifiShareTime(1.5), isNull);
     });
+  });
+
+  // 2026-11-14 产品要求（同小程序 tests/wifi-tf-local-mode.test.js）：一键清空 / 解除绑定随页面一起显示，
+  // 不等所有者查询回来再冒出来；一键清空仅所有者能用，身份没查到或是接收者时点了无反应。
+  test('WiFi 详情：一键清空随页面显示，非所有者点击无反应', () {
+    final page = File('lib/src/features/wifi/presentation/wifi_device_detail_page.dart').readAsStringSync();
+    final actions = page.substring(page.indexOf('Widget _buildActions('), page.indexOf('l10n.devUnbindDevice'));
+    expect(actions.contains('if (_isOwner) ...['), isFalse, reason: '一键清空不按身份隐藏');
+    expect(RegExp(r'label: l10n\.devClearAll,[\s\S]*?if \(!_isOwner\) \{\s*return;').hasMatch(actions), isTrue,
+        reason: '非所有者点击直接返回');
   });
 }
