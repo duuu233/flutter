@@ -118,15 +118,24 @@ class _WifiDeviceInfoPageState extends State<WifiDeviceInfoPage> {
                           child: Row(
                             children: [
                               Text(row.label, style: const TextStyle(color: Color(0xFF5E6470), fontSize: 14)),
-                              const Spacer(),
-                              if (row.leading != null) ...[row.leading!, const SizedBox(width: 6)],
-                              Flexible(
-                                child: Text(
-                                  row.value.isNotEmpty && row.value != 'null' ? row.value : '--',
-                                  textAlign: TextAlign.right,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14),
+                              const SizedBox(width: 12),
+                              // 取值吃满标签右边的全部宽度（2026-11-14：原 Spacer + Flexible 各分一半，
+                              // 安卓字体略宽时「最后上线 / 最后心跳」的时间被截成 ...）
+                              Expanded(
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    if (row.leading != null) ...[row.leading!, const SizedBox(width: 6)],
+                                    Flexible(
+                                      child: Text(
+                                        row.value.isNotEmpty && row.value != 'null' ? row.value : '--',
+                                        textAlign: TextAlign.right,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],

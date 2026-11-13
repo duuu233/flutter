@@ -248,6 +248,9 @@ void main() {
       expect(info.contains("ValueKey('wifi-fpga-dot')") || info.contains('wifiFpgaHasNew'), isFalse, reason: '入口不做红点');
       expect(info.contains('WifiOtaPage(state: widget.state, deviceId: widget.deviceId, fpga: true)'), isTrue);
       expect(info.contains('fpgaVersion\''), isFalse, reason: '不显示设备 FPGA 版本号');
+      // 2026-11-14：信息行取值吃满标签右边的宽度（原 Spacer + Flexible 各分一半，安卓上最后上线 / 心跳被截断）
+      expect(RegExp(r'const SizedBox\(width: 12\),[\s\S]{0,300}?Expanded\(\s*child: Row\(\s*mainAxisAlignment: MainAxisAlignment\.end').hasMatch(info), isTrue);
+      expect(info.contains('const Spacer(),\n                              if (row.leading != null)'), isFalse);
       // 2026-11-14：入口不等网络——用详情页解析过的渲染模式进页即显示，不随信息行加载态隐藏；文字与上面标签同样式
       expect(info.contains('widget.state.cachedRenderMode(widget.deviceId)'), isTrue);
       expect(info.contains('if (_fpga) ...['), isTrue);
