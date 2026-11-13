@@ -46,4 +46,10 @@ void main() {
       expect(source, isNot(contains('CircularProgressIndicator()')), reason: name);
     }
   });
+
+  test('WiFi 表单行（轮播设置 / 休眠设置）取值主题橙，同小程序 .ws-row__value', () {
+    final source = read('lib/src/features/wifi/wifi_widgets.dart');
+    final row = source.substring(source.indexOf('class WifiFormRow'), source.indexOf('String _two('));
+    expect(row, contains('Text(value, style: const TextStyle(color: Color(0xFFFF6A20), fontSize: 14, fontWeight: FontWeight.w600))'));
+  });
 }

@@ -211,8 +211,9 @@ class WifiFormRow extends StatelessWidget {
           children: [
             Text(label, style: const TextStyle(color: Color(0xFF33373D), fontSize: 14)),
             const Spacer(),
+            // 取值主题橙（2026-11-14，同小程序 .ws-row__value / .sl-row__value #ff6a20；原为深色）
             trailing ??
-                Text(value, style: const TextStyle(color: Color(0xFF2A2D32), fontSize: 14, fontWeight: FontWeight.w600)),
+                Text(value, style: const TextStyle(color: Color(0xFFFF6A20), fontSize: 14, fontWeight: FontWeight.w600)),
             if (onTap != null) const Icon(Icons.chevron_right_rounded, size: 18, color: Color(0xFF9BA2AD)),
           ],
         ),
