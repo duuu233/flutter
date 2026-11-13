@@ -63,14 +63,17 @@ void main() {
       expect(parseOtaProgress('abc'), isNull);
     });
 
-    test('上限：没收到停 19；收到 20/40/60/80 走到下一档减 1（80 之后 98）；不上报或写入阶段 98；VERIFYING 100', () {
+    test('上限：没收到停 19；收到 20/40/60/80 走到下一档减 1（80 之后 98）；状态不放开分档；无数值进入写入 98；VERIFYING 100', () {
       expect(otaProgressCap('SENT', null), 19);
       expect(otaProgressCap('DOWNLOADING', 20), 39);
       expect(otaProgressCap('DOWNLOADING', 40), 59);
       expect(otaProgressCap('DOWNLOADING', 60), 79);
       expect(otaProgressCap('DOWNLOADING', 80), 98);
-      expect(otaProgressCap('DOWNLOADING', null), 98, reason: '进入下载却不上报进度');
-      expect(otaProgressCap('FLASHING', 40), 98, reason: '写入阶段下载已完成');
+      expect(otaProgressCap('DOWNLOADING', null), 19, reason: '进入下载但 20 还没到：仍停 19 等 20');
+      expect(otaProgressCap('FLASHING', 40), 59, reason: '写入阶段也要等 60：状态不放开分档');
+      expect(otaProgressCap('FLASHING', 60), 79, reason: '79 等 80');
+      expect(otaProgressCap('FLASHING', 80), 98);
+      expect(otaProgressCap('FLASHING', null), 98, reason: '没有任何数值就进入写入：固件不上报');
       expect(otaProgressCap('VERIFYING', 80), 100);
       expect(otaProgressCap('SUCCESS', null), 100);
     });

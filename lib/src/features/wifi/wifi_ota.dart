@@ -105,10 +105,12 @@ WifiOtaSteps otaStepsFor(Object? status, [int lastStep = -1]) {
 // 服务端 progress（GET /api/device/ota/status 与 WS ota.result 新增，可选）：设备私有进度回执 182 / 184 / 186 / 188
 // 换算为 20 / 40 / 60 / 80，每收到一条回执 WS 推一次；进入 VERIFYING 后为 100；固件不上报进度时为 null。
 // 页面显示值只增不减、匀速前进（每 [kWifiOtaProgressTick] 走 1%），走到「上限」就停住等下一次上报：
-//   · 还没收到任何进度（SENT 等设备响应）→ 停在 19；
+//   · 还没收到任何进度 → 停在 19 等 20；
 //   · 收到 20 / 40 / 60 / 80 → 可走到 39 / 59 / 79 / 98（下一档减 1；80 之后与「不上报」同为 98）；
-//     例：走到 39 没收到 40 就停住，收到 40 后继续前进；
-//   · 已进入下载（DOWNLOADING）却一直没有进度值（固件不上报，为 null）或已进入写入（FLASHING）→ 匀速走到 98 停住；
+//     即 19 等 20、39 等 40、59 等 60、79 等 80，没收到下一档数值就一直停住（2026-11-13）；
+//   · 状态只决定步骤，不放开分档：DOWNLOADING / FLASHING 本身都不会让进度越过 19 / 39 / 59 / 79；
+//   · 固件不上报（progress 为 null）：一个数值都没收到就已进入写入（FLASHING）→ 匀速走到 98 停住；
+//     下载阶段为 null 不算「不上报」（可能只是 20 还没到），仍停 19；
 //   · VERIFYING（SUCCESS 同）→ 100。FAILED / TIMEOUT 停在当时的位置。
 // 进度条左边的文案用当前那一步的步骤文案（[otaActiveStep]）。
 
@@ -137,14 +139,12 @@ int otaProgressCap(Object? status, int? reported) {
   if (s == 'VERIFYING' || s == 'SUCCESS' || value >= 100) {
     return 100;
   }
-  if (s == 'FLASHING') {
-    return _progressSilentCap;
-  }
   if (value > 0) {
     final cap = value + _progressStepGap;
     return cap > _progressSilentCap ? _progressSilentCap : cap;
   }
-  return s == 'DOWNLOADING' ? _progressSilentCap : _progressFirstCap;
+  // 一个数值都没收到：已到写入阶段 → 固件不上报，走到 98；否则停 19 等 20
+  return s == 'FLASHING' ? _progressSilentCap : _progressFirstCap;
 }
 
 /// [otaStepsFor] 结果里「当前那一步」：转圈或打叉的那一步；全勾（VERIFYING）为最后一步。
