@@ -439,9 +439,8 @@ WiFi smooth refresh update (优雅刷新升级, FPGA, 2026-11-13, formerly 渲�
 only devices whose product `renderMode` is `fpga16` show the entry on the device info page, which opens
 `WifiOtaPage(fpga: true)` directly. The latest version and its description come from the device detail
 (`DeviceItem.fpgaVersionNo / fpgaDownloadPath / fpgaUpgradeTips` = `newVersionNoFpga / downloadPathFpga /
-upgradeTipsFpga`); there is no version list. Red dots on the WiFi detail "设备信息" row and the entry compare
-the latest version with the locally cached seen version (`WifiFpgaSeenStore`, `fpga_seen:{deviceNo}`);
-opening the page records it. Installing posts `/api/device/ota` with `type=fpga`; progress, steps and the
+upgradeTipsFpga`); there is no version list. No red dots (removed 2026-11-14 at product's request, together with the seen-version
+cache); the entry shows as soon as the page opens, using the render mode the detail page already resolved. Installing posts `/api/device/ota` with `type=fpga`; progress, steps and the
 in-flight record are shared with firmware OTA (`WifiOtaRecord.otaType`). Devices don't report their FPGA
 version, so none is shown; code 4047 means today's upgrade limit is reached (`isWifiFpgaLimitError`).
 
