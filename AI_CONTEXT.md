@@ -594,13 +594,11 @@ Logout / successful account deletion / session expiry
    code 0x01 with EF6-370) first, then screen code (0x04→25); device details show `--` when unknown
    instead of the constant 32; still-unknown capacity uses the IMG_MASK slot limit, and
    size/identity configuration errors are no longer reported as "not connected". Device images
-   come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default). Records whose
-   `broadcastId` is missing or not a product broadcast name get it from the product list by
-   `productId` (`_fillBroadcastIds`, 2026-10-23, same rule as the mini program); records still
-   unresolved are looked up once per session via `getUserProductDetail` by `userProductId`
-   (`device/product_broadcast_id.dart`, 2026-10-23: EC-370 image/capacity were wrong on home, my
-   devices and details while the mini program detail page was right), and connected devices get
-   `liveCapacity` recomputed by model. The device-details "screen size" row shows the product's
+   come from `device/device_thumb.dart` (EB-169 round, EC-370 rectangle, others default). Since
+   2026-11-14 `getUserProductList` returns `productId` / `broadcastId` directly, so `refreshDevices`
+   uses the record's own `broadcastId` (no product-list wait, no per-device `getUserProductDetail`;
+   the 2026-10-23 `_fillBroadcastIds` / `ProductBroadcastId.resolve` fallback was removed, see
+   `docs/history/2026-11/2026-11-14-device-list-product-fields.md`). The device-details "screen size" row shows the product's
    `sizeModel` (e.g. 3.6寸, from the device list/detail APIs, 2026-10-23) as configured in the admin
    console; it is no longer derived from screen code or width/height, and the row (with its divider)
    is hidden when empty. The bind search list matches the scan's broadcast name against product

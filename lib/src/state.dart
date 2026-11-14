@@ -2476,8 +2476,6 @@ class PhotoFrameState extends ChangeNotifier {
   /// 后端返回为准整体替换本地列表（含空列表）；请求失败保留当前列表。
   Future<ActionFeedback> refreshDevices() async {
     final epoch = _sessionEpoch;
-    // 产品列表（设备图回查 broadcastId 用）与设备列表并行拉，会话内成功一次后直接命中缓存
-    final catalog = _loadProductBroadcastIds();
     try {
       final data = await BoltFoxApi.getUserProductList({
         'pageIndex': 1,
@@ -2501,8 +2499,8 @@ class PhotoFrameState extends ChangeNotifier {
         // 小程序同样是合并而非覆盖（home.js:424 / device/list.js:86 的 `?? cached`）。
         _carryOverBleFields(device);
       }
-      // 设备图按机型区分：broadcastId 缺失或认不出的记录按 productId 回查产品列表补上（见 [_fillBroadcastIds]）。
-      await _fillBroadcastIds(mapped, catalog);
+      // 设备图 / 最多照片数按机型区分：列表接口直接下发 productId / broadcastId（2026-11-14），
+      // 不再等产品列表回查、也不再逐台调详情补机型（同小程序 api.getDevices）。
       // 稳定身份的第三档来源：登记表（顺序见 [DeviceIdentityRegistry]）。
       // 前两档都没给出完整 ID 时才查表兜底；反过来，后端这次下发了完整 ID 的记录顺手登记，
       // 供以后接口没下发时使用。整条补齐链只为一件事：别让身份闸把好设备拦在扫描之前。
@@ -2773,19 +2771,17 @@ class PhotoFrameState extends ChangeNotifier {
   }
 
   /// 产品列表 productId → broadcastId（去首尾空白）缓存，设备图按机型区分用
-  /// （对齐小程序 `api.js loadProductCatalog` / `withProductBroadcastId`）。
-  /// 设备列表接口下发 broadcastId，这里给缺失或认不出的记录按 productId 回查兜底：没有这一步，
-  /// 记录里取不到机型时 EC-370 只能落默认图（EB-169 还能靠 shapeType 兜成圆屏图），
-  /// 表现为搜索页对、首页/我的设备/详情错。
-  /// 成功才缓存（整次会话复用），失败静默返回空表——查不到只是设备图退回默认那张，不能挡住设备列表。
+  /// （对齐小程序 `api.js loadProductCatalog`）。设备列表接口自 2026-11-14 起直接下发 productId / broadcastId，
+  /// 设备列表不再用它；现只供投屏取产品配置（[_productField]）与绑定页搜索列表尺寸（[loadProductSizeModels]）。
+  /// 成功才缓存（整次会话复用），失败静默返回空表。
   Map<int, String>? _productBroadcastIds;
   Future<Map<int, String>>? _productBroadcastIdsRequest;
 
   /// 同一次产品列表顺带缓存的「广播名 → 尺寸型号」，绑定页搜索列表按广播名显示 sizeModel 用（2026-10-23）。
   List<ProductSizeModel>? _productSizeModels;
 
-  /// 设备列表最多为产品列表多等这么久（请求层超时 + 静默重试能拖很久）：超时就先按已有信息出图，
-  /// 请求本身照常跑完，成功了下次刷新列表就用上（与小程序 `PRODUCT_CATALOG_WAIT_MS` 同值）。
+  /// 投屏取产品配置最多为产品列表多等这么久（请求层超时 + 静默重试能拖很久）：超时就按设备号查产品，
+  /// 请求本身照常跑完，成功了下次就用上（与小程序 `PRODUCT_CATALOG_WAIT_MS` 同值）。
   static const Duration _productCatalogWait = Duration(seconds: 3);
 
   /// 产品列表按 productId 的原始行（2026-10-28 同小程序：投屏取产品的 renderMode / screenType）。
@@ -2843,7 +2839,7 @@ class PhotoFrameState extends ChangeNotifier {
 
   /// WiFi 投屏的渲染模式（2026-10-28 同小程序）：后台产品配置的 renderMode（esp32 / fpga16），原样传给 play；取不到为空串（不传）。
   ///
-  /// 解析到的值按设备记一份（会话内，[cachedRenderMode]）：设备列表不下发 productId 时要按设备号查产品（约 1 秒），
+  /// 解析到的值按设备记一份（会话内，[cachedRenderMode]）：设备没有 productId 时要按设备号查产品（约 1 秒），
   /// 设备详情页进页时已解析过一次，设备信息页据此同步决定是否显示「优雅刷新升级」，不用等网络（2026-11-14）。
   Future<String> resolveRenderMode(DeviceItem device) async {
     final mode = await _productField(device, 'renderMode');
@@ -2862,7 +2858,7 @@ class PhotoFrameState extends ChangeNotifier {
   /// 轮播投第一张三处同口径原样传；取不到为空串，由调用方按分辨率回退旧口径（[DitheringApi.typeForDevice]）。
   Future<String> resolveScreenType(DeviceItem device) => _productField(device, 'screenType');
 
-  /// 产品列表的「广播名 → 尺寸型号」（会话缓存，与设备图回查共用一次请求；失败静默返回空表）。
+  /// 产品列表的「广播名 → 尺寸型号」（会话缓存，与投屏取产品配置共用一次请求；失败静默返回空表）。
   /// 绑定页搜索列表据此按蓝牙广播名显示尺寸（见 [ProductBroadcastId.sizeModelOfScan]）。
   Future<List<ProductSizeModel>> loadProductSizeModels() => _loadProductBroadcastIds()
       .then((_) => _productSizeModels ?? const <ProductSizeModel>[]);
@@ -2877,87 +2873,6 @@ class PhotoFrameState extends ChangeNotifier {
         .then((data) => _cacheProductBroadcastIds(extractApiRows(data)))
         .catchError((Object _) => const <int, String>{})
         .whenComplete(() => _productBroadcastIdsRequest = null);
-  }
-
-  /// 设备列表认不出机型的记录按 userProductId 调详情接口补到的广播名（详情正常返回但认不出记空串），
-  /// 整次会话复用：绑定记录的机型不会变。请求失败不记，下次刷新再试。
-  final Map<String, String> _detailBroadcastIds = {};
-
-  /// 按 productId 给记录补上所属产品的 broadcastId（口径见 [ProductBroadcastId]）。记录自带、且是产品
-  /// 列表里认得的广播名就不动；没带，或带的不是任何产品的广播名（字段口径对不上时）才按 productId 回查覆盖。
-  /// 仍认不出的再按 userProductId 调详情接口补（2026-10-23：EC-370 首页/列表/详情设备图与最多照片数都不对，
-  /// 小程序详情页走详情接口是对的——列表这条记录没有可用的 productId / broadcastId）。
-  /// [catalog] 由调用方与设备列表请求并行发起，这里最多再等 [_productCatalogWait]，详情补机型同样最多再等这么久。
-  Future<void> _fillBroadcastIds(
-    List<DeviceItem> devices,
-    Future<Map<int, String>> catalog,
-  ) async {
-    if (devices.isEmpty) return;
-    final byProductId = await catalog.timeout(
-      _productCatalogWait,
-      onTimeout: () => const <int, String>{},
-    );
-    if (byProductId.isEmpty) return;
-    final pending = <DeviceItem>[];
-    for (final device in devices) {
-      final resolved = ProductBroadcastId.resolve(
-        broadcastId: device.broadcastId,
-        productId: device.productId,
-        catalog: byProductId,
-      );
-      if (resolved.isNotEmpty) {
-        device.broadcastId = resolved;
-      } else {
-        pending.add(device);
-      }
-    }
-    if (pending.isNotEmpty) {
-      final fromDetail = await Future.wait(
-        pending.map((device) => _detailBroadcastId(device.id, byProductId)),
-      ).timeout(_productCatalogWait, onTimeout: () => const <String>[]);
-      for (var i = 0; i < fromDetail.length; i++) {
-        if (fromDetail[i].isNotEmpty) pending[i].broadcastId = fromDetail[i];
-      }
-    }
-    // 机型补上后容量跟着按机型重算（v1.6：EC-370 屏型同报 0x01，只能按机型给 11）。只改已从真机
-    // 读过 0x01 的（liveImageCount 非空）；没读过的等连接后由 [_applyConnectedInfo] 按机型给。
-    for (final device in devices) {
-      if (device.liveImageCount == null) continue;
-      final capacity = FrameProtocol.capacityOf(device.broadcastId);
-      if (capacity > 0) device.liveCapacity = capacity;
-    }
-  }
-
-  /// 按 userProductId 调详情接口取所属产品的广播名；认不出或请求失败返回空串（失败不缓存）。
-  Future<String> _detailBroadcastId(
-    String userProductId,
-    Map<int, String> byProductId,
-  ) async {
-    final cached = _detailBroadcastIds[userProductId];
-    if (cached != null) return cached;
-    try {
-      final data = await BoltFoxApi.getUserProductDetail(
-        userProductId: userProductId,
-      );
-      Map<String, dynamic>? row;
-      if (data is Map) {
-        row = data.map((k, v) => MapEntry(k.toString(), v));
-      } else {
-        final rows = extractApiRows(data);
-        if (rows.isNotEmpty) row = rows.first;
-      }
-      final resolved = row == null
-          ? ''
-          : ProductBroadcastId.resolve(
-              broadcastId: (row['broadcastId'] ?? '').toString(),
-              productId: _asInt(row['productId']),
-              catalog: byProductId,
-            );
-      _detailBroadcastIds[userProductId] = resolved;
-      return resolved;
-    } catch (_) {
-      return '';
-    }
   }
 
   /// 解析 addUserProduct 必传的 productId（对齐小程序 `api.js` 的 `bindDevice` + `productScore`）。
@@ -3732,7 +3647,8 @@ class PhotoFrameState extends ChangeNotifier {
       // 原始宽高另存一份：屏型是「归一化后的枚举」，未下发时会回落 589，不能拿来展示分辨率。
       screenWidth: _asInt(data['width']),
       screenHeight: _asInt(data['height']),
-      // 产品信息：设备列表接口下发（2026-10-22 用户确认），设备图与圆屏判断用。
+      // 产品信息：设备列表接口下发 productId / broadcastId（2026-11-14 后端补上），设备图、最多照片数、投屏取产品配置用；
+      // 详情接口不带 broadcastId，[fetchDeviceFirmwareInfo] 合并时不覆盖它。
       productId: _asInt(data['productId']),
       broadcastId: (data['broadcastId'] ?? '').toString().trim(),
       // WiFi版 / 蓝牙版只按它判断（1 = 蓝牙版，2 = wifi版），见 [DeviceItem.isWifi]。

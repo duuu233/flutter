@@ -1,97 +1,34 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:BoltStar/src/device/ble/frame_protocol.dart';
 import 'package:BoltStar/src/device/device_thumb.dart';
 import 'package:BoltStar/src/device/product_broadcast_id.dart';
 
-/// 设备记录 → 机型广播名（2026-10-23，与小程序 `tests/device-thumb.test.js` 同口径）：
-/// 记录自带且认得 → 原样；否则按 productId 回查产品列表；都不行为空串，由 state 再按详情接口补。
-///
-/// 锁住：EC-370 的列表记录没有可用 productId / broadcastId 时认不出（空串，交给详情补），
-/// 详情带着 productId 17 时认得出，设备图与最多照片数随之是 EC-370 的。
+/// 已绑定设备的机型（2026-11-14 起）：设备列表接口直接下发 `productId` / `broadcastId`，
+/// 设备图与最多照片数按记录自带的 broadcastId 区分；不再等产品列表回查、不再逐台调详情补机型
+/// （原 `ProductBroadcastId.resolve` 及其用例有意删除，同小程序 `tests/device-thumb.test.js`）。
 void main() {
-  // 后台实际产品列表（2026-10-23），EB-169 的 broadcastId 带尾随空格
-  const catalog = {18: 'EB-169 ', 17: 'EC-370', 15: 'EF6-589', 9: 'EF6-370'};
-
-  test('记录自带且认得：原样，不被 productId 覆盖', () {
-    expect(
-      ProductBroadcastId.resolve(
-        broadcastId: 'EC-370',
-        productId: 18,
-        catalog: catalog,
-      ),
-      'EC-370',
-    );
-    expect(
-      ProductBroadcastId.resolve(
-        broadcastId: 'eb-169',
-        productId: 0,
-        catalog: catalog,
-      ),
-      'eb-169',
-    );
-  });
-
-  test('没带或认不出：按 productId 回查，去首尾空白', () {
-    expect(
-      ProductBroadcastId.resolve(
-        broadcastId: '',
-        productId: 17,
-        catalog: catalog,
-      ),
-      'EC-370',
-    );
-    expect(
-      ProductBroadcastId.resolve(
-        broadcastId: '37:0B:00:D0:44:5A',
-        productId: 18,
-        catalog: catalog,
-      ),
-      'EB-169',
-    );
-  });
-
-  test('都认不出为空串（交给详情接口补），不拿别的字段猜', () {
-    expect(
-      ProductBroadcastId.resolve(
-        broadcastId: '',
-        productId: 0,
-        catalog: catalog,
-      ),
-      '',
-    );
-    expect(
-      ProductBroadcastId.resolve(
-        broadcastId: '',
-        productId: 99,
-        catalog: catalog,
-      ),
-      '',
-    );
-    expect(
-      ProductBroadcastId.resolve(
-        broadcastId: '',
-        productId: 17,
-        catalog: const {},
-      ),
-      '',
-    );
-  });
-
-  test('详情补到 EC-370 后设备图与最多照片数是 EC-370 的', () {
-    final fromDetail = ProductBroadcastId.resolve(
-      broadcastId: '',
-      productId: 17,
-      catalog: catalog,
-    );
-    expect(
-      DeviceThumb.ofRecord(broadcastId: fromDetail),
-      DeviceThumb.rectangleAsset,
-    );
-    expect(FrameProtocol.capacityOf(fromDetail), 11);
-    // 列表认不出时的原样：默认图、按屏型才有容量
+  test('列表记录自带的 broadcastId 决定设备图与最多照片数', () {
+    expect(DeviceThumb.ofRecord(broadcastId: 'EC-370'), DeviceThumb.rectangleAsset);
+    expect(FrameProtocol.capacityOf('EC-370'), 11);
+    expect(DeviceThumb.ofRecord(broadcastId: 'EF6-370'), DeviceThumb.defaultAsset);
+    // 没带 broadcastId：默认图，按屏型才有容量（不再回查）
     expect(DeviceThumb.ofRecord(broadcastId: ''), DeviceThumb.defaultAsset);
     expect(FrameProtocol.capacityOf(''), 0);
+  });
+
+  test('刷新设备列表不再等产品列表、不逐台调详情', () {
+    final source = File('lib/src/state.dart').readAsStringSync().replaceAll(RegExp(r'//[^\n]*'), '');
+    final start = source.indexOf('Future<ActionFeedback> refreshDevices()');
+    final body = source.substring(start, source.indexOf('Future<', start + 10));
+    expect(body.contains('getUserProductDetail'), isFalse);
+    expect(body.contains('_loadProductBroadcastIds'), isFalse);
+    expect(source.contains('_fillBroadcastIds'), isFalse);
+    expect(source.contains('_detailBroadcastId'), isFalse);
+    expect(source, contains("broadcastId: (data['broadcastId'] ?? '').toString().trim(),"));
+    expect(source, contains("productId: _asInt(data['productId']),"));
   });
 
   group('搜索列表尺寸：按广播名匹配产品的 sizeModel（2026-10-23，同小程序 scanSizeModel）', () {
